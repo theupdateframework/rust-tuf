@@ -1,33 +1,59 @@
+use json;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
+use std::marker::PhantomData;
 use std::path::Path;
 use url::Url;
 
-use core::{SignedRootMetadata, SignedSnapshotMetadata, SignedTargetsMetadata,
-    SignedTimestampMetadata, Role, Signature, SignedMetadata, Key, KeyId, RootMetadata};
-use error::{TufError, VerificationFailure};
+use error::TufError;
+use metadata::{Role, RoleType, Root, Metadata, RootMetadata};
 
 pub struct Tuf {
     url: Url,
     local_path: Box<Path>,
-    // TODO add repo name
+    root: RootMetadata,
 }
 
 impl Tuf {
-    pub fn init(config: Config) -> Result<Self, TufError> {
-        // TODO load the current metadata ?
+    pub fn new(config: Config) -> Result<Self, TufError> {
+        let root = Self::read_metadata::<Root, RootMetadata>(&config.local_path)?;
 
-        let mut tuf = UnverifiedTuf {
+        Ok(Tuf {
             url: config.url,
             local_path: config.local_path,
-            root: None,
-            snapshot: None,
-            targets: None,
-            timestamp: None,
-        };
-
-        tuf.verify()
+            root: root,
+        })
     }
 
+    fn read_metadata<R: RoleType, M: Metadata<R>>(local_path: &Path) -> Result<M, TufError> {
+        Self::read_meta_prefix(local_path, "")
+    }
+
+    fn read_meta_num<R: RoleType, M: Metadata<R>>(local_path: &Path, num: i32) -> Result<M, TufError> {
+        Self::read_meta_prefix(local_path, &format!("{}.", num))
+    }
+
+    fn read_meta_hash<R: RoleType, M: Metadata<R>>(local_path: &Path, hash: &str) -> Result<M, TufError> {
+        Self::read_meta_prefix(local_path, &format!("{}.", hash))
+    }
+
+    fn read_meta_prefix<R: RoleType, M: Metadata<R>>(local_path: &Path, prefix: &str) -> Result<M, TufError> {
+        let path = local_path.join(format!("{}{}.json", prefix, R::role()));        
+        let mut file = File::open(path)?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)?;
+        let jsn = json::from_slice(&buf)?;
+        let safe_bytes = Self::verify_meta(jsn)?;
+        Ok(json::from_slice(&safe_bytes)?)
+    }
+
+    /// Consumes the JSON because we only care about parsing the output. Bytes are only trusted
+    /// after they are verified. We do this to mitigate exploits that rely on different JSON
+    /// parsers parsing JSON in different ways.
+    fn verify_meta(jsn: json::Value) -> Result<Vec<u8>, TufError> {
+        unimplemented!() // TODO
+    }
 
     // TODO real return type
     pub fn list_targets() -> Vec<String> {
@@ -37,140 +63,6 @@ impl Tuf {
     // TODO real input type
     pub fn fetch_target(target: String) -> Result<Box<Path>, TufError> {
         unimplemented!() // TODO
-    }
-}
-
-
-struct UnverifiedTuf {
-    url: Url,
-    local_path: Box<Path>,
-    root: Option<SignedRootMetadata>,
-    snapshot: Option<SignedSnapshotMetadata>,
-    targets: Option<SignedTargetsMetadata>,
-    timestamp: Option<SignedTimestampMetadata>,
-}
-
-impl UnverifiedTuf {
-    fn verify(&mut self) -> Result<Tuf, TufError> {
-        // update once
-        self.verify_root()?;
-        self.update()?;
-
-        // reverify everything
-        self.verify_root()?;
-        self.verify_snapshot()?;
-        self.verify_targets()?;
-        self.verify_timestamp()?;
-
-        Err(TufError::VerificationFailure(VerificationFailure::Undefined)) // TODO actually verify
-    }
-
-    fn update(&mut self) -> Result<(), TufError> {
-        unimplemented!() // TODO
-    }
-
-    fn verify_root(&self) -> Result<(), TufError> {
-        // TODO this can probably be done with `.or_ok(...)?`
-        if let Some(ref root) = self.root {
-            Self::unique_signatures(&root.signatures())
-            // TODO verify root chain
-        } else {
-            Err(TufError::MissingRole(Role::Root))
-        }
-    }
-
-    fn verify_snapshot(&self) -> Result<(), TufError> {
-        if let Some(ref snapshot) = self.snapshot {
-            Self::unique_signatures(&snapshot.signatures())?;
-            // TODO unwrap
-            self.verify_role(&self.root.as_ref().unwrap().signed, &Role::Snapshot, snapshot)
-            // TODO check expiration
-        } else {
-            Err(TufError::MissingRole(Role::Snapshot))
-        }?;
-        unimplemented!() // TODO
-    }
-
-    fn verify_targets(&self) -> Result<(), TufError> {
-        if let Some(ref targets) = self.targets {
-            Self::unique_signatures(&targets.signatures())?;
-            // TODO unwrap
-            self.verify_role(&self.root.as_ref().unwrap().signed, &Role::Targets, targets)
-            // TODO check expiration
-        } else {
-            Err(TufError::MissingRole(Role::Targets))
-        }?;
-        unimplemented!() // TODO
-    }
-
-    fn verify_timestamp(&self) -> Result<(), TufError> {
-        if let Some(ref timestamp) = self.timestamp {
-            Self::unique_signatures(&timestamp.signatures())?;
-            // TODO unwrap
-            self.verify_role(&self.root.as_ref().unwrap().signed, &Role::Timestamp, timestamp)
-            // TODO check expiration
-        } else {
-            Err(TufError::MissingRole(Role::Timestamp))
-        }?;
-        unimplemented!() // TODO
-    }
-
-    fn verify_role<M: SignedMetadata>(&self,
-                                      root: &RootMetadata,
-                                      role: &Role,
-                                      metadata: &M) -> Result<(), TufError> {
-        // TODO check M.role == *role
-
-        let role_def = root.roles.get(role).unwrap(); // TODO unwrap
-        let keys = role_def.key_ids.iter()
-            .map(|id| (id, root.keys.get(id).unwrap())) // TODO unwrap
-            // TODO collect instead of fold ?
-            .fold(HashMap::new(), |mut map, (id, key)| {
-                // TODO check that we don't overwrite ?
-                let _ = map.insert(id, key);
-                map
-            });
-
-        let (valid, errors) =
-            Self::verify_signatures(&metadata.signed(), metadata.signatures(), &keys);
-
-        // TODO unwrap
-        if valid < root.roles.get(role).unwrap().threshold {
-            Err(TufError::ThresholdNotMet(role.clone()))
-        } else {
-            Ok(()) // TODO more?
-        }
-    }
-
-    fn verify_signatures(signed: &[u8],
-                         signatures: &[Signature],
-                         available_keys: &HashMap<&KeyId, &Key>) -> (i32, Vec<TufError>) {
-        signatures.iter().map(|signature| {
-            if let Some(key) = available_keys.get(&signature.key_id) {
-                key.verify(&signed, &signature.method)
-            } else {
-                Err(TufError::UnknownKey(signature.key_id.clone()))
-            }
-        }).fold((0, Vec::new()), |(counter, mut errors), result| {
-            if let Err(err) = result {
-                errors.push(err);
-                (counter, errors)
-            } else {
-                (counter + 1, errors)
-            }
-        })
-    }
-
-    // TODO this function might need to be pulled into the SignedMetadata trait
-    fn unique_signatures(signatures: &[Signature]) -> Result<(), TufError> {
-        let sig_len = signatures.len();
-        let unique_len = signatures.iter().map(|s| s.key_id.clone()).len();
-
-        if sig_len == unique_len {
-            Ok(())
-        } else {
-            Err(TufError::NonUniqueSignatures)
-        }
     }
 }
 
