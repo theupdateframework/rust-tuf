@@ -1,4 +1,6 @@
 extern crate chrono;
+extern crate crypto;
+extern crate itoa;
 extern crate rustc_serialize;
 extern crate serde;
 #[macro_use]
@@ -8,6 +10,7 @@ extern crate url;
 
 #[ignore(dead_code, unused_variables)] // TODO remove when stable
 
+mod cjson;
 mod metadata;
 mod error;
 mod tuf;

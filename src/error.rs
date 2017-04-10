@@ -4,7 +4,8 @@ use std::io;
 use metadata::{KeyId};
 
 #[derive(Debug)]
-pub enum TufError {
+pub enum Error {
+    CanonicalJsonError(String),
     InvalidConfig(String),
     Io(io::Error),
     Json(json::Error),
@@ -12,23 +13,20 @@ pub enum TufError {
     SignatureSchemeMismatch,
     UnknownKey(KeyId),
     UnknownRole(String),
-    VerificationFailure(VerificationFailure),
+    UnsupportedKeyType(String),
+    UnsupportedSignatureScheme(String),
+    VerificationFailure,
 }
 
-impl From<io::Error> for TufError {
-    fn from(err: io::Error) -> TufError {
-        TufError::Io(err)
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Error {
+        Error::Io(err)
     }
 }
 
-impl From<json::Error> for TufError {
-    fn from(err: json::Error) -> TufError {
-        TufError::Json(err)
+impl From<json::Error> for Error {
+    fn from(err: json::Error) -> Error {
+        Error::Json(err)
     }
 }
 
-
-#[derive(Debug)]
-pub enum VerificationFailure {
-    Undefined, // TODO remove this later
-}

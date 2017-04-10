@@ -1,11 +1,13 @@
 use chrono::{DateTime, UTC};
+use crypto::ed25519;
 use json;
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
+use std::ops::Deref;
 use std::str::FromStr;
 
-use error::TufError;
+use error::Error;
 
 pub enum Role {
     Root,
@@ -15,7 +17,7 @@ pub enum Role {
 }
 
 impl FromStr for Role {
-    type Err = TufError;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -23,7 +25,7 @@ impl FromStr for Role {
             "Snapshot" => Ok(Role::Snapshot),
             "Targets" => Ok(Role::Targets),
             "Timestamp" => Ok(Role::Timestamp),
-            role => Err(TufError::UnknownRole(String::from(role))),
+            role => Err(Error::UnknownRole(String::from(role))),
         }
     }   
 }
@@ -116,11 +118,14 @@ pub struct Key {
 }
 
 impl Key {
-    pub fn verify(&self, signed: &[u8], scheme: &SignatureScheme) -> Result<(), TufError> {
+    pub fn verify(&self, scheme: &SignatureScheme, msg: &[u8], sig: &SignatureValue) -> Result<(), Error> {
         if self.typ.supports(scheme) {
-            unimplemented!() // TODO
+            match self.typ {
+                KeyType::Unsupported(ref s) => Err(Error::UnsupportedKeyType(s.clone())),
+                _ => scheme.verify(&self.value, msg, sig),
+            }
         } else {
-            Err(TufError::SignatureSchemeMismatch)
+            Err(Error::SignatureSchemeMismatch)
         }
     }
 }
@@ -128,21 +133,21 @@ impl Key {
 #[derive(Clone, PartialEq, Debug)]
 pub enum KeyType {
     Ed25519,
-    Rsa,
     Unsupported(String),
 }
 
 impl KeyType {
     fn supports(&self, scheme: &SignatureScheme) -> bool {
-        false // TODO
+        match (self, scheme) {
+            (&KeyType::Ed25519, &SignatureScheme::Ed25519) => true,
+            _ => false
+        }
     }
 }
 
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct KeyValue {
-    public: Vec<u8>,
-}
+pub struct KeyValue(Vec<u8>);
 
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
@@ -156,10 +161,24 @@ pub struct SignatureValue(Vec<u8>);
 #[derive(Clone, PartialEq, Debug)]
 pub enum SignatureScheme {
     Ed25519,
-    RsaSsaPss,
     Unsupported(String),
 }
 
+impl SignatureScheme {
+    fn verify(&self, pub_key: &KeyValue, msg: &[u8], sig: &SignatureValue) -> Result<(), Error> {
+        match self {
+            &SignatureScheme::Ed25519 => {
+                if ed25519::verify(msg, &pub_key.0, &sig.0) {
+                    Ok(())
+                } else {
+                    // TODO better error
+                    Err(Error::VerificationFailure)
+                }
+            },
+            &SignatureScheme::Unsupported(ref s) => Err(Error::UnsupportedSignatureScheme(s.clone())),
+        }
+    }
+}
 
 
 #[derive(Clone, PartialEq, Debug)]
