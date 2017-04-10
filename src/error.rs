@@ -6,6 +6,7 @@ pub enum TufError {
     InvalidRole(String),
     MissingRole(Role),
     NonUniqueSignatures,
+    SignatureSchemeMismatch,
     ThresholdNotMet(Role),
     UnknownKey(KeyId),
     VerificationFailure(VerificationFailure),

@@ -96,7 +96,7 @@ pub struct SnapshotMetadata {
     meta: HashMap<String, MetadataMetadata>,
 }
 
-// TODO this doesn't check the _type = root
+// TODO this doesn't check the _type = snapshot
 #[derive(Clone, Debug)]
 pub struct SignedSnapshotMetadata {
     signed: SnapshotMetadata,
@@ -123,7 +123,7 @@ pub struct TargetsMetadata {
     delegations: Delegations,
 }
 
-// TODO this doesn't check the _type = root
+// TODO this doesn't check the _type = targets 
 #[derive(Clone, Debug)]
 pub struct SignedTargetsMetadata {
     signed: TargetsMetadata,
@@ -149,7 +149,7 @@ pub struct TimestampMetadata {
     meta: HashMap<String, MetadataMetadata>,
 }
 
-// TODO this doesn't check the _type = root
+// TODO this doesn't check the _type = timestamp
 #[derive(Clone, Debug)]
 pub struct SignedTimestampMetadata {
     signed: TimestampMetadata,
@@ -192,7 +192,11 @@ pub struct Key {
 
 impl Key {
     pub fn verify(&self, signed: &[u8], scheme: &SignatureScheme) -> Result<(), TufError> {
-        unimplemented!() // TODO
+        if self.typ.supports(scheme) {
+            unimplemented!() // TODO
+        } else {
+            Err(TufError::SignatureSchemeMismatch)
+        }
     }
 }
 
@@ -201,6 +205,12 @@ pub enum KeyType {
     Ed25519,
     Rsa,
     Unsupported(String),
+}
+
+impl KeyType {
+    fn supports(&self, scheme: &SignatureScheme) -> bool {
+        false // TODO
+    }
 }
 
 

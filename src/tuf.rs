@@ -3,17 +3,18 @@ use std::path::Path;
 use url::Url;
 
 use core::{SignedRootMetadata, SignedSnapshotMetadata, SignedTargetsMetadata,
-    SignedTimestampMetadata, Role, Signature, SignedMetadata, Key, KeyId};
+    SignedTimestampMetadata, Role, Signature, SignedMetadata, Key, KeyId, RootMetadata};
 use error::{TufError, VerificationFailure};
 
 pub struct Tuf {
     url: Url,
     local_path: Box<Path>,
+    // TODO add repo name
 }
 
 impl Tuf {
     pub fn init(config: Config) -> Result<Self, TufError> {
-        // TODO load the curren metadata ?
+        // TODO load the current metadata ?
 
         let mut tuf = UnverifiedTuf {
             url: config.url,
@@ -25,6 +26,17 @@ impl Tuf {
         };
 
         tuf.verify()
+    }
+
+
+    // TODO real return type
+    pub fn list_targets() -> Vec<String> {
+        unimplemented!() // TODO
+    }
+
+    // TODO real input type
+    pub fn fetch_target(target: String) -> Result<Box<Path>, TufError> {
+        unimplemented!() // TODO
     }
 }
 
@@ -58,26 +70,10 @@ impl UnverifiedTuf {
     }
 
     fn verify_root(&self) -> Result<(), TufError> {
+        // TODO this can probably be done with `.or_ok(...)?`
         if let Some(ref root) = self.root {
-            Self::unique_signatures(&root.signatures())?;
-            let ref key_ids = root.signed.roles.get(&Role::Root).unwrap().key_ids; // TODO unwrap
-            let keys = key_ids.iter()
-                .map(|id| (id, root.signed.keys.get(id).unwrap())) // TODO unwrap
-                .fold(HashMap::new(), |mut map, (id, key)| {
-                    // TODO check that we don't overwrite ?
-                    let _ = map.insert(id, key);
-                    map
-                });
-
-            let (valid, errors) =
-                Self::verify_signatures(&root.signed(), root.signatures(), &keys);
-
-            // TODO unwrap
-            if valid < root.signed.roles.get(&Role::Root).unwrap().threshold {
-                Err(TufError::ThresholdNotMet(Role::Root))
-            } else {
-                Ok(()) // TODO more?
-            }
+            Self::unique_signatures(&root.signatures())
+            // TODO verify root chain
         } else {
             Err(TufError::MissingRole(Role::Root))
         }
@@ -85,7 +81,10 @@ impl UnverifiedTuf {
 
     fn verify_snapshot(&self) -> Result<(), TufError> {
         if let Some(ref snapshot) = self.snapshot {
-            Self::unique_signatures(&snapshot.signatures())
+            Self::unique_signatures(&snapshot.signatures())?;
+            // TODO unwrap
+            self.verify_role(&self.root.as_ref().unwrap().signed, &Role::Snapshot, snapshot)
+            // TODO check expiration
         } else {
             Err(TufError::MissingRole(Role::Snapshot))
         }?;
@@ -94,7 +93,10 @@ impl UnverifiedTuf {
 
     fn verify_targets(&self) -> Result<(), TufError> {
         if let Some(ref targets) = self.targets {
-            Self::unique_signatures(&targets.signatures())
+            Self::unique_signatures(&targets.signatures())?;
+            // TODO unwrap
+            self.verify_role(&self.root.as_ref().unwrap().signed, &Role::Targets, targets)
+            // TODO check expiration
         } else {
             Err(TufError::MissingRole(Role::Targets))
         }?;
@@ -103,11 +105,41 @@ impl UnverifiedTuf {
 
     fn verify_timestamp(&self) -> Result<(), TufError> {
         if let Some(ref timestamp) = self.timestamp {
-            Self::unique_signatures(&timestamp.signatures())
+            Self::unique_signatures(&timestamp.signatures())?;
+            // TODO unwrap
+            self.verify_role(&self.root.as_ref().unwrap().signed, &Role::Timestamp, timestamp)
+            // TODO check expiration
         } else {
             Err(TufError::MissingRole(Role::Timestamp))
         }?;
         unimplemented!() // TODO
+    }
+
+    fn verify_role<M: SignedMetadata>(&self,
+                                      root: &RootMetadata,
+                                      role: &Role,
+                                      metadata: &M) -> Result<(), TufError> {
+        // TODO check M.role == *role
+
+        let role_def = root.roles.get(role).unwrap(); // TODO unwrap
+        let keys = role_def.key_ids.iter()
+            .map(|id| (id, root.keys.get(id).unwrap())) // TODO unwrap
+            // TODO collect instead of fold ?
+            .fold(HashMap::new(), |mut map, (id, key)| {
+                // TODO check that we don't overwrite ?
+                let _ = map.insert(id, key);
+                map
+            });
+
+        let (valid, errors) =
+            Self::verify_signatures(&metadata.signed(), metadata.signatures(), &keys);
+
+        // TODO unwrap
+        if valid < root.roles.get(role).unwrap().threshold {
+            Err(TufError::ThresholdNotMet(role.clone()))
+        } else {
+            Ok(()) // TODO more?
+        }
     }
 
     fn verify_signatures(signed: &[u8],
