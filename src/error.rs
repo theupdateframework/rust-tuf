@@ -1,7 +1,7 @@
 use json;
 use std::io;
 
-use metadata::{KeyId};
+use metadata::KeyId;
 
 #[derive(Debug)]
 pub enum Error {
@@ -29,4 +29,3 @@ impl From<json::Error> for Error {
         Error::Json(err)
     }
 }
-

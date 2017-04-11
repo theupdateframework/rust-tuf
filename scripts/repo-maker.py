@@ -65,13 +65,11 @@ def get_key(output_dir, role, key_type):
 
 
 def write_meta(output_dir, role, meta):
-    with open(path.join(output_dir, 'meta', '{}.json'.format(role)), 'w') as f:
-        f.write(json.dumps(meta, indent=4, sort_keys=True))
+    if not isinstance(meta, bytes):
+        raise Exception('meta needs to be bytes')
 
-    # needed for the cjson test cases
-    if role == 'root':
-        with open(path.join(output_dir, 'meta', '{}.cjson'.format(role)), 'w') as f:
-            f.write(canonicaljson.encode_canonical_json(meta).decode('utf-8'))
+    with open(path.join(output_dir, 'meta', '{}.json'.format(role)), 'wb') as f:
+        f.write(meta)
 
 
 def make_root(root, root_priv, root_pub,
@@ -143,7 +141,8 @@ def make_root(root, root_priv, root_pub,
             }
         }
 
-    return {'signatures': sign(root, root_priv, root_pub, signed), 'signed': signed }
+    meta = {'signatures': sign(root, root_priv, root_pub, signed), 'signed': signed }
+    return canonicaljson.encode_canonical_json(meta)
 
 
 def make_targets(targets, targets_priv, targets_pub):
@@ -161,7 +160,8 @@ def make_targets(targets, targets_priv, targets_pub):
         }
     }
 
-    return {'signatures': sign(targets, targets_priv, targets_pub, signed), 'signed': signed }
+    meta = {'signatures': sign(targets, targets_priv, targets_pub, signed), 'signed': signed }
+    return canonicaljson.encode_canonical_json(meta)
 
 
 def key_id(pub):

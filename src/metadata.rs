@@ -36,9 +36,9 @@ impl FromStr for Role {
 impl Display for Role {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match *self {
-            Role::Root      => write!(f, "{}", "root"),
-            Role::Targets   => write!(f, "{}", "targets"),
-            Role::Snapshot  => write!(f, "{}", "snapshot"),
+            Role::Root => write!(f, "{}", "root"),
+            Role::Targets => write!(f, "{}", "targets"),
+            Role::Snapshot => write!(f, "{}", "snapshot"),
             Role::Timestamp => write!(f, "{}", "timestamp"),
         }
     }
@@ -93,12 +93,13 @@ impl<R: RoleType> Deserialize for SignedMetadata<R> {
             match (object.remove("signatures"), object.remove("signed")) {
                 (Some(a @ json::Value::Array(_)), Some(v @ json::Value::Object(_))) => {
                     Ok(SignedMetadata::<R> {
-                        signatures: json::from_value(a)
-                            .map_err(|e| DeserializeError::custom(format!("Bad signature data: {}", e)))?,
+                        signatures: json::from_value(a).map_err(|e| {
+                                DeserializeError::custom(format!("Bad signature data: {}", e))
+                            })?,
                         signed: v.clone(),
                         _role: PhantomData,
                     })
-                },
+                }
                 _ => unimplemented!(), // TODO
             }
         } else {
@@ -137,47 +138,45 @@ impl Deserialize for RootMetadata {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
             let typ = json::from_value::<Role>(object.remove("_type")
-                    .ok_or(DeserializeError::custom("Field '_type' missing"))?
-                )
-                .map_err(|e| DeserializeError::custom(format!("Field '_type' not a valid role: {}", e)))?;
+                    .ok_or(DeserializeError::custom("Field '_type' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field '_type' not a valid role: {}", e))
+                })?;
 
             if typ != Role::Root {
                 return Err(DeserializeError::custom("Field '_type' was not 'Root'"));
             }
 
             let keys = json::from_value(object.remove("keys")
-                    .ok_or(DeserializeError::custom("Field 'keys' missing"))?
-                )
-                .map_err(|e| DeserializeError::custom(format!("Field 'keys' not a valid key map: {}", e)))?;
+                    .ok_or(DeserializeError::custom("Field 'keys' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'keys' not a valid key map: {}", e))
+                })?;
 
             let mut roles = object.remove("roles")
-                .and_then(|v| {
-                    match v {
-                        json::Value::Object(o) => Some(o),
-                        _ => None,
-                    }
+                .and_then(|v| match v {
+                    json::Value::Object(o) => Some(o),
+                    _ => None,
                 })
                 .ok_or(DeserializeError::custom("Field 'roles' missing"))?;
 
             let root = json::from_value(roles.remove("root")
-                    .ok_or(DeserializeError::custom("Role 'root' missing"))?
-                )
-                .map_err(|e| DeserializeError::custom(format!("Root role definition error: {}", e)))?;
+                    .ok_or(DeserializeError::custom("Role 'root' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Root role definition error: {}", e))
+                })?;
 
             let targets = json::from_value(roles.remove("targets")
-                    .ok_or(DeserializeError::custom("Role 'targets' missing"))?
-                )
-                .map_err(|e| DeserializeError::custom(format!("Targets role definition error: {}", e)))?;
+                    .ok_or(DeserializeError::custom("Role 'targets' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Targets role definition error: {}", e))
+                })?;
 
             let timestamp = json::from_value(roles.remove("timestamp")
-                    .ok_or(DeserializeError::custom("Role 'timestamp' missing"))?
-                )
-                .map_err(|e| DeserializeError::custom(format!("Timetamp role definition error: {}", e)))?;
+                    .ok_or(DeserializeError::custom("Role 'timestamp' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Timetamp role definition error: {}", e))
+                })?;
 
             let snapshot = json::from_value(roles.remove("snapshot")
-                    .ok_or(DeserializeError::custom("Role 'shapshot' missing"))?
-                )
-                .map_err(|e| DeserializeError::custom(format!("Snapshot role definition error: {}", e)))?;
+                    .ok_or(DeserializeError::custom("Role 'shapshot' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Snapshot role definition error: {}", e))
+                })?;
 
             Ok(RootMetadata {
                 keys: keys,
@@ -216,20 +215,82 @@ impl Deserialize for TargetsMetadata {
                 // TODO this should accept null / empty object too
                 // currently the options are "not present at all" or "completely correct"
                 // and everything else errors out
-                Some(value) => Some(json::from_value(value)
-                    .map_err(|e| DeserializeError::custom(format!("Bad delegations format: {}", e)))?),
+                Some(value) => {
+                    Some(json::from_value(value).map_err(|e| {
+                            DeserializeError::custom(format!("Bad delegations format: {}", e))
+                        })?)
+                }
                 None => None,
             };
             match object.remove("targets") {
                 Some(t) => {
-                    let targets = json::from_value(t)
-                        .map_err(|e| DeserializeError::custom(format!("Bad targets format: {}", e)))?;
+                    let targets = json::from_value(t).map_err(|e| {
+                            DeserializeError::custom(format!("Bad targets format: {}", e))
+                        })?;
 
                     Ok(TargetsMetadata {
                         delegations: delegations,
                         targets: targets,
                     })
-                },
+                }
+                _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
+            }
+        } else {
+            Err(DeserializeError::custom("Role was not an object"))
+        }
+    }
+}
+
+pub struct TimestampMetadata {
+    // TODO expires: DateTime<UTC>,
+    // TODO version: i32,
+    meta: HashMap<String, MetadataMetadata>,
+}
+
+impl Metadata<Timestamp> for TimestampMetadata {}
+
+impl Deserialize for TimestampMetadata {
+    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
+            match object.remove("meta") {
+                Some(m) => {
+                    let meta = json::from_value(m).map_err(|e| {
+                            DeserializeError::custom(format!("Bad meta-meta format: {}", e))
+                        })?;
+
+                    Ok(TimestampMetadata { meta: meta })
+                }
+                _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
+            }
+        } else {
+            Err(DeserializeError::custom("Role was not an object"))
+        }
+    }
+}
+
+pub struct SnapshotMetadata {
+    // TODO expires: DateTime<UTC>,
+    // TODO version: i32,
+
+    // TODO this needs to use something other than MetaMeta
+    // because the spec says that hash/len are only mandatory for Root role
+    // but I'm lazy for now just to get this up and running
+    meta: HashMap<String, MetadataMetadata>,
+}
+
+impl Metadata<Snapshot> for SnapshotMetadata {}
+
+impl Deserialize for SnapshotMetadata {
+    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
+            match object.remove("meta") {
+                Some(m) => {
+                    let meta = json::from_value(m).map_err(|e| {
+                            DeserializeError::custom(format!("Bad meta-meta format: {}", e))
+                        })?;
+
+                    Ok(SnapshotMetadata { meta: meta })
+                }
                 _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
             }
         } else {
@@ -251,10 +312,14 @@ impl Deserialize for Signature {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
             match (object.remove("keyid"), object.remove("method"), object.remove("sig")) {
                 (Some(k), Some(m), Some(s)) => {
-                    let key_id = json::from_value(k)
-                        .map_err(|e| DeserializeError::custom(format!("Failed at keyid: {}", e)))?;
-                    let method = json::from_value(m)
-                        .map_err(|e| DeserializeError::custom(format!("Failed at method: {}", e)))?;
+                    let key_id =
+                        json::from_value(k).map_err(|e| {
+                                DeserializeError::custom(format!("Failed at keyid: {}", e))
+                            })?;
+                    let method =
+                        json::from_value(m).map_err(|e| {
+                                DeserializeError::custom(format!("Failed at method: {}", e))
+                            })?;
                     let sig = json::from_value(s)
                         .map_err(|e| DeserializeError::custom(format!("Failed at sig: {}", e)))?;
 
@@ -263,7 +328,7 @@ impl Deserialize for Signature {
                         method: method,
                         sig: sig,
                     })
-                },
+                }
                 _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
             }
         } else {
@@ -282,7 +347,11 @@ pub struct Key {
 }
 
 impl Key {
-    pub fn verify(&self, scheme: &SignatureScheme, msg: &[u8], sig: &SignatureValue) -> Result<(), Error> {
+    pub fn verify(&self,
+                  scheme: &SignatureScheme,
+                  msg: &[u8],
+                  sig: &SignatureValue)
+                  -> Result<(), Error> {
         if self.typ.supports(scheme) {
             match self.typ {
                 KeyType::Unsupported(ref s) => Err(Error::UnsupportedKeyType(s.clone())),
@@ -304,7 +373,7 @@ impl KeyType {
     fn supports(&self, scheme: &SignatureScheme) -> bool {
         match (self, scheme) {
             (&KeyType::Ed25519, &SignatureScheme::Ed25519) => true,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -344,14 +413,17 @@ impl Deserialize for KeyValue {
                 s.from_hex()
                     .map(KeyValue)
                     .map_err(|e| DeserializeError::custom(format!("Key value was not hex: {}", e)))
-            },
+            }
             json::Value::Object(mut object) => {
                 json::from_value::<KeyValue>(object.remove("public")
-                        .ok_or(DeserializeError::custom("Field 'public' missing"))?
-                    )
-                    .map_err(|e| DeserializeError::custom(format!("Field 'public' not encoded correctly: {}", e)))
-            },
-            _ => Err(DeserializeError::custom("Key value was not a string or object"))
+                        .ok_or(DeserializeError::custom("Field 'public' missing"))?)
+                    .map_err(|e| {
+                        DeserializeError::custom(format!("Field 'public' not encoded correctly: \
+                                                          {}",
+                                                         e))
+                    })
+            }
+            _ => Err(DeserializeError::custom("Key value was not a string or object")),
         }
     }
 }
@@ -363,10 +435,8 @@ pub struct KeyId(String);
 impl Deserialize for KeyId {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
         match Deserialize::deserialize(de)? {
-            json::Value::String(s) => {
-                Ok(KeyId(s))
-            },
-            _ => Err(DeserializeError::custom("Key ID was not a string"))
+            json::Value::String(s) => Ok(KeyId(s)),
+            _ => Err(DeserializeError::custom("Key ID was not a string")),
         }
     }
 }
@@ -381,9 +451,11 @@ impl Deserialize for SignatureValue {
             json::Value::String(ref s) => {
                 s.from_hex()
                     .map(SignatureValue)
-                    .map_err(|e| DeserializeError::custom(format!("Signature value was not hex: {}", e)))
-            },
-            _ => Err(DeserializeError::custom("Signature value was not a string"))
+                    .map_err(|e| {
+                        DeserializeError::custom(format!("Signature value was not hex: {}", e))
+                    })
+            }
+            _ => Err(DeserializeError::custom("Signature value was not a string")),
         }
     }
 }
@@ -404,8 +476,10 @@ impl SignatureScheme {
                 } else {
                     Err(Error::VerificationFailure("Bad signature".into()))
                 }
-            },
-            &SignatureScheme::Unsupported(ref s) => Err(Error::UnsupportedSignatureScheme(s.clone())),
+            }
+            &SignatureScheme::Unsupported(ref s) => {
+                Err(Error::UnsupportedSignatureScheme(s.clone()))
+            }
         }
     }
 }
@@ -432,7 +506,7 @@ impl Deserialize for SignatureScheme {
 }
 
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct MetadataMetadata {
     length: i64,
     hashes: HashMap<HashType, HashValue>,
@@ -480,8 +554,8 @@ impl Deserialize for HashValue {
                 s.from_hex()
                     .map(HashValue)
                     .map_err(|e| DeserializeError::custom(format!("Hash value was not hex: {}", e)))
-            },
-            _ => Err(DeserializeError::custom("Hash value was not a string"))
+            }
+            _ => Err(DeserializeError::custom("Hash value was not a string")),
         }
     }
 }

@@ -32,15 +32,15 @@ impl Value {
                 itoa::write(buf, n)
                     .map(|_| ())
                     .map_err(|err| format!("Write error: {}", err))
-            },
+            }
             &Value::Number(Number::U64(n)) => {
                 itoa::write(buf, n)
                     .map(|_| ())
                     .map_err(|err| format!("Write error: {}", err))
-            },
+            }
             &Value::String(ref s) => {
                 escape_str(&mut buf, &s).map_err(|err| format!("Write error: {}", err))
-            },
+            }
             &Value::Array(ref arr) => {
                 buf.push(b'[');
                 let mut first = true;
@@ -52,7 +52,7 @@ impl Value {
                     first = false;
                 }
                 Ok(buf.push(b']'))
-            },
+            }
             &Value::Object(ref obj) => {
                 buf.push(b'{');
                 let mut first = true;
@@ -66,7 +66,7 @@ impl Value {
                     v.write(&mut buf)?;
                 }
                 Ok(buf.push(b'}'))
-            },
+            }
         }
     }
 }
@@ -81,25 +81,26 @@ fn convert(jsn: json::Value) -> Result<Value, String> {
         json::Value::Null => Ok(Value::Null),
         json::Value::Bool(b) => Ok(Value::Bool(b)),
         json::Value::Number(n) => {
-            n.as_i64().map(Number::I64)
+            n.as_i64()
+                .map(Number::I64)
                 .or(n.as_u64().map(Number::U64))
                 .map(Value::Number)
                 .ok_or(String::from("only i64 and u64 are supported"))
-        },
+        }
         json::Value::Array(arr) => {
             let mut out = Vec::new();
             for res in arr.iter().cloned().map(|v| convert(v)) {
                 out.push(res?)
             }
             Ok(Value::Array(out))
-        },
+        }
         json::Value::Object(obj) => {
             let mut out = BTreeMap::new();
             for (k, v) in obj.iter() {
                 let _ = out.insert(k.clone(), convert(v.clone())?);
             }
             Ok(Value::Object(out))
-        },
+        }
         json::Value::String(s) => Ok(Value::String(s)),
         x => Err(format!("Value not supported: {}", x)),
     }
@@ -107,7 +108,7 @@ fn convert(jsn: json::Value) -> Result<Value, String> {
 
 /// Serializes and escapes a `&str` into a JSON string.
 fn escape_str<W>(wr: &mut W, value: &str) -> Result<(), io::Error>
-    where W: io::Write,
+    where W: io::Write
 {
     let bytes = value.as_bytes();
 
@@ -138,7 +139,7 @@ fn escape_str<W>(wr: &mut W, value: &str) -> Result<(), io::Error>
     Ok(())
 }
 
-const QU: u8 = b'"';  // \x22
+const QU: u8 = b'"'; // \x22
 const BS: u8 = b'\\'; // \x5C
 
 // Lookup table of escape sequences. A value of b'x' at index i means that byte
@@ -166,7 +167,7 @@ static ESCAPE: [u8; 256] = [
 
 #[inline]
 fn escape_char<W>(wr: &mut W, value: char) -> Result<(), io::Error>
-    where W: io::Write,
+    where W: io::Write
 {
     // FIXME: this allocation is required in order to be compatible with stable
     // rust, which doesn't support encoding a `char` into a stack buffer.
@@ -214,15 +215,12 @@ mod test {
 
     #[test]
     fn root_json() {
-        let mut file = File::open("./tests/repo-1/meta/root.cjson").expect("couldn't open root.cjson");
-        let mut expected = Vec::new();
-        file.read_to_end(&mut expected).expect("couldn't read root.cjson");
-
-        let mut file = File::open("./tests/repo-1/meta/root.json").expect("couldn't open root.json");
+        let mut file = File::open("./tests/repo-1/meta/root.json")
+            .expect("couldn't open root.json");
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).expect("couldn't read root.json");
         let jsn = json::from_slice(&buf).expect("not json");
         let out = canonicalize(jsn).expect("couldn't canonicalize");
-        assert_eq!(out, expected.to_vec());
+        assert_eq!(out, buf);
     }
 }
