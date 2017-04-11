@@ -29,25 +29,37 @@ def main(output_dir, root, targets, timestamp, snapshot):
                           snapshot, snapshot_pub,
                           )
 
+    targets_meta = make_targets(targets, targets_priv, targets_pub)
+
     write_meta(output_dir, 'root', root_meta)
-    #write_meta(output_dir, 'targets', targets_meta)
+    write_meta(output_dir, 'targets', targets_meta)
     #write_meta(output_dir, 'timestamp', timestamp_meta)
     #write_meta(output_dir, 'snapshot', snapshot_meta)
 
 
 def get_key(output_dir, role, key_type):
     if key_type == 'ed25519':
-        priv, pub = ed25519.create_keypair()
-        priv = binascii.hexlify(priv.to_bytes()).decode('utf-8')
-        pub = binascii.hexlify(pub.to_bytes()).decode('utf-8')
+        try:
+            with open(path.join(output_dir, 'keys', '{}.priv'.format(role)), 'r') as f:
+                priv = f.read()
+
+            with open(path.join(output_dir, 'keys', '{}.pub'.format(role)), 'r') as f:
+                pub = f.read()
+        except IOError:
+            priv, pub = ed25519.create_keypair()
+
+            priv = binascii.hexlify(priv.to_bytes()).decode('utf-8')
+            pub = binascii.hexlify(pub.to_bytes()).decode('utf-8')
+
+            with open(path.join(output_dir, 'keys', '{}.priv'.format(role)), 'w') as f:
+                f.write(priv)
+
+            with open(path.join(output_dir, 'keys', '{}.pub'.format(role)), 'w') as f:
+                f.write(pub)
+
     else:
         raise Exception('unknown key type: {}'.format(key_type))
 
-    with open(path.join(output_dir, 'keys', '{}.priv'.format(role)), 'w') as f:
-        f.write(priv)
-
-    with open(path.join(output_dir, 'keys', '{}.pub'.format(role)), 'w') as f:
-        f.write(pub)
 
     return (priv, pub)
 
@@ -55,6 +67,11 @@ def get_key(output_dir, role, key_type):
 def write_meta(output_dir, role, meta):
     with open(path.join(output_dir, 'meta', '{}.json'.format(role)), 'w') as f:
         f.write(json.dumps(meta, indent=4, sort_keys=True))
+
+    # needed for the cjson test cases
+    if role == 'root':
+        with open(path.join(output_dir, 'meta', '{}.cjson'.format(role)), 'w') as f:
+            f.write(canonicaljson.encode_canonical_json(meta).decode('utf-8'))
 
 
 def make_root(root, root_priv, root_pub,
@@ -71,6 +88,7 @@ def make_root(root, root_priv, root_pub,
             '_type': 'Root',
             'consistent_snapshot': False,
             'expires': '2038-01-19T03:14:06Z',
+            'version': 1,
             'keys': {
                 root_id: {
                     'keytype': root,
@@ -126,6 +144,24 @@ def make_root(root, root_priv, root_pub,
         }
 
     return {'signatures': sign(root, root_priv, root_pub, signed), 'signed': signed }
+
+
+def make_targets(targets, targets_priv, targets_pub):
+    signed = {
+        '_type': 'Targets',
+        'expires': '2038-01-19T03:14:06Z',
+        'version': 1,
+        'targets': {
+            'hack-eryone.sh': {
+                'length': 1337,
+                'hashes': {
+                    'sha256': '19ad3616216eea07d6f1adb48a774dd61c822a5ae800ef43b65766372ee4869b',
+                }
+            }
+        }
+    }
+
+    return {'signatures': sign(targets, targets_priv, targets_pub, signed), 'signed': signed }
 
 
 def key_id(pub):

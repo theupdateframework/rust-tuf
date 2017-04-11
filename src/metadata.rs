@@ -110,21 +110,23 @@ impl<R: RoleType> Deserialize for SignedMetadata<R> {
 pub trait Metadata<R: RoleType>: Deserialize {}
 
 pub struct RootMetadata {
-    //consistent_snapshot: bool,
-    //expires: DateTime<UTC>,
-    //version: i32,
+    // TODO consistent_snapshot: bool,
+    // TODO expires: DateTime<UTC>,
+    // TODO version: i32,
     pub keys: HashMap<KeyId, Key>,
     root: RoleDefinition,
-    // TODO targets: RoleDefinition,
-    // TODO timestamp: RoleDefinition,
-    // TODO snapshot: RoleDefinition,
+    targets: RoleDefinition,
+    timestamp: RoleDefinition,
+    snapshot: RoleDefinition,
 }
 
 impl RootMetadata {
     pub fn role_definition<R: RoleType>(&self) -> &RoleDefinition {
         match R::role() {
             Role::Root => &self.root,
-            _ => unimplemented!() // TODO
+            Role::Targets => &self.targets,
+            Role::Timestamp => &self.timestamp,
+            Role::Snapshot => &self.snapshot,
         }
     }
 }
@@ -134,7 +136,6 @@ impl Metadata<Root> for RootMetadata {}
 impl Deserialize for RootMetadata {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
-            // TODO unwrap
             let typ = json::from_value::<Role>(object.remove("_type")
                     .ok_or(DeserializeError::custom("Field '_type' missing"))?
                 )
@@ -163,9 +164,27 @@ impl Deserialize for RootMetadata {
                 )
                 .map_err(|e| DeserializeError::custom(format!("Root role definition error: {}", e)))?;
 
+            let targets = json::from_value(roles.remove("targets")
+                    .ok_or(DeserializeError::custom("Role 'targets' missing"))?
+                )
+                .map_err(|e| DeserializeError::custom(format!("Targets role definition error: {}", e)))?;
+
+            let timestamp = json::from_value(roles.remove("timestamp")
+                    .ok_or(DeserializeError::custom("Role 'timestamp' missing"))?
+                )
+                .map_err(|e| DeserializeError::custom(format!("Timetamp role definition error: {}", e)))?;
+
+            let snapshot = json::from_value(roles.remove("snapshot")
+                    .ok_or(DeserializeError::custom("Role 'shapshot' missing"))?
+                )
+                .map_err(|e| DeserializeError::custom(format!("Snapshot role definition error: {}", e)))?;
+
             Ok(RootMetadata {
                 keys: keys,
                 root: root,
+                targets: targets,
+                timestamp: timestamp,
+                snapshot: snapshot,
             })
         } else {
             Err(DeserializeError::custom("Role was not an object"))
@@ -178,6 +197,45 @@ pub struct RoleDefinition {
     #[serde(rename = "keyids")]
     pub key_ids: Vec<KeyId>,
     pub threshold: i32,
+}
+
+#[derive(Debug)]
+pub struct TargetsMetadata {
+    // TODO expires: DateTime<UTC>,
+    // TODO version: i32,
+    delegations: Option<Delegations>,
+    targets: HashMap<String, TargetInfo>,
+}
+
+impl Metadata<Targets> for TargetsMetadata {}
+
+impl Deserialize for TargetsMetadata {
+    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
+            let delegations = match object.remove("delegations") {
+                // TODO this should accept null / empty object too
+                // currently the options are "not present at all" or "completely correct"
+                // and everything else errors out
+                Some(value) => Some(json::from_value(value)
+                    .map_err(|e| DeserializeError::custom(format!("Bad delegations format: {}", e)))?),
+                None => None,
+            };
+            match object.remove("targets") {
+                Some(t) => {
+                    let targets = json::from_value(t)
+                        .map_err(|e| DeserializeError::custom(format!("Bad targets format: {}", e)))?;
+
+                    Ok(TargetsMetadata {
+                        delegations: delegations,
+                        targets: targets,
+                    })
+                },
+                _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
+            }
+        } else {
+            Err(DeserializeError::custom("Role was not an object"))
+        }
+    }
 }
 
 /// A cryptographic signature.
@@ -280,6 +338,9 @@ impl Deserialize for KeyValue {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
         match Deserialize::deserialize(de)? {
             json::Value::String(ref s) => {
+                // TODO this is shit because we can't tell what type of key it is
+                // e.g., ed25519 => hex, rsa => PEM
+                // need to add this into the type/struct so it can be accessed here
                 s.from_hex()
                     .map(KeyValue)
                     .map_err(|e| DeserializeError::custom(format!("Key value was not hex: {}", e)))
@@ -381,17 +442,51 @@ pub struct MetadataMetadata {
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
 pub enum HashType {
-    Sha512,
     Sha256,
+    Sha512,
     Unsupported(String),
+}
+
+impl FromStr for HashType {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "sha256" => Ok(HashType::Sha256),
+            "sha512" => Ok(HashType::Sha512),
+            typ => Ok(HashType::Unsupported(typ.into())),
+        }
+    }
+}
+
+impl Deserialize for HashType {
+    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+        if let json::Value::String(ref s) = Deserialize::deserialize(de)? {
+            s.parse().map_err(|_| unreachable!())
+        } else {
+            Err(DeserializeError::custom("Hash type was not a string"))
+        }
+    }
 }
 
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct HashValue(Vec<u8>);
 
+impl Deserialize for HashValue {
+    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+        match Deserialize::deserialize(de)? {
+            json::Value::String(ref s) => {
+                s.from_hex()
+                    .map(HashValue)
+                    .map_err(|e| DeserializeError::custom(format!("Hash value was not hex: {}", e)))
+            },
+            _ => Err(DeserializeError::custom("Hash value was not a string"))
+        }
+    }
+}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 // TODO this is a dumb name
 pub struct TargetInfo {
     length: i64,
@@ -400,14 +495,14 @@ pub struct TargetInfo {
 }
 
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct Delegations {
     keys: Vec<KeyId>,
     roles: Vec<DelegatedRole>,
 }
 
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct DelegatedRole {
     name: String,
     key_ids: Vec<KeyId>,

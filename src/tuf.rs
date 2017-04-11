@@ -8,25 +8,32 @@ use url::Url;
 
 use cjson;
 use error::Error;
-use metadata::{Role, RoleType, Root, Metadata, SignedMetadata, RootMetadata};
+use metadata::{Role, RoleType, Root, Targets, Metadata, SignedMetadata, RootMetadata,
+    TargetsMetadata};
 
 pub struct Tuf {
     url: Url,
     local_path: PathBuf,
     root: RootMetadata,
+    targets: Option<TargetsMetadata>,
 }
 
 impl Tuf {
     pub fn new(config: Config) -> Result<Self, Error> {
         // TODO don't do an unverified root read, but make someone hard code keys
         // for the first time around
-        let scary_bad_root = Self::unverified_read_root(&config.local_path)?;
-        let root = Self::load_metadata::<Root, RootMetadata>(&config.local_path, &scary_bad_root)?;
+        let root = {
+            let scary_bad_root = Self::unverified_read_root(&config.local_path)?;
+            Self::load_metadata::<Root, RootMetadata>(&config.local_path, &scary_bad_root)?
+        };
+
+        let targets = Self::load_metadata::<Targets, TargetsMetadata>(&config.local_path, &root)?;
 
         Ok(Tuf {
             url: config.url,
             local_path: config.local_path,
             root: root,
+            targets: Some(targets), // TODO we are wrongly assuming that this is always present
         })
     }
 
@@ -56,9 +63,12 @@ impl Tuf {
                                                      prefix: &str,
                                                      root: &RootMetadata) -> Result<M, Error> {
         let path = local_path.join(format!("{}{}.json", prefix, R::role()));
+        info!("Reading metadata from local path: {:?}", path);
+
         let mut file = File::open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
+
         let signed = json::from_slice(&buf)?;
         let safe_bytes = Self::verify_meta::<R>(signed, root)?;
         Ok(json::from_slice(&safe_bytes)?)
@@ -90,7 +100,7 @@ impl Tuf {
             if let Some(key) = keys.get(&sig.key_id) {
                 match key.verify(&sig.method, &bytes, &sig.sig) {
                     Ok(()) => threshold -= 1,
-                    Err(e) => warn!("Failed to verify with key ID {:?}", &sig.key_id),
+                    Err(e) => warn!("Failed to verify with key ID {:?}: {:?}", &sig.key_id, e),
                 }
                 if threshold == 0 {
                     return Ok(bytes)
