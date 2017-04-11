@@ -15,7 +15,7 @@ pub enum Error {
     UnknownRole(String),
     UnsupportedKeyType(String),
     UnsupportedSignatureScheme(String),
-    VerificationFailure,
+    VerificationFailure(String),
 }
 
 impl From<io::Error> for Error {

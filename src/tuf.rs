@@ -88,8 +88,9 @@ impl Tuf {
         let mut threshold = role.threshold;
         for sig in signed.signatures.iter() {
             if let Some(key) = keys.get(&sig.key_id) {
-                if key.verify(&sig.method, &bytes, &sig.sig).is_ok() {
-                    threshold -= 1;
+                match key.verify(&sig.method, &bytes, &sig.sig) {
+                    Ok(()) => threshold -= 1,
+                    Err(e) => warn!("Failed to verify with key ID {:?}", &sig.key_id),
                 }
                 if threshold == 0 {
                     return Ok(bytes)
@@ -97,7 +98,7 @@ impl Tuf {
             }
         }
 
-        Err(Error::VerificationFailure)
+        Err(Error::VerificationFailure(format!("Threshold not met: {}/{}", role.threshold - threshold, role.threshold)))
     }
 
     // TODO real return type

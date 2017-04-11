@@ -2,6 +2,8 @@ extern crate tempdir;
 extern crate tuf;
 extern crate url;
 
+#[ignore(dead_code, unused_variables)] // TODO remove when stable
+
 use std::fs;
 use tempdir::TempDir;
 use tuf::{Tuf, Config};
@@ -11,7 +13,7 @@ use url::Url;
 fn init() {
     let tempdir = TempDir::new("rust-tuf").expect("couldn't make temp dir");
 
-    fs::copy("./tests/repo-1/root.json", tempdir.path().join("root.json"))
+    fs::copy("./tests/repo-1/meta/root.json", tempdir.path().join("root.json"))
         .expect("copy failed");
 
     let config = Config::build()

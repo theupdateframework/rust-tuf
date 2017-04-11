@@ -1,6 +1,8 @@
 extern crate chrono;
 extern crate crypto;
 extern crate itoa;
+#[macro_use]
+extern crate log;
 extern crate rustc_serialize;
 extern crate serde;
 #[macro_use]

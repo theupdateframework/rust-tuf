@@ -179,6 +179,9 @@ fn escape_char<W>(wr: &mut W, value: char) -> Result<(), io::Error>
 mod test {
     use super::*;
 
+    use std::fs::File;
+    use std::io::Read;
+
     #[test]
     fn write_str() {
         let jsn = Value::String(String::from("wat"));
@@ -207,5 +210,17 @@ mod test {
         let mut out = Vec::new();
         jsn.write(&mut out).expect("write failed");
         assert_eq!(&out, b"{\"lol\":[\"haha\",\"omg so tired\"]}");
+    }
+
+    #[test]
+    fn root_json() {
+        let expected = r#"{"signatures":[{"keyid":"d598ba283e45ed1e8c1dc874e6d208b03b6eed152d2a5b94d8958efe9affdcee","method":"ed25519","sig":"4df20f0695e638f5aceffebf4e27ed2abb8e9d38248353079c7e4d14a680cbe06f5c2c06c80f9bd17329333d227d754ea918c21386822ec62ae6d2aa86e6da0d"}],"signed":{"_type":"Root","consistent_snapshot":false,"expires":"2038-01-19T03:14:06Z","keys":{"1c94f6235eb6045029169c01be235a3378b6b1ea044bd714f534a7c14e97e1d8":{"keytype":"ed25519","keyval":{"public":"d28ff85e56a01a7fc545cccba7733f6bb97d736ebb80993f8198b3290edd4ba7"}},"a853bf784c696eccdd40cb5d93e4dae29d8acb3460e44c39882a56505149dd06":{"keytype":"ed25519","keyval":{"public":"200de6ac8ddcab44b9ed40ac71904d1c4c873cc1b20e183b6edaea6504657297"}},"d598ba283e45ed1e8c1dc874e6d208b03b6eed152d2a5b94d8958efe9affdcee":{"keytype":"ed25519","keyval":{"public":"2ca92b0dc29b78f64d28bcc2b1081025ea843a2ee88c3fe840fb9db85604ca98"}},"de9524fc89fc886b6de5d9a1149003c995187e142a9a0f531efc5d0d9577bf5e":{"keytype":"ed25519","keyval":{"public":"04aee67fc4119ac01b8645400ff5ca7af4953eae27accf0cecfe9e22ff098d4d"}}},"roles":{"root":{"keyids":["d598ba283e45ed1e8c1dc874e6d208b03b6eed152d2a5b94d8958efe9affdcee"],"threshold":1},"snapshot":{"keyids":["1c94f6235eb6045029169c01be235a3378b6b1ea044bd714f534a7c14e97e1d8"],"threshold":1},"targets":{"keyids":["de9524fc89fc886b6de5d9a1149003c995187e142a9a0f531efc5d0d9577bf5e"],"threshold":1},"timestamp":{"keyids":["a853bf784c696eccdd40cb5d93e4dae29d8acb3460e44c39882a56505149dd06"],"threshold":1}}}}"#.as_bytes();
+
+        let mut file = File::open("./tests/repo-1/meta/root.json").expect("couldn't open root.json");
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf).expect("couldn't read root.json");
+        let jsn = json::from_slice(&buf).expect("not json");
+        let out = canonicalize(jsn).expect("couldn't canonicalize");
+        assert_eq!(out, expected.to_vec());
     }
 }

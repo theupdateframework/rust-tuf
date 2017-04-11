@@ -1,0 +1,2 @@
+canonicaljson
+ed25519
