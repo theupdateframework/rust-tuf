@@ -11,7 +11,7 @@ use url::Url;
 fn init() {
     let tempdir = TempDir::new("rust-tuf").expect("couldn't make temp dir");
 
-    for file in vec!["root", "targets"].iter() {
+    for file in vec!["root", "targets", "timestamp", "snapshot"].iter() {
         fs::copy(format!("./tests/repo-1/meta/{}.json", file),
                  tempdir.path().join(format!("{}.json", file)))
             .expect("copy failed");

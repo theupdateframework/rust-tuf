@@ -31,10 +31,15 @@ def main(output_dir, root, targets, timestamp, snapshot):
 
     targets_meta = make_targets(targets, targets_priv, targets_pub)
 
+    snapshot_meta = make_snapshot(snapshot, snapshot_priv, snapshot_pub,
+                                  root_meta, targets_meta)
+
+    timestamp_meta = make_timestamp(timestamp, timestamp_priv, timestamp_pub, snapshot_meta)
+
     write_meta(output_dir, 'root', root_meta)
     write_meta(output_dir, 'targets', targets_meta)
-    #write_meta(output_dir, 'timestamp', timestamp_meta)
-    #write_meta(output_dir, 'snapshot', snapshot_meta)
+    write_meta(output_dir, 'timestamp', timestamp_meta)
+    write_meta(output_dir, 'snapshot', snapshot_meta)
 
 
 def get_key(output_dir, role, key_type):
@@ -154,6 +159,7 @@ def make_targets(targets, targets_priv, targets_pub):
             'hack-eryone.sh': {
                 'length': 1337,
                 'hashes': {
+                    'sha512': 'dc5534422ab49283655b52f6dd7f0f3caad475fc1eaaccc84ceadb20dee2553c55cd079abefaa43fd6b268e11324fad79794ae680c351c9b76e160e1a949f968',
                     'sha256': '19ad3616216eea07d6f1adb48a774dd61c822a5ae800ef43b65766372ee4869b',
                 }
             }
@@ -162,6 +168,70 @@ def make_targets(targets, targets_priv, targets_pub):
 
     meta = {'signatures': sign(targets, targets_priv, targets_pub, signed), 'signed': signed }
     return canonicaljson.encode_canonical_json(meta)
+
+
+def make_snapshot(snapshot, snapshot_priv, snapshot_pub, root_meta, targets_meta):
+    signed = {
+        '_type': 'Targets',
+        'expires': '2038-01-19T03:14:06Z',
+        'version': 1,
+        'meta': {
+            'root.json': {
+                'length': len(root_meta),
+                'version': 1,
+                'hashes': {
+                    'sha512': sha512(root_meta),
+                    'sha256': sha256(root_meta),
+                },
+            },
+            'targets.json': {
+                # TODO remove the length - this is just here because i was lazy with the rust serde
+                'length': len(targets_meta),
+                'version': 1,
+                # TODO remove the hashes - this is just here because i was lazy with the rust serde
+                'hashes': {
+                    'sha512': sha512(targets_meta),
+                    'sha256': sha256(targets_meta),
+                },
+            },
+        }
+    }
+
+    meta = {'signatures': sign(snapshot, snapshot_priv, snapshot_pub, signed), 'signed': signed }
+    return canonicaljson.encode_canonical_json(meta)
+
+
+def make_timestamp(timestamp, timestamp_priv, timestamp_pub, snapshot_meta):
+    signed = {
+        '_type': 'Timestamp',
+        'expires': '2038-01-19T03:14:06Z',
+        'version': 1,
+        'meta': {
+            'snapshot.json': {
+                'length': len(snapshot_meta),
+                'version': 1,
+                'hashes': {
+                    'sha512': sha512(snapshot_meta),
+                    'sha256': sha256(snapshot_meta),
+                },
+            },
+        }
+    }
+
+    meta = {'signatures': sign(timestamp, timestamp_priv, timestamp_pub, signed), 'signed': signed }
+    return canonicaljson.encode_canonical_json(meta)
+
+
+def sha256(byts):
+    h = hashlib.sha256()
+    h.update(byts)
+    return h.hexdigest()
+
+
+def sha512(byts):
+    h = hashlib.sha512()
+    h.update(byts)
+    return h.hexdigest()
 
 
 def key_id(pub):
