@@ -8,7 +8,7 @@ use url::Url;
 
 use cjson;
 use error::Error;
-use metadata::{Role, RoleType, Root, Metadata, RootMetadata};
+use metadata::{Role, RoleType, Root, Metadata, SignedMetadata, RootMetadata};
 
 pub struct Tuf {
     url: Url,
@@ -18,7 +18,10 @@ pub struct Tuf {
 
 impl Tuf {
     pub fn new(config: Config) -> Result<Self, Error> {
-        let root = Self::read_metadata::<Root, RootMetadata>(&config.local_path)?;
+        // TODO don't do an unverified root read, but make someone hard code keys
+        // for the first time around
+        let scary_bad_root = Self::unverified_read_root(&config.local_path)?;
+        let root = Self::load_metadata::<Root, RootMetadata>(&config.local_path, &scary_bad_root)?;
 
         Ok(Tuf {
             url: config.url,
@@ -27,35 +30,74 @@ impl Tuf {
         })
     }
 
-    fn read_metadata<R: RoleType, M: Metadata<R>>(local_path: &Path) -> Result<M, Error> {
-        Self::read_meta_prefix(local_path, "")
+    fn load_metadata<R: RoleType, M: Metadata<R>>(local_path: &Path, root: &RootMetadata) -> Result<M, Error> {
+        Self::load_meta_prefix(local_path, "", root)
     }
 
-    fn read_meta_num<R: RoleType, M: Metadata<R>>(local_path: &Path, num: i32) -> Result<M, Error> {
-        Self::read_meta_prefix(local_path, &format!("{}.", num))
+    fn load_meta_num<R: RoleType, M: Metadata<R>>(local_path: &Path, num: i32, root: &RootMetadata) -> Result<M, Error> {
+        Self::load_meta_prefix(local_path, &format!("{}.", num), root)
     }
 
-    fn read_meta_hash<R: RoleType, M: Metadata<R>>(local_path: &Path, hash: &str) -> Result<M, Error> {
-        Self::read_meta_prefix(local_path, &format!("{}.", hash))
+    fn load_meta_hash<R: RoleType, M: Metadata<R>>(local_path: &Path, hash: &str, root: &RootMetadata) -> Result<M, Error> {
+        Self::load_meta_prefix(local_path, &format!("{}.", hash), root)
     }
 
-    fn read_meta_prefix<R: RoleType, M: Metadata<R>>(local_path: &Path, prefix: &str) -> Result<M, Error> {
-        let path = local_path.join(format!("{}{}.json", prefix, R::role()));        
+    fn unverified_read_root(local_path: &Path) -> Result<RootMetadata, Error> {
+        let path = local_path.join("root.json");
         let mut file = File::open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
-        let jsn = json::from_slice(&buf)?;
-        let safe_bytes = Self::verify_meta(jsn)?;
+        let signed: SignedMetadata<Root> = json::from_slice(&buf)?;
+        let root_str = signed.signed.to_string();
+        Ok(json::from_str(&root_str)?)
+    }
+
+    fn load_meta_prefix<R: RoleType, M: Metadata<R>>(local_path: &Path,
+                                                     prefix: &str,
+                                                     root: &RootMetadata) -> Result<M, Error> {
+        let path = local_path.join(format!("{}{}.json", prefix, R::role()));
+        let mut file = File::open(path)?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)?;
+        let signed = json::from_slice(&buf)?;
+        let safe_bytes = Self::verify_meta::<R>(signed, root)?;
         Ok(json::from_slice(&safe_bytes)?)
     }
 
-    /// Consumes the JSON because we only care about parsing the output. Bytes are only trusted
-    /// after they are verified. We do this to mitigate exploits that rely on different JSON
-    /// parsers parsing JSON in different ways.
-    fn verify_meta(jsn: json::Value) -> Result<Vec<u8>, Error> {
-        let bytes = cjson::canonicalize(jsn)
+    fn verify_meta<R: RoleType>(signed: SignedMetadata<R>, root: &RootMetadata) -> Result<Vec<u8>, Error> {
+        // TODO use the real cjson lib and not this crap
+        let bytes = cjson::canonicalize(signed.signed)
             .map_err(|err| Error::CanonicalJsonError(err))?;
-        unimplemented!() // TODO
+
+        let role = root.role_definition::<R>();
+
+        // TODO verify that sigs are unique
+        // TODO verify that threshold > 0
+        // TODO verify that #keys >= threshold
+
+       let keys = role.key_ids
+           .iter()
+           .map(|id| (id, root.keys.get(id)))
+           .fold(HashMap::new(), |mut m, (id, k)| {
+                if let Some(key) = k {
+                    m.insert(id, key);
+                }
+                m
+            });
+
+        let mut threshold = role.threshold;
+        for sig in signed.signatures.iter() {
+            if let Some(key) = keys.get(&sig.key_id) {
+                if key.verify(&sig.method, &bytes, &sig.sig).is_ok() {
+                    threshold -= 1;
+                }
+                if threshold == 0 {
+                    return Ok(bytes)
+                }
+            }
+        }
+
+        Err(Error::VerificationFailure)
     }
 
     // TODO real return type

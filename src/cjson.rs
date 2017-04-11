@@ -1,3 +1,6 @@
+//! Hack-y crate used for development until canonical_json supports serde 0.9
+// TODO remove me
+
 use itoa;
 use json;
 use std::collections::BTreeMap;

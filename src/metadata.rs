@@ -4,11 +4,13 @@ use json;
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::str::FromStr;
 
 use error::Error;
 
+#[derive(Deserialize)]
 pub enum Role {
     Root,
     Targets,
@@ -27,7 +29,7 @@ impl FromStr for Role {
             "Timestamp" => Ok(Role::Timestamp),
             role => Err(Error::UnknownRole(String::from(role))),
         }
-    }   
+    }
 }
 
 impl Display for Role {
@@ -38,7 +40,7 @@ impl Display for Role {
             Role::Snapshot  => write!(f, "{}", "snapshot"),
             Role::Timestamp => write!(f, "{}", "timestamp"),
         }
-    }   
+    }
 }
 
 pub trait RoleType {
@@ -73,30 +75,67 @@ impl RoleType for Snapshot {
     }
 }
 
-pub trait SignedMetadata<R: RoleType, M: Metadata<R>>: Deserialize {
-    fn signatures(&self) -> Vec<Signature>;
-    fn signed(&self) -> json::Value;
+pub struct SignedMetadata<R: RoleType> {
+    pub signatures: Vec<Signature>,
+    pub signed: json::Value,
+    _role: PhantomData<R>,
+}
+
+impl<R: RoleType> Deserialize for SignedMetadata<R> {
+    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+        if let json::Value::Object(ref object) = Deserialize::deserialize(de)? {
+            match (object.get("signatures"), object.get("signed")) {
+                (Some(&json::Value::Array(ref arr)), Some(v @ &json::Value::Object(_))) => {
+                    Ok(SignedMetadata::<R> {
+                        signatures: Vec::new(), // TODO
+                        signed: v.clone(),
+                        _role: PhantomData,
+                    })
+                },
+                _ => unimplemented!(), // TODO
+            }
+        } else {
+            unimplemented!() // TODO
+        }
+    }
 }
 
 pub trait Metadata<R: RoleType>: Deserialize {}
 
 pub struct RootMetadata {
-    // TODO
+    typ: Role,
+    //consistent_snapshot: bool,
+    //expires: DateTime<UTC>,
+    //version: i32,
+    pub keys: HashMap<KeyId, Key>,
+    root: RoleDefinition,
+    // TODO targets: RoleDefinition,
+    // TODO timestamp: RoleDefinition,
+    // TODO snapshot: RoleDefinition,
+}
+
+impl RootMetadata {
+    pub fn role_definition<R: RoleType>(&self) -> &RoleDefinition {
+        match R::role() {
+            Role::Root => &self.root,
+            _ => unimplemented!() // TODO
+        }
+    }
 }
 
 impl Metadata<Root> for RootMetadata {}
 
 impl Deserialize for RootMetadata {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
-        if let json::Value::Object(ref object) = Deserialize::deserialize(de)? {
+        if let json::Value::Object(object) = Deserialize::deserialize(de)? {
             unimplemented!() // TODO
         } else {
-            unimplemented!() // TODO
+            Err(DeserializeError::custom(format!("Role was not an object")))
         }
-    }   
+    }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct RoleDefinition {
     pub key_ids: Vec<KeyId>,
     pub threshold: i32,
@@ -150,7 +189,7 @@ impl KeyType {
 pub struct KeyValue(Vec<u8>);
 
 
-#[derive(Clone, Hash, Eq, PartialEq, Debug)]
+#[derive(Clone, Hash, Eq, PartialEq, Debug, Deserialize)]
 pub struct KeyId(String);
 
 
