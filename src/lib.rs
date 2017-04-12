@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_variables, unused_imports)] // TODO remove when stable
+
 extern crate chrono;
 extern crate crypto;
 extern crate itoa;
@@ -9,8 +11,6 @@ extern crate serde;
 extern crate serde_derive;
 extern crate serde_json as json;
 extern crate url;
-
-#[ignore(dead_code, unused_variables)] // TODO remove when stable
 
 mod cjson;
 mod metadata;
