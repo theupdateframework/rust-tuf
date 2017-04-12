@@ -21,11 +21,11 @@ fn main() {
 
     let mut tuf = Tuf::new(config).unwrap(); // TODO unwrap
 
-    let exit = if let Some(matches) = matches.subcommand_matches("init") {
+    let exit = if let Some(_) = matches.subcommand_matches("init") {
         cmd_init(&mut tuf)
-    } else if let Some(matches) = matches.subcommand_matches("list") {
+    } else if let Some(_) = matches.subcommand_matches("list") {
         cmd_list(&mut tuf)
-    } else if let Some(matches) = matches.subcommand_matches("verify") {
+    } else if let Some(_) = matches.subcommand_matches("verify") {
         cmd_verify(&mut tuf)
     } else {
         unreachable!() // because of AppSettings::SubcommandRequiredElseHelp
@@ -72,7 +72,7 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
                     .about("Verifies a target"))
 }
 
-fn cmd_init(tuf: &mut Tuf) -> i32 {
+fn cmd_init(_: &mut Tuf) -> i32 {
     unimplemented!() // TODO
 }
 
@@ -86,7 +86,7 @@ fn cmd_list(tuf: &mut Tuf) -> i32 {
     0
 }
 
-fn cmd_verify(tuf: &mut Tuf) -> i32 {
+fn cmd_verify(_: &mut Tuf) -> i32 {
     unimplemented!() // TODO
 }
 

@@ -207,8 +207,8 @@ pub struct RoleDefinition {
 pub struct TargetsMetadata {
     // TODO expires: DateTime<UTC>,
     // TODO version: i32,
-    delegations: Option<Delegations>,
-    targets: HashMap<String, TargetInfo>,
+    pub delegations: Option<Delegations>,
+    pub targets: HashMap<String, TargetInfo>,
 }
 
 impl Metadata<Targets> for TargetsMetadata {}

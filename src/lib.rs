@@ -1,5 +1,3 @@
-// TODO remove when stable
-
 extern crate chrono;
 extern crate crypto;
 extern crate itoa;

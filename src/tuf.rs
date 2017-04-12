@@ -73,6 +73,7 @@ impl Tuf {
         let mut file = File::open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
+
         let signed: SignedMetadata<Root> = json::from_slice(&buf)?;
         let root_str = signed.signed.to_string();
         Ok(json::from_str(&root_str)?)
@@ -137,7 +138,10 @@ impl Tuf {
 
     // TODO real return type
     pub fn list_targets(&self) -> Vec<String> {
-        unimplemented!() // TODO
+        match self.targets {
+            Some(ref targets) => targets.targets.keys().cloned().collect(),
+            None => Vec::new(),
+        }
     }
 
     // TODO real input type

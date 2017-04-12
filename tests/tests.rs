@@ -22,5 +22,7 @@ fn init() {
         .local_path(tempdir.into_path())
         .finish()
         .expect("bad config");
-    let _ = Tuf::new(config).expect("failed to initialize TUF");
+    let t = Tuf::new(config).expect("failed to initialize TUF");
+
+    assert_eq!(t.list_targets(), vec!["hack-eryone.sh".to_string()]);
 }
