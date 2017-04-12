@@ -3,6 +3,7 @@ use crypto::ed25519;
 use json;
 use rustc_serialize::hex::FromHex;
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
+use std::cmp::{Ord, Ordering};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter, Debug};
 use std::marker::PhantomData;
@@ -527,6 +528,17 @@ pub enum HashType {
     Unsupported(String),
 }
 
+impl HashType {
+    pub fn preferences() -> Vec<HashType> {
+        // TODO avoid heap
+        vec![HashType::Sha512, HashType::Sha256]
+    }
+
+    pub fn digest(self) -> Digest {
+        unimplemented!()
+    }
+}
+
 impl FromStr for HashType {
     type Err = Error;
 
@@ -569,9 +581,9 @@ impl Deserialize for HashValue {
 #[derive(Clone, Debug, Deserialize)]
 // TODO this is a dumb name
 pub struct TargetInfo {
-    length: i64,
-    hashes: HashMap<HashType, HashValue>,
-    custom: Option<HashMap<String, String>>, // TODO json value
+    pub length: i64,
+    pub hashes: HashMap<HashType, HashValue>,
+    pub custom: Option<HashMap<String, String>>, // TODO json value
 }
 
 
@@ -589,4 +601,18 @@ pub struct DelegatedRole {
     threshold: i32,
     // TODO path_hash_prefixes
     paths: Vec<String>,
+}
+
+/// Wrapper for digest algorithms
+pub struct Digest {
+
+}
+
+impl Digest {
+    pub fn input(&mut self, input: &[u8]) {
+        unimplemented!() // TODO
+    }
+    pub fn result(&mut self, output: &[u8]) {
+        unimplemented!() // TODO
+    }
 }

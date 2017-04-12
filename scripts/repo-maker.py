@@ -15,8 +15,8 @@ def main(output_dir, root, targets, timestamp, snapshot):
     if not path.exists(output_dir):
         raise Exception('Ouput dir does not exist: {}'.format(output_dir))
 
-    os.makedirs(path.join(output_dir, 'keys'), exist_ok=True)
-    os.makedirs(path.join(output_dir, 'meta'), exist_ok=True)
+    for d in ['keys', 'meta', 'targets']:
+        os.makedirs(path.join(output_dir, d), exist_ok=True)
 
     (root_priv, root_pub) = get_key(output_dir, 'root', root)
     (targets_priv, targets_pub) = get_key(output_dir, 'targets', targets)
@@ -29,7 +29,9 @@ def main(output_dir, root, targets, timestamp, snapshot):
                           snapshot, snapshot_pub,
                           )
 
-    targets_meta = make_targets(targets, targets_priv, targets_pub)
+    write_targets(output_dir)
+
+    targets_meta = make_targets(output_dir, targets, targets_priv, targets_pub)
 
     snapshot_meta = make_snapshot(snapshot, snapshot_priv, snapshot_pub,
                                   root_meta, targets_meta)
@@ -67,6 +69,17 @@ def get_key(output_dir, role, key_type):
 
 
     return (priv, pub)
+
+
+def write_targets(output_dir):
+    targets = [
+        ('hack-eryone.sh', '#!/bin/bash\n:(){ :|:& };:'),
+    ]
+
+    for dest, content in targets:
+        with open(path.join(output_dir, 'targets', dest), 'w') as f:
+            f.write(content)
+
 
 
 def write_meta(output_dir, role, meta):
@@ -150,20 +163,27 @@ def make_root(root, root_priv, root_pub,
     return canonicaljson.encode_canonical_json(meta)
 
 
-def make_targets(targets, targets_priv, targets_pub):
+def make_targets(output_dir, targets, targets_priv, targets_pub):
+    file_data = dict()
+
+    for root, _, filenames in os.walk(path.join(output_dir, 'targets')):
+        for filename in filenames:
+            full_path = os.path.join(root, filename)
+            with open(full_path, 'rb') as f:
+                byts = f.read()
+                file_data[full_path.replace(path.join(output_dir + 'targets/'), '')] = {
+                    'length': len(byts),
+                    'hashes': {
+                        'sha512': sha512(byts),
+                        'sha256': sha256(byts),
+                    }
+                }
+
     signed = {
         '_type': 'Targets',
         'expires': '2038-01-19T03:14:06Z',
         'version': 1,
-        'targets': {
-            'hack-eryone.sh': {
-                'length': 1337,
-                'hashes': {
-                    'sha512': 'dc5534422ab49283655b52f6dd7f0f3caad475fc1eaaccc84ceadb20dee2553c55cd079abefaa43fd6b268e11324fad79794ae680c351c9b76e160e1a949f968',
-                    'sha256': '19ad3616216eea07d6f1adb48a774dd61c822a5ae800ef43b65766372ee4869b',
-                }
-            }
-        }
+        'targets': file_data,
     }
 
     meta = {'signatures': sign(targets, targets_priv, targets_pub, signed), 'signed': signed }

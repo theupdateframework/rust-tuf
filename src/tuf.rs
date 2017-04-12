@@ -9,7 +9,7 @@ use url::Url;
 use cjson;
 use error::Error;
 use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, SignedMetadata,
-               RootMetadata, TargetsMetadata, TimestampMetadata, SnapshotMetadata};
+               RootMetadata, TargetsMetadata, TimestampMetadata, SnapshotMetadata, HashType};
 
 pub struct Tuf {
     url: Url,
@@ -136,7 +136,7 @@ impl Tuf {
                                                role.threshold)))
     }
 
-    // TODO real return type
+    // TODO stronger return type
     pub fn list_targets(&self) -> Vec<String> {
         match self.targets {
             Some(ref targets) => targets.targets.keys().cloned().collect(),
@@ -144,8 +144,40 @@ impl Tuf {
         }
     }
 
-    // TODO real input type
-    pub fn fetch_target(&self, target: String) -> Result<PathBuf, Error> {
+    // TODO stronger input type
+    pub fn verify_target(&self, target: String) -> Result<(), Error> {
+        let target_meta = match self.targets {
+            Some(ref targets) => {
+                targets.targets.get(&target)
+                    .ok_or_else(|| Error::UnknownTarget)?
+            },
+            None => unreachable!() // TODO
+        };
+
+        let mut digest = HashType::preferences().iter()
+            .fold(None, |alg, pref| {
+                alg.or_else(|| {
+                    if target_meta.hashes.contains_key(&pref) {
+                        Some(pref.clone())
+                    } else {
+                        None
+                    }
+                })
+            })
+            .ok_or_else(|| Error::NoSupportedHashAlgorithms)?
+            .digest();
+
+        let path = self.local_path.join(target);
+        info!("Reading target from local path: {:?}", path);
+
+        let mut file = File::open(path)?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)?;
+
+        // TODO count bytes
+        // TODO add to digest
+        // TODO verify hashes
+
         unimplemented!() // TODO
     }
 }

@@ -47,29 +47,26 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
         .about("CLI tool for verifying TUF metadata and downloading targets")
         .settings(&[AppSettings::SubcommandRequiredElseHelp])
         .arg(Arg::with_name("verbose")
-             .short("v")
-             .long("verbose")
-             .multiple(true)
-             .help("Increase the verbosity of output to stderr"))
+            .short("v")
+            .long("verbose")
+            .multiple(true)
+            .help("Increase the verbosity of output to stderr"))
         .arg(Arg::with_name("url")
-             .short("U")
-             .long("url")
-             .takes_value(true)
-             .required(true)
-             .validator(url_validator)
-             .help("URL of the TUF repo (local or remote)"))
+            .short("U")
+            .long("url")
+            .takes_value(true)
+            .required(true)
+            .validator(url_validator)
+            .help("URL of the TUF repo (local or remote)"))
         .arg(Arg::with_name("path")
-             .short("p")
-             .long("path")
-             .takes_value(true)
-             .required(true)
-             .help("Local path the TUF repo"))
-        .subcommand(SubCommand::with_name("init")
-                    .about("Initializes a new TUF repo"))
-        .subcommand(SubCommand::with_name("list")
-                    .about("Lists available targets"))
-        .subcommand(SubCommand::with_name("verify")
-                    .about("Verifies a target"))
+            .short("p")
+            .long("path")
+            .takes_value(true)
+            .required(true)
+            .help("Local path the TUF repo"))
+        .subcommand(SubCommand::with_name("init").about("Initializes a new TUF repo"))
+        .subcommand(SubCommand::with_name("list").about("Lists available targets"))
+        .subcommand(SubCommand::with_name("verify").about("Verifies a target"))
 }
 
 fn cmd_init(_: &mut Tuf) -> i32 {
@@ -81,7 +78,7 @@ fn cmd_list(tuf: &mut Tuf) -> i32 {
     targets.sort();
 
     for target in targets.iter() {
-       println!("{}", target); 
+        println!("{}", target);
     }
     0
 }
