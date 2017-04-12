@@ -136,12 +136,12 @@ impl Tuf {
     }
 
     // TODO real return type
-    pub fn list_targets() -> Vec<String> {
+    pub fn list_targets(&self) -> Vec<String> {
         unimplemented!() // TODO
     }
 
     // TODO real input type
-    pub fn fetch_target(target: String) -> Result<PathBuf, Error> {
+    pub fn fetch_target(&self, target: String) -> Result<PathBuf, Error> {
         unimplemented!() // TODO
     }
 }

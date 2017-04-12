@@ -18,8 +18,19 @@ travis-ci = { repository = "heartsucker/rust-tuf", branch = "master" }
 name = "tuf"
 path = "./src/lib.rs"
 
+[[bin]]
+name = "tuf"
+path = "./src/main.rs"
+doc = false
+required-features = [ "cli" ]
+
+[features]
+default = [ "cli" ]
+cli = [ "clap" ]
+
 [dependencies]
 chrono = { version = "0.3", features = [ "serde" ] }
+clap = { version = "2.23", optional = true }
 itoa = "0.3"
 log = "0.3"
 rust-crypto = "0.2"
