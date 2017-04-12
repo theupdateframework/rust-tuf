@@ -138,7 +138,8 @@ impl Deserialize for RootMetadata {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
             let typ = json::from_value::<Role>(object.remove("_type")
-                    .ok_or(DeserializeError::custom("Field '_type' missing"))?).map_err(|e| {
+                    .ok_or_else(|| DeserializeError::custom("Field '_type' missing"))?)
+                .map_err(|e| {
                     DeserializeError::custom(format!("Field '_type' not a valid role: {}", e))
                 })?;
 
@@ -147,7 +148,7 @@ impl Deserialize for RootMetadata {
             }
 
             let keys = json::from_value(object.remove("keys")
-                    .ok_or(DeserializeError::custom("Field 'keys' missing"))?).map_err(|e| {
+                    .ok_or_else(|| DeserializeError::custom("Field 'keys' missing"))?).map_err(|e| {
                     DeserializeError::custom(format!("Field 'keys' not a valid key map: {}", e))
                 })?;
 
@@ -156,25 +157,29 @@ impl Deserialize for RootMetadata {
                     json::Value::Object(o) => Some(o),
                     _ => None,
                 })
-                .ok_or(DeserializeError::custom("Field 'roles' missing"))?;
+                .ok_or_else(|| DeserializeError::custom("Field 'roles' missing"))?;
 
             let root = json::from_value(roles.remove("root")
-                    .ok_or(DeserializeError::custom("Role 'root' missing"))?).map_err(|e| {
+                    .ok_or_else(|| DeserializeError::custom("Role 'root' missing"))?)
+                .map_err(|e| {
                     DeserializeError::custom(format!("Root role definition error: {}", e))
                 })?;
 
             let targets = json::from_value(roles.remove("targets")
-                    .ok_or(DeserializeError::custom("Role 'targets' missing"))?).map_err(|e| {
+                    .ok_or_else(|| DeserializeError::custom("Role 'targets' missing"))?)
+                .map_err(|e| {
                     DeserializeError::custom(format!("Targets role definition error: {}", e))
                 })?;
 
             let timestamp = json::from_value(roles.remove("timestamp")
-                    .ok_or(DeserializeError::custom("Role 'timestamp' missing"))?).map_err(|e| {
+                    .ok_or_else(|| DeserializeError::custom("Role 'timestamp' missing"))?)
+                .map_err(|e| {
                     DeserializeError::custom(format!("Timetamp role definition error: {}", e))
                 })?;
 
             let snapshot = json::from_value(roles.remove("snapshot")
-                    .ok_or(DeserializeError::custom("Role 'shapshot' missing"))?).map_err(|e| {
+                    .ok_or_else(|| DeserializeError::custom("Role 'shapshot' missing"))?)
+                .map_err(|e| {
                     DeserializeError::custom(format!("Snapshot role definition error: {}", e))
                 })?;
 
@@ -224,9 +229,10 @@ impl Deserialize for TargetsMetadata {
             };
             match object.remove("targets") {
                 Some(t) => {
-                    let targets = json::from_value(t).map_err(|e| {
-                            DeserializeError::custom(format!("Bad targets format: {}", e))
-                        })?;
+                    let targets =
+                        json::from_value(t).map_err(|e| {
+                                DeserializeError::custom(format!("Bad targets format: {}", e))
+                            })?;
 
                     Ok(TargetsMetadata {
                         delegations: delegations,
@@ -416,7 +422,7 @@ impl Deserialize for KeyValue {
             }
             json::Value::Object(mut object) => {
                 json::from_value::<KeyValue>(object.remove("public")
-                        .ok_or(DeserializeError::custom("Field 'public' missing"))?)
+                        .ok_or_else(|| DeserializeError::custom("Field 'public' missing"))?)
                     .map_err(|e| {
                         DeserializeError::custom(format!("Field 'public' not encoded correctly: \
                                                           {}",

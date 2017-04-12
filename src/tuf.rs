@@ -182,9 +182,10 @@ impl ConfigBuilder {
     }
 
     pub fn finish(self) -> Result<Config, Error> {
-        let url = self.url.ok_or(Error::InvalidConfig("Repository URL was not set".to_string()))?;
+        let url = self.url
+            .ok_or_else(|| Error::InvalidConfig("Repository URL was not set".to_string()))?;
         let local_path = self.local_path
-            .ok_or(Error::InvalidConfig("Local path was not set".to_string()))?;
+            .ok_or_else(|| Error::InvalidConfig("Local path was not set".to_string()))?;
 
         // TODO error if path is not fully owned by the current user
         // TODO create path if not exists

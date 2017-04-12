@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_variables, unused_imports)] // TODO remove when stable
+// TODO remove when stable
 
 extern crate chrono;
 extern crate crypto;
