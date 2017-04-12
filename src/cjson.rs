@@ -6,6 +6,12 @@ use json;
 use std::collections::BTreeMap;
 use std::io;
 
+
+// TODO this is actually borked. Beacuse we pass in JSON that has already been parsed
+// something like the sequence"\n" has been converted into an actual new line.
+// Either unescape everthing in the convert function or (ideally) to patch the
+// canonical_json lib. However, this works for testing which is good enough for
+// development for now. (sorry future self)
 pub fn canonicalize(jsn: json::Value) -> Result<Vec<u8>, String> {
     let converted = convert(jsn)?;
     let mut buf = Vec::new();
