@@ -1,7 +1,7 @@
 use crypto::digest::Digest;
 use crypto::sha2::{Sha512, Sha256};
 use json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Read;
 use std::marker::PhantomData;
@@ -12,7 +12,7 @@ use cjson;
 use error::Error;
 use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, SignedMetadata,
                RootMetadata, TargetsMetadata, TimestampMetadata, SnapshotMetadata, HashType,
-               HashValue};
+               HashValue, KeyId};
 
 pub struct Tuf {
     url: Url,
@@ -107,9 +107,15 @@ impl Tuf {
 
         let role = root.role_definition::<R>();
 
-        // TODO verify that sigs are unique
-        // TODO verify that threshold > 0
-        // TODO verify that #keys >= threshold
+        let unique_count = signed.signatures
+            .iter()
+            .map(|s| &s.key_id)
+            .collect::<HashSet<&KeyId>>()
+            .len();
+
+        if signed.signatures.len() != unique_count {
+            return Err(Error::NonUniqueSignatures);
+        }
 
         let keys = role.key_ids
             .iter()
