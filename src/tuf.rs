@@ -1,3 +1,5 @@
+use crypto::digest::Digest;
+use crypto::sha2::{Sha512, Sha256};
 use json;
 use std::collections::HashMap;
 use std::fs::File;
@@ -9,7 +11,8 @@ use url::Url;
 use cjson;
 use error::Error;
 use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, SignedMetadata,
-               RootMetadata, TargetsMetadata, TimestampMetadata, SnapshotMetadata, HashType};
+               RootMetadata, TargetsMetadata, TimestampMetadata, SnapshotMetadata, HashType,
+               HashValue};
 
 pub struct Tuf {
     url: Url,
@@ -69,7 +72,7 @@ impl Tuf {
     }
 
     fn unverified_read_root(local_path: &Path) -> Result<RootMetadata, Error> {
-        let path = local_path.join("root.json");
+        let path = local_path.join("meta").join("root.json");
         let mut file = File::open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
@@ -83,7 +86,7 @@ impl Tuf {
                                                      prefix: &str,
                                                      root: &RootMetadata)
                                                      -> Result<M, Error> {
-        let path = local_path.join(format!("{}{}.json", prefix, R::role()));
+        let path = local_path.join("meta").join(format!("{}{}.json", prefix, R::role()));
         info!("Reading metadata from local path: {:?}", path);
 
         let mut file = File::open(path)?;
@@ -118,6 +121,9 @@ impl Tuf {
                 m
             });
 
+        // count down to zero and not up to the threshold to:
+        //   1) short curcuit complete
+        //   2) avoid ever comparing 0 >= 0 (horribly unsafe)
         let mut threshold = role.threshold;
         for sig in signed.signatures.iter() {
             if let Some(key) = keys.get(&sig.key_id) {
@@ -139,46 +145,88 @@ impl Tuf {
     // TODO stronger return type
     pub fn list_targets(&self) -> Vec<String> {
         match self.targets {
-            Some(ref targets) => targets.targets.keys().cloned().collect(),
+            Some(ref targets) => {
+                let mut res = targets.targets.keys().cloned().collect::<Vec<String>>();
+                res.sort();
+                res
+            },
             None => Vec::new(),
         }
     }
 
     // TODO stronger input type
-    pub fn verify_target(&self, target: String) -> Result<(), Error> {
+    pub fn verify_target(&self, target: &str) -> Result<(), Error> {
         let target_meta = match self.targets {
             Some(ref targets) => {
-                targets.targets.get(&target)
+                targets.targets
+                    .get(target)
                     .ok_or_else(|| Error::UnknownTarget)?
-            },
-            None => unreachable!() // TODO
+            }
+            None => unreachable!(), // TODO
         };
 
-        let mut digest = HashType::preferences().iter()
-            .fold(None, |alg, pref| {
-                alg.or_else(|| {
-                    if target_meta.hashes.contains_key(&pref) {
-                        Some(pref.clone())
-                    } else {
-                        None
-                    }
+        let (hash_alg, expected_hash): (HashType, HashValue) = HashType::preferences().iter()
+            .fold(None, |res, pref| {
+                res.or_else(|| if let Some(hash) = target_meta.hashes.get(&pref) {
+                    Some((pref.clone(), hash.clone()))
+                } else {
+                    None
                 })
             })
-            .ok_or_else(|| Error::NoSupportedHashAlgorithms)?
-            .digest();
+            .ok_or_else(|| Error::NoSupportedHashAlgorithms)?;
 
-        let path = self.local_path.join(target);
+        let path = self.local_path.join("targets").join(target);
         info!("Reading target from local path: {:?}", path);
-
         let mut file = File::open(path)?;
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf)?;
 
-        // TODO count bytes
-        // TODO add to digest
-        // TODO verify hashes
+        match hash_alg {
+            HashType::Sha512 => {
+                Self::read_and_verify(&mut file,
+                                      &mut Sha512::new(),
+                                      target_meta.length,
+                                      &expected_hash.0)
+            }
+            HashType::Sha256 => {
+                Self::read_and_verify(&mut file,
+                                      &mut Sha256::new(),
+                                      target_meta.length,
+                                      &expected_hash.0)
+            }
+            HashType::Unsupported(_) => Err(Error::NoSupportedHashAlgorithms),
+        }
+    }
 
-        unimplemented!() // TODO
+    fn read_and_verify<R: Read, D: Digest>(input: &mut R,
+                                           digest: &mut D,
+                                           size: i64,
+                                           expected_hash: &[u8])
+                                           -> Result<(), Error> {
+        let mut buf = [0; 1024];
+        let mut bytes_left = size;
+
+        loop {
+            match input.read(&mut buf) {
+                Ok(read_bytes) => {
+                    digest.input(&buf[0..read_bytes]);
+                    bytes_left -= read_bytes as i64;
+                    if bytes_left == 0 {
+                        break;
+                    } else if bytes_left <= 0 {
+                        panic!("Too many bytes read") // TODO this is sad
+                    }
+                }
+                e @ Err(_) => e.map(|_| ())?,
+            }
+        }
+
+        let mut generated_hash = vec![0; digest.output_bytes()];
+        digest.result(&mut generated_hash);
+
+        if generated_hash.as_slice() == expected_hash {
+            Ok(())
+        } else {
+            Err(Error::TargetHashMismatch)
+        }
     }
 }
 

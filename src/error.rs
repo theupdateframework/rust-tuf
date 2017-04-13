@@ -12,6 +12,7 @@ pub enum Error {
     NonUniqueSignatures,
     NoSupportedHashAlgorithms,
     SignatureSchemeMismatch,
+    TargetHashMismatch,
     UnknownKey(KeyId),
     UnknownRole(String),
     UnknownTarget,

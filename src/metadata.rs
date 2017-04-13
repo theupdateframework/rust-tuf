@@ -533,10 +533,6 @@ impl HashType {
         // TODO avoid heap
         vec![HashType::Sha512, HashType::Sha256]
     }
-
-    pub fn digest(self) -> Digest {
-        unimplemented!()
-    }
 }
 
 impl FromStr for HashType {
@@ -563,7 +559,7 @@ impl Deserialize for HashType {
 
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct HashValue(Vec<u8>);
+pub struct HashValue(pub Vec<u8>);
 
 impl Deserialize for HashValue {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
@@ -601,18 +597,4 @@ pub struct DelegatedRole {
     threshold: i32,
     // TODO path_hash_prefixes
     paths: Vec<String>,
-}
-
-/// Wrapper for digest algorithms
-pub struct Digest {
-
-}
-
-impl Digest {
-    pub fn input(&mut self, input: &[u8]) {
-        unimplemented!() // TODO
-    }
-    pub fn result(&mut self, output: &[u8]) {
-        unimplemented!() // TODO
-    }
 }

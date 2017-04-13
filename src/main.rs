@@ -8,6 +8,7 @@ use tuf::{Tuf, Config};
 use url::Url;
 
 // TODO logging
+// TODO define exit codes. possibly: 0 - success, 1 - unknown failure, 2 - validation failure
 
 fn main() {
     let matches = parser().get_matches();

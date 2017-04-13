@@ -74,6 +74,7 @@ def get_key(output_dir, role, key_type):
 def write_targets(output_dir):
     targets = [
         ('hack-eryone.sh', '#!/bin/bash\n:(){ :|:& };:'),
+        ('big-file.txt', 'wat ' * 1024),
     ]
 
     for dest, content in targets:
