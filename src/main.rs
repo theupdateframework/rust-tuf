@@ -1,10 +1,10 @@
 extern crate clap;
-extern crate tuf;
+extern crate tuf as _tuf;
 extern crate url;
 
 use clap::{App, AppSettings, SubCommand, Arg};
 use std::path::PathBuf;
-use tuf::{Tuf, Config};
+use _tuf::{Tuf, Config};
 use url::Url;
 
 // TODO logging
@@ -26,8 +26,8 @@ fn main() {
         cmd_init(&mut tuf)
     } else if let Some(_) = matches.subcommand_matches("list") {
         cmd_list(&mut tuf)
-    } else if let Some(_) = matches.subcommand_matches("verify") {
-        cmd_verify(&mut tuf)
+    } else if let Some(matches) = matches.subcommand_matches("verify") {
+        cmd_verify(&mut tuf, matches.value_of("target").unwrap())
     } else {
         unreachable!() // because of AppSettings::SubcommandRequiredElseHelp
     };
@@ -67,11 +67,18 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
             .help("Local path the TUF repo"))
         .subcommand(SubCommand::with_name("init").about("Initializes a new TUF repo"))
         .subcommand(SubCommand::with_name("list").about("Lists available targets"))
-        .subcommand(SubCommand::with_name("verify").about("Verifies a target"))
+        .subcommand(SubCommand::with_name("verify").about("Verifies a target")
+                    .arg(Arg::with_name("target")
+                         .takes_value(true)
+                         .required(true)
+                         .help("The full (non-local) path of the target to verify")))
 }
 
-fn cmd_init(_: &mut Tuf) -> i32 {
-    unimplemented!() // TODO
+fn cmd_init(tuf: &mut Tuf) -> i32 {
+    match tuf.initialize() {
+        Ok(()) => 0,
+        Err(_) => 1, // TODO error message
+    }
 }
 
 fn cmd_list(tuf: &mut Tuf) -> i32 {
@@ -84,8 +91,11 @@ fn cmd_list(tuf: &mut Tuf) -> i32 {
     0
 }
 
-fn cmd_verify(_: &mut Tuf) -> i32 {
-    unimplemented!() // TODO
+fn cmd_verify(tuf: &mut Tuf, target: &str) -> i32 {
+    match tuf.verify_target(target) {
+        Ok(()) => 0,
+        Err(_) => 1, // TODO error message
+    }
 }
 
 #[cfg(test)]

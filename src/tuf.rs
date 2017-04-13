@@ -2,7 +2,7 @@ use crypto::digest::Digest;
 use crypto::sha2::{Sha512, Sha256};
 use json;
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
+use std::fs::{File, DirBuilder};
 use std::io::Read;
 use std::marker::PhantomData;
 use std::path::{PathBuf, Path};
@@ -24,6 +24,8 @@ pub struct Tuf {
 }
 
 impl Tuf {
+    // TODO it should be possible to use Tuf::new() and /then/ tuf.initialize()
+    // Right now ::new fails if the paths don't exist.
     pub fn new(config: Config) -> Result<Self, Error> {
         // TODO don't do an unverified root read, but make someone hard code keys
         // for the first time around
@@ -49,6 +51,18 @@ impl Tuf {
             timestamp: Some(timestamp), // TODO we are wrongly assuming that this is always present
             snapshot: Some(snapshot), // TODO we are wrongly assuming that this is always present
         })
+    }
+
+    pub fn initialize(&self) -> Result<(), Error> {
+        for dir in vec!["meta", "targets"].iter() {
+            DirBuilder::new()
+                .recursive(true)
+                .create(self.local_path.as_path().join(dir))?
+
+            // TODO error if path is not fully owned by the current user
+        }
+
+        Ok(())
     }
 
     fn load_metadata<R: RoleType, M: Metadata<R>>(local_path: &Path,
@@ -276,9 +290,6 @@ impl ConfigBuilder {
             .ok_or_else(|| Error::InvalidConfig("Repository URL was not set".to_string()))?;
         let local_path = self.local_path
             .ok_or_else(|| Error::InvalidConfig("Local path was not set".to_string()))?;
-
-        // TODO error if path is not fully owned by the current user
-        // TODO create path if not exists
 
         Ok(Config {
             url: url,
