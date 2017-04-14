@@ -1,38 +1,48 @@
 extern crate clap;
+#[cfg(test)]
+extern crate tempdir;
 extern crate tuf as _tuf;
 extern crate url;
 
-use clap::{App, AppSettings, SubCommand, Arg};
+use clap::{App, AppSettings, SubCommand, Arg, ArgMatches};
 use std::path::PathBuf;
-use _tuf::{Tuf, Config};
+use _tuf::{Tuf, Config, Error};
 use url::Url;
 
 // TODO logging
-// TODO define exit codes. possibly: 0 - success, 1 - unknown failure, 2 - validation failure
 
 fn main() {
     let matches = parser().get_matches();
+    match run_main(matches) {
+        Ok(()) => std::process::exit(0),
+        Err(e) => {
+            println!("{:?}", e);
+            std::process::exit(1);
+        }
+    }
+}
 
-    // these unwraps are ok because of the validators and settings for `clap`
+fn run_main(matches: ArgMatches) -> Result<(), Error> {
     let config = Config::build()
         .url(Url::parse(matches.value_of("url").unwrap()).unwrap())
         .local_path(PathBuf::from(matches.value_of("path").unwrap()))
         .finish()
         .expect("bad config"); // TODO don't use expect
 
-    let mut tuf = Tuf::new(config).unwrap(); // TODO unwrap
-
-    let exit = if let Some(_) = matches.subcommand_matches("init") {
-        cmd_init(&mut tuf)
+    if let Some(_) = matches.subcommand_matches("init") {
+        let path = PathBuf::from(matches.value_of("path").unwrap());
+        cmd_init(&path)
     } else if let Some(_) = matches.subcommand_matches("list") {
+        let mut tuf = Tuf::new(config).unwrap(); // TODO unwrap
+        tuf.update().unwrap(); // TODO unwrap
         cmd_list(&mut tuf)
     } else if let Some(matches) = matches.subcommand_matches("verify") {
+        let mut tuf = Tuf::new(config).unwrap(); // TODO unwrap
+        tuf.update().unwrap(); // TODO unwrap
         cmd_verify(&mut tuf, matches.value_of("target").unwrap())
     } else {
         unreachable!() // because of AppSettings::SubcommandRequiredElseHelp
-    };
-
-    std::process::exit(exit)
+    }
 }
 
 fn url_validator(url: String) -> Result<(), String> {
@@ -42,7 +52,6 @@ fn url_validator(url: String) -> Result<(), String> {
 }
 
 fn parser<'a, 'b>() -> App<'a, 'b> {
-
     App::new("tuf")
         .version(env!("CARGO_PKG_VERSION"))
         .about("CLI tool for verifying TUF metadata and downloading targets")
@@ -75,36 +84,72 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
                 .help("The full (non-local) path of the target to verify")))
 }
 
-fn cmd_init(tuf: &mut Tuf) -> i32 {
-    match tuf.initialize() {
-        Ok(()) => 0,
-        Err(_) => 1, // TODO error message
-    }
+fn cmd_init(local_path: &PathBuf) -> Result<(), Error> {
+    Tuf::initialize(local_path)
 }
 
-fn cmd_list(tuf: &mut Tuf) -> i32 {
+fn cmd_list(tuf: &mut Tuf) -> Result<(), Error> {
     let mut targets = tuf.list_targets();
     targets.sort();
 
     for target in targets.iter() {
         println!("{}", target);
     }
-    0
+
+    Ok(())
 }
 
-fn cmd_verify(tuf: &mut Tuf, target: &str) -> i32 {
-    match tuf.verify_target(target) {
-        Ok(()) => 0,
-        Err(_) => 1, // TODO error message
-    }
+fn cmd_verify(tuf: &mut Tuf, target: &str) -> Result<(), Error> {
+    tuf.verify_target(target)
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::fs::{self, DirBuilder};
+    use std::path::Path;
+    use tempdir::TempDir;
 
     #[test]
-    fn clap() {
+    fn test_clap() {
         let _ = parser();
+    }
+
+    fn init_temp(temp: &Path) {
+        for dir in vec!["metadata", "targets"].iter() {
+            DirBuilder::new()
+                .recursive(true)
+                .create(temp.join(dir))
+                .expect(&format!("couldn't create path {}:", dir));
+        }
+
+        for file in vec!["metadata/root.json",
+                         "metadata/targets.json",
+                         "metadata/timestamp.json",
+                         "metadata/snapshot.json",
+                         "targets/big-file.txt",
+                         "targets/hack-eryone.sh"]
+            .iter() {
+            fs::copy(format!("./tests/repo-1/{}", file), temp.join(file))
+                .expect(&format!("copy failed: {}", file));
+        }
+    }
+
+    #[test]
+    fn run_verify() {
+        let temp = TempDir::new("rust-tuf").expect("couldn't make temp dir");
+        init_temp(temp.path());
+
+        let matches = parser()
+            .get_matches_from_safe(vec!["tuf",
+                                        "--url",
+                                        "file:///tmp",
+                                        "--path",
+                                        temp.path().to_str().expect("path not utf-8"),
+                                        "verify",
+                                        "big-file.txt"])
+            .expect("parse error");
+
+        assert_eq!(run_main(matches), Ok(()));
     }
 }

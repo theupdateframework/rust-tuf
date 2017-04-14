@@ -5,7 +5,6 @@ use json;
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, DirBuilder};
 use std::io::Read;
-use std::marker::PhantomData;
 use std::path::{PathBuf, Path};
 use url::Url;
 
@@ -25,12 +24,11 @@ pub struct Tuf {
 }
 
 impl Tuf {
-    // TODO it should be possible to use Tuf::new() and /then/ tuf.initialize()
-    // Right now ::new fails if the paths don't exist.
-    pub fn new(config: Config) -> Result<Self, Error> {
+    /// Create a `Tuf` struct from an existing repo with the initial root keys pinned.
+    pub fn from_root_keys(root_keys: Vec<Key>, config: Config) -> Result<Self, Error> {
         // TODO have this try local then try from the URL since things might not be initialized
         let root = {
-            let root = Self::read_root(&config.local_path, &config.root_keys)?;
+            let root = Self::read_root_with_keys(&config.local_path, &root_keys)?;
             // pass it back through the main path to ensure consistency
             Self::load_metadata::<Root, RootMetadata>(&config.local_path, &root)?
         };
@@ -54,13 +52,74 @@ impl Tuf {
         })
     }
 
-    pub fn initialize(&self) -> Result<(), Error> {
+    /// Create a `Tuf` struct from a new repo. Must contain the `root.json`. The root is trusted
+    /// with only verification on consistency, not authenticity. This call also calls `initialize`
+    /// to ensure the needed paths exist.
+    pub fn new(config: Config) -> Result<Self, Error> {
+        Self::initialize(&config.local_path)?;
+
+        let root = {
+            let root = Self::unverified_read_root(&config.local_path)?;
+            Self::load_metadata::<Root, RootMetadata>(&config.local_path, &root)?
+        };
+
+        Ok(Tuf {
+            url: config.url,
+            local_path: config.local_path,
+            root: root,
+            targets: None,
+            timestamp: None,
+            snapshot: None,
+        })
+    }
+
+    /// Create and verify the necessary directory structure for a TUF repo.
+    pub fn initialize(local_path: &PathBuf) -> Result<(), Error> {
         for dir in vec!["metadata", "targets"].iter() {
             DirBuilder::new().recursive(true)
-                .create(self.local_path.as_path().join(dir))?
+                .create(local_path.as_path().join(dir))?
 
             // TODO error if path is not fully owned by the current user
         }
+
+        Ok(())
+    }
+
+    /// Update the current metadata from local and remote sources.
+    pub fn update(&mut self) -> Result<(), Error> {
+        let timestamp = Self::load_metadata::<Timestamp, TimestampMetadata>(&self.local_path,
+                                                                            &self.root)?;
+        match self.timestamp {
+            Some(ref t) if t.version > timestamp.version => {
+                return Err(Error::VersionDecrease(Role::Timestamp))
+            }
+            Some(ref t) if t.version == timestamp.version => return Ok(()),
+            _ => self.timestamp = Some(timestamp),
+        }
+
+        // TODO load the version named in timestamp metadata
+        let snapshot = Self::load_metadata::<Snapshot, SnapshotMetadata>(&self.local_path,
+                                                                         &self.root)?;
+        match self.snapshot {
+            Some(ref s) if s.version > snapshot.version => {
+                return Err(Error::VersionDecrease(Role::Snapshot))
+            }
+            Some(ref s) if s.version == snapshot.version => return Ok(()),
+            _ => self.snapshot = Some(snapshot),
+        }
+
+        // TODO load the version named in snapshot metadata
+        let targets = Self::load_metadata::<Targets, TargetsMetadata>(&self.local_path,
+                                                                      &self.root)?;
+        match self.targets {
+            Some(ref t) if t.version > targets.version => {
+                return Err(Error::VersionDecrease(Role::Targets))
+            }
+            Some(ref t) if t.version == targets.version => return Ok(()),
+            _ => self.targets = Some(targets),
+        }
+
+        // TODO check remote
 
         Ok(())
     }
@@ -85,7 +144,18 @@ impl Tuf {
         Self::load_meta_prefix(local_path, &format!("{}.", hash), root)
     }
 
-    fn read_root(local_path: &Path, root_keys: &[Key]) -> Result<RootMetadata, Error> {
+    fn unverified_read_root(local_path: &Path) -> Result<RootMetadata, Error> {
+        let path = local_path.join("metadata").join("root.json");
+        let mut file = File::open(path)?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)?;
+
+        let signed: SignedMetadata<Root> = json::from_slice(&buf)?;
+        let root_str = signed.signed.to_string();
+        Ok(json::from_str(&root_str)?)
+    }
+
+    fn read_root_with_keys(local_path: &Path, root_keys: &[Key]) -> Result<RootMetadata, Error> {
         let path = local_path.join("metadata").join("root.json");
         let mut file = File::open(path)?;
         let mut buf = Vec::new();
@@ -99,7 +169,6 @@ impl Tuf {
                 if let Some(&mut json::Value::Object(ref mut root)) = roles.get_mut("root") {
                     if let Some(&mut json::Value::Array(ref mut key_ids)) = root.get_mut("keyids") {
                         key_ids.clear();
-                        // TODO unwrap
                         key_ids.extend(root_keys.iter().map(|k| json!(k.value.key_id().0)));
                     }
                 }
@@ -108,6 +177,7 @@ impl Tuf {
 
         Ok(json::from_value(signed.signed)?)
     }
+
 
     fn load_meta_prefix<R: RoleType, M: Metadata<R>>(local_path: &Path,
                                                      prefix: &str,
@@ -160,9 +230,6 @@ impl Tuf {
                 m
             });
 
-        println!("role keys {:?}", role.key_ids);
-        println!("keys {:?}", keys);
-
         let mut threshold = role.threshold;
         for sig in signed.signatures.iter() {
             debug!("Verifying role {:?} with key ID {:?}",
@@ -188,6 +255,8 @@ impl Tuf {
                                                role.threshold)))
     }
 
+    /// Lists all targets that are currently available. If a target is missing, it means the
+    /// metadata chain that leads to it cannot be verified, and the target is therefore untrusted.
     // TODO stronger return type
     pub fn list_targets(&self) -> Vec<String> {
         match self.targets {
@@ -200,6 +269,8 @@ impl Tuf {
         }
     }
 
+    /// Verifies a given target. Fails if the target is missing, or if the metadata chain that
+    /// leads to it cannot be verified.
     // TODO stronger input type
     pub fn verify_target(&self, target: &str) -> Result<(), Error> {
         let target_meta = match self.targets {
@@ -208,7 +279,7 @@ impl Tuf {
                     .get(target)
                     .ok_or_else(|| Error::UnknownTarget)?
             }
-            None => unreachable!(), // TODO
+            None => return Err(Error::MissingMetadata(Role::Targets)),
         };
 
         let (hash_alg, expected_hash): (HashType, HashValue) = HashType::preferences().iter()
@@ -276,10 +347,11 @@ impl Tuf {
     }
 }
 
+
+/// The configuration used to initialize a `Tuf` struct.
 pub struct Config {
     url: Url,
     local_path: PathBuf,
-    root_keys: Vec<Key>,
 }
 
 impl Config {
@@ -289,10 +361,10 @@ impl Config {
 }
 
 
+/// Helper that constructs `Config`s and verifies the options.
 pub struct ConfigBuilder {
     url: Option<Url>,
     local_path: Option<PathBuf>,
-    root_keys: Vec<Key>,
 }
 
 impl ConfigBuilder {
@@ -300,7 +372,6 @@ impl ConfigBuilder {
         ConfigBuilder {
             url: None,
             local_path: None,
-            root_keys: Vec::new(),
         }
     }
 
@@ -316,12 +387,6 @@ impl ConfigBuilder {
         self
     }
 
-    /// The initial trusted root keys.
-    pub fn root_keys(mut self, root_keys: Vec<Key>) -> Self {
-        self.root_keys = root_keys;
-        self
-    }
-
     /// Verify the configuration.
     pub fn finish(self) -> Result<Config, Error> {
         // TODO verify url scheme is something we support
@@ -331,14 +396,9 @@ impl ConfigBuilder {
         let local_path = self.local_path
             .ok_or_else(|| Error::InvalidConfig("Local path was not set".to_string()))?;
 
-        if self.root_keys.is_empty() {
-            return Err(Error::InvalidConfig("No root keys supplied".to_string()));
-        }
-
         Ok(Config {
             url: url,
             local_path: local_path,
-            root_keys: self.root_keys,
         })
     }
 }

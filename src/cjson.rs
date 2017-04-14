@@ -170,17 +170,6 @@ static ESCAPE: [u8; 256] = [
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // F
 ];
 
-#[inline]
-fn escape_char<W>(wr: &mut W, value: char) -> Result<(), io::Error>
-    where W: io::Write
-{
-    // FIXME: this allocation is required in order to be compatible with stable
-    // rust, which doesn't support encoding a `char` into a stack buffer.
-    let mut s = String::new();
-    s.push(value);
-    escape_str(wr, &s)
-}
-
 #[cfg(test)]
 mod test {
     use super::*;

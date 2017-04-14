@@ -1,15 +1,16 @@
 use json;
 use std::io;
 
-use metadata::KeyId;
+use metadata::{KeyId, Role};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     CanonicalJsonError(String),
     ExpiredMetadata,
     InvalidConfig(String),
-    Io(io::Error),
-    Json(json::Error),
+    Io(String),
+    Json(String),
+    MissingMetadata(Role),
     NonUniqueSignatures,
     NoSupportedHashAlgorithms,
     SignatureSchemeMismatch,
@@ -20,16 +21,17 @@ pub enum Error {
     UnsupportedKeyType(String),
     UnsupportedSignatureScheme(String),
     VerificationFailure(String),
+    VersionDecrease(Role),
 }
 
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Error {
-        Error::Io(err)
+        Error::Io(format!("{:?}", err))
     }
 }
 
 impl From<json::Error> for Error {
     fn from(err: json::Error) -> Error {
-        Error::Json(err)
+        Error::Json(format!("{:?}", err))
     }
 }

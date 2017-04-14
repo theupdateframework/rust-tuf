@@ -5,11 +5,9 @@ use crypto::sha2::Sha256;
 use json;
 use rustc_serialize::hex::{FromHex, ToHex};
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
-use std::cmp::{Ord, Ordering};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter, Debug};
 use std::marker::PhantomData;
-use std::ops::Deref;
 use std::str::FromStr;
 
 use error::Error;
@@ -118,7 +116,7 @@ pub trait Metadata<R: RoleType>: Deserialize {
 pub struct RootMetadata {
     // TODO consistent_snapshot: bool,
     expires: DateTime<UTC>,
-    // TODO version: i32,
+    pub version: i32,
     pub keys: HashMap<KeyId, Key>,
     root: RoleDefinition,
     targets: RoleDefinition,
@@ -163,7 +161,12 @@ impl Deserialize for RootMetadata {
 
             let expires = json::from_value(object.remove("expires")
                     .ok_or_else(|| DeserializeError::custom("Field 'expires' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'expires did not have a valid format: {}", e))
+                    DeserializeError::custom(format!("Field 'expires' did not have a valid format: {}", e))
+                })?;
+
+            let version = json::from_value(object.remove("version")
+                    .ok_or_else(|| DeserializeError::custom("Field 'version' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'version' did not have a valid format: {}", e))
                 })?;
 
             let mut roles = object.remove("roles")
@@ -199,6 +202,7 @@ impl Deserialize for RootMetadata {
 
             Ok(RootMetadata {
                 expires: expires,
+                version: version,
                 keys: keys,
                 root: root,
                 targets: targets,
@@ -221,7 +225,7 @@ pub struct RoleDefinition {
 #[derive(Debug)]
 pub struct TargetsMetadata {
     expires: DateTime<UTC>,
-    // TODO version: i32,
+    pub version: i32,
     pub delegations: Option<Delegations>,
     pub targets: HashMap<String, TargetInfo>,
 }
@@ -252,6 +256,11 @@ impl Deserialize for TargetsMetadata {
                     DeserializeError::custom(format!("Field 'expires did not have a valid format: {}", e))
                 })?;
 
+            let version = json::from_value(object.remove("version")
+                    .ok_or_else(|| DeserializeError::custom("Field 'version' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'version' did not have a valid format: {}", e))
+                })?;
+
             match object.remove("targets") {
                 Some(t) => {
                     let targets =
@@ -260,6 +269,7 @@ impl Deserialize for TargetsMetadata {
                             })?;
 
                     Ok(TargetsMetadata {
+                        version: version,
                         expires: expires,
                         delegations: delegations,
                         targets: targets,
@@ -275,7 +285,7 @@ impl Deserialize for TargetsMetadata {
 
 pub struct TimestampMetadata {
     expires: DateTime<UTC>,
-    // TODO version: i32,
+    pub version: i32,
     meta: HashMap<String, MetadataMetadata>,
 }
 
@@ -291,7 +301,12 @@ impl Deserialize for TimestampMetadata {
 
             let expires = json::from_value(object.remove("expires")
                     .ok_or_else(|| DeserializeError::custom("Field 'expires' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'expires did not have a valid format: {}", e))
+                    DeserializeError::custom(format!("Field 'expires' did not have a valid format: {}", e))
+                })?;
+
+            let version = json::from_value(object.remove("version")
+                    .ok_or_else(|| DeserializeError::custom("Field 'version' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'version' did not have a valid format: {}", e))
                 })?;
 
             match object.remove("meta") {
@@ -302,6 +317,7 @@ impl Deserialize for TimestampMetadata {
 
                     Ok(TimestampMetadata {
                         expires: expires,
+                        version: version,
                         meta: meta,
                     })
                 }
@@ -315,7 +331,7 @@ impl Deserialize for TimestampMetadata {
 
 pub struct SnapshotMetadata {
     expires: DateTime<UTC>,
-    // TODO version: i32,
+    pub version: i32,
 
     // TODO this needs to use something other than MetaMeta
     // because the spec says that hash/len are only mandatory for Root role
@@ -334,7 +350,12 @@ impl Deserialize for SnapshotMetadata {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
             let expires = json::from_value(object.remove("expires")
                     .ok_or_else(|| DeserializeError::custom("Field 'expires' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'expires did not have a valid format: {}", e))
+                    DeserializeError::custom(format!("Field 'expires' did not have a valid format: {}", e))
+                })?;
+
+            let version = json::from_value(object.remove("version")
+                    .ok_or_else(|| DeserializeError::custom("Field 'version' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'version' did not have a valid format: {}", e))
                 })?;
 
             match object.remove("meta") {
@@ -345,6 +366,7 @@ impl Deserialize for SnapshotMetadata {
 
                     Ok(SnapshotMetadata {
                         expires: expires,
+                        version: version,
                         meta: meta,
                     })
                 }

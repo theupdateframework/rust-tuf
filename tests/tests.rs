@@ -25,6 +25,7 @@ fn init() {
                      "metadata/targets.json",
                      "metadata/timestamp.json",
                      "metadata/snapshot.json",
+                     "targets/big-file.txt",
                      "targets/hack-eryone.sh"]
         .iter() {
         fs::copy(format!("./tests/repo-1/{}", file),
@@ -42,10 +43,10 @@ fn init() {
     let config = Config::build()
         .url(Url::parse("http://localhost:8080").expect("bad url"))
         .local_path(tempdir.into_path())
-        .root_keys(root_keys)
         .finish()
         .expect("bad config");
-    let t = Tuf::new(config).expect("failed to initialize TUF");
+
+    let t = Tuf::from_root_keys(root_keys, config).expect("failed to initialize TUF");
 
     assert_eq!(t.list_targets(),
                vec!["big-file.txt".to_string(), "hack-eryone.sh".to_string()]);
