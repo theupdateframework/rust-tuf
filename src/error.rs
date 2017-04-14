@@ -6,6 +6,7 @@ use metadata::KeyId;
 #[derive(Debug)]
 pub enum Error {
     CanonicalJsonError(String),
+    ExpiredMetadata,
     InvalidConfig(String),
     Io(io::Error),
     Json(json::Error),

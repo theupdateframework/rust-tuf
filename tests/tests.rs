@@ -36,7 +36,8 @@ fn init() {
         .expect("bad config");
     let t = Tuf::new(config).expect("failed to initialize TUF");
 
-    assert_eq!(t.list_targets(), vec!["big-file.txt".to_string(), "hack-eryone.sh".to_string()]);
+    assert_eq!(t.list_targets(),
+               vec!["big-file.txt".to_string(), "hack-eryone.sh".to_string()]);
 
     t.verify_target("hack-eryone.sh").expect("failed to verify target");
 }

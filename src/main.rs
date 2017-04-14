@@ -67,11 +67,12 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
             .help("Local path the TUF repo"))
         .subcommand(SubCommand::with_name("init").about("Initializes a new TUF repo"))
         .subcommand(SubCommand::with_name("list").about("Lists available targets"))
-        .subcommand(SubCommand::with_name("verify").about("Verifies a target")
-                    .arg(Arg::with_name("target")
-                         .takes_value(true)
-                         .required(true)
-                         .help("The full (non-local) path of the target to verify")))
+        .subcommand(SubCommand::with_name("verify")
+            .about("Verifies a target")
+            .arg(Arg::with_name("target")
+                .takes_value(true)
+                .required(true)
+                .help("The full (non-local) path of the target to verify")))
 }
 
 fn cmd_init(tuf: &mut Tuf) -> i32 {

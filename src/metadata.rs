@@ -109,11 +109,13 @@ impl<R: RoleType> Deserialize for SignedMetadata<R> {
     }
 }
 
-pub trait Metadata<R: RoleType>: Deserialize {}
+pub trait Metadata<R: RoleType>: Deserialize {
+    fn expires(&self) -> &DateTime<UTC>;
+}
 
 pub struct RootMetadata {
     // TODO consistent_snapshot: bool,
-    // TODO expires: DateTime<UTC>,
+    expires: DateTime<UTC>,
     // TODO version: i32,
     pub keys: HashMap<KeyId, Key>,
     root: RoleDefinition,
@@ -133,7 +135,11 @@ impl RootMetadata {
     }
 }
 
-impl Metadata<Root> for RootMetadata {}
+impl Metadata<Root> for RootMetadata {
+    fn expires(&self) -> &DateTime<UTC> {
+        &self.expires
+    }
+}
 
 impl Deserialize for RootMetadata {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
@@ -151,6 +157,11 @@ impl Deserialize for RootMetadata {
             let keys = json::from_value(object.remove("keys")
                     .ok_or_else(|| DeserializeError::custom("Field 'keys' missing"))?).map_err(|e| {
                     DeserializeError::custom(format!("Field 'keys' not a valid key map: {}", e))
+                })?;
+
+            let expires = json::from_value(object.remove("expires")
+                    .ok_or_else(|| DeserializeError::custom("Field 'expires' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'expires did not have a valid format: {}", e))
                 })?;
 
             let mut roles = object.remove("roles")
@@ -185,6 +196,7 @@ impl Deserialize for RootMetadata {
                 })?;
 
             Ok(RootMetadata {
+                expires: expires,
                 keys: keys,
                 root: root,
                 targets: targets,
@@ -206,13 +218,17 @@ pub struct RoleDefinition {
 
 #[derive(Debug)]
 pub struct TargetsMetadata {
-    // TODO expires: DateTime<UTC>,
+    expires: DateTime<UTC>,
     // TODO version: i32,
     pub delegations: Option<Delegations>,
     pub targets: HashMap<String, TargetInfo>,
 }
 
-impl Metadata<Targets> for TargetsMetadata {}
+impl Metadata<Targets> for TargetsMetadata {
+    fn expires(&self) -> &DateTime<UTC> {
+        &self.expires
+    }
+}
 
 impl Deserialize for TargetsMetadata {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
@@ -228,6 +244,12 @@ impl Deserialize for TargetsMetadata {
                 }
                 None => None,
             };
+
+            let expires = json::from_value(object.remove("expires")
+                    .ok_or_else(|| DeserializeError::custom("Field 'expires' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'expires did not have a valid format: {}", e))
+                })?;
+
             match object.remove("targets") {
                 Some(t) => {
                     let targets =
@@ -236,6 +258,7 @@ impl Deserialize for TargetsMetadata {
                             })?;
 
                     Ok(TargetsMetadata {
+                        expires: expires,
                         delegations: delegations,
                         targets: targets,
                     })
@@ -249,23 +272,36 @@ impl Deserialize for TargetsMetadata {
 }
 
 pub struct TimestampMetadata {
-    // TODO expires: DateTime<UTC>,
+    expires: DateTime<UTC>,
     // TODO version: i32,
     meta: HashMap<String, MetadataMetadata>,
 }
 
-impl Metadata<Timestamp> for TimestampMetadata {}
+impl Metadata<Timestamp> for TimestampMetadata {
+    fn expires(&self) -> &DateTime<UTC> {
+        &self.expires
+    }
+}
 
 impl Deserialize for TimestampMetadata {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
+
+            let expires = json::from_value(object.remove("expires")
+                    .ok_or_else(|| DeserializeError::custom("Field 'expires' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'expires did not have a valid format: {}", e))
+                })?;
+
             match object.remove("meta") {
                 Some(m) => {
                     let meta = json::from_value(m).map_err(|e| {
                             DeserializeError::custom(format!("Bad meta-meta format: {}", e))
                         })?;
 
-                    Ok(TimestampMetadata { meta: meta })
+                    Ok(TimestampMetadata {
+                        expires: expires,
+                        meta: meta,
+                    })
                 }
                 _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
             }
@@ -276,7 +312,7 @@ impl Deserialize for TimestampMetadata {
 }
 
 pub struct SnapshotMetadata {
-    // TODO expires: DateTime<UTC>,
+    expires: DateTime<UTC>,
     // TODO version: i32,
 
     // TODO this needs to use something other than MetaMeta
@@ -285,18 +321,30 @@ pub struct SnapshotMetadata {
     meta: HashMap<String, MetadataMetadata>,
 }
 
-impl Metadata<Snapshot> for SnapshotMetadata {}
+impl Metadata<Snapshot> for SnapshotMetadata {
+    fn expires(&self) -> &DateTime<UTC> {
+        &self.expires
+    }
+}
 
 impl Deserialize for SnapshotMetadata {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
+            let expires = json::from_value(object.remove("expires")
+                    .ok_or_else(|| DeserializeError::custom("Field 'expires' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'expires did not have a valid format: {}", e))
+                })?;
+
             match object.remove("meta") {
                 Some(m) => {
                     let meta = json::from_value(m).map_err(|e| {
                             DeserializeError::custom(format!("Bad meta-meta format: {}", e))
                         })?;
 
-                    Ok(SnapshotMetadata { meta: meta })
+                    Ok(SnapshotMetadata {
+                        expires: expires,
+                        meta: meta,
+                    })
                 }
                 _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
             }

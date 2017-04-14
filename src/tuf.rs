@@ -1,3 +1,4 @@
+use chrono::UTC;
 use crypto::digest::Digest;
 use crypto::sha2::{Sha512, Sha256};
 use json;
@@ -55,8 +56,7 @@ impl Tuf {
 
     pub fn initialize(&self) -> Result<(), Error> {
         for dir in vec!["meta", "targets"].iter() {
-            DirBuilder::new()
-                .recursive(true)
+            DirBuilder::new().recursive(true)
                 .create(self.local_path.as_path().join(dir))?
 
             // TODO error if path is not fully owned by the current user
@@ -109,7 +109,13 @@ impl Tuf {
 
         let signed = json::from_slice(&buf)?;
         let safe_bytes = Self::verify_meta::<R>(signed, root)?;
-        Ok(json::from_slice(&safe_bytes)?)
+        let meta: M = json::from_slice(&safe_bytes)?;
+
+        if meta.expires() <= &UTC::now() {
+            return Err(Error::ExpiredMetadata)
+        }
+
+        Ok(meta)
     }
 
     fn verify_meta<R: RoleType>(signed: SignedMetadata<R>,
@@ -169,7 +175,7 @@ impl Tuf {
                 let mut res = targets.targets.keys().cloned().collect::<Vec<String>>();
                 res.sort();
                 res
-            },
+            }
             None => Vec::new(),
         }
     }
