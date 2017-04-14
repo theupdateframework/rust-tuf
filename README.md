@@ -2,6 +2,11 @@
 
 A rust implementation of The Update Framework (TUF).
 
+## Warning: Alpha Software
+
+This is under active development and is not suitable for production use. Further,
+the API is unstable and you should be prepared to refactor on even patch releases.
+
 ## Contributing
 
 Please make all pull requests to the `develop` branch.
