@@ -55,7 +55,7 @@ impl Tuf {
     }
 
     pub fn initialize(&self) -> Result<(), Error> {
-        for dir in vec!["meta", "targets"].iter() {
+        for dir in vec!["metadata", "targets"].iter() {
             DirBuilder::new().recursive(true)
                 .create(self.local_path.as_path().join(dir))?
 

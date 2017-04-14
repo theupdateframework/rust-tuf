@@ -11,17 +11,17 @@ use url::Url;
 fn init() {
     let tempdir = TempDir::new("rust-tuf").expect("couldn't make temp dir");
 
-    for dir in vec!["meta", "targets"].iter() {
+    for dir in vec!["metadata", "targets"].iter() {
         DirBuilder::new()
             .recursive(true)
             .create(tempdir.path().join(dir))
             .expect(&format!("couldn't create path {}:", dir));
     }
 
-    for file in vec!["meta/root.json",
-                     "meta/targets.json",
-                     "meta/timestamp.json",
-                     "meta/snapshot.json",
+    for file in vec!["metadata/root.json",
+                     "metadata/targets.json",
+                     "metadata/timestamp.json",
+                     "metadata/snapshot.json",
                      "targets/hack-eryone.sh"]
         .iter() {
         fs::copy(format!("./tests/repo-1/{}", file),

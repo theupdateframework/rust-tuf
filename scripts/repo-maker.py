@@ -15,7 +15,7 @@ def main(output_dir, root, targets, timestamp, snapshot):
     if not path.exists(output_dir):
         raise Exception('Ouput dir does not exist: {}'.format(output_dir))
 
-    for d in ['keys', 'meta', 'targets']:
+    for d in ['keys', 'metadata', 'targets']:
         os.makedirs(path.join(output_dir, d), exist_ok=True)
 
     (root_priv, root_pub) = get_key(output_dir, 'root', root)
