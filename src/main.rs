@@ -116,17 +116,17 @@ mod test {
     }
 
     fn init_temp(temp: &Path) {
-        for dir in vec!["metadata", "targets"].iter() {
+        for dir in vec!["metadata/latest", "metadata/archive", "targets"].iter() {
             DirBuilder::new()
                 .recursive(true)
                 .create(temp.join(dir))
                 .expect(&format!("couldn't create path {}:", dir));
         }
 
-        for file in vec!["metadata/root.json",
-                         "metadata/targets.json",
-                         "metadata/timestamp.json",
-                         "metadata/snapshot.json",
+        for file in vec!["metadata/latest/root.json",
+                         "metadata/latest/targets.json",
+                         "metadata/latest/timestamp.json",
+                         "metadata/latest/snapshot.json",
                          "targets/big-file.txt",
                          "targets/hack-eryone.sh"]
             .iter() {

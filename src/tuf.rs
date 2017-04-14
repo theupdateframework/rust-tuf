@@ -75,7 +75,7 @@ impl Tuf {
 
     /// Create and verify the necessary directory structure for a TUF repo.
     pub fn initialize(local_path: &PathBuf) -> Result<(), Error> {
-        for dir in vec!["metadata", "targets"].iter() {
+        for dir in vec!["metadata/latest", "metadata/archive", "targets"].iter() {
             DirBuilder::new().recursive(true)
                 .create(local_path.as_path().join(dir))?
 
@@ -137,15 +137,8 @@ impl Tuf {
         Self::load_meta_prefix(local_path, &format!("{}.", num), root)
     }
 
-    fn load_meta_hash<R: RoleType, M: Metadata<R>>(local_path: &Path,
-                                                   hash: &str,
-                                                   root: &RootMetadata)
-                                                   -> Result<M, Error> {
-        Self::load_meta_prefix(local_path, &format!("{}.", hash), root)
-    }
-
     fn unverified_read_root(local_path: &Path) -> Result<RootMetadata, Error> {
-        let path = local_path.join("metadata").join("root.json");
+        let path = local_path.join("metadata/latest").join("root.json");
         let mut file = File::open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
@@ -156,7 +149,7 @@ impl Tuf {
     }
 
     fn read_root_with_keys(local_path: &Path, root_keys: &[Key]) -> Result<RootMetadata, Error> {
-        let path = local_path.join("metadata").join("root.json");
+        let path = local_path.join("metadata/latest").join("root.json");
         let mut file = File::open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
@@ -183,7 +176,7 @@ impl Tuf {
                                                      prefix: &str,
                                                      root: &RootMetadata)
                                                      -> Result<M, Error> {
-        let path = local_path.join("metadata").join(format!("{}{}.json", prefix, R::role()));
+        let path = local_path.join("metadata/latest").join(format!("{}{}.json", prefix, R::role()));
         info!("Reading metadata from local path: {:?}", path);
 
         let mut file = File::open(path)?;

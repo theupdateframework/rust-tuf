@@ -15,7 +15,8 @@ def main(output_dir, root, targets, timestamp, snapshot):
     if not path.exists(output_dir):
         raise Exception('Ouput dir does not exist: {}'.format(output_dir))
 
-    for d in ['keys', 'metadata', 'targets']:
+    for d in ['keys', path.join('metadata', 'latest'),
+              path.join('metadata', 'archive'), 'targets']:
         os.makedirs(path.join(output_dir, d), exist_ok=True)
 
     (root_priv, root_pub) = get_key(output_dir, 'root', root)
@@ -87,7 +88,7 @@ def write_meta(output_dir, role, meta):
     if not isinstance(meta, bytes):
         raise Exception('meta needs to be bytes')
 
-    with open(path.join(output_dir, 'metadata', '{}.json'.format(role)), 'wb') as f:
+    with open(path.join(output_dir, 'metadata', 'latest', '{}.json'.format(role)), 'wb') as f:
         f.write(meta)
 
 
