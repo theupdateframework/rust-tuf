@@ -147,9 +147,6 @@ impl Tuf {
                 m
             });
 
-        // count down to zero and not up to the threshold to:
-        //   1) short curcuit complete
-        //   2) avoid ever comparing 0 >= 0 (horribly unsafe)
         let mut threshold = role.threshold;
         for sig in signed.signatures.iter() {
             if let Some(key) = keys.get(&sig.key_id) {
@@ -292,8 +289,10 @@ impl ConfigBuilder {
     }
 
     pub fn finish(self) -> Result<Config, Error> {
+        // TODO verify url scheme is something we support
         let url = self.url
             .ok_or_else(|| Error::InvalidConfig("Repository URL was not set".to_string()))?;
+
         let local_path = self.local_path
             .ok_or_else(|| Error::InvalidConfig("Local path was not set".to_string()))?;
 
