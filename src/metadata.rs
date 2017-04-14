@@ -1,7 +1,9 @@
 use chrono::{DateTime, UTC};
+use crypto::digest::Digest;
 use crypto::ed25519;
+use crypto::sha2::Sha256;
 use json;
-use rustc_serialize::hex::FromHex;
+use rustc_serialize::hex::{FromHex, ToHex};
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use std::cmp::{Ord, Ordering};
 use std::collections::HashMap;
@@ -12,7 +14,7 @@ use std::str::FromStr;
 
 use error::Error;
 
-#[derive(Eq, PartialEq, Deserialize)]
+#[derive(Eq, PartialEq, Deserialize, Debug)]
 pub enum Role {
     Root,
     Targets,
@@ -393,12 +395,13 @@ impl Deserialize for Signature {
 }
 
 
+/// A public key
 #[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct Key {
     #[serde(rename = "keytype")]
-    typ: KeyType,
+    pub typ: KeyType,
     #[serde(rename = "keyval")]
-    value: KeyValue,
+    pub value: KeyValue,
 }
 
 impl Key {
@@ -418,6 +421,7 @@ impl Key {
     }
 }
 
+/// Types of public keys.
 #[derive(Clone, PartialEq, Debug)]
 pub enum KeyType {
     Ed25519,
@@ -455,8 +459,20 @@ impl Deserialize for KeyType {
 }
 
 
+/// The raw bytes of a public key.
 #[derive(Clone, PartialEq, Debug)]
-pub struct KeyValue(Vec<u8>);
+pub struct KeyValue(pub Vec<u8>);
+
+impl KeyValue {
+    /// Calculates the `KeyId` of the public key.
+    pub fn key_id(&self) -> KeyId {
+        let mut digest = Sha256::new();
+        let mut result = vec![0; digest.output_bytes()];
+        digest.input(&self.0);
+        digest.result(&mut result);
+        KeyId(result.to_hex())
+    }
+}
 
 impl Deserialize for KeyValue {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
@@ -484,8 +500,9 @@ impl Deserialize for KeyValue {
 }
 
 
+/// The hex encoded ID of a public key.
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
-pub struct KeyId(String);
+pub struct KeyId(pub String);
 
 impl Deserialize for KeyId {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {

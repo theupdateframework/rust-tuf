@@ -87,7 +87,7 @@ def write_meta(output_dir, role, meta):
     if not isinstance(meta, bytes):
         raise Exception('meta needs to be bytes')
 
-    with open(path.join(output_dir, 'meta', '{}.json'.format(role)), 'wb') as f:
+    with open(path.join(output_dir, 'metadata', '{}.json'.format(role)), 'wb') as f:
         f.write(meta)
 
 
@@ -257,7 +257,7 @@ def sha512(byts):
 
 def key_id(pub):
     h = hashlib.sha256()
-    h.update(pub.encode('utf-8'))  # TODO pretty sure this is wrong according to the spec
+    h.update(binascii.unhexlify(pub))
     return h.hexdigest()
 
 

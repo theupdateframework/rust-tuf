@@ -13,7 +13,7 @@ use cjson;
 use error::Error;
 use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, SignedMetadata,
                RootMetadata, TargetsMetadata, TimestampMetadata, SnapshotMetadata, HashType,
-               HashValue, KeyId};
+               HashValue, KeyId, Key};
 
 pub struct Tuf {
     url: Url,
@@ -28,11 +28,11 @@ impl Tuf {
     // TODO it should be possible to use Tuf::new() and /then/ tuf.initialize()
     // Right now ::new fails if the paths don't exist.
     pub fn new(config: Config) -> Result<Self, Error> {
-        // TODO don't do an unverified root read, but make someone hard code keys
-        // for the first time around
+        // TODO have this try local then try from the URL since things might not be initialized
         let root = {
-            let scary_bad_root = Self::unverified_read_root(&config.local_path)?;
-            Self::load_metadata::<Root, RootMetadata>(&config.local_path, &scary_bad_root)?
+            let root = Self::read_root(&config.local_path, &config.root_keys)?;
+            // pass it back through the main path to ensure consistency
+            Self::load_metadata::<Root, RootMetadata>(&config.local_path, &root)?
         };
 
         let targets = Self::load_metadata::<Targets, TargetsMetadata>(&config.local_path, &root)?;
@@ -85,22 +85,35 @@ impl Tuf {
         Self::load_meta_prefix(local_path, &format!("{}.", hash), root)
     }
 
-    fn unverified_read_root(local_path: &Path) -> Result<RootMetadata, Error> {
-        let path = local_path.join("meta").join("root.json");
+    fn read_root(local_path: &Path, root_keys: &[Key]) -> Result<RootMetadata, Error> {
+        let path = local_path.join("metadata").join("root.json");
         let mut file = File::open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
 
-        let signed: SignedMetadata<Root> = json::from_slice(&buf)?;
-        let root_str = signed.signed.to_string();
-        Ok(json::from_str(&root_str)?)
+        // TODO once serialize is implemented for all the types, don't use this
+        // json manipulation mess here
+        let mut signed = json::from_slice::<SignedMetadata<Root>>(&buf)?;
+        if let json::Value::Object(ref mut object) = signed.signed {
+            if let Some(&mut json::Value::Object(ref mut roles)) = object.get_mut("roles") {
+                if let Some(&mut json::Value::Object(ref mut root)) = roles.get_mut("root") {
+                    if let Some(&mut json::Value::Array(ref mut key_ids)) = root.get_mut("keyids") {
+                        key_ids.clear();
+                        // TODO unwrap
+                        key_ids.extend(root_keys.iter().map(|k| json!(k.value.key_id().0)));
+                    }
+                }
+            }
+        }
+
+        Ok(json::from_value(signed.signed)?)
     }
 
     fn load_meta_prefix<R: RoleType, M: Metadata<R>>(local_path: &Path,
                                                      prefix: &str,
                                                      root: &RootMetadata)
                                                      -> Result<M, Error> {
-        let path = local_path.join("meta").join(format!("{}{}.json", prefix, R::role()));
+        let path = local_path.join("metadata").join(format!("{}{}.json", prefix, R::role()));
         info!("Reading metadata from local path: {:?}", path);
 
         let mut file = File::open(path)?;
@@ -112,7 +125,7 @@ impl Tuf {
         let meta: M = json::from_slice(&safe_bytes)?;
 
         if meta.expires() <= &UTC::now() {
-            return Err(Error::ExpiredMetadata)
+            return Err(Error::ExpiredMetadata);
         }
 
         Ok(meta)
@@ -147,9 +160,19 @@ impl Tuf {
                 m
             });
 
+        println!("role keys {:?}", role.key_ids);
+        println!("keys {:?}", keys);
+
         let mut threshold = role.threshold;
         for sig in signed.signatures.iter() {
+            debug!("Verifying role {:?} with key ID {:?}",
+                   R::role(),
+                   sig.key_id);
             if let Some(key) = keys.get(&sig.key_id) {
+                debug!("Verifying role {:?} with key ID {:?}",
+                       R::role(),
+                       sig.key_id);
+
                 match key.verify(&sig.method, &bytes, &sig.sig) {
                     Ok(()) => threshold -= 1,
                     Err(e) => warn!("Failed to verify with key ID {:?}: {:?}", &sig.key_id, e),
@@ -256,6 +279,7 @@ impl Tuf {
 pub struct Config {
     url: Url,
     local_path: PathBuf,
+    root_keys: Vec<Key>,
 }
 
 impl Config {
@@ -268,6 +292,7 @@ impl Config {
 pub struct ConfigBuilder {
     url: Option<Url>,
     local_path: Option<PathBuf>,
+    root_keys: Vec<Key>,
 }
 
 impl ConfigBuilder {
@@ -275,19 +300,29 @@ impl ConfigBuilder {
         ConfigBuilder {
             url: None,
             local_path: None,
+            root_keys: Vec::new(),
         }
     }
 
+    /// The remote URL of the TUF repo.
     pub fn url(mut self, url: Url) -> Self {
         self.url = Some(url);
         self
     }
 
+    /// The local path for metadata and target storage.
     pub fn local_path(mut self, local_path: PathBuf) -> Self {
         self.local_path = Some(local_path);
         self
     }
 
+    /// The initial trusted root keys.
+    pub fn root_keys(mut self, root_keys: Vec<Key>) -> Self {
+        self.root_keys = root_keys;
+        self
+    }
+
+    /// Verify the configuration.
     pub fn finish(self) -> Result<Config, Error> {
         // TODO verify url scheme is something we support
         let url = self.url
@@ -296,9 +331,14 @@ impl ConfigBuilder {
         let local_path = self.local_path
             .ok_or_else(|| Error::InvalidConfig("Local path was not set".to_string()))?;
 
+        if self.root_keys.is_empty() {
+            return Err(Error::InvalidConfig("No root keys supplied".to_string()));
+        }
+
         Ok(Config {
             url: url,
             local_path: local_path,
+            root_keys: self.root_keys,
         })
     }
 }

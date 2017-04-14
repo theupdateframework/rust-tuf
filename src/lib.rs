@@ -7,6 +7,7 @@ extern crate rustc_serialize;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
 extern crate serde_json as json;
 extern crate url;
 
@@ -17,3 +18,6 @@ mod tuf;
 
 pub use tuf::*;
 pub use error::*;
+pub mod meta {
+    pub use metadata::{Key, KeyValue, KeyType};
+}
