@@ -1,7 +1,8 @@
 use chrono::{DateTime, UTC};
-use crypto::digest::Digest;
-use crypto::ed25519;
-use crypto::sha2::Sha256;
+use ring;
+use ring::digest::{digest, SHA256};
+use ring::signature::{verify, ED25519};
+use untrusted::Input;
 use json;
 use rustc_serialize::hex::{FromHex, ToHex};
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
@@ -488,11 +489,7 @@ pub struct KeyValue(pub Vec<u8>);
 impl KeyValue {
     /// Calculates the `KeyId` of the public key.
     pub fn key_id(&self) -> KeyId {
-        let mut digest = Sha256::new();
-        let mut result = vec![0; digest.output_bytes()];
-        digest.input(&self.0);
-        digest.result(&mut result);
-        KeyId(result.to_hex())
+        KeyId(digest(&SHA256, &self.0).as_ref().to_hex())
     }
 }
 
@@ -565,7 +562,10 @@ impl SignatureScheme {
     fn verify(&self, pub_key: &KeyValue, msg: &[u8], sig: &SignatureValue) -> Result<(), Error> {
         match self {
             &SignatureScheme::Ed25519 => {
-                if ed25519::verify(msg, &pub_key.0, &sig.0) {
+                if ring::signature::verify(
+                    &ED25519,
+                    Input::from(&pub_key.0), Input::from(msg), Input::from(&sig.0)
+                ).is_ok() {
                     Ok(())
                 } else {
                     Err(Error::VerificationFailure("Bad signature".into()))
