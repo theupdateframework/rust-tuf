@@ -1,6 +1,7 @@
 use chrono::UTC;
-use ring::digest::{SHA256, SHA512, Context};
 use json;
+use ring::digest;
+use ring::digest::{SHA256, SHA512};
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, DirBuilder};
 use std::io::Read;
@@ -291,13 +292,13 @@ impl Tuf {
         match hash_alg {
             HashType::Sha512 => {
                 Self::read_and_verify(&mut file,
-                                      Context::new(&SHA512),
+                                      digest::Context::new(&SHA512),
                                       target_meta.length,
                                       &expected_hash.0)
             }
             HashType::Sha256 => {
                 Self::read_and_verify(&mut file,
-                                      Context::new(&SHA256),
+                                      digest::Context::new(&SHA256),
                                       target_meta.length,
                                       &expected_hash.0)
             }
@@ -306,7 +307,7 @@ impl Tuf {
     }
 
     fn read_and_verify<R: Read>(input: &mut R,
-                                mut context: Context,
+                                mut context: digest::Context,
                                 size: i64,
                                 expected_hash: &[u8])
                                 -> Result<(), Error> {
