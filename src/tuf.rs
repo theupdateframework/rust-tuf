@@ -223,28 +223,29 @@ impl Tuf {
                 m
             });
 
-        let mut threshold = role.threshold;
+        if role.threshold <= 0 {
+            return Err(Error::VerificationFailure("Threshold not >= 1".into()));
+        }
+
+        let mut valid_sigs = 0;
         for sig in signed.signatures.iter() {
-            debug!("Verifying role {:?} with key ID {:?}",
-                   R::role(),
-                   sig.key_id);
             if let Some(key) = keys.get(&sig.key_id) {
                 debug!("Verifying role {:?} with key ID {:?}",
                        R::role(),
                        sig.key_id);
 
                 match key.verify(&sig.method, &bytes, &sig.sig) {
-                    Ok(()) => threshold -= 1,
+                    Ok(()) => valid_sigs += 1,
                     Err(e) => warn!("Failed to verify with key ID {:?}: {:?}", &sig.key_id, e),
                 }
-                if threshold == 0 {
+                if valid_sigs == role.threshold {
                     return Ok(bytes);
                 }
             }
         }
 
         Err(Error::VerificationFailure(format!("Threshold not met: {}/{}",
-                                               role.threshold - threshold,
+                                               valid_sigs,
                                                role.threshold)))
     }
 

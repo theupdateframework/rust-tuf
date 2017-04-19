@@ -215,11 +215,38 @@ impl Deserialize for RootMetadata {
     }
 }
 
-#[derive(Clone, PartialEq, Debug, Deserialize)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct RoleDefinition {
-    #[serde(rename = "keyids")]
     pub key_ids: Vec<KeyId>,
     pub threshold: i32,
+}
+
+impl Deserialize for RoleDefinition {
+    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
+            let key_ids = json::from_value(object.remove("keyids")
+                    .ok_or_else(|| DeserializeError::custom("Field 'keyids' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'keyids' not a valid array: {}", e))
+                })?;
+
+            let threshold = json::from_value(object.remove("threshold")
+                    .ok_or_else(|| DeserializeError::custom("Field 'threshold' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'threshold' not a an int: {}", e))
+                })?;
+
+            if threshold <= 0 {
+                return Err(DeserializeError::custom("'threshold' must be >= 1"));
+            }
+
+
+            Ok(RoleDefinition {
+                key_ids: key_ids,
+                threshold: threshold,
+            })
+        } else {
+            Err(DeserializeError::custom("Role definition was not an object"))
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -286,7 +313,7 @@ impl Deserialize for TargetsMetadata {
 pub struct TimestampMetadata {
     expires: DateTime<UTC>,
     pub version: i32,
-    meta: HashMap<String, MetadataMetadata>,
+    pub meta: HashMap<String, MetadataMetadata>,
 }
 
 impl Metadata<Timestamp> for TimestampMetadata {
@@ -336,7 +363,7 @@ pub struct SnapshotMetadata {
     // TODO this needs to use something other than MetaMeta
     // because the spec says that hash/len are only mandatory for Root role
     // but I'm lazy for now just to get this up and running
-    meta: HashMap<String, MetadataMetadata>,
+    pub meta: HashMap<String, MetadataMetadata>,
 }
 
 impl Metadata<Snapshot> for SnapshotMetadata {
@@ -602,9 +629,9 @@ impl Deserialize for SignatureScheme {
 
 #[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct MetadataMetadata {
-    length: i64,
-    hashes: HashMap<HashType, HashValue>,
-    version: i32,
+    pub length: i64,
+    pub hashes: HashMap<HashType, HashValue>,
+    pub version: i32,
 }
 
 
