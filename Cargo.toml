@@ -25,7 +25,6 @@ doc = false
 required-features = [ "cli" ]
 
 [features]
-default = [ "cli" ]
 cli = [ "clap" ]
 
 [dependencies]
