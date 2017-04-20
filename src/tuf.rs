@@ -1,7 +1,7 @@
 use chrono::UTC;
-use crypto::digest::Digest;
-use crypto::sha2::{Sha512, Sha256};
 use json;
+use ring::digest;
+use ring::digest::{SHA256, SHA512};
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, DirBuilder};
 use std::io::Read;
@@ -293,13 +293,13 @@ impl Tuf {
         match hash_alg {
             HashType::Sha512 => {
                 Self::read_and_verify(&mut file,
-                                      &mut Sha512::new(),
+                                      digest::Context::new(&SHA512),
                                       target_meta.length,
                                       &expected_hash.0)
             }
             HashType::Sha256 => {
                 Self::read_and_verify(&mut file,
-                                      &mut Sha256::new(),
+                                      digest::Context::new(&SHA256),
                                       target_meta.length,
                                       &expected_hash.0)
             }
@@ -307,18 +307,18 @@ impl Tuf {
         }
     }
 
-    fn read_and_verify<R: Read, D: Digest>(input: &mut R,
-                                           digest: &mut D,
-                                           size: i64,
-                                           expected_hash: &[u8])
-                                           -> Result<(), Error> {
+    fn read_and_verify<R: Read>(input: &mut R,
+                                mut context: digest::Context,
+                                size: i64,
+                                expected_hash: &[u8])
+                                -> Result<(), Error> {
         let mut buf = [0; 1024];
         let mut bytes_left = size;
 
         loop {
             match input.read(&mut buf) {
                 Ok(read_bytes) => {
-                    digest.input(&buf[0..read_bytes]);
+                    context.update(&buf[0..read_bytes]);
                     bytes_left -= read_bytes as i64;
                     if bytes_left == 0 {
                         break;
@@ -330,10 +330,9 @@ impl Tuf {
             }
         }
 
-        let mut generated_hash = vec![0; digest.output_bytes()];
-        digest.result(&mut generated_hash);
+        let generated_hash = context.finish();
 
-        if generated_hash.as_slice() == expected_hash {
+        if generated_hash.as_ref() == expected_hash {
             Ok(())
         } else {
             Err(Error::TargetHashMismatch)
