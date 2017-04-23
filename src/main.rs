@@ -1,4 +1,7 @@
 extern crate clap;
+extern crate env_logger;
+#[macro_use]
+extern crate log;
 #[cfg(test)]
 extern crate tempdir;
 extern crate tuf as _tuf;
@@ -13,10 +16,12 @@ use url::Url;
 
 fn main() {
     let matches = parser().get_matches();
+    env_logger::init().unwrap();
+
     match run_main(matches) {
         Ok(()) => std::process::exit(0),
         Err(e) => {
-            println!("{:?}", e);
+            error!("{:?}", e);
             std::process::exit(1);
         }
     }
@@ -34,11 +39,9 @@ fn run_main(matches: ArgMatches) -> Result<(), Error> {
         cmd_init(&path)
     } else if let Some(_) = matches.subcommand_matches("list") {
         let mut tuf = Tuf::new(config).unwrap(); // TODO unwrap
-        tuf.update().unwrap(); // TODO unwrap
         cmd_list(&mut tuf)
     } else if let Some(matches) = matches.subcommand_matches("verify") {
         let mut tuf = Tuf::new(config).unwrap(); // TODO unwrap
-        tuf.update().unwrap(); // TODO unwrap
         cmd_verify(&mut tuf, matches.value_of("target").unwrap())
     } else {
         unreachable!() // because of AppSettings::SubcommandRequiredElseHelp

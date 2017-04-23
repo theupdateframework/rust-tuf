@@ -2,7 +2,7 @@ use chrono::{DateTime, UTC};
 use json;
 use ring;
 use ring::digest::{digest, SHA256};
-use ring::signature::{verify, ED25519};
+use ring::signature::ED25519;
 use rustc_serialize::hex::{FromHex, ToHex};
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use std::collections::HashMap;
@@ -589,10 +589,11 @@ impl SignatureScheme {
     fn verify(&self, pub_key: &KeyValue, msg: &[u8], sig: &SignatureValue) -> Result<(), Error> {
         match self {
             &SignatureScheme::Ed25519 => {
-                ring::signature::verify(
-                    &ED25519,
-                    Input::from(&pub_key.0), Input::from(msg), Input::from(&sig.0)
-                ).map_err(|_| Error::VerificationFailure("Bad signature".into()))
+                ring::signature::verify(&ED25519,
+                                        Input::from(&pub_key.0),
+                                        Input::from(msg),
+                                        Input::from(&sig.0))
+                    .map_err(|_| Error::VerificationFailure("Bad signature".into()))
             }
             &SignatureScheme::Unsupported(ref s) => {
                 Err(Error::UnsupportedSignatureScheme(s.clone()))

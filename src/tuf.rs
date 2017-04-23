@@ -14,6 +14,8 @@ use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, Sig
                RootMetadata, TargetsMetadata, TimestampMetadata, SnapshotMetadata, HashType,
                HashValue, KeyId, Key};
 
+
+/// Interface for interacting with TUF repositories.
 pub struct Tuf {
     url: Url,
     local_path: PathBuf,
@@ -33,23 +35,17 @@ impl Tuf {
             Self::load_metadata::<Root, RootMetadata>(&config.local_path, &root)?
         };
 
-        let targets = Self::load_metadata::<Targets, TargetsMetadata>(&config.local_path, &root)?;
-        let timestamp = Self::load_metadata::<Timestamp, TimestampMetadata>(&config.local_path,
-                                                                            &root)?;
-        let snapshot = Self::load_metadata::<Snapshot, SnapshotMetadata>(&config.local_path,
-                                                                         &root)?;
-
-        // TODO cross verification of all the metadata against each other
-        // TODO check the timestamps aren't expired
-
-        Ok(Tuf {
+        let mut tuf = Tuf {
             url: config.url,
             local_path: config.local_path,
             root: root,
-            targets: Some(targets), // TODO we are wrongly assuming that this is always present
-            timestamp: Some(timestamp), // TODO we are wrongly assuming that this is always present
-            snapshot: Some(snapshot), // TODO we are wrongly assuming that this is always present
-        })
+            targets: None,
+            timestamp: None,
+            snapshot: None,
+        };
+
+        tuf.update_local()?;
+        Ok(tuf)
     }
 
     /// Create a `Tuf` struct from a new repo. Must contain the `root.json`. The root is trusted
@@ -63,14 +59,17 @@ impl Tuf {
             Self::load_metadata::<Root, RootMetadata>(&config.local_path, &root)?
         };
 
-        Ok(Tuf {
+        let mut tuf = Tuf {
             url: config.url,
             local_path: config.local_path,
             root: root,
             targets: None,
             timestamp: None,
             snapshot: None,
-        })
+        };
+        tuf.update_local()?;
+
+        Ok(tuf)
     }
 
     /// Create and verify the necessary directory structure for a TUF repo.
@@ -85,8 +84,7 @@ impl Tuf {
         Ok(())
     }
 
-    /// Update the current metadata from local and remote sources.
-    pub fn update(&mut self) -> Result<(), Error> {
+    fn update_local(&mut self) -> Result<(), Error> {
         let timestamp = Self::load_metadata::<Timestamp, TimestampMetadata>(&self.local_path,
                                                                             &self.root)?;
         match self.timestamp {
@@ -97,7 +95,15 @@ impl Tuf {
             _ => self.timestamp = Some(timestamp),
         }
 
-        // TODO load the version named in timestamp metadata
+        if let Some(ref timestamp) = self.timestamp {
+            if let Some(ref timestamp_meta) = timestamp.meta.get("snapshot.json") {
+                if timestamp_meta.version > timestamp.version {
+                    info!("Snapshot metadata is up to date");
+                    return Ok(());
+                }
+            }
+        }
+
         let snapshot = Self::load_metadata::<Snapshot, SnapshotMetadata>(&self.local_path,
                                                                          &self.root)?;
         match self.snapshot {
@@ -108,7 +114,16 @@ impl Tuf {
             _ => self.snapshot = Some(snapshot),
         }
 
-        // TODO load the version named in snapshot metadata
+        // TODO this needs to be extended once we do delegations
+        if let Some(ref snapshot) = self.snapshot {
+            if let Some(ref snapshot_meta) = snapshot.meta.get("targets.json") {
+                if snapshot_meta.version > snapshot.version {
+                    info!("Timestamp metadata is up to date");
+                    return Ok(());
+                }
+            }
+        }
+
         let targets = Self::load_metadata::<Targets, TargetsMetadata>(&self.local_path,
                                                                       &self.root)?;
         match self.targets {
@@ -119,6 +134,9 @@ impl Tuf {
             _ => self.targets = Some(targets),
         }
 
+        // TODO check that targets hash/size matches what snapshot says
+
+        // TODO update root
         // TODO check remote
 
         Ok(())

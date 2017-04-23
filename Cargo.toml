@@ -25,11 +25,12 @@ doc = false
 required-features = [ "cli" ]
 
 [features]
-cli = [ "clap" ]
+cli = [ "clap", "env_logger" ]
 
 [dependencies]
 chrono = { version = "0.3", features = [ "serde" ] }
 clap = { version = "2.23", optional = true }
+env_logger = { version = "0.4", optional = true }
 itoa = "0.3"
 log = "0.3"
 ring = "0.7"
