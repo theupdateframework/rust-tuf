@@ -1,9 +1,9 @@
-extern crate rustc_serialize;
+extern crate data_encoding;
 extern crate tempdir;
 extern crate tuf;
 extern crate url;
 
-use rustc_serialize::hex::FromHex;
+use data_encoding::HEXLOWER;
 use std::fs::{self, DirBuilder};
 use tempdir::TempDir;
 use tuf::{Tuf, Config};
@@ -35,8 +35,7 @@ fn init() {
 
     let root_keys = vec![Key {
                              typ: KeyType::Ed25519,
-                             value: KeyValue(include_str!("./repo-1/keys/root.pub")
-                                 .from_hex()
+                             value: KeyValue(HEXLOWER.decode(include_str!("./repo-1/keys/root.pub").as_ref())
                                  .expect("key value not hex")),
                          }];
 
