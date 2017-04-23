@@ -1,9 +1,9 @@
 use chrono::{DateTime, UTC};
+use data_encoding::HEXLOWER;
 use json;
 use ring;
 use ring::digest::{digest, SHA256};
 use ring::signature::ED25519;
-use rustc_serialize::hex::{FromHex, ToHex};
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter, Debug};
@@ -516,7 +516,7 @@ pub struct KeyValue(pub Vec<u8>);
 impl KeyValue {
     /// Calculates the `KeyId` of the public key.
     pub fn key_id(&self) -> KeyId {
-        KeyId(digest(&SHA256, &self.0).as_ref().to_hex())
+        KeyId(HEXLOWER.encode(digest(&SHA256, &self.0).as_ref()))
     }
 }
 
@@ -527,7 +527,7 @@ impl Deserialize for KeyValue {
                 // TODO this is shit because we can't tell what type of key it is
                 // e.g., ed25519 => hex, rsa => PEM
                 // need to add this into the type/struct so it can be accessed here
-                s.from_hex()
+                HEXLOWER.decode(s.as_ref())
                     .map(KeyValue)
                     .map_err(|e| DeserializeError::custom(format!("Key value was not hex: {}", e)))
             }
@@ -567,7 +567,7 @@ impl Deserialize for SignatureValue {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
         match Deserialize::deserialize(de)? {
             json::Value::String(ref s) => {
-                s.from_hex()
+                HEXLOWER.decode(s.as_ref())
                     .map(SignatureValue)
                     .map_err(|e| {
                         DeserializeError::custom(format!("Signature value was not hex: {}", e))
@@ -676,7 +676,7 @@ impl Deserialize for HashValue {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
         match Deserialize::deserialize(de)? {
             json::Value::String(ref s) => {
-                s.from_hex()
+                HEXLOWER.decode(s.as_ref())
                     .map(HashValue)
                     .map_err(|e| DeserializeError::custom(format!("Hash value was not hex: {}", e)))
             }
