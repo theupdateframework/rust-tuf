@@ -1,2 +1,0 @@
-canonicaljson
-ed25519

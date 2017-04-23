@@ -1,0 +1,3 @@
+[submodule "tests/tuf-test-vectors"]
+	path = tests/tuf-test-vectors
+	url = https://github.com/heartsucker/tuf-test-vectors.git

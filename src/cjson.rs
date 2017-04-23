@@ -209,7 +209,7 @@ mod test {
 
     #[test]
     fn root_json() {
-        let mut file = File::open("./tests/repo-1/metadata/latest/root.json")
+        let mut file = File::open("./tests/cjson/root.json")
             .expect("couldn't open root.json");
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).expect("couldn't read root.json");

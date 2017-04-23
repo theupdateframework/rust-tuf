@@ -11,6 +11,7 @@ use std::marker::PhantomData;
 use std::str::FromStr;
 use untrusted::Input;
 
+use cjson::canonicalize;
 use error::Error;
 
 #[derive(Eq, PartialEq, Deserialize, Debug)]
@@ -101,11 +102,11 @@ impl<R: RoleType> Deserialize for SignedMetadata<R> {
                         signed: v.clone(),
                         _role: PhantomData,
                     })
-                }
-                _ => unimplemented!(), // TODO
+                },
+                _ => Err(DeserializeError::custom("Metadata missing 'signed' or 'signatures' section"))
             }
         } else {
-            unimplemented!() // TODO
+            Err(DeserializeError::custom("Metadata was not an object"))
         }
     }
 }
@@ -114,6 +115,8 @@ pub trait Metadata<R: RoleType>: Deserialize {
     fn expires(&self) -> &DateTime<UTC>;
 }
 
+
+#[derive(Debug)]
 pub struct RootMetadata {
     // TODO consistent_snapshot: bool,
     expires: DateTime<UTC>,
@@ -311,6 +314,8 @@ impl Deserialize for TargetsMetadata {
     }
 }
 
+
+#[derive(Debug)]
 pub struct TimestampMetadata {
     expires: DateTime<UTC>,
     pub version: i32,
@@ -357,14 +362,12 @@ impl Deserialize for TimestampMetadata {
     }
 }
 
+
+#[derive(Debug)]
 pub struct SnapshotMetadata {
     expires: DateTime<UTC>,
     pub version: i32,
-
-    // TODO this needs to use something other than MetaMeta
-    // because the spec says that hash/len are only mandatory for Root role
-    // but I'm lazy for now just to get this up and running
-    pub meta: HashMap<String, MetadataMetadata>,
+    pub meta: HashMap<String, SnapshotMetadataMetadata>,
 }
 
 impl Metadata<Snapshot> for SnapshotMetadata {
@@ -516,7 +519,10 @@ pub struct KeyValue(pub Vec<u8>);
 impl KeyValue {
     /// Calculates the `KeyId` of the public key.
     pub fn key_id(&self) -> KeyId {
-        KeyId(HEXLOWER.encode(digest(&SHA256, &self.0).as_ref()))
+        // TODO this only works because we're using ed25519
+        // and this will break when we add RSA.
+        let key_value_hex = canonicalize(json!(HEXLOWER.encode(&self.0))).unwrap(); // TODO unwrap
+        KeyId(HEXLOWER.encode(digest(&SHA256, &key_value_hex).as_ref()))
     }
 }
 
@@ -628,6 +634,14 @@ impl Deserialize for SignatureScheme {
 pub struct MetadataMetadata {
     pub length: i64,
     pub hashes: HashMap<HashType, HashValue>,
+    pub version: i32,
+}
+
+
+#[derive(Clone, PartialEq, Debug, Deserialize)]
+pub struct SnapshotMetadataMetadata {
+    pub length: Option<i64>,
+    pub hashes: Option<HashMap<HashType, HashValue>>,
     pub version: i32,
 }
 

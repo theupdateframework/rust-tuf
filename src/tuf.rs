@@ -16,6 +16,7 @@ use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, Sig
 
 
 /// Interface for interacting with TUF repositories.
+#[derive(Debug)]
 pub struct Tuf {
     url: Url,
     local_path: PathBuf,
@@ -237,6 +238,8 @@ impl Tuf {
             .fold(HashMap::new(), |mut m, (id, k)| {
                 if let Some(key) = k {
                     m.insert(id, key);
+                } else {
+                    debug!("Unknown key ID: {:?}", id);
                 }
                 m
             });
@@ -253,7 +256,10 @@ impl Tuf {
                        sig.key_id);
 
                 match key.verify(&sig.method, &bytes, &sig.sig) {
-                    Ok(()) => valid_sigs += 1,
+                    Ok(()) => {
+                        debug!("Good signature from key ID {:?}", sig.key_id);
+                        valid_sigs += 1;
+                    }
                     Err(e) => warn!("Failed to verify with key ID {:?}: {:?}", &sig.key_id, e),
                 }
                 if valid_sigs == role.threshold {
@@ -304,7 +310,7 @@ impl Tuf {
             })
             .ok_or_else(|| Error::NoSupportedHashAlgorithms)?;
 
-        let path = self.local_path.join("targets").join(target);
+        let path = self.local_path.join(target);
         info!("Reading target from local path: {:?}", path);
         let mut file = File::open(path)?;
 
