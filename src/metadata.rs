@@ -1,9 +1,9 @@
 use chrono::{DateTime, UTC};
+use data_encoding::HEXLOWER;
 use json;
 use ring;
 use ring::digest::{digest, SHA256};
 use ring::signature::ED25519;
-use data_encoding::HEXLOWER;
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter, Debug};
