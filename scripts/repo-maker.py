@@ -53,7 +53,7 @@ def get_key(output_dir, role, key_type):
 
             with open(path.join(output_dir, 'keys', '{}.pub'.format(role)), 'r') as f:
                 pub = f.read()
-        except IOError:
+        except FileNotFoundError:
             priv, pub = ed25519.create_keypair()
 
             priv = binascii.hexlify(priv.to_bytes()).decode('utf-8')
@@ -194,7 +194,7 @@ def make_targets(output_dir, targets, targets_priv, targets_pub):
 
 def make_snapshot(snapshot, snapshot_priv, snapshot_pub, root_meta, targets_meta):
     signed = {
-        '_type': 'Targets',
+        '_type': 'Snapshot',
         'expires': '2038-01-19T03:14:06Z',
         'version': 1,
         'meta': {
