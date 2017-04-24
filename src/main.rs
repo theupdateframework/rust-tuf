@@ -119,6 +119,8 @@ mod test {
     }
 
     fn init_temp(temp: &Path) {
+        let vector_path = "./tests/tuf-test-vectors/vectors/001";
+
         for dir in vec!["metadata/latest", "metadata/archive", "targets"].iter() {
             DirBuilder::new()
                 .recursive(true)
@@ -126,19 +128,22 @@ mod test {
                 .expect(&format!("couldn't create path {}:", dir));
         }
 
-        for file in vec!["metadata/latest/root.json",
-                         "metadata/latest/targets.json",
-                         "metadata/latest/timestamp.json",
-                         "metadata/latest/snapshot.json",
-                         "targets/big-file.txt",
-                         "targets/hack-eryone.sh"]
+        for file in vec!["root.json",
+                         "targets.json",
+                         "timestamp.json",
+                         "snapshot.json"]
             .iter() {
-            fs::copy(format!("./tests/repo-1/{}", file), temp.join(file))
+            fs::copy(format!("{}/repo/{}", vector_path, file),
+                     temp.join("metadata").join("latest").join(file))
                 .expect(&format!("copy failed: {}", file));
         }
+
+        fs::copy(format!("{}/repo/targets/file.txt", vector_path),
+                 temp.join("targets").join("file.txt"))
+                .expect(&format!("copy failed for target"));
     }
 
-    #[ignore]
+    #[test]
     fn run_verify() {
         let temp = TempDir::new("rust-tuf").expect("couldn't make temp dir");
         init_temp(temp.path());
@@ -150,7 +155,7 @@ mod test {
                                         "--path",
                                         temp.path().to_str().expect("path not utf-8"),
                                         "verify",
-                                        "big-file.txt"])
+                                        "targets/file.txt"])
             .expect("parse error");
 
         assert_eq!(run_main(matches), Ok(()));
