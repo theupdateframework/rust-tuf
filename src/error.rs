@@ -19,6 +19,7 @@ pub enum Error {
     UnknownKey(KeyId),
     UnknownRole(String),
     UnknownTarget,
+    UnmetThreshold(Role),
     UnsupportedKeyType(String),
     UnsupportedSignatureScheme(String),
     VerificationFailure(String),

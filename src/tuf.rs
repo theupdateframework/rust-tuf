@@ -268,9 +268,8 @@ impl Tuf {
             }
         }
 
-        Err(Error::VerificationFailure(format!("Threshold not met: {}/{}",
-                                               valid_sigs,
-                                               role.threshold)))
+        info!("Threshold not met: {}/{}", valid_sigs, role.threshold);
+        return Err(Error::UnmetThreshold(R::role()));
     }
 
     /// Lists all targets that are currently available. If a target is missing, it means the

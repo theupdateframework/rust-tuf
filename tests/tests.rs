@@ -108,8 +108,13 @@ fn run_test_vector(test_path: &str) {
                         .ends_with(role.to_string().as_str()),
                     format!("Role: {}, err: {}", role, err))
         },
+        (Err(Error::UnmetThreshold(ref role)), &Some(ref err)) if err.starts_with("UnmetThreshold::") => {
+            assert!(err.to_lowercase()
+                        .ends_with(role.to_string().as_str()),
+                    format!("Role: {}, err: {}", role, err))
+        },
         x => {
-            panic!("{:?}", x)
+            panic!("Unexpected failures: {:?}", x)
         }
     }
 }
@@ -137,4 +142,16 @@ mod vectors {
 
     #[test]
     fn vector_010() { run_test_vector("010") }
+
+    #[test]
+    fn vector_011() { run_test_vector("011") }
+
+    #[test]
+    fn vector_012() { run_test_vector("012") }
+
+    #[test]
+    fn vector_013() { run_test_vector("013") }
+
+    #[test]
+    fn vector_014() { run_test_vector("014") }
 }
