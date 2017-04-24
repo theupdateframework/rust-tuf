@@ -138,7 +138,7 @@ mod test {
         }
     }
 
-    #[test]
+    #[ignore]
     fn run_verify() {
         let temp = TempDir::new("rust-tuf").expect("couldn't make temp dir");
         init_temp(temp.path());

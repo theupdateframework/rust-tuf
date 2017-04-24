@@ -347,7 +347,7 @@ impl Tuf {
                     if bytes_left == 0 {
                         break;
                     } else if bytes_left <= 0 {
-                        panic!("Too many bytes read") // TODO this is sad
+                        return Err(Error::OversizedTarget);
                     }
                 }
                 e @ Err(_) => e.map(|_| ())?,

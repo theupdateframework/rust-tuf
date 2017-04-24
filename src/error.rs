@@ -13,6 +13,7 @@ pub enum Error {
     MissingMetadata(Role),
     NonUniqueSignatures,
     NoSupportedHashAlgorithms,
+    OversizedTarget,
     SignatureSchemeMismatch,
     TargetHashMismatch,
     UnknownKey(KeyId),
