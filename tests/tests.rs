@@ -103,8 +103,10 @@ fn run_test_vector(test_path: &str) {
         (Ok(ref tuf), &Some(ref err)) if err == &"OversizedTarget".to_string() => {
             assert_eq!(tuf.verify_target("targets/file.txt"), Err(Error::OversizedTarget));
         },
-        (Err(ref tuf_err), &Some(ref vector_err)) => {
-            panic!("{:?} : {}", tuf_err, vector_err)
+        (Err(Error::ExpiredMetadata(ref role)), &Some(ref err)) if err.starts_with("ExpiredMetadata::") => {
+            assert!(err.to_lowercase()
+                        .ends_with(role.to_string().as_str()),
+                    format!("Role: {}, err: {}", role, err))
         },
         x => {
             panic!("{:?}", x)
@@ -116,17 +118,23 @@ mod vectors {
     use super::*;
 
     #[test]
-    fn vector_001() {
-        run_test_vector("001")
-    }
+    fn vector_001() { run_test_vector("001") }
 
     #[test]
-    fn vector_002() {
-        run_test_vector("002")
-    }
+    fn vector_002() { run_test_vector("002") }
 
     #[test]
-    fn vector_005() {
-        run_test_vector("005")
-    }
+    fn vector_005() { run_test_vector("005") }
+
+    #[test]
+    fn vector_007() { run_test_vector("007") }
+
+    #[test]
+    fn vector_008() { run_test_vector("008") }
+
+    #[test]
+    fn vector_009() { run_test_vector("009") }
+
+    #[test]
+    fn vector_010() { run_test_vector("010") }
 }

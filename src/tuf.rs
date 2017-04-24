@@ -207,7 +207,7 @@ impl Tuf {
         let meta: M = json::from_slice(&safe_bytes)?;
 
         if meta.expires() <= &UTC::now() {
-            return Err(Error::ExpiredMetadata);
+            return Err(Error::ExpiredMetadata(R::role()));
         }
 
         Ok(meta)
