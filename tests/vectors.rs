@@ -51,14 +51,16 @@ fn run_test_vector(test_path: &str) {
             .expect(&format!("couldn't create path {}:", dir));
     }
 
-    for file in vec!["root.json",
+    for file in vec!["1.root.json",
+                     "2.root.json",
+                     "root.json",
                      "targets.json",
                      "timestamp.json",
                      "snapshot.json"]
         .iter() {
         fs::copy(format!("{}/repo/{}", vector_path, file),
-                 tempdir.path().join("metadata").join("latest").join(file))
-            .expect(&format!("copy failed: {}", file));
+                 tempdir.path().join("metadata").join("latest").join(file));
+            //.expect(&format!("copy failed: {}", file));
     }
 
     fs::copy(format!("{}/repo/targets/file.txt", vector_path),
@@ -119,39 +121,38 @@ fn run_test_vector(test_path: &str) {
     }
 }
 
-mod vectors {
-    use super::*;
+#[test]
+fn vector_001() { run_test_vector("001") }
 
-    #[test]
-    fn vector_001() { run_test_vector("001") }
+#[test]
+fn vector_002() { run_test_vector("002") }
 
-    #[test]
-    fn vector_002() { run_test_vector("002") }
+#[test]
+fn vector_005() { run_test_vector("005") }
 
-    #[test]
-    fn vector_005() { run_test_vector("005") }
+#[test]
+fn vector_007() { run_test_vector("007") }
 
-    #[test]
-    fn vector_007() { run_test_vector("007") }
+#[test]
+fn vector_008() { run_test_vector("008") }
 
-    #[test]
-    fn vector_008() { run_test_vector("008") }
+#[test]
+fn vector_009() { run_test_vector("009") }
 
-    #[test]
-    fn vector_009() { run_test_vector("009") }
+#[test]
+fn vector_010() { run_test_vector("010") }
 
-    #[test]
-    fn vector_010() { run_test_vector("010") }
+#[test]
+fn vector_011() { run_test_vector("011") }
 
-    #[test]
-    fn vector_011() { run_test_vector("011") }
+#[test]
+fn vector_012() { run_test_vector("012") }
 
-    #[test]
-    fn vector_012() { run_test_vector("012") }
+#[test]
+fn vector_013() { run_test_vector("013") }
 
-    #[test]
-    fn vector_013() { run_test_vector("013") }
+#[test]
+fn vector_014() { run_test_vector("014") }
 
-    #[test]
-    fn vector_014() { run_test_vector("014") }
-}
+#[test]
+fn vector_015() { run_test_vector("015") }

@@ -33,7 +33,7 @@ impl Tuf {
         let root = {
             let root = Self::read_root_with_keys(&config.local_path, &root_keys)?;
             // pass it back through the main path to ensure consistency
-            Self::load_metadata::<Root, RootMetadata>(&config.local_path, &root)?
+            Self::load_meta_num::<Root, RootMetadata>(&config.local_path, 1, &root)?
         };
 
         let mut tuf = Tuf {
@@ -86,6 +86,22 @@ impl Tuf {
     }
 
     fn update_local(&mut self) -> Result<(), Error> {
+        let temp_root = Self::unverified_read_root(&self.local_path)?;
+
+        for i in (self.root.version + 1)..(temp_root.version + 1) {
+            let root = Self::load_meta_num::<Root, RootMetadata>(&self.local_path,
+                                                                 i,
+                                                                 &self.root)?;
+
+            info!("Rotated to root metadata version {}", i);
+            self.root = root;
+
+            // set to None to untrust old metadata
+            self.targets = None;
+            self.timestamp = None;
+            self.snapshot = None;
+        }
+
         let timestamp = Self::load_metadata::<Timestamp, TimestampMetadata>(&self.local_path,
                                                                             &self.root)?;
         match self.timestamp {
@@ -99,7 +115,7 @@ impl Tuf {
         if let Some(ref timestamp) = self.timestamp {
             if let Some(ref timestamp_meta) = timestamp.meta.get("snapshot.json") {
                 if timestamp_meta.version > timestamp.version {
-                    info!("Snapshot metadata is up to date");
+                    info!("Timestamp metadata is up to date");
                     return Ok(());
                 }
             }
@@ -119,7 +135,7 @@ impl Tuf {
         if let Some(ref snapshot) = self.snapshot {
             if let Some(ref snapshot_meta) = snapshot.meta.get("targets.json") {
                 if snapshot_meta.version > snapshot.version {
-                    info!("Timestamp metadata is up to date");
+                    info!("Snapshot metadata is up to date");
                     return Ok(());
                 }
             }
@@ -168,7 +184,7 @@ impl Tuf {
     }
 
     fn read_root_with_keys(local_path: &Path, root_keys: &[Key]) -> Result<RootMetadata, Error> {
-        let path = local_path.join("metadata/latest").join("root.json");
+        let path = local_path.join("metadata/latest").join("1.root.json");
         let mut file = File::open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
@@ -254,10 +270,14 @@ impl Tuf {
                 debug!("Verifying role {:?} with key ID {:?}",
                        R::role(),
                        sig.key_id);
+                println!("Verifying role {:?} with key ID {:?}",
+                       R::role(),
+                       sig.key_id);
 
                 match key.verify(&sig.method, &bytes, &sig.sig) {
                     Ok(()) => {
                         debug!("Good signature from key ID {:?}", sig.key_id);
+                        println!("Good signature from key ID {:?}", sig.key_id);
                         valid_sigs += 1;
                     }
                     Err(e) => warn!("Failed to verify with key ID {:?}: {:?}", &sig.key_id, e),
