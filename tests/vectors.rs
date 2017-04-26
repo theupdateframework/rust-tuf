@@ -156,3 +156,6 @@ fn vector_014() { run_test_vector("014") }
 
 #[test]
 fn vector_015() { run_test_vector("015") }
+
+#[test]
+fn vector_016() { run_test_vector("016") }
