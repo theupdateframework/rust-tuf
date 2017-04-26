@@ -15,7 +15,14 @@ use tuf::{Tuf, Config, Error};
 use tuf::meta::{Key, KeyValue, KeyType};
 use url::Url;
 
-static VECTOR_META: &'static str = include_str!("./tuf-test-vectors/vectors/vector-meta.json");
+fn load_vector_meta() -> String {
+
+    let mut file = File::open("./tests/tuf-test-vectors/vectors/vector-meta.json")
+        .expect("couldn't open vector meta");
+    let mut buf = String::new();
+    file.read_to_string(&mut buf).expect("couldn't read vector meta");
+    buf
+}
 
 #[derive(Deserialize)]
 struct VectorMeta {
@@ -34,7 +41,7 @@ struct RootKeyData {
 fn run_test_vector(test_path: &str) {
     let tempdir = TempDir::new("rust-tuf").expect("couldn't make temp dir");
 
-    let vectors: Vec<VectorMeta> = json::from_str(VECTOR_META).expect("couldn't deserializd meta");
+    let vectors: Vec<VectorMeta> = json::from_str(&load_vector_meta()).expect("couldn't deserializd meta");
 
     let test_vector = vectors.iter()
         .filter(|v| v.repo == test_path)
@@ -58,6 +65,7 @@ fn run_test_vector(test_path: &str) {
                      "timestamp.json",
                      "snapshot.json"]
         .iter() {
+        // TODO make sure these copies succeed
         fs::copy(format!("{}/repo/{}", vector_path, file),
                  tempdir.path().join("metadata").join("latest").join(file));
             //.expect(&format!("copy failed: {}", file));
@@ -159,3 +167,15 @@ fn vector_015() { run_test_vector("015") }
 
 #[test]
 fn vector_016() { run_test_vector("016") }
+
+#[test]
+fn vector_017() { run_test_vector("017") }
+
+#[test]
+fn vector_018() { run_test_vector("018") }
+
+#[test]
+fn vector_019() { run_test_vector("019") }
+
+#[test]
+fn vector_020() { run_test_vector("020") }

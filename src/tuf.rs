@@ -270,14 +270,10 @@ impl Tuf {
                 debug!("Verifying role {:?} with key ID {:?}",
                        R::role(),
                        sig.key_id);
-                println!("Verifying role {:?} with key ID {:?}",
-                       R::role(),
-                       sig.key_id);
 
                 match key.verify(&sig.method, &bytes, &sig.sig) {
                     Ok(()) => {
                         debug!("Good signature from key ID {:?}", sig.key_id);
-                        println!("Good signature from key ID {:?}", sig.key_id);
                         valid_sigs += 1;
                     }
                     Err(e) => warn!("Failed to verify with key ID {:?}: {:?}", &sig.key_id, e),
