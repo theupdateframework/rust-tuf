@@ -15,8 +15,8 @@ use tuf::{Tuf, Config, Error};
 use tuf::meta::{Key, KeyValue, KeyType};
 use url::Url;
 
-fn load_vector_meta() -> String {
 
+fn load_vector_meta() -> String {
     let mut file = File::open("./tests/tuf-test-vectors/vectors/vector-meta.json")
         .expect("couldn't open vector meta");
     let mut buf = String::new();
@@ -107,22 +107,39 @@ fn run_test_vector(test_path: &str) {
             assert_eq!(tuf.list_targets(), vec!["targets/file.txt".to_string()]);
             assert_eq!(tuf.verify_target("targets/file.txt"), Ok(()));
         },
+
         (Ok(ref tuf), &Some(ref err)) if err == &"TargetHashMismatch".to_string() => {
             assert_eq!(tuf.verify_target("targets/file.txt"), Err(Error::TargetHashMismatch));
         },
+
         (Ok(ref tuf), &Some(ref err)) if err == &"OversizedTarget".to_string() => {
             assert_eq!(tuf.verify_target("targets/file.txt"), Err(Error::OversizedTarget));
         },
+
         (Err(Error::ExpiredMetadata(ref role)), &Some(ref err)) if err.starts_with("ExpiredMetadata::") => {
             assert!(err.to_lowercase()
                         .ends_with(role.to_string().as_str()),
                     format!("Role: {}, err: {}", role, err))
         },
+
         (Err(Error::UnmetThreshold(ref role)), &Some(ref err)) if err.starts_with("UnmetThreshold::") => {
             assert!(err.to_lowercase()
                         .ends_with(role.to_string().as_str()),
                     format!("Role: {}, err: {}", role, err))
         },
+
+        (Err(Error::MetadataHashMismatch(ref role)), &Some(ref err)) if err.starts_with("MetadataHashMismatch::") => {
+            assert!(err.to_lowercase()
+                        .ends_with(role.to_string().as_str()),
+                    format!("Role: {}, err: {}", role, err))
+        },
+
+        (Err(Error::OversizedMetadata(ref role)), &Some(ref err)) if err.starts_with("OversizedMetadata::") => {
+            assert!(err.to_lowercase()
+                        .ends_with(role.to_string().as_str()),
+                    format!("Role: {}, err: {}", role, err))
+        },
+
         x => {
             panic!("Unexpected failures: {:?}", x)
         }
@@ -178,4 +195,7 @@ fn vector_018() { run_test_vector("018") }
 fn vector_019() { run_test_vector("019") }
 
 #[test]
-fn vector_020() { run_test_vector("020") }
+fn vector_021() { run_test_vector("021") }
+
+#[test]
+fn vector_022() { run_test_vector("022") }
