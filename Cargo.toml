@@ -13,6 +13,7 @@ categories = [ "cryptography" ]
 
 [badges]
 travis-ci = { repository = "heartsucker/rust-tuf", branch = "master" }
+appveyor = { repository = "heartsucker/rust-tuf", branch = "master", service = "github" }
 
 [lib]
 name = "tuf"
@@ -28,7 +29,7 @@ required-features = [ "cli" ]
 cli = [ "clap", "env_logger" ]
 
 [dependencies]
-chrono = { version = "0.3", features = [ "serde" ] }
+chrono = { version = "= 0.3.0", features = [ "serde" ] }
 clap = { version = "2.23", optional = true }
 data-encoding = "2.0.0-rc.1"
 env_logger = { version = "0.4", optional = true }
