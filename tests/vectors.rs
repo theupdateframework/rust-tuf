@@ -1,4 +1,5 @@
 extern crate data_encoding;
+extern crate pem;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -93,6 +94,13 @@ fn run_test_vector(test_path: &str) {
                         value: KeyValue(val),
                     }
                 }
+                "rsa" => {
+                    let _pem = pem::parse(key).expect("key not in pem format");
+                    Key {
+                        typ: KeyType::Rsa,
+                        value: KeyValue(_pem.contents),
+                    }
+                }
                 x => panic!("unknown key type: {}", x),
             }
         })
@@ -185,11 +193,21 @@ fn vector_004() {
 }
 
 #[test]
+fn vector_003() {
+    run_test_vector("003")
+}
+
+#[test]
+fn vector_004() {
+    run_test_vector("004")
+}
+
+#[test]
 fn vector_005() {
     run_test_vector("005")
 }
 
-#[ignore]
+#[test]
 fn vector_006() {
     run_test_vector("006")
 }

@@ -1,9 +1,10 @@
 use chrono::{DateTime, UTC};
 use data_encoding::HEXLOWER;
 use json;
+use pem;
 use ring;
 use ring::digest::{digest, SHA256};
-use ring::signature::ED25519;
+use ring::signature::{ED25519, RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA512};
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter, Debug};
@@ -483,6 +484,7 @@ impl Key {
 #[derive(Clone, PartialEq, Debug)]
 pub enum KeyType {
     Ed25519,
+    Rsa,
     Unsupported(String),
 }
 
@@ -490,6 +492,8 @@ impl KeyType {
     fn supports(&self, scheme: &SignatureScheme) -> bool {
         match (self, scheme) {
             (&KeyType::Ed25519, &SignatureScheme::Ed25519) => true,
+            (&KeyType::Rsa, &SignatureScheme::RsaSsaPssSha256) => true,
+            (&KeyType::Rsa, &SignatureScheme::RsaSsaPssSha512) => true,
             _ => false,
         }
     }
@@ -501,6 +505,7 @@ impl FromStr for KeyType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "ed25519" => Ok(KeyType::Ed25519),
+            "rsa" => Ok(KeyType::Rsa),
             typ => Ok(KeyType::Unsupported(typ.into())),
         }
     }
@@ -535,12 +540,20 @@ impl Deserialize for KeyValue {
     fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
         match Deserialize::deserialize(de)? {
             json::Value::String(ref s) => {
-                // TODO this is shit because we can't tell what type of key it is
-                // e.g., ed25519 => hex, rsa => PEM
-                // need to add this into the type/struct so it can be accessed here
-                HEXLOWER.decode(s.as_ref())
-                    .map(KeyValue)
-                    .map_err(|e| DeserializeError::custom(format!("Key value was not hex: {}", e)))
+                // TODO this is pretty shaky
+                if s.starts_with("-----") {
+                    pem::parse(s)
+                        .map(|p| KeyValue(p.contents))
+                        .map_err(|e| {
+                            DeserializeError::custom(format!("Key was not PEM encoded: {}", e))
+                        })
+                } else {
+                    HEXLOWER.decode(s.as_ref())
+                        .map(KeyValue)
+                        .map_err(|e| {
+                            DeserializeError::custom(format!("Key value was not hex: {}", e))
+                        })
+                }
             }
             json::Value::Object(mut object) => {
                 json::from_value::<KeyValue>(object.remove("public")
@@ -593,6 +606,8 @@ impl Deserialize for SignatureValue {
 #[derive(Clone, PartialEq, Debug)]
 pub enum SignatureScheme {
     Ed25519,
+    RsaSsaPssSha256,
+    RsaSsaPssSha512,
     Unsupported(String),
 }
 
@@ -605,6 +620,18 @@ impl SignatureScheme {
                                         Input::from(msg),
                                         Input::from(&sig.0))
                     .map_err(|_| Error::VerificationFailure("Bad signature".into()))
+            }
+            &SignatureScheme::RsaSsaPssSha256 => {
+                let pub_key = Input::from(&pub_key.0);
+                let msg = Input::from(msg);
+                let sig = Input::from(&sig.0);
+                Ok(ring::signature::verify(&RSA_PSS_2048_8192_SHA256, pub_key, msg, sig)?)
+            }
+            &SignatureScheme::RsaSsaPssSha512 => {
+                let pub_key = Input::from(&pub_key.0);
+                let msg = Input::from(msg);
+                let sig = Input::from(&sig.0);
+                Ok(ring::signature::verify(&RSA_PSS_2048_8192_SHA512, pub_key, msg, sig)?)
             }
             &SignatureScheme::Unsupported(ref s) => {
                 Err(Error::UnsupportedSignatureScheme(s.clone()))

@@ -168,7 +168,7 @@ impl Tuf {
                                                                        Some(meta.length),
                                                                        Some((&hash_alg,
                                                                              &expected_hash.0)))?;
-    
+
         // TODO ? check downloaded version matches what was in the timestamp.json
 
         match self.snapshot {
