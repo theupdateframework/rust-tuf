@@ -14,7 +14,7 @@ Please make all pull requests to the `develop` branch.
 ### Bugs
 
 This project has a **full disclosure** policy on security related errors. Please
-treat these errors like all other bugs and file a public issue. Errors communitcated
+treat these errors like all other bugs and file a public issue. Errors communicated
 via other channels will be immediately made public.
 
 ## Legal
