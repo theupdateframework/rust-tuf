@@ -11,6 +11,7 @@ extern crate url;
 use data_encoding::HEXLOWER;
 use std::fs::{self, File, DirBuilder};
 use std::io::Read;
+use std::str;
 use tempdir::TempDir;
 use tuf::{Tuf, Config, Error};
 use tuf::meta::{Key, KeyValue, KeyType};
@@ -82,23 +83,37 @@ fn run_test_vector(test_path: &str) {
         .map(|k| {
             let mut file = File::open(format!("{}/keys/{}", vector_path, k.path))
                 .expect("couldn't open file");
-            let mut key = String::new();
-            file.read_to_string(&mut key).expect("couldn't read key");
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf).expect("couldn't read key");
+
+            let len = buf.len();
+            if buf[len - 1] == b'\n' {
+                buf.truncate(len - 1)
+            }
+
+            let key = str::from_utf8(&buf).expect("not utf-8").to_string();
 
             match k.typ.as_ref() {
                 "ed25519" => {
-                    let val = HEXLOWER.decode(key.replace("\n", "").as_ref())
-                        .expect("key value not hex");
+                    let val = HEXLOWER.decode(key.as_bytes()).expect("key value not hex");
                     Key {
                         typ: KeyType::Ed25519,
-                        value: KeyValue(val),
+                        value: KeyValue {
+                            value: val,
+                            original: key,
+                            typ: KeyType::Ed25519,
+                        },
                     }
                 }
                 "rsa" => {
-                    let _pem = pem::parse(key).expect("key not in pem format");
+                    let _pem = pem::parse(key.clone()).expect("key not in pem format");
                     Key {
                         typ: KeyType::Rsa,
-                        value: KeyValue(_pem.contents),
+                        value: KeyValue {
+                            value: _pem.contents,
+                            original: key,
+                            typ: KeyType::Rsa,
+                        },
                     }
                 }
                 x => panic!("unknown key type: {}", x),
@@ -180,16 +195,6 @@ fn vector_001() {
 #[test]
 fn vector_002() {
     run_test_vector("002")
-}
-
-#[ignore]
-fn vector_003() {
-    run_test_vector("003")
-}
-
-#[ignore]
-fn vector_004() {
-    run_test_vector("004")
 }
 
 #[test]

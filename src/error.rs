@@ -1,5 +1,4 @@
 use json;
-use ring;
 use std::io;
 
 use metadata::{KeyId, Role};
@@ -38,11 +37,5 @@ impl From<io::Error> for Error {
 impl From<json::Error> for Error {
     fn from(err: json::Error) -> Error {
         Error::Json(format!("{:?}", err))
-    }
-}
-
-impl From<ring::error::Unspecified> for Error {
-    fn from(err: ring::error::Unspecified) -> Error {
-        Error::Json(format!("Unspecified `ring` error: {:?}", err))
     }
 }

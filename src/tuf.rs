@@ -329,7 +329,8 @@ impl Tuf {
                 if let Some(&mut json::Value::Object(ref mut root)) = roles.get_mut("root") {
                     if let Some(&mut json::Value::Array(ref mut key_ids)) = root.get_mut("keyids") {
                         key_ids.clear();
-                        key_ids.extend(root_keys.iter().map(|k| json!(k.value.key_id().0)));
+                        key_ids.extend(root_keys.iter()
+                            .map(|k| json::Value::String(k.value.key_id().0)));
                     }
                 }
             }
@@ -364,7 +365,7 @@ impl Tuf {
                 if let Some(key) = k {
                     m.insert(id, key);
                 } else {
-                    debug!("Unknown key ID: {:?}", id);
+                    debug!("unknown key id: {:?}", id);
                 }
                 m
             });

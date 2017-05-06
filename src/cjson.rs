@@ -210,10 +210,26 @@ mod test {
     #[test]
     fn root_json() {
         let mut file = File::open("./tests/cjson/root.json").expect("couldn't open root.json");
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf).expect("couldn't read root.json");
-        let jsn = json::from_slice(&buf).expect("not json");
+        let mut buf = String::new();
+        file.read_to_string(&mut buf).expect("couldn't read root.json");
+
+        let mut file = File::open("./tests/cjson/root.cjson").expect("couldn't open root.cjson");
+        let mut cjsn = String::new();
+        file.read_to_string(&mut cjsn).expect("couldn't read root.cjson");
+
+        let jsn = json::from_str(&buf).expect("not json");
         let out = canonicalize(jsn).expect("couldn't canonicalize");
-        assert_eq!(out, buf);
+        let out = ::std::str::from_utf8(&out).expect("not utf-8");
+
+        let mut i = 0;
+        for (a, b) in cjsn.as_bytes().iter().zip(out.as_bytes().iter()) {
+            if a != b {
+                println!("{} {} {}", i, a, b);
+                break;
+            }
+            i += 1;
+        }
+
+        assert_eq!(out, cjsn);
     }
 }

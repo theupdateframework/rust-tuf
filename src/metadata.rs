@@ -524,15 +524,23 @@ impl Deserialize for KeyType {
 
 /// The raw bytes of a public key.
 #[derive(Clone, PartialEq, Debug)]
-pub struct KeyValue(pub Vec<u8>);
+pub struct KeyValue {
+    pub value: Vec<u8>,
+    // the original needs to be kept around key ID calculation
+    pub original: String,
+    pub typ: KeyType,
+}
 
 impl KeyValue {
     /// Calculates the `KeyId` of the public key.
     pub fn key_id(&self) -> KeyId {
-        // TODO this only works because we're using ed25519
-        // and this will break when we add RSA.
-        let key_value_hex = canonicalize(json!(HEXLOWER.encode(&self.0))).unwrap(); // TODO unwrap
-        KeyId(HEXLOWER.encode(digest(&SHA256, &key_value_hex).as_ref()))
+        match self.typ {
+            KeyType::Unsupported(_) => KeyId(String::from("error")), // TODO this feels wrong, but we check this everywhere else
+            _ => {
+                let key_value = canonicalize(json::Value::String(self.original.clone())).unwrap(); // TODO unwrap
+                KeyId(HEXLOWER.encode(digest(&SHA256, &key_value).as_ref()))
+            }
+        }
     }
 }
 
@@ -543,13 +551,25 @@ impl Deserialize for KeyValue {
                 // TODO this is pretty shaky
                 if s.starts_with("-----") {
                     pem::parse(s)
-                        .map(|p| KeyValue(p.contents))
+                        .map(|p| {
+                            KeyValue {
+                                value: p.contents,
+                                original: s.clone(),
+                                typ: KeyType::Rsa,
+                            }
+                        })
                         .map_err(|e| {
                             DeserializeError::custom(format!("Key was not PEM encoded: {}", e))
                         })
                 } else {
                     HEXLOWER.decode(s.as_ref())
-                        .map(KeyValue)
+                        .map(|v| {
+                            KeyValue {
+                                value: v,
+                                original: s.clone(),
+                                typ: KeyType::Ed25519,
+                            }
+                        })
                         .map_err(|e| {
                             DeserializeError::custom(format!("Key value was not hex: {}", e))
                         })
@@ -616,22 +636,24 @@ impl SignatureScheme {
         match self {
             &SignatureScheme::Ed25519 => {
                 ring::signature::verify(&ED25519,
-                                        Input::from(&pub_key.0),
+                                        Input::from(&pub_key.value),
                                         Input::from(msg),
                                         Input::from(&sig.0))
                     .map_err(|_| Error::VerificationFailure("Bad signature".into()))
             }
             &SignatureScheme::RsaSsaPssSha256 => {
-                let pub_key = Input::from(&pub_key.0);
-                let msg = Input::from(msg);
-                let sig = Input::from(&sig.0);
-                Ok(ring::signature::verify(&RSA_PSS_2048_8192_SHA256, pub_key, msg, sig)?)
+                ring::signature::verify(&RSA_PSS_2048_8192_SHA256,
+                                        Input::from(&pub_key.value),
+                                        Input::from(msg),
+                                        Input::from(&sig.0))
+                    .map_err(|_| Error::VerificationFailure("Bad signature".into()))
             }
             &SignatureScheme::RsaSsaPssSha512 => {
-                let pub_key = Input::from(&pub_key.0);
-                let msg = Input::from(msg);
-                let sig = Input::from(&sig.0);
-                Ok(ring::signature::verify(&RSA_PSS_2048_8192_SHA512, pub_key, msg, sig)?)
+                ring::signature::verify(&RSA_PSS_2048_8192_SHA512,
+                                        Input::from(&pub_key.value),
+                                        Input::from(msg),
+                                        Input::from(&sig.0))
+                    .map_err(|_| Error::VerificationFailure("Bad signature".into()))
             }
             &SignatureScheme::Unsupported(ref s) => {
                 Err(Error::UnsupportedSignatureScheme(s.clone()))
