@@ -221,15 +221,6 @@ mod test {
         let out = canonicalize(jsn).expect("couldn't canonicalize");
         let out = ::std::str::from_utf8(&out).expect("not utf-8");
 
-        let mut i = 0;
-        for (a, b) in cjsn.as_bytes().iter().zip(out.as_bytes().iter()) {
-            if a != b {
-                println!("{} {} {}", i, a, b);
-                break;
-            }
-            i += 1;
-        }
-
         assert_eq!(out, cjsn);
     }
 }

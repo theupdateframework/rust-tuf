@@ -13,6 +13,7 @@ extern crate url;
 extern crate untrusted;
 
 mod cjson;
+mod der;
 mod metadata;
 mod error;
 mod tuf;

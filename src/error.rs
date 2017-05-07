@@ -5,6 +5,7 @@ use metadata::{KeyId, Role};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
+    Asn1(String),
     CanonicalJsonError(String),
     ExpiredMetadata(Role),
     InvalidConfig(String),
