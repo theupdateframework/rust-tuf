@@ -14,6 +14,7 @@ use untrusted::Input;
 
 use cjson::canonicalize;
 use error::Error;
+use rsa::convert_to_pkcs1;
 
 static HASH_PREFERENCES: &'static [HashType] = &[HashType::Sha512, HashType::Sha256];
 
@@ -643,14 +644,14 @@ impl SignatureScheme {
             }
             &SignatureScheme::RsaSsaPssSha256 => {
                 ring::signature::verify(&RSA_PSS_2048_8192_SHA256,
-                                        Input::from(&pub_key.value),
+                                        Input::from(&convert_to_pkcs1(&pub_key.value)),
                                         Input::from(msg),
                                         Input::from(&sig.0))
                     .map_err(|_| Error::VerificationFailure("Bad signature".into()))
             }
             &SignatureScheme::RsaSsaPssSha512 => {
                 ring::signature::verify(&RSA_PSS_2048_8192_SHA512,
-                                        Input::from(&pub_key.value),
+                                        Input::from(&convert_to_pkcs1(&pub_key.value)),
                                         Input::from(msg),
                                         Input::from(&sig.0))
                     .map_err(|_| Error::VerificationFailure("Bad signature".into()))

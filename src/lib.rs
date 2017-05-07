@@ -12,10 +12,12 @@ extern crate serde_json as json;
 extern crate url;
 extern crate untrusted;
 
+mod asn1;
 mod cjson;
 mod der;
-mod metadata;
 mod error;
+mod metadata;
+mod rsa;
 mod tuf;
 
 pub use tuf::*;

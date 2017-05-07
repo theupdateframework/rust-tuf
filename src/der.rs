@@ -195,7 +195,6 @@ pub fn positive_integer<'a>(input: &mut untrusted::Reader<'a>)
 
 #[cfg(test)]
 mod tests {
-    use error;
     use super::*;
     use untrusted;
 
