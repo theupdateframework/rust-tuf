@@ -20,24 +20,15 @@ use ring;
 use untrusted;
 
 pub const CONSTRUCTED: u8 = 1 << 5;
-pub const CONTEXT_SPECIFIC: u8 = 2 << 6;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 #[repr(u8)]
 pub enum Tag {
-    Boolean = 0x01,
     Integer = 0x02,
     BitString = 0x03,
-    OctetString = 0x04,
     Null = 0x05,
     OID = 0x06,
     Sequence = CONSTRUCTED | 0x10, // 0x30
-    UTCTime = 0x17,
-    GeneralizedTime = 0x18,
-
-    ContextSpecificConstructed0 = CONTEXT_SPECIFIC | CONSTRUCTED | 0,
-    ContextSpecificConstructed1 = CONTEXT_SPECIFIC | CONSTRUCTED | 1,
-    ContextSpecificConstructed3 = CONTEXT_SPECIFIC | CONSTRUCTED | 3,
 }
 
 pub fn expect_tag_and_get_value<'a>(input: &mut untrusted::Reader<'a>,
@@ -54,6 +45,7 @@ pub fn read_tag_and_get_value<'a>
     (input: &mut untrusted::Reader<'a>)
      -> Result<(u8, untrusted::Input<'a>), ring::error::Unspecified> {
     let tag = try!(input.read_byte());
+
     if (tag & 0x1F) == 0x1F {
         return Err(ring::error::Unspecified); // High tag number form is not allowed.
     }
@@ -71,6 +63,7 @@ pub fn read_tag_and_get_value<'a>
             second_byte as usize
         }
         0x82 => {
+            println!("FACK");
             let second_byte = try!(input.read_byte()) as usize;
             let third_byte = try!(input.read_byte()) as usize;
             let combined = (second_byte << 8) | third_byte;
@@ -86,18 +79,6 @@ pub fn read_tag_and_get_value<'a>
 
     let inner = try!(input.skip_and_get_input(length));
     Ok((tag, inner))
-}
-
-pub fn bit_string_with_no_unused_bits<'a>
-    (input: &mut untrusted::Reader<'a>)
-     -> Result<untrusted::Input<'a>, ring::error::Unspecified> {
-    nested(input, Tag::BitString, ring::error::Unspecified, |value| {
-        let unused_bits_at_end = try!(value.read_byte().map_err(|_| ring::error::Unspecified));
-        if unused_bits_at_end != 0 {
-            return Err(ring::error::Unspecified);
-        }
-        Ok(value.skip_to_end())
-    })
 }
 
 // TODO: investigate taking decoder as a reference to reduce generated code
@@ -172,18 +153,6 @@ fn nonnegative_integer<'a>(input: &mut untrusted::Reader<'a>,
     })
 }
 
-/// Parse as integer with a value in the in the range [0, 255], returning its
-/// numeric value. This is typically used for parsing version numbers.
-#[inline]
-pub fn small_nonnegative_integer(input: &mut untrusted::Reader)
-                                 -> Result<u8, ring::error::Unspecified> {
-    let value = try!(nonnegative_integer(input, 0));
-    value.read_all(ring::error::Unspecified, |input| {
-        let r = try!(input.read_byte());
-        Ok(r)
-    })
-}
-
 /// Parses a positive DER integer, returning the big-endian-encoded value, sans
 /// any leading zero byte.
 #[inline]
@@ -249,26 +218,6 @@ mod tests {
                                                                   &[0x02, 0x02, 0x00, 0x02],
                                                                   &[0x02, 0x02, 0x00, 0x7e],
                                                                   &[0x02, 0x02, 0x00, 0x7f]];
-
-    #[test]
-    fn test_small_nonnegative_integer() {
-        with_good_i(ZERO_INTEGER, |input| {
-            assert_eq!(try!(small_nonnegative_integer(input)), 0x00);
-            Ok(())
-        });
-        for &(ref test_in, test_out) in GOOD_POSITIVE_INTEGERS.iter() {
-            with_good_i(test_in, |input| {
-                assert_eq!(try!(small_nonnegative_integer(input)), test_out);
-                Ok(())
-            });
-        }
-        for &test_in in BAD_NONNEGATIVE_INTEGERS.iter() {
-            with_bad_i(test_in, |input| {
-                let _ = try!(small_nonnegative_integer(input));
-                Ok(())
-            });
-        }
-    }
 
     #[test]
     fn test_positive_integer() {
