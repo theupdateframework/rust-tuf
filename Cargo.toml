@@ -35,12 +35,12 @@ data-encoding = "2.0.0-rc.1"
 env_logger = { version = "0.4", optional = true }
 itoa = "0.3"
 log = "0.3"
-ring = "0.7"
+ring = "0.9.4"
 serde = "0.9"
 serde_derive = "0.9"
 serde_json = "0.9"
 url = "1.4"
-untrusted = "0.3"
+untrusted = "0.5"
 
 [dev-dependencies]
 tempdir = "0.3"
