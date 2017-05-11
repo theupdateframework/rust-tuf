@@ -14,6 +14,8 @@ use untrusted::Input;
 use cjson::canonicalize;
 use error::Error;
 
+static HASH_PREFERENCES: &'static [HashType] = &[HashType::Sha512, HashType::Sha256];
+
 #[derive(Eq, PartialEq, Deserialize, Debug)]
 pub enum Role {
     Root,
@@ -102,8 +104,11 @@ impl<R: RoleType> Deserialize for SignedMetadata<R> {
                         signed: v.clone(),
                         _role: PhantomData,
                     })
-                },
-                _ => Err(DeserializeError::custom("Metadata missing 'signed' or 'signatures' section"))
+                }
+                _ => {
+                    Err(DeserializeError::custom("Metadata missing 'signed' or 'signatures' \
+                                                  section"))
+                }
             }
         } else {
             Err(DeserializeError::custom("Metadata was not an object"))
@@ -654,9 +659,8 @@ pub enum HashType {
 }
 
 impl HashType {
-    pub fn preferences() -> Vec<HashType> {
-        // TODO avoid heap
-        vec![HashType::Sha512, HashType::Sha256]
+    pub fn preferences() -> &'static [HashType] {
+        HASH_PREFERENCES
     }
 }
 

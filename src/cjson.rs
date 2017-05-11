@@ -209,8 +209,7 @@ mod test {
 
     #[test]
     fn root_json() {
-        let mut file = File::open("./tests/cjson/root.json")
-            .expect("couldn't open root.json");
+        let mut file = File::open("./tests/cjson/root.json").expect("couldn't open root.json");
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).expect("couldn't read root.json");
         let jsn = json::from_slice(&buf).expect("not json");

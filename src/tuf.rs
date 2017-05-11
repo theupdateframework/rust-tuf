@@ -31,9 +31,9 @@ impl Tuf {
     pub fn from_root_keys(root_keys: Vec<Key>, config: Config) -> Result<Self, Error> {
         // TODO have this try local then try from the URL since things might not be initialized
         let root = {
-            let root = Self::read_root_with_keys(&config.local_path, &root_keys)?;
+            let modified_root = Self::read_root_with_keys(&config.local_path, &root_keys)?;
             // pass it back through the main path to ensure consistency
-            Self::load_meta_num::<Root, RootMetadata>(&config.local_path, 1, &root)?
+            Self::load_meta_num::<Root, RootMetadata>(&config.local_path, 1, &modified_root)?
         };
 
         let mut tuf = Tuf {
@@ -86,29 +86,42 @@ impl Tuf {
     }
 
     fn update_local(&mut self) -> Result<(), Error> {
+        self.update_root_local()?;
+
+        if self.update_timestamp_local()? && self.update_snapshot_local()? {
+            self.update_targets_local()
+        } else {
+            Ok(())
+        }
+    }
+
+    fn update_root_local(&mut self) -> Result<(), Error> {
         let temp_root = Self::unverified_read_root(&self.local_path)?;
 
         for i in (self.root.version + 1)..(temp_root.version + 1) {
-            let root = Self::load_meta_num::<Root, RootMetadata>(&self.local_path,
-                                                                 i,
-                                                                 &self.root)?;
+            let root = Self::load_meta_num::<Root, RootMetadata>(&self.local_path, i, &self.root)?;
 
             info!("Rotated to root metadata version {}", i);
             self.root = root;
 
             // set to None to untrust old metadata
+            // TODO this is bad because it allows rollbacks
             self.targets = None;
             self.timestamp = None;
             self.snapshot = None;
         }
 
+        Ok(())
+    }
+
+    fn update_timestamp_local(&mut self) -> Result<bool, Error> {
         let timestamp = Self::load_metadata::<Timestamp, TimestampMetadata>(&self.local_path,
                                                                             &self.root)?;
         match self.timestamp {
             Some(ref t) if t.version > timestamp.version => {
                 return Err(Error::VersionDecrease(Role::Timestamp))
             }
-            Some(ref t) if t.version == timestamp.version => return Ok(()),
+            Some(ref t) if t.version == timestamp.version => return Ok(false),
             _ => self.timestamp = Some(timestamp),
         }
 
@@ -116,45 +129,121 @@ impl Tuf {
             if let Some(ref timestamp_meta) = timestamp.meta.get("snapshot.json") {
                 if timestamp_meta.version > timestamp.version {
                     info!("Timestamp metadata is up to date");
-                    return Ok(());
+                    return Ok(false);
                 }
             }
         }
 
-        let snapshot = Self::load_metadata::<Snapshot, SnapshotMetadata>(&self.local_path,
-                                                                         &self.root)?;
+        Ok(true)
+    }
+
+    fn update_snapshot_local(&mut self) -> Result<bool, Error> {
+        let meta = match self.timestamp {
+            Some(ref timestamp) => {
+                match timestamp.meta.get("snapshot.json") {
+                    Some(meta) => meta,
+                    None => {
+                        return Err(Error::VerificationFailure("Missing snapshot.json in \
+                                                               timestamp.json"
+                            .to_string()))
+                    }
+                }
+            }
+            None => return Err(Error::MissingMetadata(Role::Timestamp)),
+        };
+
+        let (hash_alg, expected_hash): (&HashType, &HashValue) = HashType::preferences().iter()
+            .fold(None, |res, pref| {
+                res.or_else(|| if let Some(hash) = meta.hashes.get(&pref) {
+                    Some((pref, hash))
+                } else {
+                    None
+                })
+            })
+            .ok_or_else(|| Error::NoSupportedHashAlgorithms)?;
+
+        let snapshot = Self::load_metadata_checked::<Snapshot,
+                                                     SnapshotMetadata>(&self.local_path,
+                                                                       &self.root,
+                                                                       Some(meta.length),
+                                                                       Some((&hash_alg,
+                                                                             &expected_hash.0)))?;
+    
+        // TODO ? check downloaded version matches what was in the timestamp.json
+
         match self.snapshot {
             Some(ref s) if s.version > snapshot.version => {
                 return Err(Error::VersionDecrease(Role::Snapshot))
             }
-            Some(ref s) if s.version == snapshot.version => return Ok(()),
+            Some(ref s) if s.version == snapshot.version => return Ok(false),
             _ => self.snapshot = Some(snapshot),
         }
 
         // TODO this needs to be extended once we do delegations
         if let Some(ref snapshot) = self.snapshot {
             if let Some(ref snapshot_meta) = snapshot.meta.get("targets.json") {
-                if snapshot_meta.version > snapshot.version {
-                    info!("Snapshot metadata is up to date");
-                    return Ok(());
+                if let Some(ref targets) = self.targets {
+                    if snapshot_meta.version > targets.version {
+                        info!("Snapshot metadata is up to date");
+                        return Ok(false);
+                    }
                 }
             }
         }
 
-        let targets = Self::load_metadata::<Targets, TargetsMetadata>(&self.local_path,
-                                                                      &self.root)?;
+        Ok(true)
+    }
+
+    fn update_targets_local(&mut self) -> Result<(), Error> {
+        let meta = match self.snapshot {
+            Some(ref snapshot) => {
+                match snapshot.meta.get("targets.json") {
+                    Some(meta) => meta,
+                    None => {
+                        return Err(Error::VerificationFailure("Missing targets.json in \
+                                                               snapshot.json"
+                            .to_string()))
+                    }
+                }
+            }
+            None => return Err(Error::MissingMetadata(Role::Snapshot)),
+        };
+
+        let hash_data = match meta.hashes {
+            Some(ref hashes) => {
+                Some(HashType::preferences().iter()
+                    .fold(None, |res, pref| {
+                        res.or_else(|| if let Some(hash) = hashes.get(&pref) {
+                            Some((pref, hash))
+                        } else {
+                            None
+                        })
+                    })
+                    .ok_or_else(|| Error::NoSupportedHashAlgorithms)?)
+            }
+            None => None,
+        };
+
+        let hash_data = hash_data.map(|(t, v)| (t, v.0.as_slice()));
+
+        let targets = Self::load_meta_prefix::<Targets, TargetsMetadata>(&self.local_path,
+                                                                         "",
+                                                                         &self.root,
+                                                                         meta.length,
+                                                                         hash_data)?;
+
+        // TODO ? check downloaded version matches what was in the snapshot.json
+
         match self.targets {
             Some(ref t) if t.version > targets.version => {
                 return Err(Error::VersionDecrease(Role::Targets))
             }
+            Some(ref t) if t.version != meta.version => {
+                panic!() // TODO
+            }
             Some(ref t) if t.version == targets.version => return Ok(()),
             _ => self.targets = Some(targets),
         }
-
-        // TODO check that targets hash/size matches what snapshot says
-
-        // TODO update root
-        // TODO check remote
 
         Ok(())
     }
@@ -162,14 +251,55 @@ impl Tuf {
     fn load_metadata<R: RoleType, M: Metadata<R>>(local_path: &Path,
                                                   root: &RootMetadata)
                                                   -> Result<M, Error> {
-        Self::load_meta_prefix(local_path, "", root)
+        Self::load_meta_prefix(local_path, "", root, None, None)
+    }
+
+    fn load_metadata_checked<R: RoleType, M: Metadata<R>>(local_path: &Path,
+                                                          root: &RootMetadata,
+                                                          size: Option<i64>,
+                                                          hash_data: Option<(&HashType, &[u8])>)
+                                                          -> Result<M, Error> {
+        Self::load_meta_prefix(local_path, "", root, size, hash_data)
     }
 
     fn load_meta_num<R: RoleType, M: Metadata<R>>(local_path: &Path,
                                                   num: i32,
                                                   root: &RootMetadata)
                                                   -> Result<M, Error> {
-        Self::load_meta_prefix(local_path, &format!("{}.", num), root)
+        Self::load_meta_prefix(local_path, &format!("{}.", num), root, None, None)
+    }
+
+    fn load_meta_prefix<R: RoleType, M: Metadata<R>>(local_path: &Path,
+                                                     prefix: &str,
+                                                     root: &RootMetadata,
+                                                     size: Option<i64>,
+                                                     hash_data: Option<(&HashType, &[u8])>)
+                                                     -> Result<M, Error> {
+        let path = local_path.join("metadata/latest").join(format!("{}{}.json", prefix, R::role()));
+        info!("Reading metadata from local path: {:?}", path);
+
+        match R::role() {
+            Role::Root if size.is_none() || hash_data.is_none() => (), // TODO
+            _ => (),
+        };
+
+        let mut file = File::open(path)?;
+        let mut buf = Vec::new();
+
+        match (size, hash_data) {
+            (None, None) => file.read_to_end(&mut buf).map(|_| ())?,
+            _ => Self::read_and_verify(&mut file, &mut buf, size, hash_data)?,
+        };
+
+        let signed = json::from_slice(&buf)?;
+        let safe_bytes = Self::verify_meta::<R>(signed, root)?;
+        let meta: M = json::from_slice(&safe_bytes)?;
+
+        if meta.expires() <= &UTC::now() {
+            return Err(Error::ExpiredMetadata(R::role()));
+        }
+
+        Ok(meta)
     }
 
     fn unverified_read_root(local_path: &Path) -> Result<RootMetadata, Error> {
@@ -183,8 +313,10 @@ impl Tuf {
         Ok(json::from_str(&root_str)?)
     }
 
+    /// Read the root.json metadata and replace keys for the root role with the keys that are given
+    /// as arguments to this function. This initial read is unverified in any way.
     fn read_root_with_keys(local_path: &Path, root_keys: &[Key]) -> Result<RootMetadata, Error> {
-        let path = local_path.join("metadata/latest").join("1.root.json");
+        let path = local_path.join("metadata").join("latest").join("1.root.json");
         let mut file = File::open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
@@ -204,29 +336,6 @@ impl Tuf {
         }
 
         Ok(json::from_value(signed.signed)?)
-    }
-
-
-    fn load_meta_prefix<R: RoleType, M: Metadata<R>>(local_path: &Path,
-                                                     prefix: &str,
-                                                     root: &RootMetadata)
-                                                     -> Result<M, Error> {
-        let path = local_path.join("metadata/latest").join(format!("{}{}.json", prefix, R::role()));
-        info!("Reading metadata from local path: {:?}", path);
-
-        let mut file = File::open(path)?;
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf)?;
-
-        let signed = json::from_slice(&buf)?;
-        let safe_bytes = Self::verify_meta::<R>(signed, root)?;
-        let meta: M = json::from_slice(&safe_bytes)?;
-
-        if meta.expires() <= &UTC::now() {
-            return Err(Error::ExpiredMetadata(R::role()));
-        }
-
-        Ok(meta)
     }
 
     fn verify_meta<R: RoleType>(signed: SignedMetadata<R>,
@@ -315,66 +424,89 @@ impl Tuf {
             None => return Err(Error::MissingMetadata(Role::Targets)),
         };
 
-        let (hash_alg, expected_hash): (HashType, HashValue) = HashType::preferences().iter()
+        let (hash_alg, expected_hash): (&HashType, HashValue) = HashType::preferences().iter()
             .fold(None, |res, pref| {
                 res.or_else(|| if let Some(hash) = target_meta.hashes.get(&pref) {
-                    Some((pref.clone(), hash.clone()))
+                    Some((pref, hash.clone()))
                 } else {
                     None
                 })
             })
             .ok_or_else(|| Error::NoSupportedHashAlgorithms)?;
 
+        // TODO pretty sure this join is wrong somehow
         let path = self.local_path.join(target);
         info!("Reading target from local path: {:?}", path);
-        let mut file = File::open(path)?;
 
-        match hash_alg {
-            HashType::Sha512 => {
-                Self::read_and_verify(&mut file,
-                                      digest::Context::new(&SHA512),
-                                      target_meta.length,
-                                      &expected_hash.0)
-            }
-            HashType::Sha256 => {
-                Self::read_and_verify(&mut file,
-                                      digest::Context::new(&SHA256),
-                                      target_meta.length,
-                                      &expected_hash.0)
-            }
-            HashType::Unsupported(_) => Err(Error::NoSupportedHashAlgorithms),
-        }
+        let mut file = File::open(path)?;
+        let mut out = Vec::new();
+
+        Self::read_and_verify(&mut file,
+                              &mut out,
+                              Some(target_meta.length),
+                              Some((&hash_alg, &expected_hash.0)))
+            .map(|_| ())
     }
 
     fn read_and_verify<R: Read>(input: &mut R,
-                                mut context: digest::Context,
-                                size: i64,
-                                expected_hash: &[u8])
+                                output: &mut Vec<u8>,
+                                size: Option<i64>,
+                                hash_data: Option<(&HashType, &[u8])>)
                                 -> Result<(), Error> {
+        let mut context = match hash_data {
+            Some((&HashType::Sha512, _)) => Some(digest::Context::new(&SHA512)),
+            Some((&HashType::Sha256, _)) => Some(digest::Context::new(&SHA256)),
+            Some((&HashType::Unsupported(_), _)) => return Err(Error::NoSupportedHashAlgorithms),
+            _ => None,
+        };
+
         let mut buf = [0; 1024];
         let mut bytes_left = size;
 
         loop {
             match input.read(&mut buf) {
                 Ok(read_bytes) => {
-                    context.update(&buf[0..read_bytes]);
-                    bytes_left -= read_bytes as i64;
-                    if bytes_left == 0 {
-                        break;
-                    } else if bytes_left <= 0 {
-                        return Err(Error::OversizedTarget);
-                    }
+                    output.extend(&buf[0..read_bytes]);
+
+                    match context {
+                        Some(ref mut c) => c.update(&buf[0..read_bytes]),
+                        None => (),
+                    };
+
+                    match bytes_left {
+                        Some(ref mut bytes_left) => {
+                            *bytes_left -= read_bytes as i64;
+                            if *bytes_left == 0 {
+                                break;
+                            } else if *bytes_left < 0 {
+                                return Err(Error::OversizedTarget);
+                            }
+                        }
+                        None => (),
+                    };
                 }
                 e @ Err(_) => e.map(|_| ())?,
             }
         }
 
-        let generated_hash = context.finish();
+        let generated_hash = context.map(|c| c.finish());
 
-        if generated_hash.as_ref() == expected_hash {
-            Ok(())
-        } else {
-            Err(Error::TargetHashMismatch)
+        match (generated_hash, hash_data) {
+            (Some(generated_hash), Some((_, expected_hash))) if generated_hash.as_ref() !=
+                                                                expected_hash => {
+                Err(Error::TargetHashMismatch)
+            }
+            // this case should never happen, so err if it does for safety
+            (Some(_), None) => {
+                Err(Error::VerificationFailure("Hash calculated when no expected hash supplied"
+                    .to_string()))
+            }
+            // this case should never happen, so err if it does for safety
+            (None, Some(_)) => {
+                Err(Error::VerificationFailure("No hash calculated when expected hash supplied"
+                    .to_string()))
+            }
+            _ => Ok(()),
         }
     }
 }

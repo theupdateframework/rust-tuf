@@ -128,11 +128,7 @@ mod test {
                 .expect(&format!("couldn't create path {}:", dir));
         }
 
-        for file in vec!["root.json",
-                         "targets.json",
-                         "timestamp.json",
-                         "snapshot.json"]
-            .iter() {
+        for file in vec!["root.json", "targets.json", "timestamp.json", "snapshot.json"].iter() {
             fs::copy(format!("{}/repo/{}", vector_path, file),
                      temp.join("metadata").join("latest").join(file))
                 .expect(&format!("copy failed: {}", file));
@@ -140,7 +136,7 @@ mod test {
 
         fs::copy(format!("{}/repo/targets/file.txt", vector_path),
                  temp.join("targets").join("file.txt"))
-                .expect(&format!("copy failed for target"));
+            .expect(&format!("copy failed for target"));
     }
 
     #[test]

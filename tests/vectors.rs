@@ -15,8 +15,8 @@ use tuf::{Tuf, Config, Error};
 use tuf::meta::{Key, KeyValue, KeyType};
 use url::Url;
 
-fn load_vector_meta() -> String {
 
+fn load_vector_meta() -> String {
     let mut file = File::open("./tests/tuf-test-vectors/vectors/vector-meta.json")
         .expect("couldn't open vector meta");
     let mut buf = String::new();
@@ -41,7 +41,8 @@ struct RootKeyData {
 fn run_test_vector(test_path: &str) {
     let tempdir = TempDir::new("rust-tuf").expect("couldn't make temp dir");
 
-    let vectors: Vec<VectorMeta> = json::from_str(&load_vector_meta()).expect("couldn't deserializd meta");
+    let vectors: Vec<VectorMeta> = json::from_str(&load_vector_meta())
+        .expect("couldn't deserializd meta");
 
     let test_vector = vectors.iter()
         .filter(|v| v.repo == test_path)
@@ -68,14 +69,15 @@ fn run_test_vector(test_path: &str) {
         // TODO make sure these copies succeed
         fs::copy(format!("{}/repo/{}", vector_path, file),
                  tempdir.path().join("metadata").join("latest").join(file));
-            //.expect(&format!("copy failed: {}", file));
+        //.expect(&format!("copy failed: {}", file));
     }
 
     fs::copy(format!("{}/repo/targets/file.txt", vector_path),
              tempdir.path().join("targets").join("file.txt"))
-            .expect(&format!("copy failed for target"));
+        .expect(&format!("copy failed for target"));
 
-    let root_keys = test_vector.root_keys.iter()
+    let root_keys = test_vector.root_keys
+        .iter()
         .map(|k| {
             let mut file = File::open(format!("{}/keys/{}", vector_path, k.path))
                 .expect("couldn't open file");
@@ -90,7 +92,7 @@ fn run_test_vector(test_path: &str) {
                         typ: KeyType::Ed25519,
                         value: KeyValue(val),
                     }
-                },
+                }
                 x => panic!("unknown key type: {}", x),
             }
         })
@@ -106,76 +108,198 @@ fn run_test_vector(test_path: &str) {
         (Ok(ref tuf), &None) => {
             assert_eq!(tuf.list_targets(), vec!["targets/file.txt".to_string()]);
             assert_eq!(tuf.verify_target("targets/file.txt"), Ok(()));
-        },
-        (Ok(ref tuf), &Some(ref err)) if err == &"TargetHashMismatch".to_string() => {
-            assert_eq!(tuf.verify_target("targets/file.txt"), Err(Error::TargetHashMismatch));
-        },
-        (Ok(ref tuf), &Some(ref err)) if err == &"OversizedTarget".to_string() => {
-            assert_eq!(tuf.verify_target("targets/file.txt"), Err(Error::OversizedTarget));
-        },
-        (Err(Error::ExpiredMetadata(ref role)), &Some(ref err)) if err.starts_with("ExpiredMetadata::") => {
-            assert!(err.to_lowercase()
-                        .ends_with(role.to_string().as_str()),
-                    format!("Role: {}, err: {}", role, err))
-        },
-        (Err(Error::UnmetThreshold(ref role)), &Some(ref err)) if err.starts_with("UnmetThreshold::") => {
-            assert!(err.to_lowercase()
-                        .ends_with(role.to_string().as_str()),
-                    format!("Role: {}, err: {}", role, err))
-        },
-        x => {
-            panic!("Unexpected failures: {:?}", x)
         }
+
+        (Ok(ref tuf), &Some(ref err)) if err == &"TargetHashMismatch".to_string() => {
+            assert_eq!(tuf.verify_target("targets/file.txt"),
+                       Err(Error::TargetHashMismatch));
+        }
+
+        (Ok(ref tuf), &Some(ref err)) if err == &"OversizedTarget".to_string() => {
+            assert_eq!(tuf.verify_target("targets/file.txt"),
+                       Err(Error::OversizedTarget));
+        }
+
+        (Err(Error::ExpiredMetadata(ref role)), &Some(ref err))
+            if err.starts_with("ExpiredMetadata::") => {
+            assert!(err.to_lowercase()
+                        .ends_with(role.to_string().as_str()),
+                    format!("Role: {}, err: {}", role, err))
+        }
+
+        (Err(Error::UnmetThreshold(ref role)), &Some(ref err))
+            if err.starts_with("UnmetThreshold::") => {
+            assert!(err.to_lowercase()
+                        .ends_with(role.to_string().as_str()),
+                    format!("Role: {}, err: {}", role, err))
+        }
+
+        (Err(Error::MetadataHashMismatch(ref role)), &Some(ref err))
+            if err.starts_with("MetadataHashMismatch::") => {
+            assert!(err.to_lowercase()
+                        .ends_with(role.to_string().as_str()),
+                    format!("Role: {}, err: {}", role, err))
+        }
+
+        (Err(Error::OversizedMetadata(ref role)), &Some(ref err))
+            if err.starts_with("OversizedMetadata::") => {
+            assert!(err.to_lowercase()
+                        .ends_with(role.to_string().as_str()),
+                    format!("Role: {}, err: {}", role, err))
+        }
+
+        // we're using a json error because the threshold is checked in the deserializer
+        // this may need to change in the future
+        (Err(Error::Json(ref msg)), &Some(ref err)) if err.starts_with("IllegalThreshold::") => {
+            let role = err.split("::").last().unwrap();
+
+            assert!(msg.contains("threshold"),
+                    format!("Role: {}, err: {}", role, err));
+            assert!(err.to_lowercase()
+                        .contains(role.to_lowercase().as_str()),
+                    format!("Role: {}, err: {}", role, err))
+        }
+
+        x => panic!("Unexpected failures: {:?}", x),
     }
 }
 
 #[test]
-fn vector_001() { run_test_vector("001") }
+fn vector_001() {
+    run_test_vector("001")
+}
 
 #[test]
-fn vector_002() { run_test_vector("002") }
+fn vector_002() {
+    run_test_vector("002")
+}
+
+#[ignore]
+fn vector_003() {
+    run_test_vector("003")
+}
+
+#[ignore]
+fn vector_004() {
+    run_test_vector("004")
+}
 
 #[test]
-fn vector_005() { run_test_vector("005") }
+fn vector_005() {
+    run_test_vector("005")
+}
+
+#[ignore]
+fn vector_006() {
+    run_test_vector("006")
+}
 
 #[test]
-fn vector_007() { run_test_vector("007") }
+fn vector_007() {
+    run_test_vector("007")
+}
 
 #[test]
-fn vector_008() { run_test_vector("008") }
+fn vector_008() {
+    run_test_vector("008")
+}
 
 #[test]
-fn vector_009() { run_test_vector("009") }
+fn vector_009() {
+    run_test_vector("009")
+}
 
 #[test]
-fn vector_010() { run_test_vector("010") }
+fn vector_010() {
+    run_test_vector("010")
+}
 
 #[test]
-fn vector_011() { run_test_vector("011") }
+fn vector_011() {
+    run_test_vector("011")
+}
 
 #[test]
-fn vector_012() { run_test_vector("012") }
+fn vector_012() {
+    run_test_vector("012")
+}
 
 #[test]
-fn vector_013() { run_test_vector("013") }
+fn vector_013() {
+    run_test_vector("013")
+}
 
 #[test]
-fn vector_014() { run_test_vector("014") }
+fn vector_014() {
+    run_test_vector("014")
+}
 
 #[test]
-fn vector_015() { run_test_vector("015") }
+fn vector_015() {
+    run_test_vector("015")
+}
 
 #[test]
-fn vector_016() { run_test_vector("016") }
+fn vector_016() {
+    run_test_vector("016")
+}
 
 #[test]
-fn vector_017() { run_test_vector("017") }
+fn vector_017() {
+    run_test_vector("017")
+}
 
 #[test]
-fn vector_018() { run_test_vector("018") }
+fn vector_018() {
+    run_test_vector("018")
+}
 
 #[test]
-fn vector_019() { run_test_vector("019") }
+fn vector_019() {
+    run_test_vector("019")
+}
 
 #[test]
-fn vector_020() { run_test_vector("020") }
+fn vector_020() {
+    run_test_vector("020")
+}
+
+#[test]
+fn vector_021() {
+    run_test_vector("021")
+}
+
+#[test]
+fn vector_022() {
+    run_test_vector("022")
+}
+
+#[test]
+fn vector_023() {
+    run_test_vector("023")
+}
+
+#[test]
+fn vector_024() {
+    run_test_vector("024")
+}
+
+#[test]
+fn vector_025() {
+    run_test_vector("025")
+}
+
+#[test]
+fn vector_026() {
+    run_test_vector("026")
+}
+
+#[ignore]
+fn vector_027() {
+    run_test_vector("027")
+}
+
+#[ignore]
+fn vector_028() {
+    run_test_vector("028")
+}
