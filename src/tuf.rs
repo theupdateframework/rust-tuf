@@ -157,9 +157,9 @@ impl Tuf {
 
         let snapshot = Self::load_metadata_checked::<Snapshot, SnapshotMetadata>(&self.local_path,
                                                                                  &self.root,
-                                                                                 meta.length,
-                                                                                 &hash_alg,
-                                                                                 &expected_hash.0)?;
+                                                                                 Some(meta.length),
+                                                                                 Some((&hash_alg,
+                                                                                       &expected_hash.0)))?;
         match self.snapshot {
             Some(ref s) if s.version > snapshot.version => {
                 return Err(Error::VersionDecrease(Role::Snapshot))
@@ -184,12 +184,21 @@ impl Tuf {
     }
 
     fn update_targets_local(&mut self) -> Result<(), Error> {
+        let meta = match self.snapshot {
+            Some(ref snapshot) => snapshot.meta.get("targets.json").unwrap(), // TODO
+            None => return Err(Error::MissingMetadata(Role::Snapshot)),
+        };
+
         let targets = Self::load_metadata::<Targets, TargetsMetadata>(&self.local_path,
                                                                       &self.root)?;
+
         match self.targets {
             Some(ref t) if t.version > targets.version => {
                 return Err(Error::VersionDecrease(Role::Targets))
             }
+            Some(ref t) if t.version != meta.version => {
+                panic!() // TODO
+            },
             Some(ref t) if t.version == targets.version => return Ok(()),
             _ => self.targets = Some(targets),
         }
@@ -200,42 +209,47 @@ impl Tuf {
     fn load_metadata<R: RoleType, M: Metadata<R>>(local_path: &Path,
                                                   root: &RootMetadata)
                                                   -> Result<M, Error> {
-        Self::load_meta_prefix(local_path, "", root, None)
+        Self::load_meta_prefix(local_path, "", root, None, None)
     }
 
     fn load_metadata_checked<R: RoleType, M: Metadata<R>>(local_path: &Path,
                                                           root: &RootMetadata,
-                                                          size: i64,
-                                                          hash_alg: &HashType,
-                                                          expected_hash: &[u8]) -> Result<M, Error> {
-        Self::load_meta_prefix(local_path, "", root, Some((size, hash_alg, expected_hash)))
+                                                          size: Option<i64>,
+                                                          hash_data: Option<(&HashType, &[u8])>
+                                                          ) -> Result<M, Error> {
+        Self::load_meta_prefix(local_path, "", root, size, hash_data)
     }
 
     fn load_meta_num<R: RoleType, M: Metadata<R>>(local_path: &Path,
                                                   num: i32,
                                                   root: &RootMetadata)
                                                   -> Result<M, Error> {
-        Self::load_meta_prefix(local_path, &format!("{}.", num), root, None)
+        Self::load_meta_prefix(local_path, &format!("{}.", num), root, None, None)
     }
 
     fn load_meta_prefix<R: RoleType, M: Metadata<R>>(local_path: &Path,
                                                      prefix: &str,
                                                      root: &RootMetadata,
-                                                     meta: Option<(i64, &HashType, &[u8])>)
+                                                     size: Option<i64>,
+                                                     hash_data: Option<(&HashType, &[u8])>)
                                                      -> Result<M, Error> {
         let path = local_path.join("metadata/latest").join(format!("{}{}.json", prefix, R::role()));
         info!("Reading metadata from local path: {:?}", path);
 
+        match R::role() {
+            Role::Root if size.is_none() || hash_data.is_none() => (), // TODO
+            _ => (),
+        };
+
         let mut file = File::open(path)?;
         let mut buf = Vec::new();
 
-        match meta {
-            Some((size, hash_alg, expected_hash)) => Self::read_and_verify(&mut file,
-                                                                           &mut buf,
-                                                                           size,
-                                                                           &hash_alg,
-                                                                           &expected_hash)?,
-            None => file.read_to_end(&mut buf).map(|_| ())?,
+        match (size, hash_data) {
+            (None, None) => file.read_to_end(&mut buf).map(|_| ())?,
+            _ => Self::read_and_verify(&mut file,
+                                       &mut buf,
+                                       size,
+                                       hash_data)?,
         };
 
         let signed = json::from_slice(&buf)?;
@@ -390,22 +404,21 @@ impl Tuf {
 
         Self::read_and_verify(&mut file,
                               &mut out,
-                              target_meta.length,
-                              &hash_alg,
-                              &expected_hash.0)
+                              Some(target_meta.length),
+                              Some((&hash_alg, &expected_hash.0)))
             .map(|_| ())
     }
 
     fn read_and_verify<R: Read>(input: &mut R,
                                 output: &mut Vec<u8>,
-                                size: i64,
-                                hash_alg: &HashType,
-                                expected_hash: &[u8])
+                                size: Option<i64>,
+                                hash_data: Option<(&HashType, &[u8])>)
                                 -> Result<(), Error> {
-        let mut context = match hash_alg {
-            &HashType::Sha512 => digest::Context::new(&SHA512),
-            &HashType::Sha256 => digest::Context::new(&SHA256),
-            &HashType::Unsupported(_) => return Err(Error::NoSupportedHashAlgorithms),
+        let mut context = match hash_data {
+            Some((&HashType::Sha512, _)) => Some(digest::Context::new(&SHA512)),
+            Some((&HashType::Sha256, _)) => Some(digest::Context::new(&SHA256)),
+            Some((&HashType::Unsupported(_), _)) => return Err(Error::NoSupportedHashAlgorithms),
+            _ => None,
         };
 
         let mut buf = [0; 1024];
@@ -415,24 +428,35 @@ impl Tuf {
             match input.read(&mut buf) {
                 Ok(read_bytes) => {
                     output.extend(&buf[0..read_bytes]);
-                    context.update(&buf[0..read_bytes]);
-                    bytes_left -= read_bytes as i64;
-                    if bytes_left == 0 {
-                        break;
-                    } else if bytes_left < 0 {
-                        return Err(Error::OversizedTarget);
-                    }
+
+                    match context {
+                        Some(ref mut c) => c.update(&buf[0..read_bytes]),
+                        None => (),
+                    };
+
+                    match bytes_left {
+                        Some(ref mut bytes_left) => {
+                            *bytes_left -= read_bytes as i64;
+                            if *bytes_left == 0 {
+                                break;
+                            } else if *bytes_left < 0 {
+                                return Err(Error::OversizedTarget);
+                            }
+                        },
+                        None => (),
+                    };
                 }
                 e @ Err(_) => e.map(|_| ())?,
             }
         }
 
-        let generated_hash = context.finish();
+        let generated_hash = context.map(|c| c.finish());
 
-        if generated_hash.as_ref() == expected_hash {
-            Ok(())
-        } else {
-            Err(Error::TargetHashMismatch)
+        match (generated_hash, hash_data) {
+            (Some(generated_hash), Some((_, expected_hash))) if generated_hash.as_ref() != expected_hash => {
+                Err(Error::TargetHashMismatch)
+            },
+            _ => Ok(()),
         }
     }
 }

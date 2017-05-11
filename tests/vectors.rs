@@ -140,6 +140,17 @@ fn run_test_vector(test_path: &str) {
                     format!("Role: {}, err: {}", role, err))
         },
 
+        // we're using a json error because the threshold is checked in the deserializer
+        // this may need to change in the future
+        (Err(Error::Json(ref msg)), &Some(ref err)) if err.starts_with("IllegalThreshold::") => {
+            let role = err.split("::").last().unwrap();
+
+            assert!(msg.contains("threshold"), format!("Role: {}, err: {}", role, err));
+            assert!(err.to_lowercase()
+                        .contains(role.to_lowercase().as_str()),
+                    format!("Role: {}, err: {}", role, err))
+        },
+
         x => {
             panic!("Unexpected failures: {:?}", x)
         }
@@ -152,8 +163,17 @@ fn vector_001() { run_test_vector("001") }
 #[test]
 fn vector_002() { run_test_vector("002") }
 
+#[ignore]
+fn vector_003() { run_test_vector("003") }
+
+#[ignore]
+fn vector_004() { run_test_vector("004") }
+
 #[test]
 fn vector_005() { run_test_vector("005") }
+
+#[ignore]
+fn vector_006() { run_test_vector("006") }
 
 #[test]
 fn vector_007() { run_test_vector("007") }
@@ -195,7 +215,28 @@ fn vector_018() { run_test_vector("018") }
 fn vector_019() { run_test_vector("019") }
 
 #[test]
+fn vector_020() { run_test_vector("020") }
+
+#[test]
 fn vector_021() { run_test_vector("021") }
 
 #[test]
 fn vector_022() { run_test_vector("022") }
+
+#[test]
+fn vector_023() { run_test_vector("023") }
+
+#[test]
+fn vector_024() { run_test_vector("024") }
+
+#[test]
+fn vector_025() { run_test_vector("025") }
+
+#[test]
+fn vector_026() { run_test_vector("026") }
+
+#[ignore]
+fn vector_027() { run_test_vector("027") }
+
+#[ignore]
+fn vector_028() { run_test_vector("028") }
