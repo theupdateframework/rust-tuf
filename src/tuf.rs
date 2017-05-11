@@ -139,7 +139,16 @@ impl Tuf {
 
     fn update_snapshot_local(&mut self) -> Result<bool, Error> {
         let meta = match self.timestamp {
-            Some(ref timestamp) => timestamp.meta.get("snapshot.json").unwrap(), // TODO
+            Some(ref timestamp) => {
+                match timestamp.meta.get("snapshot.json") {
+                    Some(meta) => meta,
+                    None => {
+                        return Err(Error::VerificationFailure("Missing snapshot.json in \
+                                                               timestamp.json"
+                            .to_string()))
+                    }
+                }
+            }
             None => return Err(Error::MissingMetadata(Role::Timestamp)),
         };
 
@@ -184,7 +193,16 @@ impl Tuf {
 
     fn update_targets_local(&mut self) -> Result<(), Error> {
         let meta = match self.snapshot {
-            Some(ref snapshot) => snapshot.meta.get("targets.json").unwrap(), // TODO
+            Some(ref snapshot) => {
+                match snapshot.meta.get("targets.json") {
+                    Some(meta) => meta,
+                    None => {
+                        return Err(Error::VerificationFailure("Missing targets.json in \
+                                                               snapshot.json"
+                            .to_string()))
+                    }
+                }
+            }
             None => return Err(Error::MissingMetadata(Role::Snapshot)),
         };
 
