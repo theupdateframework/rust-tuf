@@ -102,8 +102,11 @@ impl<R: RoleType> Deserialize for SignedMetadata<R> {
                         signed: v.clone(),
                         _role: PhantomData,
                     })
-                },
-                _ => Err(DeserializeError::custom("Metadata missing 'signed' or 'signatures' section"))
+                }
+                _ => {
+                    Err(DeserializeError::custom("Metadata missing 'signed' or 'signatures' \
+                                                  section"))
+                }
             }
         } else {
             Err(DeserializeError::custom("Metadata was not an object"))

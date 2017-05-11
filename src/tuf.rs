@@ -99,9 +99,7 @@ impl Tuf {
         let temp_root = Self::unverified_read_root(&self.local_path)?;
 
         for i in (self.root.version + 1)..(temp_root.version + 1) {
-            let root = Self::load_meta_num::<Root, RootMetadata>(&self.local_path,
-                                                                 i,
-                                                                 &self.root)?;
+            let root = Self::load_meta_num::<Root, RootMetadata>(&self.local_path, i, &self.root)?;
 
             info!("Rotated to root metadata version {}", i);
             self.root = root;
@@ -155,11 +153,12 @@ impl Tuf {
             })
             .ok_or_else(|| Error::NoSupportedHashAlgorithms)?;
 
-        let snapshot = Self::load_metadata_checked::<Snapshot, SnapshotMetadata>(&self.local_path,
-                                                                                 &self.root,
-                                                                                 Some(meta.length),
-                                                                                 Some((&hash_alg,
-                                                                                       &expected_hash.0)))?;
+        let snapshot = Self::load_metadata_checked::<Snapshot,
+                                                     SnapshotMetadata>(&self.local_path,
+                                                                       &self.root,
+                                                                       Some(meta.length),
+                                                                       Some((&hash_alg,
+                                                                             &expected_hash.0)))?;
         match self.snapshot {
             Some(ref s) if s.version > snapshot.version => {
                 return Err(Error::VersionDecrease(Role::Snapshot))
@@ -198,7 +197,7 @@ impl Tuf {
             }
             Some(ref t) if t.version != meta.version => {
                 panic!() // TODO
-            },
+            }
             Some(ref t) if t.version == targets.version => return Ok(()),
             _ => self.targets = Some(targets),
         }
@@ -215,8 +214,8 @@ impl Tuf {
     fn load_metadata_checked<R: RoleType, M: Metadata<R>>(local_path: &Path,
                                                           root: &RootMetadata,
                                                           size: Option<i64>,
-                                                          hash_data: Option<(&HashType, &[u8])>
-                                                          ) -> Result<M, Error> {
+                                                          hash_data: Option<(&HashType, &[u8])>)
+                                                          -> Result<M, Error> {
         Self::load_meta_prefix(local_path, "", root, size, hash_data)
     }
 
@@ -246,10 +245,7 @@ impl Tuf {
 
         match (size, hash_data) {
             (None, None) => file.read_to_end(&mut buf).map(|_| ())?,
-            _ => Self::read_and_verify(&mut file,
-                                       &mut buf,
-                                       size,
-                                       hash_data)?,
+            _ => Self::read_and_verify(&mut file, &mut buf, size, hash_data)?,
         };
 
         let signed = json::from_slice(&buf)?;
@@ -442,7 +438,7 @@ impl Tuf {
                             } else if *bytes_left < 0 {
                                 return Err(Error::OversizedTarget);
                             }
-                        },
+                        }
                         None => (),
                     };
                 }
@@ -453,9 +449,20 @@ impl Tuf {
         let generated_hash = context.map(|c| c.finish());
 
         match (generated_hash, hash_data) {
-            (Some(generated_hash), Some((_, expected_hash))) if generated_hash.as_ref() != expected_hash => {
+            (Some(generated_hash), Some((_, expected_hash))) if generated_hash.as_ref() !=
+                                                                expected_hash => {
                 Err(Error::TargetHashMismatch)
-            },
+            }
+            // this case should never happen, so err if it does for safety
+            (Some(_), None) => {
+                Err(Error::VerificationFailure("Hash calculated when no expected hash supplied"
+                    .to_string()))
+            }
+            // this case should never happen, so err if it does for safety
+            (None, Some(_)) => {
+                Err(Error::VerificationFailure("No hash calculated when expected hash supplied"
+                    .to_string()))
+            }
             _ => Ok(()),
         }
     }
