@@ -152,10 +152,10 @@ impl Tuf {
             None => return Err(Error::MissingMetadata(Role::Timestamp)),
         };
 
-        let (hash_alg, expected_hash): (HashType, &HashValue) = HashType::preferences().iter()
+        let (hash_alg, expected_hash): (&HashType, &HashValue) = HashType::preferences().iter()
             .fold(None, |res, pref| {
                 res.or_else(|| if let Some(hash) = meta.hashes.get(&pref) {
-                    Some((pref.clone(), hash))
+                    Some((pref, hash))
                 } else {
                     None
                 })
@@ -168,6 +168,9 @@ impl Tuf {
                                                                        Some(meta.length),
                                                                        Some((&hash_alg,
                                                                              &expected_hash.0)))?;
+    
+        // TODO ? check downloaded version matches what was in the timestamp.json
+
         match self.snapshot {
             Some(ref s) if s.version > snapshot.version => {
                 return Err(Error::VersionDecrease(Role::Snapshot))
@@ -206,8 +209,30 @@ impl Tuf {
             None => return Err(Error::MissingMetadata(Role::Snapshot)),
         };
 
-        let targets = Self::load_metadata::<Targets, TargetsMetadata>(&self.local_path,
-                                                                      &self.root)?;
+        let hash_data = match meta.hashes {
+            Some(ref hashes) => {
+                Some(HashType::preferences().iter()
+                    .fold(None, |res, pref| {
+                        res.or_else(|| if let Some(hash) = hashes.get(&pref) {
+                            Some((pref, hash))
+                        } else {
+                            None
+                        })
+                    })
+                    .ok_or_else(|| Error::NoSupportedHashAlgorithms)?)
+            }
+            None => None,
+        };
+
+        let hash_data = hash_data.map(|(t, v)| (t, v.0.as_slice()));
+
+        let targets = Self::load_meta_prefix::<Targets, TargetsMetadata>(&self.local_path,
+                                                                         "",
+                                                                         &self.root,
+                                                                         meta.length,
+                                                                         hash_data)?;
+
+        // TODO ? check downloaded version matches what was in the snapshot.json
 
         match self.targets {
             Some(ref t) if t.version > targets.version => {
@@ -399,10 +424,10 @@ impl Tuf {
             None => return Err(Error::MissingMetadata(Role::Targets)),
         };
 
-        let (hash_alg, expected_hash): (HashType, HashValue) = HashType::preferences().iter()
+        let (hash_alg, expected_hash): (&HashType, HashValue) = HashType::preferences().iter()
             .fold(None, |res, pref| {
                 res.or_else(|| if let Some(hash) = target_meta.hashes.get(&pref) {
-                    Some((pref.clone(), hash.clone()))
+                    Some((pref, hash.clone()))
                 } else {
                     None
                 })
