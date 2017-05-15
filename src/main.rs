@@ -40,6 +40,9 @@ fn run_main(matches: ArgMatches) -> Result<(), Error> {
     } else if let Some(_) = matches.subcommand_matches("list") {
         let mut tuf = Tuf::new(config).unwrap(); // TODO unwrap
         cmd_list(&mut tuf)
+    } else if let Some(_) = matches.subcommand_matches("update") {
+        let mut tuf = Tuf::new(config).unwrap(); // TODO unwrap
+        cmd_update(&mut tuf)
     } else if let Some(matches) = matches.subcommand_matches("verify") {
         let mut tuf = Tuf::new(config).unwrap(); // TODO unwrap
         cmd_verify(&mut tuf, matches.value_of("target").unwrap())
@@ -79,6 +82,7 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
             .help("Local path the TUF repo"))
         .subcommand(SubCommand::with_name("init").about("Initializes a new TUF repo"))
         .subcommand(SubCommand::with_name("list").about("Lists available targets"))
+        .subcommand(SubCommand::with_name("update").about("Updates metadata from remotes"))
         .subcommand(SubCommand::with_name("verify")
             .about("Verifies a target")
             .arg(Arg::with_name("target")
@@ -102,6 +106,10 @@ fn cmd_list(tuf: &mut Tuf) -> Result<(), Error> {
     Ok(())
 }
 
+fn cmd_update(tuf: &mut Tuf) -> Result<(), Error> {
+    tuf.update()
+}
+
 fn cmd_verify(tuf: &mut Tuf, target: &str) -> Result<(), Error> {
     tuf.verify_target(target)
 }
@@ -121,7 +129,7 @@ mod test {
     fn init_temp(temp: &Path) {
         let vector_path = "./tests/tuf-test-vectors/vectors/001";
 
-        for dir in vec!["metadata/latest", "metadata/archive", "targets"].iter() {
+        for dir in vec!["metadata/current", "metadata/archive", "targets"].iter() {
             DirBuilder::new()
                 .recursive(true)
                 .create(temp.join(dir))
@@ -130,7 +138,7 @@ mod test {
 
         for file in vec!["root.json", "targets.json", "timestamp.json", "snapshot.json"].iter() {
             fs::copy(format!("{}/repo/{}", vector_path, file),
-                     temp.join("metadata").join("latest").join(file))
+                     temp.join("metadata").join("current").join(file))
                 .expect(&format!("copy failed: {}", file));
         }
 

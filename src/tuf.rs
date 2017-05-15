@@ -1,18 +1,21 @@
 use chrono::UTC;
 use json;
+use hyper::client::Client;
 use ring::digest;
 use ring::digest::{SHA256, SHA512};
 use std::collections::{HashMap, HashSet};
-use std::fs::{File, DirBuilder};
-use std::io::Read;
-use std::path::{PathBuf, Path};
+use std::fs::{self, File, DirBuilder};
+use std::io::{Read, Write};
+use std::path::PathBuf;
 use url::Url;
+use uuid::Uuid;
 
 use cjson;
 use error::Error;
 use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, SignedMetadata,
                RootMetadata, TargetsMetadata, TimestampMetadata, SnapshotMetadata, HashType,
                HashValue, KeyId, Key};
+use util;
 
 
 /// Interface for interacting with TUF repositories.
@@ -20,6 +23,7 @@ use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, Sig
 pub struct Tuf {
     url: Url,
     local_path: PathBuf,
+    http_client: Client,
     root: RootMetadata,
     targets: Option<TargetsMetadata>,
     timestamp: Option<TimestampMetadata>,
@@ -27,25 +31,36 @@ pub struct Tuf {
 }
 
 impl Tuf {
-    /// Create a `Tuf` struct from an existing repo with the initial root keys pinned.
+    /// Create a `Tuf` struct from an existing repo with the initial root keys pinned. This also
+    /// calls `initialize` to ensure the needed paths exist.
     pub fn from_root_keys(root_keys: Vec<Key>, config: Config) -> Result<Self, Error> {
+        Self::initialize(&config.local_path)?;
+
+        let url = util::path_to_url(config.local_path.as_path())
+            .map_err(|e| Error::Generic(format!("{:?}", e)))?;
+
         // TODO have this try local then try from the URL since things might not be initialized
         let root = {
-            let modified_root = Self::read_root_with_keys(&config.local_path, &root_keys)?;
+            let modified_root = Self::read_root_with_keys(&config.http_client, &url, &root_keys)?;
             // pass it back through the main path to ensure consistency
-            Self::load_meta_num::<Root, RootMetadata>(&config.local_path, 1, &modified_root)?
+            Self::get_meta_num::<Root, RootMetadata, File>(&config.http_client,
+                                                           &url,
+                                                           1,
+                                                           &modified_root,
+                                                           &mut None)?
         };
 
         let mut tuf = Tuf {
             url: config.url,
             local_path: config.local_path,
+            http_client: config.http_client,
             root: root,
             targets: None,
             timestamp: None,
             snapshot: None,
         };
 
-        tuf.update_local()?;
+        tuf.update()?;
         Ok(tuf)
     }
 
@@ -54,28 +69,38 @@ impl Tuf {
     /// to ensure the needed paths exist.
     pub fn new(config: Config) -> Result<Self, Error> {
         Self::initialize(&config.local_path)?;
+        let url = util::path_to_url(config.local_path.as_path())
+            .map_err(|e| Error::Generic(format!("{:?}", e)))?;
 
         let root = {
-            let root = Self::unverified_read_root(&config.local_path)?;
-            Self::load_metadata::<Root, RootMetadata>(&config.local_path, &root)?
+            let root = Self::unverified_read_root(&config.http_client, &url)?;
+            Self::get_metadata::<Root, RootMetadata, File>(&config.http_client,
+                                                           &url,
+                                                           &root,
+                                                           &mut None)?
         };
 
         let mut tuf = Tuf {
             url: config.url,
             local_path: config.local_path,
+            http_client: config.http_client,
             root: root,
             targets: None,
             timestamp: None,
             snapshot: None,
         };
-        tuf.update_local()?;
+        tuf.update()?;
 
         Ok(tuf)
     }
 
     /// Create and verify the necessary directory structure for a TUF repo.
     pub fn initialize(local_path: &PathBuf) -> Result<(), Error> {
-        for dir in vec!["metadata/latest", "metadata/archive", "targets"].iter() {
+        for dir in vec![PathBuf::from("metadata").join("current"),
+                        PathBuf::from("metadata").join("archive"),
+                        PathBuf::from("targets"),
+                        PathBuf::from("temp")]
+            .iter() {
             DirBuilder::new().recursive(true)
                 .create(local_path.as_path().join(dir))?
 
@@ -85,24 +110,71 @@ impl Tuf {
         Ok(())
     }
 
-    fn update_local(&mut self) -> Result<(), Error> {
-        self.update_root_local()?;
+    // TODO clean function that cleans up local_path for old targets, old dirs, etc
 
-        if self.update_timestamp_local()? && self.update_snapshot_local()? {
-            self.update_targets_local()
+    fn temp_file(&self) -> Result<(File, PathBuf), Error> {
+        let uuid = Uuid::new_v4();
+        let path = self.local_path.as_path().join("temp").join(uuid.hyphenated().to_string());
+        Ok((File::create(path.clone())?, path.to_path_buf()))
+    }
+
+    /// Update the metadata from local and remote sources.
+    pub fn update(&mut self) -> Result<(), Error> {
+        self.update_local()?;
+        self.update_remote()
+    }
+
+    // TODO move all the temp files to their proper location
+    fn update_remote(&mut self) -> Result<(), Error> {
+        self.update_root(true)?;
+
+        if self.update_timestamp(true)? && self.update_snapshot(true)? {
+            self.update_targets(true)
         } else {
             Ok(())
         }
     }
 
-    fn update_root_local(&mut self) -> Result<(), Error> {
-        let temp_root = Self::unverified_read_root(&self.local_path)?;
+    fn update_local(&mut self) -> Result<(), Error> {
+        self.update_root(false)?;
 
+        if self.update_timestamp(false)? && self.update_snapshot(false)? {
+            self.update_targets(false)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn update_root(&mut self, remote: bool) -> Result<(), Error> {
+        let url = if remote {
+            // TODO remove this clone
+            self.url.clone()
+        } else {
+            util::path_to_url(self.local_path.as_path())
+                .map_err(|e| Error::Generic(format!("{:?}", e)))?
+        };
+
+        let temp_root = Self::unverified_read_root(&self.http_client, &url)?;
+
+        // TODO reuse temp root as last one
         for i in (self.root.version + 1)..(temp_root.version + 1) {
-            let root = Self::load_meta_num::<Root, RootMetadata>(&self.local_path, i, &self.root)?;
+            let (mut out, out_path) = if remote {
+                let (file, path) = self.temp_file()?;
+                (Some(file), Some(path))
+            } else {
+                (None, None)
+            };
+
+            let root = Self::get_meta_num::<Root, RootMetadata, File>(&self.http_client,
+                                                                      &url,
+                                                                      i,
+                                                                      &self.root,
+                                                                      &mut out)?;
 
             info!("Rotated to root metadata version {}", i);
             self.root = root;
+
+            // TODO move tempfile
 
             // set to None to untrust old metadata
             // TODO this is bad because it allows rollbacks
@@ -114,12 +186,28 @@ impl Tuf {
         Ok(())
     }
 
-    fn update_timestamp_local(&mut self) -> Result<bool, Error> {
-        let timestamp = Self::load_metadata::<Timestamp, TimestampMetadata>(&self.local_path,
-                                                                            &self.root)?;
+    fn update_timestamp(&mut self, remote: bool) -> Result<bool, Error> {
+        let (url, mut out, out_path) = if remote {
+            // TODO remove this clone
+            let (file, path) = self.temp_file()?;
+            (self.url.clone(), Some(file), Some(path))
+        } else {
+            let url = util::path_to_url(self.local_path.as_path())
+                .map_err(|e| Error::Generic(format!("{:?}", e)))?;
+            (url, None, None)
+        };
+
+        let timestamp = Self::get_metadata::<Timestamp,
+                                             TimestampMetadata,
+                                             File>(&self.http_client, &url, &self.root, &mut out)?;
         match self.timestamp {
             Some(ref t) if t.version > timestamp.version => {
-                return Err(Error::VersionDecrease(Role::Timestamp))
+                match out_path {
+                    Some(out_path) => fs::remove_file(out_path)?,
+                    None => (),
+                };
+
+                return Err(Error::VersionDecrease(Role::Timestamp));
             }
             Some(ref t) if t.version == timestamp.version => return Ok(false),
             _ => self.timestamp = Some(timestamp),
@@ -129,15 +217,23 @@ impl Tuf {
             if let Some(ref timestamp_meta) = timestamp.meta.get("snapshot.json") {
                 if timestamp_meta.version > timestamp.version {
                     info!("Timestamp metadata is up to date");
+
+                    match out_path {
+                        Some(out_path) => fs::remove_file(out_path)?,
+                        None => (),
+                    };
+
                     return Ok(false);
                 }
             }
         }
 
+
+        // TODO move file to actual location
         Ok(true)
     }
 
-    fn update_snapshot_local(&mut self) -> Result<bool, Error> {
+    fn update_snapshot(&mut self, remote: bool) -> Result<bool, Error> {
         let meta = match self.timestamp {
             Some(ref timestamp) => {
                 match timestamp.meta.get("snapshot.json") {
@@ -162,18 +258,35 @@ impl Tuf {
             })
             .ok_or_else(|| Error::NoSupportedHashAlgorithms)?;
 
-        let snapshot = Self::load_metadata_checked::<Snapshot,
-                                                     SnapshotMetadata>(&self.local_path,
-                                                                       &self.root,
-                                                                       Some(meta.length),
-                                                                       Some((&hash_alg,
-                                                                             &expected_hash.0)))?;
-    
+        let (url, mut out, out_path) = if remote {
+            let (file, path) = self.temp_file()?;
+            // TODO remove this clone
+            (self.url.clone(), Some(file), Some(path))
+        } else {
+            let url = util::path_to_url(self.local_path.as_path())
+                .map_err(|e| Error::Generic(format!("{:?}", e)))?;
+            (url, None, None)
+        };
+
+        let snapshot = Self::get_meta_prefix::<Snapshot,
+                                               SnapshotMetadata,
+                                               File>(&self.http_client,
+                                                     &url,
+                                                     "",
+                                                     &self.root,
+                                                     Some(meta.length),
+                                                     Some((&hash_alg, &expected_hash.0)),
+                                                     &mut out)?;
+
         // TODO ? check downloaded version matches what was in the timestamp.json
 
         match self.snapshot {
             Some(ref s) if s.version > snapshot.version => {
-                return Err(Error::VersionDecrease(Role::Snapshot))
+                match out_path {
+                    Some(out_path) => fs::remove_file(out_path)?,
+                    None => (),
+                };
+                return Err(Error::VersionDecrease(Role::Snapshot));
             }
             Some(ref s) if s.version == snapshot.version => return Ok(false),
             _ => self.snapshot = Some(snapshot),
@@ -185,16 +298,22 @@ impl Tuf {
                 if let Some(ref targets) = self.targets {
                     if snapshot_meta.version > targets.version {
                         info!("Snapshot metadata is up to date");
+
+                        match out_path {
+                            Some(out_path) => fs::remove_file(out_path)?,
+                            None => (),
+                        };
                         return Ok(false);
                     }
                 }
             }
         }
 
+        // TODO move file, remove temp
         Ok(true)
     }
 
-    fn update_targets_local(&mut self) -> Result<(), Error> {
+    fn update_targets(&mut self, remote: bool) -> Result<(), Error> {
         let meta = match self.snapshot {
             Some(ref snapshot) => {
                 match snapshot.meta.get("targets.json") {
@@ -226,87 +345,151 @@ impl Tuf {
 
         let hash_data = hash_data.map(|(t, v)| (t, v.0.as_slice()));
 
-        let targets = Self::load_meta_prefix::<Targets, TargetsMetadata>(&self.local_path,
-                                                                         "",
-                                                                         &self.root,
-                                                                         meta.length,
-                                                                         hash_data)?;
+        let (url, mut out, out_path) = if remote {
+            let (file, path) = self.temp_file()?;
+            (self.url.clone(), Some(file), Some(path))
+        } else {
+            let url = util::path_to_url(self.local_path.as_path())
+                .map_err(|e| Error::Generic(format!("{:?}", e)))?;
+            (url, None, None)
+        };
+
+        let targets = Self::get_meta_prefix::<Targets, TargetsMetadata, File>(&self.http_client,
+                                                                              &url,
+                                                                              "",
+                                                                              &self.root,
+                                                                              meta.length,
+                                                                              hash_data,
+                                                                              &mut out)?;
 
         // TODO ? check downloaded version matches what was in the snapshot.json
 
         match self.targets {
             Some(ref t) if t.version > targets.version => {
-                return Err(Error::VersionDecrease(Role::Targets))
-            }
-            Some(ref t) if t.version != meta.version => {
-                panic!() // TODO
+                match out_path {
+                    Some(out_path) => fs::remove_file(out_path)?,
+                    None => (),
+                };
+
+                return Err(Error::VersionDecrease(Role::Targets));
             }
             Some(ref t) if t.version == targets.version => return Ok(()),
             _ => self.targets = Some(targets),
         }
 
+        // TODO move files, remove temp
         Ok(())
     }
 
-    fn load_metadata<R: RoleType, M: Metadata<R>>(local_path: &Path,
-                                                  root: &RootMetadata)
-                                                  -> Result<M, Error> {
-        Self::load_meta_prefix(local_path, "", root, None, None)
+    fn get_metadata<R: RoleType, M: Metadata<R>, W: Write>(http_client: &Client,
+                                                           url: &Url,
+                                                           root: &RootMetadata,
+                                                           mut out: &mut Option<W>)
+                                                           -> Result<M, Error> {
+        Self::get_meta_prefix(http_client, url, "", root, None, None, &mut out)
     }
 
-    fn load_metadata_checked<R: RoleType, M: Metadata<R>>(local_path: &Path,
-                                                          root: &RootMetadata,
-                                                          size: Option<i64>,
-                                                          hash_data: Option<(&HashType, &[u8])>)
-                                                          -> Result<M, Error> {
-        Self::load_meta_prefix(local_path, "", root, size, hash_data)
+    fn get_meta_num<R: RoleType, M: Metadata<R>, W: Write>(http_client: &Client,
+                                                           url: &Url,
+                                                           num: i32,
+                                                           root: &RootMetadata,
+                                                           mut out: &mut Option<W>)
+                                                           -> Result<M, Error> {
+        // TODO this should check that the metadata version == num
+        Self::get_meta_prefix(http_client,
+                              url,
+                              &format!("{}.", num),
+                              root,
+                              None,
+                              None,
+                              &mut out)
     }
 
-    fn load_meta_num<R: RoleType, M: Metadata<R>>(local_path: &Path,
-                                                  num: i32,
-                                                  root: &RootMetadata)
-                                                  -> Result<M, Error> {
-        Self::load_meta_prefix(local_path, &format!("{}.", num), root, None, None)
-    }
+    fn get_meta_prefix<R: RoleType, M: Metadata<R>, W: Write>(http_client: &Client,
+                                                              url: &Url,
+                                                              prefix: &str,
+                                                              root: &RootMetadata,
+                                                              size: Option<i64>,
+                                                              hash_data: Option<(&HashType,
+                                                                                 &[u8])>,
+                                                              mut out: &mut Option<W>)
+                                                              -> Result<M, Error> {
+        let buf: Vec<u8> = match url.scheme() {
+            "file" => {
+                let path = util::url_path_to_os_path(url.path())
+                    ?
+                    .join("metadata")
+                    .join("current")
+                    .join(format!("{}{}.json", prefix, R::role()));
+                info!("Reading metadata from local path: {:?}", path);
 
-    fn load_meta_prefix<R: RoleType, M: Metadata<R>>(local_path: &Path,
-                                                     prefix: &str,
-                                                     root: &RootMetadata,
-                                                     size: Option<i64>,
-                                                     hash_data: Option<(&HashType, &[u8])>)
-                                                     -> Result<M, Error> {
-        let path = local_path.join("metadata/latest").join(format!("{}{}.json", prefix, R::role()));
-        info!("Reading metadata from local path: {:?}", path);
+                let mut file = File::open(path)?;
+                let mut buf = Vec::new();
 
-        match R::role() {
-            Role::Root if size.is_none() || hash_data.is_none() => (), // TODO
-            _ => (),
-        };
+                match (size, hash_data) {
+                    (None, None) => file.read_to_end(&mut buf).map(|_| ())?,
+                    _ => Self::read_and_verify(&mut file, &mut Some(&mut buf), size, hash_data)?,
+                };
 
-        let mut file = File::open(path)?;
-        let mut buf = Vec::new();
+                buf
+            }
+            "http" | "https" => {
+                let url = util::url_to_hyper_url(url)?
+                    .join(&format!("{}{}.json", prefix, R::role()))?;
+                let mut resp = http_client.get(url).send()?;
+                let mut buf = Vec::new();
 
-        match (size, hash_data) {
-            (None, None) => file.read_to_end(&mut buf).map(|_| ())?,
-            _ => Self::read_and_verify(&mut file, &mut buf, size, hash_data)?,
+                match (size, hash_data) {
+                    (None, None) => resp.read_to_end(&mut buf).map(|_| ())?,
+                    _ => Self::read_and_verify(&mut resp, &mut Some(&mut buf), size, hash_data)?,
+                };
+
+                buf
+            }
+            x => return Err(Error::Generic(format!("Unsupported URL scheme: {}", x))),
         };
 
         let signed = json::from_slice(&buf)?;
         let safe_bytes = Self::verify_meta::<R>(signed, root)?;
         let meta: M = json::from_slice(&safe_bytes)?;
 
+        // TODO this will be a problem with updating root metadata and this function probably
+        // needs an arg like `allow_expired`.
         if meta.expires() <= &UTC::now() {
             return Err(Error::ExpiredMetadata(R::role()));
         }
 
+        match out {
+            &mut Some(ref mut out) => out.write_all(&buf)?,
+            &mut None => (),
+        };
+
         Ok(meta)
     }
 
-    fn unverified_read_root(local_path: &Path) -> Result<RootMetadata, Error> {
-        let path = local_path.join("metadata/latest").join("root.json");
-        let mut file = File::open(path)?;
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf)?;
+    fn unverified_read_root(http_client: &Client, url: &Url) -> Result<RootMetadata, Error> {
+        let buf: Vec<u8> = match url.scheme() {
+            "file" => {
+                let path = util::url_path_to_os_path(url.path())
+                    ?
+                    .join("metadata")
+                    .join("current")
+                    .join("root.json");
+
+                let mut file = File::open(path)?;
+                let mut buf = Vec::new();
+                file.read_to_end(&mut buf).map(|_| ())?;
+                buf
+            }
+            "http" | "https" => {
+                let url = util::url_to_hyper_url(url)?.join("root.json")?;
+                let mut resp = http_client.get(url).send()?;
+                let mut buf = Vec::new();
+                resp.read_to_end(&mut buf).map(|_| ())?;
+                buf
+            }
+            x => return Err(Error::Generic(format!("Unsupported URL scheme: {}", x))),
+        };
 
         let signed: SignedMetadata<Root> = json::from_slice(&buf)?;
         let root_str = signed.signed.to_string();
@@ -315,11 +498,32 @@ impl Tuf {
 
     /// Read the root.json metadata and replace keys for the root role with the keys that are given
     /// as arguments to this function. This initial read is unverified in any way.
-    fn read_root_with_keys(local_path: &Path, root_keys: &[Key]) -> Result<RootMetadata, Error> {
-        let path = local_path.join("metadata").join("latest").join("1.root.json");
-        let mut file = File::open(path)?;
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf)?;
+    fn read_root_with_keys(http_client: &Client,
+                           url: &Url,
+                           root_keys: &[Key])
+                           -> Result<RootMetadata, Error> {
+        let buf: Vec<u8> = match url.scheme() {
+            "file" => {
+                let path = util::url_path_to_os_path(url.path())
+                    ?
+                    .join("metadata")
+                    .join("current")
+                    .join("1.root.json");
+
+                let mut file = File::open(path)?;
+                let mut buf = Vec::new();
+                file.read_to_end(&mut buf).map(|_| ())?;
+                buf
+            }
+            "http" | "https" => {
+                let url = util::url_to_hyper_url(url)?;
+                let mut resp = http_client.get(url).send()?;
+                let mut buf = Vec::new();
+                resp.read_to_end(&mut buf).map(|_| ())?;
+                buf
+            }
+            x => return Err(Error::Generic(format!("Unsupported URL scheme: {}", x))),
+        };
 
         // TODO once serialize is implemented for all the types, don't use this
         // json manipulation mess here
@@ -341,7 +545,6 @@ impl Tuf {
     fn verify_meta<R: RoleType>(signed: SignedMetadata<R>,
                                 root: &RootMetadata)
                                 -> Result<Vec<u8>, Error> {
-        // TODO use the real cjson lib and not this crap
         let bytes =
             cjson::canonicalize(signed.signed).map_err(|err| Error::CanonicalJsonError(err))?;
 
@@ -439,20 +642,19 @@ impl Tuf {
         info!("Reading target from local path: {:?}", path);
 
         let mut file = File::open(path)?;
-        let mut out = Vec::new();
 
         Self::read_and_verify(&mut file,
-                              &mut out,
+                              &mut None::<&mut File>,
                               Some(target_meta.length),
                               Some((&hash_alg, &expected_hash.0)))
             .map(|_| ())
     }
 
-    fn read_and_verify<R: Read>(input: &mut R,
-                                output: &mut Vec<u8>,
-                                size: Option<i64>,
-                                hash_data: Option<(&HashType, &[u8])>)
-                                -> Result<(), Error> {
+    fn read_and_verify<R: Read, W: Write>(input: &mut R,
+                                          output: &mut Option<W>,
+                                          size: Option<i64>,
+                                          hash_data: Option<(&HashType, &[u8])>)
+                                          -> Result<(), Error> {
         let mut context = match hash_data {
             Some((&HashType::Sha512, _)) => Some(digest::Context::new(&SHA512)),
             Some((&HashType::Sha256, _)) => Some(digest::Context::new(&SHA256)),
@@ -466,7 +668,10 @@ impl Tuf {
         loop {
             match input.read(&mut buf) {
                 Ok(read_bytes) => {
-                    output.extend(&buf[0..read_bytes]);
+                    match output {
+                        &mut Some(ref mut output) => output.write_all(&buf[0..read_bytes])?,
+                        &mut None => (),
+                    };
 
                     match context {
                         Some(ref mut c) => c.update(&buf[0..read_bytes]),
@@ -516,6 +721,7 @@ impl Tuf {
 pub struct Config {
     url: Url,
     local_path: PathBuf,
+    http_client: Client,
 }
 
 impl Config {
@@ -529,6 +735,7 @@ impl Config {
 pub struct ConfigBuilder {
     url: Option<Url>,
     local_path: Option<PathBuf>,
+    http_client: Option<Client>,
 }
 
 impl ConfigBuilder {
@@ -536,6 +743,7 @@ impl ConfigBuilder {
         ConfigBuilder {
             url: None,
             local_path: None,
+            http_client: None,
         }
     }
 
@@ -551,6 +759,12 @@ impl ConfigBuilder {
         self
     }
 
+    /// The `hyper::client::Client` to use. Default: `Client::new()`.
+    pub fn http_client(mut self, client: Client) -> Self {
+        self.http_client = Some(client);
+        self
+    }
+
     /// Verify the configuration.
     pub fn finish(self) -> Result<Config, Error> {
         // TODO verify url scheme is something we support
@@ -563,6 +777,7 @@ impl ConfigBuilder {
         Ok(Config {
             url: url,
             local_path: local_path,
+            http_client: self.http_client.unwrap_or_else(|| Client::new()),
         })
     }
 }

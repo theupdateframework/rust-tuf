@@ -10,9 +10,11 @@ extern crate url;
 use data_encoding::HEXLOWER;
 use std::fs::{self, File, DirBuilder};
 use std::io::Read;
+use std::path::PathBuf;
 use tempdir::TempDir;
 use tuf::{Tuf, Config, Error};
 use tuf::meta::{Key, KeyValue, KeyType};
+use tuf::util;
 use url::Url;
 
 
@@ -50,13 +52,19 @@ fn run_test_vector(test_path: &str) {
         .pop()
         .expect(format!("No repo named {}", test_path).as_str());
 
-    let vector_path = format!("./tests/tuf-test-vectors/vectors/{}", test_vector.repo);
+    let vector_path = PathBuf::from("tests")
+        .join("tuf-test-vectors")
+        .join("vectors")
+        .join(test_vector.repo.clone());
 
-    for dir in vec!["metadata/latest", "metadata/archive", "targets"].iter() {
+    for dir in vec![PathBuf::from("metadata").join("current"),
+                    PathBuf::from("metadata").join("archive"),
+                    PathBuf::from("targets")]
+        .iter() {
         DirBuilder::new()
             .recursive(true)
             .create(tempdir.path().join(dir))
-            .expect(&format!("couldn't create path {}:", dir));
+            .expect(&format!("couldn't create path {}:", dir.to_string_lossy()));
     }
 
     for file in vec!["1.root.json",
@@ -67,19 +75,22 @@ fn run_test_vector(test_path: &str) {
                      "snapshot.json"]
         .iter() {
         // TODO make sure these copies succeed
-        fs::copy(format!("{}/repo/{}", vector_path, file),
-                 tempdir.path().join("metadata").join("latest").join(file));
+        // TODO windows support
+        fs::copy(format!("{}/repo/{}", vector_path.to_string_lossy(), file),
+                 tempdir.path().join("metadata").join("current").join(file));
         //.expect(&format!("copy failed: {}", file));
     }
 
-    fs::copy(format!("{}/repo/targets/file.txt", vector_path),
+    // TODO windows support
+    fs::copy(format!("{}/repo/targets/file.txt", vector_path.to_string_lossy()),
              tempdir.path().join("targets").join("file.txt"))
         .expect(&format!("copy failed for target"));
 
     let root_keys = test_vector.root_keys
         .iter()
         .map(|k| {
-            let mut file = File::open(format!("{}/keys/{}", vector_path, k.path))
+            // TODO windows support
+            let mut file = File::open(format!("{}/keys/{}", vector_path.to_string_lossy(), k.path))
                 .expect("couldn't open file");
             let mut key = String::new();
             file.read_to_string(&mut key).expect("couldn't read key");
@@ -99,7 +110,7 @@ fn run_test_vector(test_path: &str) {
         .collect();
 
     let config = Config::build()
-        .url(Url::parse("http://localhost:8080").expect("bad url"))
+        .url(util::path_to_url(tempdir.path()).expect("couldn't make url"))
         .local_path(tempdir.into_path())
         .finish()
         .expect("bad config");
