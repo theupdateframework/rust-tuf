@@ -96,14 +96,16 @@ impl Tuf {
 
     /// Create and verify the necessary directory structure for a TUF repo.
     pub fn initialize(local_path: &PathBuf) -> Result<(), Error> {
+        info!("Initializing local storage: {}", local_path.to_string_lossy());
+
         for dir in vec![PathBuf::from("metadata").join("current"),
                         PathBuf::from("metadata").join("archive"),
                         PathBuf::from("targets"),
                         PathBuf::from("temp")]
             .iter() {
-            DirBuilder::new().recursive(true)
-                .create(local_path.as_path().join(dir))?
-
+            let path = local_path.as_path().join(dir);
+            debug!("Creating path: {}", path.to_string_lossy());
+            DirBuilder::new().recursive(true).create(path)?
             // TODO error if path is not fully owned by the current user
         }
 
@@ -120,12 +122,17 @@ impl Tuf {
 
     /// Update the metadata from local and remote sources.
     pub fn update(&mut self) -> Result<(), Error> {
+        info!("Updating metdata");
         self.update_local()?;
-        self.update_remote()
+        self.update_remote()?;
+        info!("Successfully updated metadata");
+        Ok(())
     }
 
     // TODO move all the temp files to their proper location
     fn update_remote(&mut self) -> Result<(), Error> {
+        debug!("Updating metadata from remote sources");
+
         self.update_root(true)?;
 
         if self.update_timestamp(true)? && self.update_snapshot(true)? {
@@ -136,6 +143,8 @@ impl Tuf {
     }
 
     fn update_local(&mut self) -> Result<(), Error> {
+        debug!("Updating metadata from local sources");
+
         self.update_root(false)?;
 
         if self.update_timestamp(false)? && self.update_snapshot(false)? {
@@ -703,13 +712,15 @@ impl Tuf {
             }
             // this case should never happen, so err if it does for safety
             (Some(_), None) => {
-                Err(Error::VerificationFailure("Hash calculated when no expected hash supplied"
-                    .to_string()))
+                let msg = "Hash calculated when no expected hash supplied";
+                error!("Programming error. Please report this as a bug: {}", msg);
+                Err(Error::VerificationFailure(msg.to_string()))
             }
             // this case should never happen, so err if it does for safety
             (None, Some(_)) => {
-                Err(Error::VerificationFailure("No hash calculated when expected hash supplied"
-                    .to_string()))
+                let msg = "No hash calculated when expected hash supplied";
+                error!("Programming error. Please report this as a bug: {}", msg);
+                Err(Error::VerificationFailure(msg.to_string()))
             }
             _ => Ok(()),
         }

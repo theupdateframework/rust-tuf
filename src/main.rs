@@ -118,8 +118,9 @@ fn cmd_verify(tuf: &mut Tuf, target: &str) -> Result<(), Error> {
 mod test {
     use super::*;
     use std::fs::{self, DirBuilder};
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use tempdir::TempDir;
+    use _tuf::util;
 
     #[test]
     fn test_clap() {
@@ -127,35 +128,45 @@ mod test {
     }
 
     fn init_temp(temp: &Path) {
-        let vector_path = "./tests/tuf-test-vectors/vectors/001";
+        let vector_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("tuf-test-vectors")
+            .join("vectors")
+            .join("001");
 
-        for dir in vec!["metadata/current", "metadata/archive", "targets"].iter() {
+        for dir in vec![PathBuf::from("metadata").join("current"),
+                        PathBuf::from("metadata").join("archive"),
+                        PathBuf::from("targets")].iter() {
             DirBuilder::new()
                 .recursive(true)
                 .create(temp.join(dir))
-                .expect(&format!("couldn't create path {}:", dir));
+                .expect(&format!("couldn't create path {}:", dir.to_string_lossy()));
         }
 
         for file in vec!["root.json", "targets.json", "timestamp.json", "snapshot.json"].iter() {
-            fs::copy(format!("{}/repo/{}", vector_path, file),
+            let copy_path = vector_path.join("repo").join(file);
+            fs::copy(copy_path,
                      temp.join("metadata").join("current").join(file))
                 .expect(&format!("copy failed: {}", file));
         }
 
-        fs::copy(format!("{}/repo/targets/file.txt", vector_path),
+        let copy_path = vector_path.join("repo").join("targets").join("file.txt");
+        fs::copy(copy_path,
                  temp.join("targets").join("file.txt"))
             .expect(&format!("copy failed for target"));
     }
 
     #[test]
     fn run_verify() {
+        let _ = util::test_logger();
+
         let temp = TempDir::new("rust-tuf").expect("couldn't make temp dir");
         init_temp(temp.path());
 
         let matches = parser()
             .get_matches_from_safe(vec!["tuf",
                                         "--url",
-                                        "file:///tmp",
+                                        &util::path_to_url(temp.path()).expect("bad path").to_string(),
                                         "--path",
                                         temp.path().to_str().expect("path not utf-8"),
                                         "verify",

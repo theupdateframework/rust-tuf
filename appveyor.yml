@@ -51,12 +51,15 @@ test_script:
   - rustup.exe default %RUST_VERSION%
   - rustc -V
   - cargo -V
-  # TODO ? use make
-  - cargo build --target %TARGET%
-  - cargo test --target %TARGET%
+  - git submodule update --init --recursive
+  - SET RUST_BACKTRACE=full
+  - cargo build --verbose --features=cli --target %TARGET%
+  - cargo test --verbose --features=cli --no-run --target %TARGET%
+  - SET RUST_LOG=debug
+  - cargo test --verbose --features=cli --target %TARGET%
 
 # TODO on failure cat Cargo.lock (but only we can't use make)
 
 cache:
   - target
-  - C:\Users\appveyor\.cargo\registry
+  - C:\Users\appveyor\.cargo\
