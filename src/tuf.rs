@@ -725,6 +725,7 @@ pub struct Config {
 }
 
 impl Config {
+    /// Create a new builder with the defaul configurations where applicable.
     pub fn build() -> ConfigBuilder {
         ConfigBuilder::new()
     }
@@ -739,6 +740,7 @@ pub struct ConfigBuilder {
 }
 
 impl ConfigBuilder {
+    /// Create a new builder with the defaul configurations where applicable.
     pub fn new() -> Self {
         ConfigBuilder {
             url: None,

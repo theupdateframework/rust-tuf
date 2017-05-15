@@ -474,7 +474,7 @@ impl Key {
                 _ => scheme.verify(&self.value, msg, sig),
             }
         } else {
-            Err(Error::SignatureSchemeMismatch)
+            Err(Error::Generic(format!("Signature scheme mismatch: Key {:?}, Scheme {:?}", self, scheme)))
         }
     }
 }

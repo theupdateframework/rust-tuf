@@ -1,3 +1,5 @@
+//! Convenience helpers. Intended for internal use only, but made public for testing.
+
 use hyper;
 use std::path::{Path, PathBuf};
 use url::Url;
@@ -5,6 +7,7 @@ use url::percent_encoding::{percent_encode, percent_decode, DEFAULT_ENCODE_SET};
 
 use error::Error;
 
+/// Converts a `Path` into a URL with scheme `file://`.
 pub fn path_to_url(path: &Path) -> Result<Url, Error> {
     path.to_str()
         .ok_or(Error::Generic("Path was not utf-8".to_string()))
@@ -16,6 +19,7 @@ pub fn path_to_url(path: &Path) -> Result<Url, Error> {
         })
 }
 
+/// Converts a URL string (without scheme) into an OS specific path.
 pub fn url_path_to_os_path(url_path: &str) -> Result<PathBuf, Error> {
     // TODO windows support
     let url_path = percent_decode(url_path.as_bytes())
@@ -26,6 +30,7 @@ pub fn url_path_to_os_path(url_path: &str) -> Result<PathBuf, Error> {
     Ok(Path::new(&url_path).to_path_buf())
 }
 
+/// Converts a `url::Url` into a `hyper::Url`.
 pub fn url_to_hyper_url(url: &Url) -> Result<hyper::Url, Error> {
     Ok(hyper::Url::parse(url.as_str())?)
 }
