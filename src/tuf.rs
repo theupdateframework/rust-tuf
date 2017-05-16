@@ -129,7 +129,6 @@ impl Tuf {
         Ok(())
     }
 
-    // TODO move all the temp files to their proper location
     fn update_remote(&mut self) -> Result<(), Error> {
         debug!("Updating metadata from remote sources");
 
@@ -174,19 +173,39 @@ impl Tuf {
                 (None, None)
             };
 
-            let root = Self::get_meta_num::<Root, RootMetadata, File>(&self.http_client,
+            let root = match Self::get_meta_num::<Root, RootMetadata, File>(&self.http_client,
                                                                       &url,
                                                                       i,
                                                                       &self.root,
-                                                                      &mut out)?;
+                                                                     &mut out) {
+                Ok(root) => {
+                    root
+                }
+                Err(e) => {
+                    match out_path {
+                        Some(out_path) => match fs::remove_file(out_path.clone()) {
+                            Ok(_) => (),
+                            Err(e) => error!("Error removing temp file {:?}: {}", out_path, e),
+                        },
+                        None => (),
+                    }
+                    return Err(e)
+                }
+            };
 
             info!("Rotated to root metadata version {}", i);
             self.root = root;
 
-            // TODO move tempfile
+            match out_path {
+                Some(out_path) => {
+                    fs::rename(out_path,
+                               self.local_path.join("metadata").join("archive").join(format!("{}.root.json", i)))?
+                }
+                None => (),
+            };
 
             // set to None to untrust old metadata
-            // TODO this is bad because it allows rollbacks
+            // TODO check that these resets are in line with the Mercury paper
             self.targets = None;
             self.timestamp = None;
             self.snapshot = None;
@@ -228,7 +247,12 @@ impl Tuf {
                     info!("Timestamp metadata is up to date");
 
                     match out_path {
-                        Some(out_path) => fs::remove_file(out_path)?,
+                        Some(out_path) => {
+                            match fs::remove_file(out_path.clone()) {
+                                Ok(_) => (),
+                                Err(e) => error!("Error removing temp file {:?}: {}", out_path, e),
+                            }
+                        },
                         None => (),
                     };
 
@@ -238,7 +262,16 @@ impl Tuf {
         }
 
 
-        // TODO move file to actual location
+        match out_path {
+            Some(out_path) => {
+                fs::rename(self.local_path.join("metadata").join("current").join("timestamp.json"),
+                           self.local_path.join("metadata").join("archive").join("timestamp.json"))?;
+                fs::rename(out_path,
+                           self.local_path.join("metadata").join("current").join("timestamp.json"))?
+            }
+            None => (),
+        };
+
         Ok(true)
     }
 
@@ -318,7 +351,16 @@ impl Tuf {
             }
         }
 
-        // TODO move file, remove temp
+        match out_path {
+            Some(out_path) => {
+                fs::rename(self.local_path.join("metadata").join("current").join("snapshot.json"),
+                           self.local_path.join("metadata").join("archive").join("snapshot.json"))?;
+                fs::rename(out_path,
+                           self.local_path.join("metadata").join("current").join("snapshot.json"))?
+            }
+            None => (),
+        };
+
         Ok(true)
     }
 
@@ -386,7 +428,16 @@ impl Tuf {
             _ => self.targets = Some(targets),
         }
 
-        // TODO move files, remove temp
+        match out_path {
+            Some(out_path) => {
+                fs::rename(self.local_path.join("metadata").join("current").join("targets.json"),
+                           self.local_path.join("metadata").join("archive").join("targets.json"))?;
+                fs::rename(out_path,
+                           self.local_path.join("metadata").join("current").join("targets.json"))?
+            }
+            None => (),
+        };
+
         Ok(())
     }
 
