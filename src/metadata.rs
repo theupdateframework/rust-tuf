@@ -634,13 +634,10 @@ pub enum SignatureScheme {
 
 impl SignatureScheme {
     fn verify(&self, pub_key: &KeyValue, msg: &[u8], sig: &SignatureValue) -> Result<(), Error> {
-        let alg = match self {
-            &SignatureScheme::Ed25519 =>
-                &ED25519 as &ring::signature::VerificationAlgorithm,
-            &SignatureScheme::RsaSsaPssSha256 =>
-                &RSA_PSS_2048_8192_SHA256 as &ring::signature::VerificationAlgorithm,
-            &SignatureScheme::RsaSsaPssSha512 =>
-                &RSA_PSS_2048_8192_SHA512 as &ring::signature::VerificationAlgorithm,
+        let alg: &ring::signature::VerificationAlgorithm = match self {
+            &SignatureScheme::Ed25519 => &ED25519,
+            &SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
+            &SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
             &SignatureScheme::Unsupported(ref s) => {
                 return Err(Error::UnsupportedSignatureScheme(s.clone()));
             }
