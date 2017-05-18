@@ -634,32 +634,18 @@ pub enum SignatureScheme {
 
 impl SignatureScheme {
     fn verify(&self, pub_key: &KeyValue, msg: &[u8], sig: &SignatureValue) -> Result<(), Error> {
-        match self {
-            &SignatureScheme::Ed25519 => {
-                ring::signature::verify(&ED25519,
-                                        Input::from(&pub_key.value),
-                                        Input::from(msg),
-                                        Input::from(&sig.0))
-                    .map_err(|_| Error::VerificationFailure("Bad signature".into()))
-            }
-            &SignatureScheme::RsaSsaPssSha256 => {
-                ring::signature::verify(&RSA_PSS_2048_8192_SHA256,
-                                        Input::from(&convert_to_pkcs1(&pub_key.value)),
-                                        Input::from(msg),
-                                        Input::from(&sig.0))
-                    .map_err(|_| Error::VerificationFailure("Bad signature".into()))
-            }
-            &SignatureScheme::RsaSsaPssSha512 => {
-                ring::signature::verify(&RSA_PSS_2048_8192_SHA512,
-                                        Input::from(&convert_to_pkcs1(&pub_key.value)),
-                                        Input::from(msg),
-                                        Input::from(&sig.0))
-                    .map_err(|_| Error::VerificationFailure("Bad signature".into()))
-            }
+        let alg: &ring::signature::VerificationAlgorithm = match self {
+            &SignatureScheme::Ed25519 => &ED25519,
+            &SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
+            &SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
             &SignatureScheme::Unsupported(ref s) => {
-                Err(Error::UnsupportedSignatureScheme(s.clone()))
+                return Err(Error::UnsupportedSignatureScheme(s.clone()));
             }
-        }
+        };
+
+        ring::signature::verify(alg, Input::from(&convert_to_pkcs1(&pub_key.value)),
+                                Input::from(msg), Input::from(&sig.0))
+            .map_err(|_| Error::VerificationFailure("Bad signature".into()))
     }
 }
 
