@@ -125,7 +125,7 @@ mod test {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("tuf-test-vectors")
-            .join("vectors")
+            .join("tuf")
             .join("001")
             .join("repo")
     }
