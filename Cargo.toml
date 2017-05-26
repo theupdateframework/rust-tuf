@@ -32,7 +32,7 @@ cli = [ "clap" ]
 chrono = { version = "0.3.1", features = [ "serde" ] }
 clap = { version = "2.23", optional = true }
 data-encoding = "2.0.0-rc.1"
-env_logger = "0.4.2"
+env_logger = "0.4.3"
 hyper = "0.10.10"
 itoa = "0.3"
 log = "0.3"

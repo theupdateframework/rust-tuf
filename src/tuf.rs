@@ -1,11 +1,12 @@
 use chrono::UTC;
 use json;
+use hyper::Url as HyperUrl;
 use hyper::client::Client;
 use ring::digest;
 use ring::digest::{SHA256, SHA512};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, DirBuilder};
-use std::io::{Read, Write};
+use std::io::{Read, Write, Seek, SeekFrom};
 use std::path::PathBuf;
 use url::Url;
 use uuid::Uuid;
@@ -36,18 +37,33 @@ impl Tuf {
     pub fn from_root_keys(root_keys: Vec<Key>, config: Config) -> Result<Self, Error> {
         Self::initialize(&config.local_path)?;
 
-        let url = util::path_to_url(config.local_path.as_path())
-            .map_err(|e| Error::Generic(format!("{:?}", e)))?;
-
-        // TODO have this try local then try from the URL since things might not be initialized
         let root = {
-            let modified_root = Self::read_root_with_keys(&config.http_client, &url, &root_keys)?;
-            // pass it back through the main path to ensure consistency
-            Self::get_meta_num::<Root, RootMetadata, File>(&config.http_client,
-                                                           &url,
-                                                           1,
-                                                           &modified_root,
-                                                           &mut None)?
+            let fetch_type = &FetchType::Cache(config.local_path.clone());
+
+            match Self::read_root_with_keys(fetch_type, &config.http_client, &root_keys) {
+                Ok(modified_root) => {
+                    Self::get_meta_num::<Root, RootMetadata, File>(fetch_type,
+                                                                   &config.http_client,
+                                                                   1,
+                                                                   &modified_root,
+                                                                   &mut None)?
+                }
+                Err(e) => {
+                    debug!("Failed to read root locally: {:?}", e);
+                    let fetch_type = &match config.url.scheme() {
+                        "file" => FetchType::File(util::url_path_to_os_path(config.url.path())?),
+                        "http" | "https" => FetchType::Http(util::url_to_hyper_url(&config.url)?),
+                        x => return Err(Error::Generic(format!("Unsupported URL scheme: {}", x))),
+                    };
+                    let modified_root =
+                        Self::read_root_with_keys(fetch_type, &config.http_client, &root_keys)?;
+                    Self::get_meta_num::<Root, RootMetadata, File>(fetch_type,
+                                                                   &config.http_client,
+                                                                   1,
+                                                                   &modified_root,
+                                                                   &mut None)?
+                }
+            }
         };
 
         let mut tuf = Tuf {
@@ -69,13 +85,12 @@ impl Tuf {
     /// to ensure the needed paths exist.
     pub fn new(config: Config) -> Result<Self, Error> {
         Self::initialize(&config.local_path)?;
-        let url = util::path_to_url(config.local_path.as_path())
-            .map_err(|e| Error::Generic(format!("{:?}", e)))?;
 
         let root = {
-            let root = Self::unverified_read_root(&config.http_client, &url)?;
-            Self::get_metadata::<Root, RootMetadata, File>(&config.http_client,
-                                                           &url,
+            let fetch_type = &FetchType::Cache(config.local_path.clone());
+            let root = Self::unverified_read_root(fetch_type, &config.http_client)?;
+            Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
+                                                           &config.http_client,
                                                            &root,
                                                            &mut None)?
         };
@@ -96,7 +111,8 @@ impl Tuf {
 
     /// Create and verify the necessary directory structure for a TUF repo.
     pub fn initialize(local_path: &PathBuf) -> Result<(), Error> {
-        info!("Initializing local storage: {}", local_path.to_string_lossy());
+        info!("Initializing local storage: {}",
+              local_path.to_string_lossy());
 
         for dir in vec![PathBuf::from("metadata").join("current"),
                         PathBuf::from("metadata").join("archive"),
@@ -117,13 +133,18 @@ impl Tuf {
     fn temp_file(&self) -> Result<(File, PathBuf), Error> {
         let uuid = Uuid::new_v4();
         let path = self.local_path.as_path().join("temp").join(uuid.hyphenated().to_string());
+
+        debug!("Creating temp file: {:?}", path);
         Ok((File::create(path.clone())?, path.to_path_buf()))
     }
 
     /// Update the metadata from local and remote sources.
     pub fn update(&mut self) -> Result<(), Error> {
         info!("Updating metdata");
-        self.update_local()?;
+        match self.update_local() {
+            Ok(()) => (),
+            Err(e) => warn!("Error updating metadata from local sources: {:?}", e),
+        };
         self.update_remote()?;
         info!("Successfully updated metadata");
         Ok(())
@@ -131,11 +152,22 @@ impl Tuf {
 
     fn update_remote(&mut self) -> Result<(), Error> {
         debug!("Updating metadata from remote sources");
+        let fetch_type = &match self.url.scheme() {
+            "file" => FetchType::File(util::url_path_to_os_path(self.url.path())?),
+            "http" | "https" => FetchType::Http(util::url_to_hyper_url(&self.url)?),
+            x => {
+                let msg = format!("Programming error: unsupported URL scheme {}. Please report \
+                                   this as a bug.",
+                                  x);
+                error!("{}", msg);
+                return Err(Error::Generic(msg));
+            }
+        };
 
-        self.update_root(true)?;
+        self.update_root(fetch_type)?;
 
-        if self.update_timestamp(true)? && self.update_snapshot(true)? {
-            self.update_targets(true)
+        if self.update_timestamp(fetch_type)? && self.update_snapshot(fetch_type)? {
+            self.update_targets(fetch_type)
         } else {
             Ok(())
         }
@@ -143,53 +175,78 @@ impl Tuf {
 
     fn update_local(&mut self) -> Result<(), Error> {
         debug!("Updating metadata from local sources");
+        let fetch_type = &FetchType::Cache(self.local_path.clone());
 
-        self.update_root(false)?;
+        self.update_root(fetch_type)?;
 
-        if self.update_timestamp(false)? && self.update_snapshot(false)? {
-            self.update_targets(false)
+        if self.update_timestamp(fetch_type)? && self.update_snapshot(fetch_type)? {
+            self.update_targets(fetch_type)
         } else {
             Ok(())
         }
     }
 
-    fn update_root(&mut self, remote: bool) -> Result<(), Error> {
-        let url = if remote {
-            // TODO remove this clone
-            self.url.clone()
-        } else {
-            util::path_to_url(self.local_path.as_path())
-                .map_err(|e| Error::Generic(format!("{:?}", e)))?
-        };
+    fn update_root(&mut self, fetch_type: &FetchType) -> Result<(), Error> {
+        debug!("Updating root metadata");
+        println!("Updating root metadata");
 
-        let temp_root = Self::unverified_read_root(&self.http_client, &url)?;
+        let temp_root = Self::unverified_read_root(fetch_type, &self.http_client)?;
 
         // TODO reuse temp root as last one
         for i in (self.root.version + 1)..(temp_root.version + 1) {
-            let (mut out, out_path) = if remote {
+            let (mut out, out_path) = if !fetch_type.is_cache() {
                 let (file, path) = self.temp_file()?;
                 (Some(file), Some(path))
             } else {
                 (None, None)
             };
 
-            let root = match Self::get_meta_num::<Root, RootMetadata, File>(&self.http_client,
-                                                                      &url,
-                                                                      i,
-                                                                      &self.root,
-                                                                     &mut out) {
-                Ok(root) => {
-                    root
+            let root = match Self::get_meta_num::<Root, RootMetadata, File>(fetch_type,
+                                                                            &self.http_client,
+                                                                            i,
+                                                                            &self.root,
+                                                                            &mut out) {
+                Ok(root) => root,
+                Err(e) => {
+                    match out_path {
+                        Some(out_path) => {
+                            match fs::remove_file(out_path.clone()) {
+                                Ok(_) => (),
+                                Err(e) => warn!("Error removing temp file {:?}: {}", out_path, e),
+                            }
+                        }
+                        None => (),
+                    }
+                    return Err(e);
+                }
+            };
+
+            // verify root again against itself (for cross signing)
+            // TODO this is not the most efficient way to do it, but it works
+            match Self::get_meta_num::<Root, RootMetadata, File>(fetch_type,
+                                                                 &self.http_client,
+                                                                 i,
+                                                                 &root,
+                                                                 &mut None::<File>) {
+                Ok(root_again) => {
+                    if root != root_again {
+                        // TODO better error message
+                        return Err(Error::Generic(format!("Cross singning of root version {} \
+                                                           failed",
+                                                          i)));
+                    }
                 }
                 Err(e) => {
                     match out_path {
-                        Some(out_path) => match fs::remove_file(out_path.clone()) {
-                            Ok(_) => (),
-                            Err(e) => error!("Error removing temp file {:?}: {}", out_path, e),
-                        },
+                        Some(out_path) => {
+                            match fs::remove_file(out_path.clone()) {
+                                Ok(_) => (),
+                                Err(e) => warn!("Error removing temp file {:?}: {}", out_path, e),
+                            }
+                        }
                         None => (),
                     }
-                    return Err(e)
+                    return Err(e);
                 }
             };
 
@@ -199,7 +256,10 @@ impl Tuf {
             match out_path {
                 Some(out_path) => {
                     fs::rename(out_path,
-                               self.local_path.join("metadata").join("archive").join(format!("{}.root.json", i)))?
+                               self.local_path
+                                   .join("metadata")
+                                   .join("archive")
+                                   .join(format!("{}.root.json", i)))?
                 }
                 None => (),
             };
@@ -214,20 +274,23 @@ impl Tuf {
         Ok(())
     }
 
-    fn update_timestamp(&mut self, remote: bool) -> Result<bool, Error> {
-        let (url, mut out, out_path) = if remote {
-            // TODO remove this clone
+    fn update_timestamp(&mut self, fetch_type: &FetchType) -> Result<bool, Error> {
+        debug!("Updating timestamp metadata");
+        println!("Updating timestamp metadata");
+
+        let (mut out, out_path) = if !fetch_type.is_cache() {
             let (file, path) = self.temp_file()?;
-            (self.url.clone(), Some(file), Some(path))
+            (Some(file), Some(path))
         } else {
-            let url = util::path_to_url(self.local_path.as_path())
-                .map_err(|e| Error::Generic(format!("{:?}", e)))?;
-            (url, None, None)
+            (None, None)
         };
 
-        let timestamp = Self::get_metadata::<Timestamp,
-                                             TimestampMetadata,
-                                             File>(&self.http_client, &url, &self.root, &mut out)?;
+        let timestamp =
+            Self::get_metadata::<Timestamp, TimestampMetadata, File>(fetch_type,
+                                                                     &self.http_client,
+                                                                     &self.root,
+                                                                     &mut out)?;
+
         match self.timestamp {
             Some(ref t) if t.version > timestamp.version => {
                 match out_path {
@@ -250,9 +313,9 @@ impl Tuf {
                         Some(out_path) => {
                             match fs::remove_file(out_path.clone()) {
                                 Ok(_) => (),
-                                Err(e) => error!("Error removing temp file {:?}: {}", out_path, e),
+                                Err(e) => warn!("Error removing temp file {:?}: {}", out_path, e),
                             }
-                        },
+                        }
                         None => (),
                     };
 
@@ -261,11 +324,21 @@ impl Tuf {
             }
         }
 
-
         match out_path {
             Some(out_path) => {
-                fs::rename(self.local_path.join("metadata").join("current").join("timestamp.json"),
-                           self.local_path.join("metadata").join("archive").join("timestamp.json"))?;
+                let current_path = self.local_path
+                    .join("metadata")
+                    .join("current")
+                    .join("timestamp.json");
+
+                if current_path.exists() {
+                    fs::rename(current_path,
+                               self.local_path
+                                   .join("metadata")
+                                   .join("archive")
+                                   .join("timestamp.json"))?;
+                };
+
                 fs::rename(out_path,
                            self.local_path.join("metadata").join("current").join("timestamp.json"))?
             }
@@ -275,7 +348,9 @@ impl Tuf {
         Ok(true)
     }
 
-    fn update_snapshot(&mut self, remote: bool) -> Result<bool, Error> {
+    fn update_snapshot(&mut self, fetch_type: &FetchType) -> Result<bool, Error> {
+        debug!("Updating snapshot metadata");
+
         let meta = match self.timestamp {
             Some(ref timestamp) => {
                 match timestamp.meta.get("snapshot.json") {
@@ -300,20 +375,17 @@ impl Tuf {
             })
             .ok_or_else(|| Error::NoSupportedHashAlgorithms)?;
 
-        let (url, mut out, out_path) = if remote {
+        let (mut out, out_path) = if !fetch_type.is_cache() {
             let (file, path) = self.temp_file()?;
-            // TODO remove this clone
-            (self.url.clone(), Some(file), Some(path))
+            (Some(file), Some(path))
         } else {
-            let url = util::path_to_url(self.local_path.as_path())
-                .map_err(|e| Error::Generic(format!("{:?}", e)))?;
-            (url, None, None)
+            (None, None)
         };
 
         let snapshot = Self::get_meta_prefix::<Snapshot,
                                                SnapshotMetadata,
-                                               File>(&self.http_client,
-                                                     &url,
+                                               File>(fetch_type,
+                                                     &self.http_client,
                                                      "",
                                                      &self.root,
                                                      Some(meta.length),
@@ -353,8 +425,19 @@ impl Tuf {
 
         match out_path {
             Some(out_path) => {
-                fs::rename(self.local_path.join("metadata").join("current").join("snapshot.json"),
-                           self.local_path.join("metadata").join("archive").join("snapshot.json"))?;
+                let current_path = self.local_path
+                    .join("metadata")
+                    .join("current")
+                    .join("snapshot.json");
+
+                if current_path.exists() {
+                    fs::rename(current_path,
+                               self.local_path
+                                   .join("metadata")
+                                   .join("archive")
+                                   .join("snapshot.json"))?;
+                };
+
                 fs::rename(out_path,
                            self.local_path.join("metadata").join("current").join("snapshot.json"))?
             }
@@ -364,7 +447,9 @@ impl Tuf {
         Ok(true)
     }
 
-    fn update_targets(&mut self, remote: bool) -> Result<(), Error> {
+    fn update_targets(&mut self, fetch_type: &FetchType) -> Result<(), Error> {
+        debug!("Updating targets metadata");
+
         let meta = match self.snapshot {
             Some(ref snapshot) => {
                 match snapshot.meta.get("targets.json") {
@@ -396,17 +481,15 @@ impl Tuf {
 
         let hash_data = hash_data.map(|(t, v)| (t, v.0.as_slice()));
 
-        let (url, mut out, out_path) = if remote {
+        let (mut out, out_path) = if !fetch_type.is_cache() {
             let (file, path) = self.temp_file()?;
-            (self.url.clone(), Some(file), Some(path))
+            (Some(file), Some(path))
         } else {
-            let url = util::path_to_url(self.local_path.as_path())
-                .map_err(|e| Error::Generic(format!("{:?}", e)))?;
-            (url, None, None)
+            (None, None)
         };
 
-        let targets = Self::get_meta_prefix::<Targets, TargetsMetadata, File>(&self.http_client,
-                                                                              &url,
+        let targets = Self::get_meta_prefix::<Targets, TargetsMetadata, File>(fetch_type,
+                                                                              &self.http_client,
                                                                               "",
                                                                               &self.root,
                                                                               meta.length,
@@ -430,8 +513,19 @@ impl Tuf {
 
         match out_path {
             Some(out_path) => {
-                fs::rename(self.local_path.join("metadata").join("current").join("targets.json"),
-                           self.local_path.join("metadata").join("archive").join("targets.json"))?;
+                let current_path = self.local_path
+                    .join("metadata")
+                    .join("current")
+                    .join("targets.json");
+
+                if current_path.exists() {
+                    fs::rename(current_path,
+                               self.local_path
+                                   .join("metadata")
+                                   .join("archive")
+                                   .join("targets.json"))?;
+                };
+
                 fs::rename(out_path,
                            self.local_path.join("metadata").join("current").join("targets.json"))?
             }
@@ -441,23 +535,23 @@ impl Tuf {
         Ok(())
     }
 
-    fn get_metadata<R: RoleType, M: Metadata<R>, W: Write>(http_client: &Client,
-                                                           url: &Url,
+    fn get_metadata<R: RoleType, M: Metadata<R>, W: Write>(fetch_type: &FetchType,
+                                                           http_client: &Client,
                                                            root: &RootMetadata,
                                                            mut out: &mut Option<W>)
                                                            -> Result<M, Error> {
-        Self::get_meta_prefix(http_client, url, "", root, None, None, &mut out)
+        Self::get_meta_prefix(fetch_type, http_client, "", root, None, None, &mut out)
     }
 
-    fn get_meta_num<R: RoleType, M: Metadata<R>, W: Write>(http_client: &Client,
-                                                           url: &Url,
+    fn get_meta_num<R: RoleType, M: Metadata<R>, W: Write>(fetch_type: &FetchType,
+                                                           http_client: &Client,
                                                            num: i32,
                                                            root: &RootMetadata,
                                                            mut out: &mut Option<W>)
                                                            -> Result<M, Error> {
         // TODO this should check that the metadata version == num
-        Self::get_meta_prefix(http_client,
-                              url,
+        Self::get_meta_prefix(fetch_type,
+                              http_client,
                               &format!("{}.", num),
                               root,
                               None,
@@ -465,8 +559,8 @@ impl Tuf {
                               &mut out)
     }
 
-    fn get_meta_prefix<R: RoleType, M: Metadata<R>, W: Write>(http_client: &Client,
-                                                              url: &Url,
+    fn get_meta_prefix<R: RoleType, M: Metadata<R>, W: Write>(fetch_type: &FetchType,
+                                                              http_client: &Client,
                                                               prefix: &str,
                                                               root: &RootMetadata,
                                                               size: Option<i64>,
@@ -474,16 +568,17 @@ impl Tuf {
                                                                                  &[u8])>,
                                                               mut out: &mut Option<W>)
                                                               -> Result<M, Error> {
-        let buf: Vec<u8> = match url.scheme() {
-            "file" => {
-                let path = util::url_path_to_os_path(url.path())
-                    ?
-                    .join("metadata")
+
+        debug!("Loading metadata from {:?}", fetch_type);
+
+        let buf: Vec<u8> = match fetch_type {
+            &FetchType::Cache(ref local_path) => {
+                let path = local_path.join("metadata")
                     .join("current")
                     .join(format!("{}{}.json", prefix, R::role()));
                 info!("Reading metadata from local path: {:?}", path);
 
-                let mut file = File::open(path)?;
+                let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
                 let mut buf = Vec::new();
 
                 match (size, hash_data) {
@@ -493,9 +588,22 @@ impl Tuf {
 
                 buf
             }
-            "http" | "https" => {
-                let url = util::url_to_hyper_url(url)?
-                    .join(&format!("{}{}.json", prefix, R::role()))?;
+            &FetchType::File(ref path) => {
+                let path = path.join(format!("{}{}.json", prefix, R::role()));
+                info!("Reading metadata from path: {:?}", path);
+
+                let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
+                let mut buf = Vec::new();
+
+                match (size, hash_data) {
+                    (None, None) => file.read_to_end(&mut buf).map(|_| ())?,
+                    _ => Self::read_and_verify(&mut file, &mut Some(&mut buf), size, hash_data)?,
+                };
+
+                buf
+            }
+            &FetchType::Http(ref url) => {
+                let url = url.join(&format!("{}{}.json", prefix, R::role()))?;
                 let mut resp = http_client.get(url).send()?;
                 let mut buf = Vec::new();
 
@@ -506,7 +614,6 @@ impl Tuf {
 
                 buf
             }
-            x => return Err(Error::Generic(format!("Unsupported URL scheme: {}", x))),
         };
 
         let signed = json::from_slice(&buf)?;
@@ -527,28 +634,34 @@ impl Tuf {
         Ok(meta)
     }
 
-    fn unverified_read_root(http_client: &Client, url: &Url) -> Result<RootMetadata, Error> {
-        let buf: Vec<u8> = match url.scheme() {
-            "file" => {
-                let path = util::url_path_to_os_path(url.path())
-                    ?
-                    .join("metadata")
+    fn unverified_read_root(fetch_type: &FetchType,
+                            http_client: &Client)
+                            -> Result<RootMetadata, Error> {
+        let buf: Vec<u8> = match fetch_type {
+            &FetchType::Cache(ref local_path) => {
+                let path = local_path.join("metadata")
                     .join("current")
                     .join("root.json");
 
-                let mut file = File::open(path)?;
+                let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
                 let mut buf = Vec::new();
                 file.read_to_end(&mut buf).map(|_| ())?;
                 buf
             }
-            "http" | "https" => {
-                let url = util::url_to_hyper_url(url)?.join("root.json")?;
+            &FetchType::File(ref path) => {
+                let path = path.join("root.json");
+                let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
+                let mut buf = Vec::new();
+                file.read_to_end(&mut buf).map(|_| ())?;
+                buf
+            }
+            &FetchType::Http(ref url) => {
+                let url = url.join("root.json")?;
                 let mut resp = http_client.get(url).send()?;
                 let mut buf = Vec::new();
                 resp.read_to_end(&mut buf).map(|_| ())?;
                 buf
             }
-            x => return Err(Error::Generic(format!("Unsupported URL scheme: {}", x))),
         };
 
         let signed: SignedMetadata<Root> = json::from_slice(&buf)?;
@@ -558,31 +671,37 @@ impl Tuf {
 
     /// Read the root.json metadata and replace keys for the root role with the keys that are given
     /// as arguments to this function. This initial read is unverified in any way.
-    fn read_root_with_keys(http_client: &Client,
-                           url: &Url,
+    fn read_root_with_keys(fetch_type: &FetchType,
+                           http_client: &Client,
                            root_keys: &[Key])
                            -> Result<RootMetadata, Error> {
-        let buf: Vec<u8> = match url.scheme() {
-            "file" => {
-                let path = util::url_path_to_os_path(url.path())
-                    ?
-                    .join("metadata")
-                    .join("current")
+        let buf: Vec<u8> = match fetch_type {
+            &FetchType::Cache(ref local_path) => {
+                let path = local_path.join("metadata")
+                    .join("archive")
                     .join("1.root.json");
 
-                let mut file = File::open(path)?;
+                debug!("Reading root.json from path: {:?}", path);
+
+                let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
                 let mut buf = Vec::new();
                 file.read_to_end(&mut buf).map(|_| ())?;
                 buf
             }
-            "http" | "https" => {
-                let url = util::url_to_hyper_url(url)?;
+            &FetchType::File(ref path) => {
+                let path = path.join("1.root.json");
+                let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
+                let mut buf = Vec::new();
+                file.read_to_end(&mut buf).map(|_| ())?;
+                buf
+            }
+            &FetchType::Http(ref url) => {
+                let url = url.join("1.root.json")?;
                 let mut resp = http_client.get(url).send()?;
                 let mut buf = Vec::new();
                 resp.read_to_end(&mut buf).map(|_| ())?;
                 buf
             }
-            x => return Err(Error::Generic(format!("Unsupported URL scheme: {}", x))),
         };
 
         // TODO once serialize is implemented for all the types, don't use this
@@ -674,10 +793,11 @@ impl Tuf {
         }
     }
 
-    /// Verifies a given target. Fails if the target is missing, or if the metadata chain that
-    /// leads to it cannot be verified.
-    // TODO stronger input type
-    pub fn verify_target(&self, target: &str) -> Result<(), Error> {
+    /// Reads a target from local storage or fetches it from a remote repository. Verifies the
+    /// target. Fails if the target is missing, or if the metadata chain that leads to it cannot
+    /// be verified.
+    // TODO ? stronger input type
+    pub fn fetch_target(&self, target: &str) -> Result<PathBuf, Error> {
         let target_meta = match self.targets {
             Some(ref targets) => {
                 targets.targets
@@ -697,17 +817,106 @@ impl Tuf {
             })
             .ok_or_else(|| Error::NoSupportedHashAlgorithms)?;
 
-        // TODO pretty sure this join is wrong somehow
-        let path = self.local_path.join(target);
-        info!("Reading target from local path: {:?}", path);
+        // TODO correctly split path
+        let path = self.local_path.join("targets").join(util::url_path_to_os_path(target)?);
+        info!("reading target from local path: {:?}", path);
 
-        let mut file = File::open(path)?;
+        if path.exists() {
+            let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
+            Self::read_and_verify(&mut file,
+                                  &mut None::<&mut File>,
+                                  Some(target_meta.length),
+                                  Some((&hash_alg, &expected_hash.0)))?;
+            let _ = file.seek(SeekFrom::Start(0))?;
+            return Ok(path);
+        } else {
+            let (out, out_path) = self.temp_file()?;
 
-        Self::read_and_verify(&mut file,
-                              &mut None::<&mut File>,
-                              Some(target_meta.length),
-                              Some((&hash_alg, &expected_hash.0)))
-            .map(|_| ())
+            match self.url.scheme() {
+                "file" => {
+                    let mut url = self.url.clone();
+                    {
+                        url.path_segments_mut()
+                            .map_err(|_| Error::Generic("Path could not be mutated".to_string()))?
+                            .extend(target.split("/"));
+                    }
+
+                    let path = util::url_path_to_os_path(url.path())?;
+                    let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
+
+                    match Self::read_and_verify(&mut file,
+                                                &mut Some(out),
+                                                Some(target_meta.length),
+                                                Some((&hash_alg, &expected_hash.0))) {
+                        Ok(()) => {
+                            // TODO ensure intermediate directories exist
+                            let mut storage_path = self.local_path.join("targets");
+                            storage_path.extend(target.split("/"));
+
+                            {
+                                let parent = storage_path.parent()
+                                    .ok_or_else(|| Error::Generic("Path had no parent".to_string()))?;
+
+                                DirBuilder::new()
+                                    .recursive(true)
+                                    .create(parent)?;
+                            }
+
+                            fs::rename(out_path, storage_path.clone())?;
+                            Ok(storage_path)
+                        }
+                        Err(e) => {
+                            match fs::remove_file(out_path.clone()) {
+                                Ok(_) => Err(e),
+                                Err(e) => {
+                                    warn!("Error removing temp file {:?}: {}", out_path, e);
+                                    Err(Error::from(e))
+                                }
+                            }
+                        }
+                    }
+                }
+                "http" | "https" => {
+                    let url = util::url_to_hyper_url(&self.url.join(target)?)?;
+                    let mut resp = self.http_client.get(url).send()?;
+
+                    match Self::read_and_verify(&mut resp,
+                                                &mut Some(out),
+                                                Some(target_meta.length),
+                                                Some((&hash_alg, &expected_hash.0))) {
+                        Ok(()) => {
+                            // TODO this isn't windows friendly
+                            // TODO ensure intermediate directories exist
+                            let mut storage_path = self.local_path.join("targets");
+                            storage_path.extend(target.split("/"));
+
+                            {
+                                let parent = storage_path.parent()
+                                    .ok_or_else(|| Error::Generic("Path had no parent".to_string()))?;
+
+                                DirBuilder::new()
+                                    .recursive(true)
+                                    .create(parent)?;
+                            }
+
+                            fs::rename(out_path, storage_path.clone())?;
+
+                            Ok(storage_path)
+                        }
+                        Err(e) => {
+                            match fs::remove_file(out_path.clone()) {
+                                Ok(_) => Err(e),
+                                Err(e) => {
+                                    warn!("Error removing temp file {:?}: {}", out_path, e);
+                                    Err(Error::from(e))
+                                }
+                            }
+                        }
+                    }
+                }
+                x => Err(Error::Generic(format!("Unsupported URL scheme: {}", x))),
+            }
+        }
     }
 
     fn read_and_verify<R: Read, W: Write>(input: &mut R,
@@ -728,6 +937,10 @@ impl Tuf {
         loop {
             match input.read(&mut buf) {
                 Ok(read_bytes) => {
+                    if read_bytes == 0 {
+                        break;
+                    }
+
                     match output {
                         &mut Some(ref mut output) => output.write_all(&buf[0..read_bytes])?,
                         &mut None => (),
@@ -761,19 +974,20 @@ impl Tuf {
                                                                 expected_hash => {
                 Err(Error::TargetHashMismatch)
             }
-            // this case should never happen, so err if it does for safety
+            // this should never happen, so err if it does for safety
             (Some(_), None) => {
                 let msg = "Hash calculated when no expected hash supplied";
                 error!("Programming error. Please report this as a bug: {}", msg);
                 Err(Error::VerificationFailure(msg.to_string()))
             }
-            // this case should never happen, so err if it does for safety
+            // this should never happen, so err if it does for safety
             (None, Some(_)) => {
                 let msg = "No hash calculated when expected hash supplied";
                 error!("Programming error. Please report this as a bug: {}", msg);
                 Err(Error::VerificationFailure(msg.to_string()))
             }
-            _ => Ok(()),
+            (Some(_), Some(_)) |
+            (None, None) => Ok(()),
         }
     }
 }
@@ -784,10 +998,11 @@ pub struct Config {
     url: Url,
     local_path: PathBuf,
     http_client: Client,
+    // TODO add `init: bool` to specify whether or not to create dir structure
 }
 
 impl Config {
-    /// Create a new builder with the defaul configurations where applicable.
+    /// Create a new builder with the default configurations where applicable.
     pub fn build() -> ConfigBuilder {
         ConfigBuilder::new()
     }
@@ -802,7 +1017,7 @@ pub struct ConfigBuilder {
 }
 
 impl ConfigBuilder {
-    /// Create a new builder with the defaul configurations where applicable.
+    /// Create a new builder with the default configurations where applicable.
     pub fn new() -> Self {
         ConfigBuilder {
             url: None,
@@ -831,9 +1046,13 @@ impl ConfigBuilder {
 
     /// Verify the configuration.
     pub fn finish(self) -> Result<Config, Error> {
-        // TODO verify url scheme is something we support
         let url = self.url
             .ok_or_else(|| Error::InvalidConfig("Repository URL was not set".to_string()))?;
+
+        match url.scheme() {
+            "file" | "http" | "https" => (),
+            x => return Err(Error::InvalidConfig(format!("Unsupported URL scheme: {}", x))),
+        };
 
         let local_path = self.local_path
             .ok_or_else(|| Error::InvalidConfig("Local path was not set".to_string()))?;
@@ -843,5 +1062,22 @@ impl ConfigBuilder {
             local_path: local_path,
             http_client: self.http_client.unwrap_or_else(|| Client::new()),
         })
+    }
+}
+
+
+#[derive(Debug)]
+enum FetchType {
+    Cache(PathBuf),
+    File(PathBuf),
+    Http(HyperUrl),
+}
+
+impl FetchType {
+    fn is_cache(&self) -> bool {
+        match self {
+            &FetchType::Cache(_) => true,
+            _ => false,
+        }
     }
 }

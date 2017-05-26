@@ -121,7 +121,7 @@ pub trait Metadata<R: RoleType>: DeserializeOwned {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RootMetadata {
     // TODO consistent_snapshot: bool,
     expires: DateTime<UTC>,

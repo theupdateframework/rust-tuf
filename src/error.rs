@@ -1,5 +1,6 @@
 use hyper;
 use json;
+use std::path::Path;
 use std::io;
 
 use metadata::Role;
@@ -49,6 +50,12 @@ pub enum Error {
     VerificationFailure(String),
     /// A piece of metadata decreased its version when not allowed.
     VersionDecrease(Role),
+}
+
+impl Error {
+    pub fn from_io(err: io::Error, path: &Path) -> Error {
+        Error::Io(format!("Path {:?} : {:?}", path, err))
+    }
 }
 
 impl From<io::Error> for Error {

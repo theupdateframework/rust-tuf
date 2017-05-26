@@ -28,23 +28,21 @@ fn main() {
 }
 
 fn run_main(matches: ArgMatches) -> Result<(), Error> {
-    let config = Config::build()
-        .url(Url::parse(matches.value_of("url").unwrap()).unwrap())
+    let config = Config::build().url(Url::parse(matches.value_of("url").unwrap())?)
         .local_path(PathBuf::from(matches.value_of("path").unwrap()))
-        .finish()
-        .expect("bad config"); // TODO don't use expect
+        .finish()?;
 
     if let Some(_) = matches.subcommand_matches("init") {
         let path = PathBuf::from(matches.value_of("path").unwrap());
         cmd_init(&path)
     } else if let Some(_) = matches.subcommand_matches("list") {
-        let mut tuf = Tuf::new(config).unwrap(); // TODO unwrap
+        let mut tuf = Tuf::new(config)?;
         cmd_list(&mut tuf)
     } else if let Some(_) = matches.subcommand_matches("update") {
-        let mut tuf = Tuf::new(config).unwrap(); // TODO unwrap
+        let mut tuf = Tuf::new(config)?;
         cmd_update(&mut tuf)
     } else if let Some(matches) = matches.subcommand_matches("verify") {
-        let mut tuf = Tuf::new(config).unwrap(); // TODO unwrap
+        let mut tuf = Tuf::new(config)?;
         cmd_verify(&mut tuf, matches.value_of("target").unwrap())
     } else {
         unreachable!() // because of AppSettings::SubcommandRequiredElseHelp
@@ -111,7 +109,8 @@ fn cmd_update(tuf: &mut Tuf) -> Result<(), Error> {
 }
 
 fn cmd_verify(tuf: &mut Tuf, target: &str) -> Result<(), Error> {
-    tuf.verify_target(target)
+    tuf.fetch_target(target)
+        .map(|_| ())
 }
 
 #[cfg(test)]
@@ -122,57 +121,73 @@ mod test {
     use tempdir::TempDir;
     use _tuf::util;
 
+    fn vector_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("tuf-test-vectors")
+            .join("vectors")
+            .join("001")
+            .join("repo")
+    }
+
     #[test]
     fn test_clap() {
         let _ = parser();
     }
 
     fn init_temp(temp: &Path) {
-        let vector_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("tuf-test-vectors")
-            .join("vectors")
-            .join("001");
+        let dir = PathBuf::from("metadata").join("current");
+        DirBuilder::new()
+            .recursive(true)
+            .create(temp.join(dir.clone()))
+            .expect(&format!("couldn't create path {}:", temp.join(dir).to_string_lossy()));
 
-        for dir in vec![PathBuf::from("metadata").join("current"),
-                        PathBuf::from("metadata").join("archive"),
-                        PathBuf::from("targets")].iter() {
-            DirBuilder::new()
-                .recursive(true)
-                .create(temp.join(dir))
-                .expect(&format!("couldn't create path {}:", dir.to_string_lossy()));
-        }
-
-        for file in vec!["root.json", "targets.json", "timestamp.json", "snapshot.json"].iter() {
-            let copy_path = vector_path.join("repo").join(file);
-            fs::copy(copy_path,
-                     temp.join("metadata").join("current").join(file))
-                .expect(&format!("copy failed: {}", file));
-        }
-
-        let copy_path = vector_path.join("repo").join("targets").join("file.txt");
+        let copy_path = vector_path().join("root.json");
         fs::copy(copy_path,
-                 temp.join("targets").join("file.txt"))
+                 temp.join("metadata").join("current").join("root.json"))
             .expect(&format!("copy failed for target"));
     }
 
     #[test]
-    fn run_verify() {
-        let _ = util::test_logger();
-
+    fn run_it() {
         let temp = TempDir::new("rust-tuf").expect("couldn't make temp dir");
         init_temp(temp.path());
 
         let matches = parser()
             .get_matches_from_safe(vec!["tuf",
                                         "--url",
-                                        &util::path_to_url(temp.path()).expect("bad path").to_string(),
+                                        &util::path_to_url(&vector_path())
+                                            .expect("bad path")
+                                            .to_string(),
+                                        "--path",
+                                        temp.path().to_str().expect("path not utf-8"),
+                                        "init"])
+            .expect("parse error");
+        assert_eq!(run_main(matches), Ok(()));
+
+        let matches = parser()
+            .get_matches_from_safe(vec!["tuf",
+                                        "--url",
+                                        &util::path_to_url(&vector_path())
+                                            .expect("bad path")
+                                            .to_string(),
+                                        "--path",
+                                        temp.path().to_str().expect("path not utf-8"),
+                                        "update"])
+            .expect("parse error");
+        assert_eq!(run_main(matches), Ok(()));
+
+        let matches = parser()
+            .get_matches_from_safe(vec!["tuf",
+                                        "--url",
+                                        &util::path_to_url(&vector_path())
+                                            .expect("bad path")
+                                            .to_string(),
                                         "--path",
                                         temp.path().to_str().expect("path not utf-8"),
                                         "verify",
                                         "targets/file.txt"])
             .expect("parse error");
-
         assert_eq!(run_main(matches), Ok(()));
     }
 }

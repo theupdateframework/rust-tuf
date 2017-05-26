@@ -20,7 +20,7 @@ fn load_vector_meta() -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("tuf-test-vectors")
-        .join("vectors")
+        .join("tuf")
         .join("vector-meta.json");
     let mut file = File::open(path).expect("couldn't open vector meta");
     let mut buf = String::new();
@@ -43,7 +43,10 @@ struct RootKeyData {
 }
 
 fn run_test_vector(test_path: &str) {
-    let tempdir = TempDir::new("rust-tuf").expect("couldn't make temp dir");
+    let temp_dir = TempDir::new("rust-tuf").expect("couldn't make temp dir");
+    let temp_path = temp_dir.into_path();
+
+    println!("Temp dir is: {:?}", temp_path);
 
     let vectors: Vec<VectorMeta> = json::from_str(&load_vector_meta())
         .expect("couldn't deserializd meta");
@@ -57,40 +60,11 @@ fn run_test_vector(test_path: &str) {
     let vector_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("tuf-test-vectors")
-        .join("vectors")
+        .join("tuf")
         .join(test_vector.repo.clone());
 
     println!("The test vector path is: {}",
              vector_path.to_string_lossy().into_owned());
-
-    for dir in vec![PathBuf::from("metadata").join("current"),
-                    PathBuf::from("metadata").join("archive"),
-                    PathBuf::from("targets")]
-        .iter() {
-        DirBuilder::new()
-            .recursive(true)
-            .create(tempdir.path().join(dir))
-            .expect(&format!("couldn't create path {}:", dir.to_string_lossy()));
-    }
-
-    for file in vec!["1.root.json",
-                     "2.root.json",
-                     "root.json",
-                     "targets.json",
-                     "timestamp.json",
-                     "snapshot.json"]
-        .iter() {
-        // TODO make sure these copies succeed
-        let copy_path = vector_path.join("repo").join(file);
-        fs::copy(copy_path.to_string_lossy().into_owned(),
-                 tempdir.path().join("metadata").join("current").join(file));
-        //.expect(&format!("copy failed: {}", file));
-    }
-
-    let copy_path = vector_path.join("repo").join("targets").join("file.txt");
-    fs::copy(copy_path.to_string_lossy().into_owned(),
-             tempdir.path().join("targets").join("file.txt"))
-        .expect(&format!("copy failed for target"));
 
     let root_keys = test_vector.root_keys
         .iter()
@@ -115,24 +89,28 @@ fn run_test_vector(test_path: &str) {
         .collect();
 
     let config = Config::build()
-        .url(util::path_to_url(tempdir.path()).expect("couldn't make url"))
-        .local_path(tempdir.into_path())
+        .url(util::path_to_url(&vector_path.join("repo")).expect("couldn't make url"))
+        .local_path(temp_path.clone())
         .finish()
         .expect("bad config");
 
     match (Tuf::from_root_keys(root_keys, config), &test_vector.error) {
         (Ok(ref tuf), &None) => {
             assert_eq!(tuf.list_targets(), vec!["targets/file.txt".to_string()]);
-            assert_eq!(tuf.verify_target("targets/file.txt"), Ok(()));
+            // first time pulls remote
+            assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()), Ok(()));
+            assert!(temp_path.join("targets").join("targets").join("file.txt").exists());
+            // second time pulls local
+            assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()), Ok(()));
         }
 
         (Ok(ref tuf), &Some(ref err)) if err == &"TargetHashMismatch".to_string() => {
-            assert_eq!(tuf.verify_target("targets/file.txt"),
+            assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()),
                        Err(Error::TargetHashMismatch));
         }
 
         (Ok(ref tuf), &Some(ref err)) if err == &"OversizedTarget".to_string() => {
-            assert_eq!(tuf.verify_target("targets/file.txt"),
+            assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()),
                        Err(Error::OversizedTarget));
         }
 

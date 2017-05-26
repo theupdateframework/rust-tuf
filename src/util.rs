@@ -1,6 +1,6 @@
-//! Convenience helpers. Intended for internal use only, but made public for testing.
+//! Intended for internal use only, but made public for testing. This SHOULD NOT be used or relied
+//! upon.
 
-use env_logger::LogBuilder;
 use hyper;
 use std::path::{Path, PathBuf, Component};
 use url::Url;
@@ -25,7 +25,7 @@ pub fn path_to_url(path: &Path) -> Result<Url, Error> {
             Component::RootDir => buf.join("/"),
             Component::Prefix(pref) => {
                 if cfg!(windows) {
-                    buf.join(pref.as_os_str().to_string_lossy().into_owned())
+                    buf.join("/").join(pref.as_os_str().to_string_lossy().into_owned())
                 } else {
                     buf
                 }
@@ -58,13 +58,6 @@ pub fn url_path_to_os_path(url_path: &str) -> Result<PathBuf, Error> {
 /// Converts a `url::Url` into a `hyper::Url`.
 pub fn url_to_hyper_url(url: &Url) -> Result<hyper::Url, Error> {
     Ok(hyper::Url::parse(url.as_str())?)
-}
-
-/// Initialize the logger used for testing.
-pub fn test_logger() {
-    let _ = LogBuilder::new()
-        // TODO requires new release of env_logger .target(LogTarget::Stdout)
-        .init();
 }
 
 #[cfg(test)]
