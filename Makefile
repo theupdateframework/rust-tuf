@@ -13,6 +13,5 @@ test: ## Run the tests with logging enabled
 
 travis: ## Run the TravisCI tests
 	@RUST_BACKTRACE=full cargo build --verbose --features=cli && \
-		cargo test --verbose --features=cli --no-run && \
-		RUST_LOG=debug RUST_BACKTRACE=full cargo test --verbose --features=cli || \
+		RUST_BACKTRACE=full cargo test --verbose --features=cli || \
 		{ cat Cargo.lock; exit 1; }

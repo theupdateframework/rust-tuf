@@ -188,7 +188,6 @@ impl Tuf {
 
     fn update_root(&mut self, fetch_type: &FetchType) -> Result<(), Error> {
         debug!("Updating root metadata");
-        println!("Updating root metadata");
 
         let temp_root = Self::unverified_read_root(fetch_type, &self.http_client)?;
 
@@ -276,7 +275,6 @@ impl Tuf {
 
     fn update_timestamp(&mut self, fetch_type: &FetchType) -> Result<bool, Error> {
         debug!("Updating timestamp metadata");
-        println!("Updating timestamp metadata");
 
         let (mut out, out_path) = if !fetch_type.is_cache() {
             let (file, path) = self.temp_file()?;
@@ -332,15 +330,14 @@ impl Tuf {
                     .join("timestamp.json");
 
                 if current_path.exists() {
-                    fs::rename(current_path,
+                    fs::rename(current_path.clone(),
                                self.local_path
                                    .join("metadata")
                                    .join("archive")
                                    .join("timestamp.json"))?;
                 };
 
-                fs::rename(out_path,
-                           self.local_path.join("metadata").join("current").join("timestamp.json"))?
+                fs::rename(out_path, current_path)?
             }
             None => (),
         };
@@ -431,15 +428,14 @@ impl Tuf {
                     .join("snapshot.json");
 
                 if current_path.exists() {
-                    fs::rename(current_path,
+                    fs::rename(current_path.clone(),
                                self.local_path
                                    .join("metadata")
                                    .join("archive")
                                    .join("snapshot.json"))?;
                 };
 
-                fs::rename(out_path,
-                           self.local_path.join("metadata").join("current").join("snapshot.json"))?
+                fs::rename(out_path, current_path)?
             }
             None => (),
         };
@@ -519,15 +515,14 @@ impl Tuf {
                     .join("targets.json");
 
                 if current_path.exists() {
-                    fs::rename(current_path,
+                    fs::rename(current_path.clone(),
                                self.local_path
                                    .join("metadata")
                                    .join("archive")
                                    .join("targets.json"))?;
                 };
 
-                fs::rename(out_path,
-                           self.local_path.join("metadata").join("current").join("targets.json"))?
+                fs::rename(out_path, current_path)?
             }
             None => (),
         };
@@ -642,7 +637,6 @@ impl Tuf {
                 let path = local_path.join("metadata")
                     .join("current")
                     .join("root.json");
-
                 let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
                 let mut buf = Vec::new();
                 file.read_to_end(&mut buf).map(|_| ())?;
@@ -838,7 +832,7 @@ impl Tuf {
                     {
                         url.path_segments_mut()
                             .map_err(|_| Error::Generic("Path could not be mutated".to_string()))?
-                            .extend(target.split("/"));
+                            .extend(util::url_path_to_os_path_components(target)?);
                     }
 
                     let path = util::url_path_to_os_path(url.path())?;
@@ -851,7 +845,7 @@ impl Tuf {
                         Ok(()) => {
                             // TODO ensure intermediate directories exist
                             let mut storage_path = self.local_path.join("targets");
-                            storage_path.extend(target.split("/"));
+                            storage_path.extend(util::url_path_to_os_path_components(target)?);
 
                             {
                                 let parent = storage_path.parent()
@@ -888,7 +882,7 @@ impl Tuf {
                             // TODO this isn't windows friendly
                             // TODO ensure intermediate directories exist
                             let mut storage_path = self.local_path.join("targets");
-                            storage_path.extend(target.split("/"));
+                            storage_path.extend(util::url_path_to_os_path_components(target)?);
 
                             {
                                 let parent = storage_path.parent()

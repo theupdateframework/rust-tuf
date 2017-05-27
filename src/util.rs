@@ -55,6 +55,19 @@ pub fn url_path_to_os_path(url_path: &str) -> Result<PathBuf, Error> {
     Ok(Path::new(&url_path).to_path_buf())
 }
 
+pub fn url_path_to_os_path_components(url_path: &str) -> Result<Vec<String>, Error> {
+    let mut out = Vec::new();
+    for component in url_path.split("/") {
+        let component = percent_decode(component.as_bytes())
+            .decode_utf8()
+            .map_err(|e| Error::Generic(format!("Path component not utf-8: {:?}", e)))
+            ?
+            .into_owned();
+        out.push(component);
+    }
+    Ok(out)
+}
+
 /// Converts a `url::Url` into a `hyper::Url`.
 pub fn url_to_hyper_url(url: &Url) -> Result<hyper::Url, Error> {
     Ok(hyper::Url::parse(url.as_str())?)
@@ -124,5 +137,14 @@ mod test {
         let path = r"C:/tmp/test%20stuff";
         assert_eq!(url_path_to_os_path(path),
                    Ok(PathBuf::from(r"C:\tmp\test stuff")));
+    }
+
+    #[test]
+    fn test_url_path_to_os_path_components() {
+        let path = "test/foo";
+        assert_eq!(url_path_to_os_path_components(path), Ok(vec!["test".into(), "foo".into()]));
+
+        let path = "test/foo%20bar";
+        assert_eq!(url_path_to_os_path_components(path), Ok(vec!["test".into(), "foo bar".into()]));
     }
 }

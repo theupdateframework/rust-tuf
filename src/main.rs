@@ -152,13 +152,14 @@ mod test {
     fn run_it() {
         let temp = TempDir::new("rust-tuf").expect("couldn't make temp dir");
         init_temp(temp.path());
+        let url = util::path_to_url(&vector_path()).expect("bad path");
+        println!("Test path: {:?}", temp.path());
+        println!("Test URL: {:?}", url);
 
         let matches = parser()
             .get_matches_from_safe(vec!["tuf",
                                         "--url",
-                                        &util::path_to_url(&vector_path())
-                                            .expect("bad path")
-                                            .to_string(),
+                                        &url.to_string(),
                                         "--path",
                                         temp.path().to_str().expect("path not utf-8"),
                                         "init"])
@@ -168,9 +169,7 @@ mod test {
         let matches = parser()
             .get_matches_from_safe(vec!["tuf",
                                         "--url",
-                                        &util::path_to_url(&vector_path())
-                                            .expect("bad path")
-                                            .to_string(),
+                                        &url.to_string(),
                                         "--path",
                                         temp.path().to_str().expect("path not utf-8"),
                                         "update"])
@@ -180,9 +179,7 @@ mod test {
         let matches = parser()
             .get_matches_from_safe(vec!["tuf",
                                         "--url",
-                                        &util::path_to_url(&vector_path())
-                                            .expect("bad path")
-                                            .to_string(),
+                                        &url.to_string(),
                                         "--path",
                                         temp.path().to_str().expect("path not utf-8"),
                                         "verify",
