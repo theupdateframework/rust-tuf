@@ -30,6 +30,11 @@ fn load_vector_meta() -> String {
 
 #[derive(Deserialize)]
 struct VectorMeta {
+    vectors: Vec<VectorMetaEntry>,
+}
+
+#[derive(Deserialize)]
+struct VectorMetaEntry {
     repo: String,
     error: Option<String>,
     root_keys: Vec<RootKeyData>,
@@ -48,12 +53,12 @@ fn run_test_vector(test_path: &str) {
 
     println!("Temp dir is: {:?}", temp_path);
 
-    let vectors: Vec<VectorMeta> = json::from_str(&load_vector_meta())
+    let vector_meta: VectorMeta = json::from_str(&load_vector_meta())
         .expect("couldn't deserializd meta");
 
-    let test_vector = vectors.iter()
+    let test_vector = vector_meta.vectors.iter()
         .filter(|v| v.repo == test_path)
-        .collect::<Vec<&VectorMeta>>()
+        .collect::<Vec<&VectorMetaEntry>>()
         .pop()
         .expect(format!("No repo named {}", test_path).as_str());
 
