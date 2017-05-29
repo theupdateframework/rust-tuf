@@ -1,6 +1,6 @@
 # rust-tuf
 
-A rust implementation of [The Update Framework (TUF)](https://theupdateframework.github.io/).
+A Rust implementation of [The Update Framework (TUF)](https://theupdateframework.github.io/).
 
 ## Warning: Beta Software
 
