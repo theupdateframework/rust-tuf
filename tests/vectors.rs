@@ -302,3 +302,33 @@ fn vector_027() {
 fn vector_028() {
     run_test_vector("028")
 }
+
+#[test]
+fn vector_029() {
+    run_test_vector("029")
+}
+
+#[test]
+fn vector_030() {
+    run_test_vector("030")
+}
+
+#[test]
+fn vector_031() {
+    run_test_vector("031")
+}
+
+#[test]
+fn vector_032() {
+    run_test_vector("032")
+}
+
+#[test]
+fn vector_033() {
+    run_test_vector("033")
+}
+
+#[test]
+fn vector_034() {
+    run_test_vector("034")
+}
