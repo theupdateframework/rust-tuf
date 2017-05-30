@@ -1,4 +1,4 @@
-.PHONY: help travis
+.PHONY: clean help test travis
 .DEFAULT_GOAL := help
 
 clean: ## Remove junk
