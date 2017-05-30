@@ -11,9 +11,8 @@ use std::fs::{self, File, DirBuilder};
 use std::io::Read;
 use std::path::PathBuf;
 use tempdir::TempDir;
-use tuf::{Tuf, Config, Error};
+use tuf::{Tuf, Config, Error, RemoteRepo};
 use tuf::meta::{Key, KeyValue, KeyType};
-use tuf::util;
 
 
 fn load_vector_meta() -> String {
@@ -56,7 +55,8 @@ fn run_test_vector(test_path: &str) {
     let vector_meta: VectorMeta = json::from_str(&load_vector_meta())
         .expect("couldn't deserializd meta");
 
-    let test_vector = vector_meta.vectors.iter()
+    let test_vector = vector_meta.vectors
+        .iter()
         .filter(|v| v.repo == test_path)
         .collect::<Vec<&VectorMetaEntry>>()
         .pop()
@@ -94,7 +94,7 @@ fn run_test_vector(test_path: &str) {
         .collect();
 
     let config = Config::build()
-        .url(util::path_to_url(&vector_path.join("repo")).expect("couldn't make url"))
+        .remote(RemoteRepo::File(vector_path.join("repo")))
         .local_path(temp_path.clone())
         .finish()
         .expect("bad config");

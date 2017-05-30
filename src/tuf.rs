@@ -19,10 +19,26 @@ use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, Sig
 use util;
 
 
+#[derive(Debug)]
+pub enum RemoteRepo {
+    File(PathBuf),
+    Http(Url),
+}
+
+impl RemoteRepo {
+    fn as_fetch(&self) -> FetchType {
+        match self {
+            &RemoteRepo::File(ref path) => FetchType::File(path.clone()),
+            &RemoteRepo::Http(ref url) => FetchType::Http(url.clone()),
+        }
+    }
+}
+
+
 /// Interface for interacting with TUF repositories.
 #[derive(Debug)]
 pub struct Tuf {
-    url: Url,
+    remote: RemoteRepo,
     local_path: PathBuf,
     http_client: Client,
     root: RootMetadata,
@@ -50,11 +66,7 @@ impl Tuf {
                 }
                 Err(e) => {
                     debug!("Failed to read root locally: {:?}", e);
-                    let fetch_type = &match config.url.scheme() {
-                        "file" => FetchType::File(util::url_path_to_os_path(config.url.path())?),
-                        "http" | "https" => FetchType::Http(util::url_to_hyper_url(&config.url)?),
-                        x => return Err(Error::Generic(format!("Unsupported URL scheme: {}", x))),
-                    };
+                    let fetch_type = &config.remote.as_fetch();
                     let modified_root =
                         Self::read_root_with_keys(fetch_type, &config.http_client, &root_keys)?;
                     Self::get_meta_num::<Root, RootMetadata, File>(fetch_type,
@@ -67,7 +79,7 @@ impl Tuf {
         };
 
         let mut tuf = Tuf {
-            url: config.url,
+            remote: config.remote,
             local_path: config.local_path,
             http_client: config.http_client,
             root: root,
@@ -96,7 +108,7 @@ impl Tuf {
         };
 
         let mut tuf = Tuf {
-            url: config.url,
+            remote: config.remote,
             local_path: config.local_path,
             http_client: config.http_client,
             root: root,
@@ -152,18 +164,7 @@ impl Tuf {
 
     fn update_remote(&mut self) -> Result<(), Error> {
         debug!("Updating metadata from remote sources");
-        let fetch_type = &match self.url.scheme() {
-            "file" => FetchType::File(util::url_path_to_os_path(self.url.path())?),
-            "http" | "https" => FetchType::Http(util::url_to_hyper_url(&self.url)?),
-            x => {
-                let msg = format!("Programming error: unsupported URL scheme {}. Please report \
-                                   this as a bug.",
-                                  x);
-                error!("{}", msg);
-                return Err(Error::Generic(msg));
-            }
-        };
-
+        let fetch_type = &self.remote.as_fetch();
         self.update_root(fetch_type)?;
 
         if self.update_timestamp(fetch_type)? && self.update_snapshot(fetch_type)? {
@@ -826,16 +827,10 @@ impl Tuf {
         } else {
             let (out, out_path) = self.temp_file()?;
 
-            match self.url.scheme() {
-                "file" => {
-                    let mut url = self.url.clone();
-                    {
-                        url.path_segments_mut()
-                            .map_err(|_| Error::Generic("Path could not be mutated".to_string()))?
-                            .extend(util::url_path_to_os_path_components(target)?);
-                    }
-
-                    let path = util::url_path_to_os_path(url.path())?;
+            match self.remote {
+                RemoteRepo::File(ref path) => {
+                    let mut path = path.clone();
+                    path.extend(util::url_path_to_path_components(target)?);
                     let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
 
                     match Self::read_and_verify(&mut file,
@@ -845,7 +840,7 @@ impl Tuf {
                         Ok(()) => {
                             // TODO ensure intermediate directories exist
                             let mut storage_path = self.local_path.join("targets");
-                            storage_path.extend(util::url_path_to_os_path_components(target)?);
+                            storage_path.extend(util::url_path_to_path_components(target)?);
 
                             {
                                 let parent = storage_path.parent()
@@ -870,8 +865,14 @@ impl Tuf {
                         }
                     }
                 }
-                "http" | "https" => {
-                    let url = util::url_to_hyper_url(&self.url.join(target)?)?;
+                RemoteRepo::Http(ref url) => {
+                    let mut url = url.clone();
+                    {
+                        url.path_segments_mut()
+                            .map_err(|_| Error::Generic("URL path could not be mutated".to_string()))?
+                            .extend(util::url_path_to_path_components(&target)?);
+                    }
+                    let url = util::url_to_hyper_url(&url)?;
                     let mut resp = self.http_client.get(url).send()?;
 
                     match Self::read_and_verify(&mut resp,
@@ -882,7 +883,7 @@ impl Tuf {
                             // TODO this isn't windows friendly
                             // TODO ensure intermediate directories exist
                             let mut storage_path = self.local_path.join("targets");
-                            storage_path.extend(util::url_path_to_os_path_components(target)?);
+                            storage_path.extend(util::url_path_to_path_components(target)?);
 
                             {
                                 let parent = storage_path.parent()
@@ -908,7 +909,6 @@ impl Tuf {
                         }
                     }
                 }
-                x => Err(Error::Generic(format!("Unsupported URL scheme: {}", x))),
             }
         }
     }
@@ -989,9 +989,9 @@ impl Tuf {
 
 /// The configuration used to initialize a `Tuf` struct.
 pub struct Config {
-    url: Url,
+    remote: RemoteRepo,
     local_path: PathBuf,
-    http_client: Client,
+    http_client: Client, 
     // TODO add `init: bool` to specify whether or not to create dir structure
 }
 
@@ -1005,7 +1005,7 @@ impl Config {
 
 /// Helper that constructs `Config`s and verifies the options.
 pub struct ConfigBuilder {
-    url: Option<Url>,
+    remote: Option<RemoteRepo>,
     local_path: Option<PathBuf>,
     http_client: Option<Client>,
 }
@@ -1014,15 +1014,15 @@ impl ConfigBuilder {
     /// Create a new builder with the default configurations where applicable.
     pub fn new() -> Self {
         ConfigBuilder {
-            url: None,
+            remote: None,
             local_path: None,
             http_client: None,
         }
     }
 
-    /// The remote URL of the TUF repo.
-    pub fn url(mut self, url: Url) -> Self {
-        self.url = Some(url);
+    /// The remote TUF repo.
+    pub fn remote(mut self, remote: RemoteRepo) -> Self {
+        self.remote = Some(remote);
         self
     }
 
@@ -1040,19 +1040,14 @@ impl ConfigBuilder {
 
     /// Verify the configuration.
     pub fn finish(self) -> Result<Config, Error> {
-        let url = self.url
-            .ok_or_else(|| Error::InvalidConfig("Repository URL was not set".to_string()))?;
-
-        match url.scheme() {
-            "file" | "http" | "https" => (),
-            x => return Err(Error::InvalidConfig(format!("Unsupported URL scheme: {}", x))),
-        };
+        let remote = self.remote
+            .ok_or_else(|| Error::InvalidConfig("Remote repository was not set".to_string()))?;
 
         let local_path = self.local_path
             .ok_or_else(|| Error::InvalidConfig("Local path was not set".to_string()))?;
 
         Ok(Config {
-            url: url,
+            remote: remote,
             local_path: local_path,
             http_client: self.http_client.unwrap_or_else(|| Client::new()),
         })

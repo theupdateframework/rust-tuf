@@ -1,43 +1,9 @@
-//! Intended for internal use only, but made public for testing. This SHOULD NOT be used or relied
-//! upon.
-
 use hyper;
-use std::path::{Path, PathBuf, Component};
+use std::path::{Path, PathBuf};
 use url::Url;
-use url::percent_encoding::{percent_encode, percent_decode, DEFAULT_ENCODE_SET};
+use url::percent_encoding::percent_decode;
 
 use error::Error;
-
-// TODO I'm pretty sure all of this path stuff is a mess, but at least the basics of
-// windows will work, right? Right?
-
-/// Converts a `Path` into a URL with scheme `file://`.
-pub fn path_to_url(path: &Path) -> Result<Url, Error> {
-    // TODO handle sloppy to_string_lossy() calls
-
-    let path_str = path.components()
-        .fold(PathBuf::new(), |buf, c| match c {
-            Component::Normal(os_str) => {
-                buf.join(format!("{}",
-                                 percent_encode(os_str.to_string_lossy().as_bytes(),
-                                                DEFAULT_ENCODE_SET)))
-            }
-            Component::RootDir => buf.join("/"),
-            Component::Prefix(pref) => {
-                if cfg!(windows) {
-                    buf.join("/").join(pref.as_os_str().to_string_lossy().into_owned())
-                } else {
-                    buf
-                }
-            }
-            Component::CurDir => buf.join("."),
-            Component::ParentDir => buf.join(".."),
-        });
-
-    Url::parse(&format!("file://{}",
-                        percent_encode(path_str.to_string_lossy().as_bytes(), DEFAULT_ENCODE_SET)))
-        .map_err(|e| Error::Generic(format!("{}", e)))
-}
 
 /// Converts a URL string (without scheme) into an OS specific path.
 pub fn url_path_to_os_path(url_path: &str) -> Result<PathBuf, Error> {
@@ -55,13 +21,12 @@ pub fn url_path_to_os_path(url_path: &str) -> Result<PathBuf, Error> {
     Ok(Path::new(&url_path).to_path_buf())
 }
 
-pub fn url_path_to_os_path_components(url_path: &str) -> Result<Vec<String>, Error> {
+pub fn url_path_to_path_components(url_path: &str) -> Result<Vec<String>, Error> {
     let mut out = Vec::new();
     for component in url_path.split("/") {
         let component = percent_decode(component.as_bytes())
             .decode_utf8()
-            .map_err(|e| Error::Generic(format!("Path component not utf-8: {:?}", e)))
-            ?
+            .map_err(|e| Error::Generic(format!("Path component not utf-8: {:?}", e)))?
             .into_owned();
         out.push(component);
     }
@@ -76,38 +41,6 @@ pub fn url_to_hyper_url(url: &Url) -> Result<hyper::Url, Error> {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    #[cfg(not(target_os = "windows"))]
-    fn test_path_to_url_nix() {
-        let path = Path::new("/tmp/test");
-        assert_eq!(path_to_url(path),
-                   Ok(Url::parse("file:///tmp/test").unwrap()));
-    }
-
-    #[test]
-    #[cfg(not(target_os = "windows"))]
-    fn test_path_to_url_spaces_nix() {
-        let path = Path::new("/tmp/test stuff");
-        assert_eq!(path_to_url(path),
-                   Ok(Url::parse("file:///tmp/test%20stuff").unwrap()));
-    }
-
-    #[test]
-    #[cfg(target_os = "windows")]
-    fn test_path_to_url_win() {
-        let path = Path::new(r"C:\tmp\test");
-        assert_eq!(path_to_url(path),
-                   Ok(Url::parse("file:///C:/tmp/test").unwrap()));
-    }
-
-    #[test]
-    #[cfg(target_os = "windows")]
-    fn test_path_to_url_spaces_win() {
-        let path = Path::new(r"C:\tmp\test stuff");
-        assert_eq!(path_to_url(path),
-                   Ok(Url::parse("file:///C:/tmp/test%20stuff").unwrap()));
-    }
 
     #[test]
     #[cfg(not(target_os = "windows"))]
@@ -140,11 +73,13 @@ mod test {
     }
 
     #[test]
-    fn test_url_path_to_os_path_components() {
+    fn test_url_path_to_path_components() {
         let path = "test/foo";
-        assert_eq!(url_path_to_os_path_components(path), Ok(vec!["test".into(), "foo".into()]));
+        assert_eq!(url_path_to_path_components(path),
+                   Ok(vec!["test".into(), "foo".into()]));
 
         let path = "test/foo%20bar";
-        assert_eq!(url_path_to_os_path_components(path), Ok(vec!["test".into(), "foo bar".into()]));
+        assert_eq!(url_path_to_path_components(path),
+                   Ok(vec!["test".into(), "foo bar".into()]));
     }
 }

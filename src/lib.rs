@@ -19,7 +19,7 @@ mod cjson;
 mod metadata;
 mod error;
 mod tuf;
-pub mod util;
+mod util;
 
 pub use tuf::*;
 pub use error::*;

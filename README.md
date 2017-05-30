@@ -1,10 +1,14 @@
 # rust-tuf
 
-A rust implementation of The Update Framework (TUF).
+[![Travis build Status](https://travis-ci.org/heartsucker/rust-tuf.svg?branch=master)](https://travis-ci.org/heartsucker/rust-tuf) [![Appveyor build status](https://ci.appveyor.com/api/projects/status/kfyvpkdvn5ap7dqc?svg=true)](https://ci.appveyor.com/project/heartsucker/rust-tuf)
 
-## Warning: Alpha Software
+A Rust implementation of [The Update Framework (TUF)](https://theupdateframework.github.io/).
 
-This is under active development and is not suitable for production use. Further,
+Full documentation is hosted at [docs.rs](https://docs.rs/crate/tuf).
+
+## Warning: Beta Software
+
+This is under active development and may not suitable for production use. Further,
 the API is unstable and you should be prepared to refactor on even patch releases.
 
 ## Contributing

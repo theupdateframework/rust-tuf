@@ -1,6 +1,6 @@
 [package]
 name = "tuf"
-version = "0.1.0"
+version = "0.1.1"
 authors = [ "heartsucker <heartsucker@autistici.org>" ]
 description = "Library for The Update Framework (TUF)"
 homepage = "https://github.com/heartsucker/rust-tuf"
