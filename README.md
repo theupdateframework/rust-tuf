@@ -1,5 +1,7 @@
 # rust-tuf
 
+[![Travis build Status](https://travis-ci.org/heartsucker/rust-tuf.svg?branch=master)](https://travis-ci.org/heartsucker/rust-tuf) [![Appveyor build status](https://ci.appveyor.com/api/projects/status/kfyvpkdvn5ap7dqc?svg=true)](https://ci.appveyor.com/project/heartsucker/rust-tuf)
+
 A Rust implementation of [The Update Framework (TUF)](https://theupdateframework.github.io/).
 
 ## Warning: Beta Software
