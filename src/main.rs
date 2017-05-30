@@ -7,9 +7,9 @@ extern crate tempdir;
 extern crate tuf as _tuf;
 extern crate url;
 
-use clap::{App, AppSettings, SubCommand, Arg, ArgMatches};
+use clap::{App, AppSettings, SubCommand, Arg, ArgMatches, ArgGroup};
 use std::path::PathBuf;
-use _tuf::{Tuf, Config, Error};
+use _tuf::{Tuf, Config, Error, RemoteRepo};
 use url::Url;
 
 // TODO logging
@@ -28,7 +28,10 @@ fn main() {
 }
 
 fn run_main(matches: ArgMatches) -> Result<(), Error> {
-    let config = Config::build().url(Url::parse(matches.value_of("url").unwrap())?)
+    let remote = matches.value_of("url").map(|u| RemoteRepo::Http(Url::parse(u).unwrap()))
+        .or_else(|| matches.value_of("file").map(|p| RemoteRepo::File(PathBuf::from(p))))
+        .unwrap();
+    let config = Config::build().remote(remote)
         .local_path(PathBuf::from(matches.value_of("path").unwrap()))
         .finish()?;
 
@@ -69,15 +72,22 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
             .short("U")
             .long("url")
             .takes_value(true)
-            .required(true)
             .validator(url_validator)
-            .help("URL of the TUF repo (local or remote)"))
+            .help("URL of the TUF repo"))
+        .arg(Arg::with_name("file")
+            .short("f")
+            .long("file")
+            .takes_value(true)
+            .help("Path to the TUF repo (remote)"))
         .arg(Arg::with_name("path")
             .short("p")
             .long("path")
             .takes_value(true)
             .required(true)
             .help("Local path the TUF repo"))
+        .group(ArgGroup::with_name("remote_repo")
+               .args(&["url", "file"])
+               .required(true))
         .subcommand(SubCommand::with_name("init").about("Initializes a new TUF repo"))
         .subcommand(SubCommand::with_name("list").about("Lists available targets"))
         .subcommand(SubCommand::with_name("update").about("Updates metadata from remotes"))
@@ -119,7 +129,6 @@ mod test {
     use std::fs::{self, DirBuilder};
     use std::path::{Path, PathBuf};
     use tempdir::TempDir;
-    use _tuf::util;
 
     fn vector_path() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -152,14 +161,14 @@ mod test {
     fn run_it() {
         let temp = TempDir::new("rust-tuf").expect("couldn't make temp dir");
         init_temp(temp.path());
-        let url = util::path_to_url(&vector_path()).expect("bad path");
-        println!("Test path: {:?}", temp.path());
-        println!("Test URL: {:?}", url);
+        let path = vector_path();
+        println!("Temp path: {:?}", temp.path());
+        println!("Test path: {:?}", path);
 
         let matches = parser()
             .get_matches_from_safe(vec!["tuf",
-                                        "--url",
-                                        &url.to_string(),
+                                        "--file",
+                                        &path.to_string_lossy(),
                                         "--path",
                                         temp.path().to_str().expect("path not utf-8"),
                                         "init"])
@@ -168,8 +177,8 @@ mod test {
 
         let matches = parser()
             .get_matches_from_safe(vec!["tuf",
-                                        "--url",
-                                        &url.to_string(),
+                                        "--file",
+                                        &path.to_string_lossy(),
                                         "--path",
                                         temp.path().to_str().expect("path not utf-8"),
                                         "update"])
@@ -178,8 +187,8 @@ mod test {
 
         let matches = parser()
             .get_matches_from_safe(vec!["tuf",
-                                        "--url",
-                                        &url.to_string(),
+                                        "--file",
+                                        &path.to_string_lossy(),
                                         "--path",
                                         temp.path().to_str().expect("path not utf-8"),
                                         "verify",
