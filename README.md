@@ -4,6 +4,8 @@
 
 A Rust implementation of [The Update Framework (TUF)](https://theupdateframework.github.io/).
 
+Full documentation is hosted at [docs.rs](https://docs.rs/crate/tuf).
+
 ## Warning: Beta Software
 
 This is under active development and may not suitable for production use. Further,
