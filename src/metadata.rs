@@ -456,13 +456,16 @@ impl<'de> Deserialize<'de> for Signature {
 /// A public key
 #[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct Key {
+    /// The type of keys.
     #[serde(rename = "keytype")]
     pub typ: KeyType,
+    /// The key's value.
     #[serde(rename = "keyval")]
     pub value: KeyValue,
 }
 
 impl Key {
+    /// Use the given key to verify a signature over a byte array.
     pub fn verify(&self,
                   scheme: &SignatureScheme,
                   msg: &[u8],
@@ -484,7 +487,9 @@ impl Key {
 /// Types of public keys.
 #[derive(Clone, PartialEq, Debug)]
 pub enum KeyType {
+    /// [Ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) signature scheme.
     Ed25519,
+    /// Internal representation of an unsupported key type.
     Unsupported(String),
 }
 

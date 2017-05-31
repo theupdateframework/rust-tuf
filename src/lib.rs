@@ -134,6 +134,8 @@
 //!
 //! ```
 
+#![deny(missing_docs)]
+
 extern crate chrono;
 extern crate data_encoding;
 extern crate env_logger;

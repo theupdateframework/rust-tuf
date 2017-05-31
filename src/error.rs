@@ -53,6 +53,7 @@ pub enum Error {
 }
 
 impl Error {
+    /// Helper to include the path that causd the error for FS I/O errors.
     pub fn from_io(err: io::Error, path: &Path) -> Error {
         Error::Io(format!("Path {:?} : {:?}", path, err))
     }

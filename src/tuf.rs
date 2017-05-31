@@ -18,10 +18,12 @@ use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, Sig
                HashValue, KeyId, Key};
 use util;
 
-
+/// A remote TUF repository.
 #[derive(Debug)]
 pub enum RemoteRepo {
+    /// An untrusted repository on the same file sytem. Primarily used for testing.
     File(PathBuf),
+    /// A repository reachable via HTTP/S.
     Http(Url),
 }
 
