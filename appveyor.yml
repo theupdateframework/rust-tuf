@@ -57,5 +57,4 @@ test_script:
 # TODO on failure cat Cargo.lock
 
 cache:
-  - target
-  - C:\Users\appveyor\.cargo\
+  - C:\Users\appveyor\.cargo\bin

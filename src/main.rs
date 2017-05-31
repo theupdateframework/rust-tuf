@@ -35,7 +35,10 @@ fn run_main(matches: ArgMatches) -> Result<(), Error> {
         .local_path(PathBuf::from(matches.value_of("path").unwrap()))
         .finish()?;
 
-    if let Some(_) = matches.subcommand_matches("init") {
+    if let Some(matches) = matches.subcommand_matches("fetch") {
+        let tuf = Tuf::new(config)?;
+        cmd_fetch(&tuf, matches.value_of("target").unwrap())
+    } else if let Some(_) = matches.subcommand_matches("init") {
         let path = PathBuf::from(matches.value_of("path").unwrap());
         cmd_init(&path)
     } else if let Some(_) = matches.subcommand_matches("list") {
@@ -88,6 +91,11 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
         .group(ArgGroup::with_name("remote_repo")
                .args(&["url", "file"])
                .required(true))
+        .subcommand(SubCommand::with_name("fetch").about("Fetch a target")
+            .arg(Arg::with_name("target")
+                .takes_value(true)
+                .required(true)
+                .help("The full (non-local) path of the target to verify")))
         .subcommand(SubCommand::with_name("init").about("Initializes a new TUF repo"))
         .subcommand(SubCommand::with_name("list").about("Lists available targets"))
         .subcommand(SubCommand::with_name("update").about("Updates metadata from remotes"))
@@ -97,6 +105,11 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
                 .takes_value(true)
                 .required(true)
                 .help("The full (non-local) path of the target to verify")))
+}
+
+fn cmd_fetch(tuf: &Tuf, target: &str) -> Result<(), Error> {
+    tuf.fetch_target(target)
+        .map(|_| ())
 }
 
 fn cmd_init(local_path: &PathBuf) -> Result<(), Error> {
@@ -182,6 +195,17 @@ mod test {
                                         "--path",
                                         temp.path().to_str().expect("path not utf-8"),
                                         "update"])
+            .expect("parse error");
+        assert_eq!(run_main(matches), Ok(()));
+
+        let matches = parser()
+            .get_matches_from_safe(vec!["tuf",
+                                        "--file",
+                                        &path.to_string_lossy(),
+                                        "--path",
+                                        temp.path().to_str().expect("path not utf-8"),
+                                        "fetch",
+                                        "targets/file.txt"])
             .expect("parse error");
         assert_eq!(run_main(matches), Ok(()));
 
