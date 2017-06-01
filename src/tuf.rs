@@ -733,7 +733,7 @@ impl Tuf {
             .len();
 
         if signed.signatures.len() != unique_count {
-            return Err(Error::NonUniqueSignatures);
+            return Err(Error::NonUniqueSignatures(R::role()));
         }
 
         let keys = role.key_ids

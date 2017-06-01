@@ -27,7 +27,7 @@ pub enum Error {
     /// A necessary piece of metadata was missing.
     MissingMetadata(Role),
     /// The signed metadata had duplicate signatures from a particular key.
-    NonUniqueSignatures,
+    NonUniqueSignatures(Role),
     /// The metadata did not provide any hash algorithms that this library can calculate.
     NoSupportedHashAlgorithms,
     /// A piece of metadata exceeded the provided or maximum allowed size.
