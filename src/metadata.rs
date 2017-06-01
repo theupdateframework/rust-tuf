@@ -696,7 +696,6 @@ impl<'de> Deserialize<'de> for HashType {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct HashValue(pub Vec<u8>);
-
 impl<'de> Deserialize<'de> for HashValue {
     fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         match Deserialize::deserialize(de)? {
@@ -721,16 +720,68 @@ pub struct TargetInfo {
 
 #[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct Delegations {
-    keys: Vec<KeyId>,
+    keys: HashMap<KeyId, Key>,
     roles: Vec<DelegatedRole>,
 }
 
 
-#[derive(Clone, PartialEq, Debug, Deserialize)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct DelegatedRole {
     name: String,
     key_ids: Vec<KeyId>,
     threshold: i32,
-    // TODO path_hash_prefixes
-    paths: Vec<String>,
+    paths: TargetPaths,
+}
+
+impl<'de> Deserialize<'de> for DelegatedRole {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
+            match (object.remove("name"), object.remove("keyids"),
+                   object.remove("threshold"), object.remove("paths"),
+                   object.remove("path_hash_prefixes")) {
+                (Some(n), Some(ks), Some(t), Some(ps), None) => {
+                    let name =
+                        json::from_value(n).map_err(|e| {
+                                DeserializeError::custom(format!("Failed at name: {}", e))
+                            })?;
+
+                    let key_ids =
+                        json::from_value(ks).map_err(|e| {
+                                DeserializeError::custom(format!("Failed at keyids: {}", e))
+                            })?;
+
+                    let threshold =
+                        json::from_value(t).map_err(|e| {
+                                DeserializeError::custom(format!("Failed at treshold: {}", e))
+                            })?;
+
+                    let paths: Vec<String> =
+                        json::from_value(ps).map_err(|e| {
+                                DeserializeError::custom(format!("Failed at treshold: {}", e))
+                            })?;
+
+                    Ok(DelegatedRole {
+                        name: name,
+                        key_ids: key_ids,
+                        threshold: threshold,
+                        paths: TargetPaths::Patterns(paths),
+                    })
+                }
+                (_, _, _, Some(_), Some(_)) =>
+                    Err(DeserializeError::custom("Fields 'paths' or 'pash_hash_prefixes' are mutually exclusive".to_string())),
+                (_, _, _, _, Some(_)) =>
+                    Err(DeserializeError::custom("'pash_hash_prefixes' is not yet supported".to_string())),
+                _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
+            }
+        } else {
+            Err(DeserializeError::custom("Delegated role was not an object".to_string()))
+        }
+    }
+}
+
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum TargetPaths {
+    Patterns(Vec<String>),
+    // TODO HashPrefixes(Vec<String>),
 }
