@@ -47,6 +47,7 @@ pub struct Tuf {
     targets: Option<TargetsMetadata>,
     timestamp: Option<TimestampMetadata>,
     snapshot: Option<SnapshotMetadata>,
+    targets_delegations: HashMap<String, TargetsMetadata>,
 }
 
 impl Tuf {
@@ -60,10 +61,14 @@ impl Tuf {
 
             match Self::read_root_with_keys(fetch_type, &config.http_client, &root_keys) {
                 Ok(modified_root) => {
-                    Self::get_meta_num::<Root, RootMetadata, File>(fetch_type,
+                    Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
                                                                    &config.http_client,
-                                                                   1,
-                                                                   &modified_root,
+                                                                   Some(1),
+                                                                   modified_root.root.threshold,
+                                                                   &modified_root.root.key_ids,
+                                                                   &modified_root.keys,
+                                                                   None,
+                                                                   None,
                                                                    &mut None)?
                 }
                 Err(e) => {
@@ -71,10 +76,14 @@ impl Tuf {
                     let fetch_type = &config.remote.as_fetch();
                     let modified_root =
                         Self::read_root_with_keys(fetch_type, &config.http_client, &root_keys)?;
-                    Self::get_meta_num::<Root, RootMetadata, File>(fetch_type,
+                    Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
                                                                    &config.http_client,
-                                                                   1,
-                                                                   &modified_root,
+                                                                   Some(1),
+                                                                   modified_root.root.threshold,
+                                                                   &modified_root.root.key_ids,
+                                                                   &modified_root.keys,
+                                                                   None,
+                                                                   None,
                                                                    &mut None)?
                 }
             }
@@ -88,6 +97,7 @@ impl Tuf {
             targets: None,
             timestamp: None,
             snapshot: None,
+            targets_delegations: HashMap::new(),
         };
 
         tuf.update()?;
@@ -105,7 +115,12 @@ impl Tuf {
             let root = Self::unverified_read_root(fetch_type, &config.http_client)?;
             Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
                                                            &config.http_client,
-                                                           &root,
+                                                           None,
+                                                           root.root.threshold,
+                                                           &root.root.key_ids,
+                                                           &root.keys,
+                                                           None,
+                                                           None,
                                                            &mut None)?
         };
 
@@ -117,6 +132,7 @@ impl Tuf {
             targets: None,
             timestamp: None,
             snapshot: None,
+            targets_delegations: HashMap::new(),
         };
         tuf.update()?;
 
@@ -170,7 +186,8 @@ impl Tuf {
         self.update_root(fetch_type)?;
 
         if self.update_timestamp(fetch_type)? && self.update_snapshot(fetch_type)? {
-            self.update_targets(fetch_type)
+            self.update_targets(fetch_type)?;
+            self.update_delegations(fetch_type)
         } else {
             Ok(())
         }
@@ -183,7 +200,8 @@ impl Tuf {
         self.update_root(fetch_type)?;
 
         if self.update_timestamp(fetch_type)? && self.update_snapshot(fetch_type)? {
-            self.update_targets(fetch_type)
+            self.update_targets(fetch_type)?;
+            self.update_delegations(fetch_type)
         } else {
             Ok(())
         }
@@ -203,10 +221,14 @@ impl Tuf {
                 (None, None)
             };
 
-            let root = match Self::get_meta_num::<Root, RootMetadata, File>(fetch_type,
+            let root = match Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
                                                                             &self.http_client,
-                                                                            i,
-                                                                            &self.root,
+                                                                            Some(i),
+                                                                            self.root.root.threshold,
+                                                                            &self.root.root.key_ids,
+                                                                            &self.root.keys,
+                                                                            None,
+                                                                            None,
                                                                             &mut out) {
                 Ok(root) => root,
                 Err(e) => {
@@ -225,10 +247,14 @@ impl Tuf {
 
             // verify root again against itself (for cross signing)
             // TODO this is not the most efficient way to do it, but it works
-            match Self::get_meta_num::<Root, RootMetadata, File>(fetch_type,
+            match Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
                                                                  &self.http_client,
-                                                                 i,
-                                                                 &root,
+                                                                 Some(i),
+                                                                 root.root.threshold,
+                                                                 &root.root.key_ids,
+                                                                 &root.keys,
+                                                                 None,
+                                                                 None,
                                                                  &mut None::<File>) {
                 Ok(root_again) => {
                     if root != root_again {
@@ -289,7 +315,12 @@ impl Tuf {
         let timestamp =
             Self::get_metadata::<Timestamp, TimestampMetadata, File>(fetch_type,
                                                                      &self.http_client,
-                                                                     &self.root,
+                                                                     None,
+                                                                     self.root.timestamp.threshold,
+                                                                     &self.root.timestamp.key_ids,
+                                                                     &self.root.keys,
+                                                                     None,
+                                                                     None,
                                                                      &mut out)?;
 
         match self.timestamp {
@@ -382,12 +413,14 @@ impl Tuf {
             (None, None)
         };
 
-        let snapshot = Self::get_meta_prefix::<Snapshot,
+        let snapshot = Self::get_metadata::<Snapshot,
                                                SnapshotMetadata,
                                                File>(fetch_type,
                                                      &self.http_client,
-                                                     "",
-                                                     &self.root,
+                                                     None,
+                                                     self.root.snapshot.threshold,
+                                                     &self.root.snapshot.key_ids,
+                                                     &self.root.keys,
                                                      Some(meta.length),
                                                      Some((&hash_alg, &expected_hash.0)),
                                                      &mut out)?;
@@ -487,13 +520,15 @@ impl Tuf {
             (None, None)
         };
 
-        let targets = Self::get_meta_prefix::<Targets, TargetsMetadata, File>(fetch_type,
-                                                                              &self.http_client,
-                                                                              "",
-                                                                              &self.root,
-                                                                              meta.length,
-                                                                              hash_data,
-                                                                              &mut out)?;
+        let targets = Self::get_metadata::<Targets, TargetsMetadata, File>(fetch_type,
+                                                                           &self.http_client,
+                                                                           None,
+                                                                           self.root.targets.threshold,
+                                                                           &self.root.targets.key_ids,
+                                                                           &self.root.keys,
+                                                                           meta.length,
+                                                                           hash_data,
+                                                                           &mut out)?;
 
         // TODO ? check downloaded version matches what was in the snapshot.json
 
@@ -533,34 +568,47 @@ impl Tuf {
         Ok(())
     }
 
+    fn update_delegations(&mut self, fetch_type: &FetchType) -> Result<(), Error> {
+        fn recursively_update_delegations(trusted: &mut HashSet<String>, targets: &TargetsMetadata) {
+            match targets.delegations {
+                Some(ref delegations) => {
+                    for delegation in delegations.roles.iter() {
+                        // get the metadata
+                        // verify it
+                        // update self.targets_delegations
+                    }
+                }
+                None => (),
+            }
+        };
+
+        match self.targets {
+            Some(ref targets) => {
+                let mut trusted = HashSet::new();
+                recursively_update_delegations(&mut trusted, &targets);
+
+                let mut untrusted = HashSet::new();
+                for role in self.targets_delegations.keys() {
+                    // TODO clone is sad
+                    untrusted.insert(role.clone());
+                }
+
+                for role in untrusted.iter() {
+                    let _ = self.targets_delegations.remove(role);
+                }
+
+                Ok(())
+            }
+            None => Err(Error::MissingMetadata(Role::Targets))
+        }
+    }
+
     fn get_metadata<R: RoleType, M: Metadata<R>, W: Write>(fetch_type: &FetchType,
-                                                           http_client: &Client,
-                                                           root: &RootMetadata,
-                                                           mut out: &mut Option<W>)
-                                                           -> Result<M, Error> {
-        Self::get_meta_prefix(fetch_type, http_client, "", root, None, None, &mut out)
-    }
-
-    fn get_meta_num<R: RoleType, M: Metadata<R>, W: Write>(fetch_type: &FetchType,
-                                                           http_client: &Client,
-                                                           num: i32,
-                                                           root: &RootMetadata,
-                                                           mut out: &mut Option<W>)
-                                                           -> Result<M, Error> {
-        // TODO this should check that the metadata version == num
-        Self::get_meta_prefix(fetch_type,
-                              http_client,
-                              &format!("{}.", num),
-                              root,
-                              None,
-                              None,
-                              &mut out)
-    }
-
-    fn get_meta_prefix<R: RoleType, M: Metadata<R>, W: Write>(fetch_type: &FetchType,
                                                               http_client: &Client,
-                                                              prefix: &str,
-                                                              root: &RootMetadata,
+                                                              metadata_version: Option<i32>,
+                                                              threshold: i32,
+                                                              trusted_ids: &[KeyId],
+                                                              available_keys: &HashMap<KeyId, Key>,
                                                               size: Option<i64>,
                                                               hash_data: Option<(&HashType,
                                                                                  &[u8])>,
@@ -568,12 +616,14 @@ impl Tuf {
                                                               -> Result<M, Error> {
 
         debug!("Loading metadata from {:?}", fetch_type);
+        let metadata_version_str = metadata_version.map(|x| format!("{}.", x))
+            .unwrap_or_else(|| "".to_string());
 
         let buf: Vec<u8> = match fetch_type {
             &FetchType::Cache(ref local_path) => {
                 let path = local_path.join("metadata")
                     .join("current")
-                    .join(format!("{}{}.json", prefix, R::role()));
+                    .join(format!("{}{}.json", metadata_version_str, R::role()));
                 info!("Reading metadata from local path: {:?}", path);
 
                 let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
@@ -587,7 +637,7 @@ impl Tuf {
                 buf
             }
             &FetchType::File(ref path) => {
-                let path = path.join(format!("{}{}.json", prefix, R::role()));
+                let path = path.join(format!("{}{}.json", metadata_version_str, R::role()));
                 info!("Reading metadata from path: {:?}", path);
 
                 let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
@@ -601,7 +651,7 @@ impl Tuf {
                 buf
             }
             &FetchType::Http(ref url) => {
-                let url = url.join(&format!("{}{}.json", prefix, R::role()))?;
+                let url = url.join(&format!("{}{}.json", metadata_version_str, R::role()))?;
                 let mut resp = http_client.get(url).send()?;
                 let mut buf = Vec::new();
 
@@ -615,7 +665,7 @@ impl Tuf {
         };
 
         let signed = json::from_slice(&buf)?;
-        let safe_bytes = Self::verify_meta::<R>(signed, root)?;
+        let safe_bytes = Self::verify_meta::<R>(signed, threshold, trusted_ids, available_keys)?;
         let meta: M = json::from_slice(&safe_bytes)?;
 
         // TODO this will be a problem with updating root metadata and this function probably
@@ -719,12 +769,12 @@ impl Tuf {
     }
 
     fn verify_meta<R: RoleType>(signed: SignedMetadata<R>,
-                                root: &RootMetadata)
+                                threshold: i32,
+                                trusted_ids: &[KeyId],
+                                available_keys: &HashMap<KeyId, Key>)
                                 -> Result<Vec<u8>, Error> {
         let bytes =
             cjson::canonicalize(signed.signed).map_err(|err| Error::CanonicalJsonError(err))?;
-
-        let role = root.role_definition::<R>();
 
         let unique_count = signed.signatures
             .iter()
@@ -736,9 +786,8 @@ impl Tuf {
             return Err(Error::NonUniqueSignatures(R::role()));
         }
 
-        let keys = role.key_ids
-            .iter()
-            .map(|id| (id, root.keys.get(id)))
+        let keys = trusted_ids.iter()
+            .map(|id| (id, available_keys.get(id)))
             .fold(HashMap::new(), |mut m, (id, k)| {
                 if let Some(key) = k {
                     m.insert(id, key);
@@ -748,7 +797,7 @@ impl Tuf {
                 m
             });
 
-        if role.threshold <= 0 {
+        if threshold <= 0 {
             return Err(Error::VerificationFailure("Threshold not >= 1".into()));
         }
 
@@ -766,13 +815,13 @@ impl Tuf {
                     }
                     Err(e) => warn!("Failed to verify with key ID {:?}: {:?}", &sig.key_id, e),
                 }
-                if valid_sigs == role.threshold {
+                if valid_sigs == threshold {
                     return Ok(bytes);
                 }
             }
         }
 
-        info!("Threshold not met: {}/{}", valid_sigs, role.threshold);
+        info!("Threshold not met: {}/{}", valid_sigs, threshold);
         return Err(Error::UnmetThreshold(R::role()));
     }
 
@@ -993,7 +1042,7 @@ impl Tuf {
 pub struct Config {
     remote: RemoteRepo,
     local_path: PathBuf,
-    http_client: Client, 
+    http_client: Client,
     // TODO add `init: bool` to specify whether or not to create dir structure
 }
 

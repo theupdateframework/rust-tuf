@@ -22,6 +22,7 @@ pub enum Role {
     Targets,
     Timestamp,
     Snapshot,
+    TargetsDelegation(String),
 }
 
 impl FromStr for Role {
@@ -45,6 +46,7 @@ impl Display for Role {
             Role::Targets => write!(f, "{}", "targets"),
             Role::Snapshot => write!(f, "{}", "snapshot"),
             Role::Timestamp => write!(f, "{}", "timestamp"),
+            Role::TargetsDelegation(ref s) => write!(f, "{}", s),
         }
     }
 }
@@ -123,25 +125,14 @@ pub trait Metadata<R: RoleType>: DeserializeOwned {
 
 #[derive(Debug, PartialEq)]
 pub struct RootMetadata {
-    // TODO consistent_snapshot: bool,
+    consistent_snapshot: bool,
     expires: DateTime<UTC>,
     pub version: i32,
     pub keys: HashMap<KeyId, Key>,
-    root: RoleDefinition,
-    targets: RoleDefinition,
-    timestamp: RoleDefinition,
-    snapshot: RoleDefinition,
-}
-
-impl RootMetadata {
-    pub fn role_definition<R: RoleType>(&self) -> &RoleDefinition {
-        match R::role() {
-            Role::Root => &self.root,
-            Role::Targets => &self.targets,
-            Role::Timestamp => &self.timestamp,
-            Role::Snapshot => &self.snapshot,
-        }
-    }
+    pub root: RoleDefinition,
+    pub targets: RoleDefinition,
+    pub timestamp: RoleDefinition,
+    pub snapshot: RoleDefinition,
 }
 
 impl Metadata<Root> for RootMetadata {
@@ -178,6 +169,11 @@ impl<'de> Deserialize<'de> for RootMetadata {
                     DeserializeError::custom(format!("Field 'version' did not have a valid format: {}", e))
                 })?;
 
+            let consistent_snapshot = json::from_value(object.remove("consistent_snapshot")
+                    .ok_or_else(|| DeserializeError::custom("Field 'consistent_snapshot' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'consistent_snapshot' did not have a valid format: {}", e))
+                })?;
+
             let mut roles = object.remove("roles")
                 .and_then(|v| match v {
                     json::Value::Object(o) => Some(o),
@@ -210,6 +206,7 @@ impl<'de> Deserialize<'de> for RootMetadata {
                 })?;
 
             Ok(RootMetadata {
+                consistent_snapshot,
                 expires: expires,
                 version: version,
                 keys: keys,
@@ -710,18 +707,17 @@ impl<'de> Deserialize<'de> for HashValue {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-// TODO this is a dumb name
 pub struct TargetInfo {
     pub length: i64,
     pub hashes: HashMap<HashType, HashValue>,
-    pub custom: Option<HashMap<String, String>>, // TODO json value
+    pub custom: Option<HashMap<String, json::Value>>,
 }
 
 
 #[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct Delegations {
-    keys: HashMap<KeyId, Key>,
-    roles: Vec<DelegatedRole>,
+    pub keys: HashMap<KeyId, Key>,
+    pub roles: Vec<DelegatedRole>,
 }
 
 
@@ -730,6 +726,7 @@ pub struct DelegatedRole {
     name: String,
     key_ids: Vec<KeyId>,
     threshold: i32,
+    terminating: bool,
     paths: TargetPaths,
 }
 
@@ -737,9 +734,9 @@ impl<'de> Deserialize<'de> for DelegatedRole {
     fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
             match (object.remove("name"), object.remove("keyids"),
-                   object.remove("threshold"), object.remove("paths"),
-                   object.remove("path_hash_prefixes")) {
-                (Some(n), Some(ks), Some(t), Some(ps), None) => {
+                   object.remove("threshold"), object.remove("terminating"),
+                   object.remove("paths"), object.remove("path_hash_prefixes")) {
+                (Some(n), Some(ks), Some(t), Some(term), Some(ps), None) => {
                     let name =
                         json::from_value(n).map_err(|e| {
                                 DeserializeError::custom(format!("Failed at name: {}", e))
@@ -755,6 +752,11 @@ impl<'de> Deserialize<'de> for DelegatedRole {
                                 DeserializeError::custom(format!("Failed at treshold: {}", e))
                             })?;
 
+                    let terminating =
+                        json::from_value(term).map_err(|e| {
+                                DeserializeError::custom(format!("Failed at treshold: {}", e))
+                            })?;
+
                     let paths: Vec<String> =
                         json::from_value(ps).map_err(|e| {
                                 DeserializeError::custom(format!("Failed at treshold: {}", e))
@@ -764,12 +766,13 @@ impl<'de> Deserialize<'de> for DelegatedRole {
                         name: name,
                         key_ids: key_ids,
                         threshold: threshold,
+                        terminating: terminating,
                         paths: TargetPaths::Patterns(paths),
                     })
                 }
-                (_, _, _, Some(_), Some(_)) =>
+                (_, _, _, _, Some(_), Some(_)) =>
                     Err(DeserializeError::custom("Fields 'paths' or 'pash_hash_prefixes' are mutually exclusive".to_string())),
-                (_, _, _, _, Some(_)) =>
+                (_, _, _, _, _, Some(_)) =>
                     Err(DeserializeError::custom("'pash_hash_prefixes' is not yet supported".to_string())),
                 _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
             }

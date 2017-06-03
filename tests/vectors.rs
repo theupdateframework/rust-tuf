@@ -349,3 +349,8 @@ fn vector_040() {
 // TODO 042
 // TODO 043
 // TODO 044
+
+#[test]
+fn vector_045() {
+    run_test_vector("045")
+}
