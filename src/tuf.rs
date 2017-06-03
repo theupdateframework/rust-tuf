@@ -51,10 +51,11 @@ pub struct Tuf {
 }
 
 impl Tuf {
-    /// Create a `Tuf` struct from an existing repo with the initial root keys pinned. This also
-    /// calls `initialize` to ensure the needed paths exist.
+    /// Create a `Tuf` struct from an existing repo with the initial root keys pinned.
     pub fn from_root_keys(root_keys: Vec<Key>, config: Config) -> Result<Self, Error> {
-        Self::initialize(&config.local_path)?;
+        if config.init {
+            Self::initialize(&config.local_path)?;
+        }
 
         let root = {
             let fetch_type = &FetchType::Cache(config.local_path.clone());
@@ -105,10 +106,11 @@ impl Tuf {
     }
 
     /// Create a `Tuf` struct from a new repo. Must contain the `root.json`. The root is trusted
-    /// with only verification on consistency, not authenticity. This call also calls `initialize`
-    /// to ensure the needed paths exist.
+    /// with only verification on consistency, not authenticity.
     pub fn new(config: Config) -> Result<Self, Error> {
-        Self::initialize(&config.local_path)?;
+        if config.init {
+            Self::initialize(&config.local_path)?;
+        }
 
         let root = {
             let fetch_type = &FetchType::Cache(config.local_path.clone());
@@ -889,7 +891,6 @@ impl Tuf {
                                                 Some(target_meta.length),
                                                 Some((&hash_alg, &expected_hash.0))) {
                         Ok(()) => {
-                            // TODO ensure intermediate directories exist
                             let mut storage_path = self.local_path.join("targets");
                             storage_path.extend(util::url_path_to_path_components(target)?);
 
@@ -932,7 +933,6 @@ impl Tuf {
                                                 Some((&hash_alg, &expected_hash.0))) {
                         Ok(()) => {
                             // TODO this isn't windows friendly
-                            // TODO ensure intermediate directories exist
                             let mut storage_path = self.local_path.join("targets");
                             storage_path.extend(util::url_path_to_path_components(target)?);
 
@@ -1043,7 +1043,7 @@ pub struct Config {
     remote: RemoteRepo,
     local_path: PathBuf,
     http_client: Client,
-    // TODO add `init: bool` to specify whether or not to create dir structure
+    init: bool,
 }
 
 impl Config {
@@ -1059,6 +1059,7 @@ pub struct ConfigBuilder {
     remote: Option<RemoteRepo>,
     local_path: Option<PathBuf>,
     http_client: Option<Client>,
+    init: bool,
 }
 
 impl ConfigBuilder {
@@ -1068,6 +1069,7 @@ impl ConfigBuilder {
             remote: None,
             local_path: None,
             http_client: None,
+            init: true,
         }
     }
 
@@ -1089,6 +1091,12 @@ impl ConfigBuilder {
         self
     }
 
+    /// Where or not to initialize the local directory structures.
+    pub fn init(&mut self, init: bool) -> Self {
+        self.init = init;
+        self
+    }
+
     /// Verify the configuration.
     pub fn finish(self) -> Result<Config, Error> {
         let remote = self.remote
@@ -1101,6 +1109,7 @@ impl ConfigBuilder {
             remote: remote,
             local_path: local_path,
             http_client: self.http_client.unwrap_or_else(|| Client::new()),
+            init: self.init,
         })
     }
 }
