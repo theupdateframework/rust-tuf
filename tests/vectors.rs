@@ -101,7 +101,6 @@ fn run_test_vector(test_path: &str) {
 
     match (Tuf::from_root_keys(root_keys, config), &test_vector.error) {
         (Ok(ref tuf), &None) => {
-            assert_eq!(tuf.list_targets(), vec!["targets/file.txt".to_string()]);
             // first time pulls remote
             assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()), Ok(()));
             assert!(temp_path.join("targets").join("targets").join("file.txt").exists());
@@ -111,12 +110,12 @@ fn run_test_vector(test_path: &str) {
 
         (Ok(ref tuf), &Some(ref err)) if err == &"TargetHashMismatch".to_string() => {
             assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()),
-                       Err(Error::TargetHashMismatch));
+                       Err(Error::UnavailableTarget));
         }
 
         (Ok(ref tuf), &Some(ref err)) if err == &"OversizedTarget".to_string() => {
             assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()),
-                       Err(Error::OversizedTarget));
+                       Err(Error::UnavailableTarget));
         }
 
         (Err(Error::ExpiredMetadata(ref role)), &Some(ref err))

@@ -255,7 +255,7 @@ impl<'de> Deserialize<'de> for RoleDefinition {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TargetsMetadata {
     expires: DateTime<UTC>,
     pub version: i32,
@@ -723,11 +723,29 @@ pub struct Delegations {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct DelegatedRole {
-    name: String,
-    key_ids: Vec<KeyId>,
-    threshold: i32,
-    terminating: bool,
+    pub name: String,
+    pub key_ids: Vec<KeyId>,
+    pub threshold: i32,
+    pub terminating: bool,
     paths: TargetPaths,
+}
+
+impl DelegatedRole {
+    pub fn could_have_target(&self, target: &str) -> bool {
+        match self.paths {
+            TargetPaths::Patterns(ref patterns) => {
+                for path in patterns.iter() {
+                    let path_str = path.as_str();
+                    if path_str == target {
+                        return true
+                    } else if path_str.ends_with("/") && target.starts_with(path_str) {
+                         return true
+                    }
+                }
+                return false
+            }
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for DelegatedRole {
@@ -787,4 +805,33 @@ impl<'de> Deserialize<'de> for DelegatedRole {
 pub enum TargetPaths {
     Patterns(Vec<String>),
     // TODO HashPrefixes(Vec<String>),
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn delegated_role_could_have_target() {
+        let vectors = vec![
+            ("foo", "foo", true),
+            ("foo/", "foo/bar", true),
+            ("foo", "foo/bar", false),
+            ("foo/bar", "foo/baz", false),
+            ("foo/bar/", "foo/bar/baz", true),
+        ];
+
+        for &(prefix, target, success) in vectors.iter() {
+            let delegation = DelegatedRole {
+                name: "".to_string(),
+                key_ids: Vec::new(),
+                threshold: 1,
+                terminating: false,
+                paths: TargetPaths::Patterns(vec![prefix.to_string()]),
+            };
+
+            assert!(!success ^ delegation.could_have_target(target),
+                    format!("Prefix {} should have target {}: {}", prefix, target, success))
+        };
+    }
 }

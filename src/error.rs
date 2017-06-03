@@ -32,14 +32,10 @@ pub enum Error {
     NoSupportedHashAlgorithms,
     /// A piece of metadata exceeded the provided or maximum allowed size.
     OversizedMetadata(Role),
-    /// The targets exceeded the provided size.
-    OversizedTarget,
     /// The calculated and provided hashes for the target did not match.
-    TargetHashMismatch,
-    /// An unknown role type was parsed and rejected.
     UnknownRole(String),
-    /// The target does not exist in valid metadata.
-    UnknownTarget,
+    /// The target does not exist in valid metadata or could not be verified.
+    UnavailableTarget,
     /// The role did not have enough signatures to meet the required threshold.
     UnmetThreshold(Role),
     /// The key type was not supported by this library.

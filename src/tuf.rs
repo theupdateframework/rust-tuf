@@ -47,7 +47,6 @@ pub struct Tuf {
     targets: Option<TargetsMetadata>,
     timestamp: Option<TimestampMetadata>,
     snapshot: Option<SnapshotMetadata>,
-    targets_delegations: HashMap<String, TargetsMetadata>,
 }
 
 impl Tuf {
@@ -98,7 +97,6 @@ impl Tuf {
             targets: None,
             timestamp: None,
             snapshot: None,
-            targets_delegations: HashMap::new(),
         };
 
         tuf.update()?;
@@ -134,7 +132,6 @@ impl Tuf {
             targets: None,
             timestamp: None,
             snapshot: None,
-            targets_delegations: HashMap::new(),
         };
         tuf.update()?;
 
@@ -188,8 +185,7 @@ impl Tuf {
         self.update_root(fetch_type)?;
 
         if self.update_timestamp(fetch_type)? && self.update_snapshot(fetch_type)? {
-            self.update_targets(fetch_type)?;
-            self.update_delegations(fetch_type)
+            self.update_targets(fetch_type)
         } else {
             Ok(())
         }
@@ -202,8 +198,7 @@ impl Tuf {
         self.update_root(fetch_type)?;
 
         if self.update_timestamp(fetch_type)? && self.update_snapshot(fetch_type)? {
-            self.update_targets(fetch_type)?;
-            self.update_delegations(fetch_type)
+            self.update_targets(fetch_type)
         } else {
             Ok(())
         }
@@ -570,41 +565,6 @@ impl Tuf {
         Ok(())
     }
 
-    fn update_delegations(&mut self, fetch_type: &FetchType) -> Result<(), Error> {
-        fn recursively_update_delegations(trusted: &mut HashSet<String>, targets: &TargetsMetadata) {
-            match targets.delegations {
-                Some(ref delegations) => {
-                    for delegation in delegations.roles.iter() {
-                        // get the metadata
-                        // verify it
-                        // update self.targets_delegations
-                    }
-                }
-                None => (),
-            }
-        };
-
-        match self.targets {
-            Some(ref targets) => {
-                let mut trusted = HashSet::new();
-                recursively_update_delegations(&mut trusted, &targets);
-
-                let mut untrusted = HashSet::new();
-                for role in self.targets_delegations.keys() {
-                    // TODO clone is sad
-                    untrusted.insert(role.clone());
-                }
-
-                for role in untrusted.iter() {
-                    let _ = self.targets_delegations.remove(role);
-                }
-
-                Ok(())
-            }
-            None => Err(Error::MissingMetadata(Role::Targets))
-        }
-    }
-
     fn get_metadata<R: RoleType, M: Metadata<R>, W: Write>(fetch_type: &FetchType,
                                                               http_client: &Client,
                                                               metadata_version: Option<i32>,
@@ -827,17 +787,66 @@ impl Tuf {
         return Err(Error::UnmetThreshold(R::role()));
     }
 
-    /// Lists all targets that are currently available. If a target is missing, it means the
-    /// metadata chain that leads to it cannot be verified, and the target is therefore untrusted.
-    // TODO stronger return type
-    pub fn list_targets(&self) -> Vec<String> {
+    // TODO have this return an interator or some sort and not a vec because lazy eval ftw
+    fn find_target_metadata_chain(&self, target: &str) -> Result<Vec<(bool, TargetsMetadata)>, Error> {
+        fn recursively_find_target(tuf: &Tuf,
+                                   buf: &mut Vec<(bool, TargetsMetadata)>,
+                                   terminate: bool,
+                                   targets: TargetsMetadata,
+                                   target: &str) {
+            match targets.targets.get(target) {
+                Some(_) => buf.push((terminate, targets)),
+                None => {
+                    match targets.delegations {
+                        Some(ref delegations) => {
+                            for delegation in delegations.roles.iter() {
+                                let version = match tuf.snapshot {
+                                    Some(ref snapshot) => {
+                                        match snapshot.meta.get(&format!("{}.json", delegation.name)) {
+                                            Some(meta) => meta.version,
+                                            None => return // TODO err msg
+                                        }
+                                    }
+                                    None => return // TODO err msg
+                                };
+
+                                // TODO extract hash/len from snapshot and use in verification
+                                if delegation.could_have_target(&target) {
+                                    match Tuf::get_metadata::<Targets,
+                                                              TargetsMetadata,
+                                                              File>(&tuf.remote.as_fetch(),
+                                                                  &tuf.http_client,
+                                                                  None,
+                                                                  delegation.threshold,
+                                                                  &delegation.key_ids,
+                                                                  &delegations.keys,
+                                                                  None,
+                                                                  None,
+                                                                  &mut None) {
+                                            Ok(meta) => {
+                                                panic!()
+                                            }
+                                            Err(e) => warn!("Error fetching metadata: {:?}", e),
+                                        }
+                                } else {
+                                    continue
+                                }
+                            }
+                        },
+                        None => (),
+                    }
+                }
+            }
+        }
+
         match self.targets {
             Some(ref targets) => {
-                let mut res = targets.targets.keys().cloned().collect::<Vec<String>>();
-                res.sort();
-                res
+                let mut buf = Vec::new();
+                recursively_find_target(&self, &mut buf, false, targets.clone(), target);
+                // TODO cloned = sadness
+                Ok(buf.iter().cloned().filter(|&(_, ref t)| t.targets.contains_key(target)).collect())
             }
-            None => Vec::new(),
+            None => Err(Error::MissingMetadata(Targets::role()))
         }
     }
 
@@ -846,122 +855,116 @@ impl Tuf {
     /// be verified.
     // TODO ? stronger input type
     pub fn fetch_target(&self, target: &str) -> Result<PathBuf, Error> {
-        let target_meta = match self.targets {
-            Some(ref targets) => {
-                targets.targets
-                    .get(target)
-                    .ok_or_else(|| Error::UnknownTarget)?
+        for &(terminate, ref targets_meta) in self.find_target_metadata_chain(target)?.iter() {
+            let target_meta = match targets_meta.targets.get(target) {
+                Some(meta) => meta,
+                None => continue,
+            };
+
+            let (hash_alg, expected_hash): (&HashType, HashValue) = HashType::preferences().iter()
+                .fold(None, |res, pref| {
+                    res.or_else(|| if let Some(hash) = target_meta.hashes.get(&pref) {
+                        Some((pref, hash.clone()))
+                    } else {
+                        None
+                    })
+                })
+                .ok_or_else(|| Error::NoSupportedHashAlgorithms)?;
+
+            // TODO correctly split path
+            let path = self.local_path.join("targets").join(util::url_path_to_os_path(target)?);
+            info!("reading target from local path: {:?}", path);
+
+            if path.exists() {
+                let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
+                Self::read_and_verify(&mut file,
+                                      &mut None::<&mut File>,
+                                      Some(target_meta.length),
+                                      Some((&hash_alg, &expected_hash.0)))?;
+                let _ = file.seek(SeekFrom::Start(0))?;
+                return Ok(path);
+            } else {
+                let (out, out_path) = self.temp_file()?;
+
+                match self.remote {
+                    RemoteRepo::File(ref path) => {
+                        let mut path = path.clone();
+                        path.extend(util::url_path_to_path_components(target)?);
+                        let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
+
+                        match Self::read_and_verify(&mut file,
+                                                    &mut Some(out),
+                                                    Some(target_meta.length),
+                                                    Some((&hash_alg, &expected_hash.0))) {
+                            Ok(()) => {
+                                let mut storage_path = self.local_path.join("targets");
+                                storage_path.extend(util::url_path_to_path_components(target)?);
+
+                                {
+                                    let parent = storage_path.parent()
+                                        .ok_or_else(|| Error::Generic("Path had no parent".to_string()))?;
+
+                                    DirBuilder::new()
+                                        .recursive(true)
+                                        .create(parent)?;
+                                }
+
+                                fs::rename(out_path, storage_path.clone())?;
+                                return Ok(storage_path)
+                            }
+                            Err(e) => {
+                                match fs::remove_file(out_path.clone()) {
+                                    Ok(_) => warn!("Error verifying target: {:?}", e),
+                                    Err(e) => warn!("Error removing temp file {:?}: {}", out_path, e),
+                                }
+                            }
+                        }
+                    }
+                    RemoteRepo::Http(ref url) => {
+                        let mut url = url.clone();
+                        {
+                            url.path_segments_mut()
+                                .map_err(|_| Error::Generic("URL path could not be mutated".to_string()))?
+                                .extend(util::url_path_to_path_components(&target)?);
+                        }
+                        let url = util::url_to_hyper_url(&url)?;
+                        let mut resp = self.http_client.get(url).send()?;
+
+                        match Self::read_and_verify(&mut resp,
+                                                    &mut Some(out),
+                                                    Some(target_meta.length),
+                                                    Some((&hash_alg, &expected_hash.0))) {
+                            Ok(()) => {
+                                // TODO this isn't windows friendly
+                                let mut storage_path = self.local_path.join("targets");
+                                storage_path.extend(util::url_path_to_path_components(target)?);
+
+                                {
+                                    let parent = storage_path.parent()
+                                        .ok_or_else(|| Error::Generic("Path had no parent".to_string()))?;
+
+                                    DirBuilder::new()
+                                        .recursive(true)
+                                        .create(parent)?;
+                                }
+
+                                fs::rename(out_path, storage_path.clone())?;
+
+                                return Ok(storage_path)
+                            }
+                            Err(e) => {
+                                match fs::remove_file(out_path.clone()) {
+                                    Ok(_) => warn!("Error verifying target: {:?}", e),
+                                    Err(e) => warn!("Error removing temp file {:?}: {}", out_path, e),
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            None => return Err(Error::MissingMetadata(Role::Targets)),
         };
 
-        let (hash_alg, expected_hash): (&HashType, HashValue) = HashType::preferences().iter()
-            .fold(None, |res, pref| {
-                res.or_else(|| if let Some(hash) = target_meta.hashes.get(&pref) {
-                    Some((pref, hash.clone()))
-                } else {
-                    None
-                })
-            })
-            .ok_or_else(|| Error::NoSupportedHashAlgorithms)?;
-
-        // TODO correctly split path
-        let path = self.local_path.join("targets").join(util::url_path_to_os_path(target)?);
-        info!("reading target from local path: {:?}", path);
-
-        if path.exists() {
-            let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
-            Self::read_and_verify(&mut file,
-                                  &mut None::<&mut File>,
-                                  Some(target_meta.length),
-                                  Some((&hash_alg, &expected_hash.0)))?;
-            let _ = file.seek(SeekFrom::Start(0))?;
-            return Ok(path);
-        } else {
-            let (out, out_path) = self.temp_file()?;
-
-            match self.remote {
-                RemoteRepo::File(ref path) => {
-                    let mut path = path.clone();
-                    path.extend(util::url_path_to_path_components(target)?);
-                    let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
-
-                    match Self::read_and_verify(&mut file,
-                                                &mut Some(out),
-                                                Some(target_meta.length),
-                                                Some((&hash_alg, &expected_hash.0))) {
-                        Ok(()) => {
-                            let mut storage_path = self.local_path.join("targets");
-                            storage_path.extend(util::url_path_to_path_components(target)?);
-
-                            {
-                                let parent = storage_path.parent()
-                                    .ok_or_else(|| Error::Generic("Path had no parent".to_string()))?;
-
-                                DirBuilder::new()
-                                    .recursive(true)
-                                    .create(parent)?;
-                            }
-
-                            fs::rename(out_path, storage_path.clone())?;
-                            Ok(storage_path)
-                        }
-                        Err(e) => {
-                            match fs::remove_file(out_path.clone()) {
-                                Ok(_) => Err(e),
-                                Err(e) => {
-                                    warn!("Error removing temp file {:?}: {}", out_path, e);
-                                    Err(Error::from(e))
-                                }
-                            }
-                        }
-                    }
-                }
-                RemoteRepo::Http(ref url) => {
-                    let mut url = url.clone();
-                    {
-                        url.path_segments_mut()
-                            .map_err(|_| Error::Generic("URL path could not be mutated".to_string()))?
-                            .extend(util::url_path_to_path_components(&target)?);
-                    }
-                    let url = util::url_to_hyper_url(&url)?;
-                    let mut resp = self.http_client.get(url).send()?;
-
-                    match Self::read_and_verify(&mut resp,
-                                                &mut Some(out),
-                                                Some(target_meta.length),
-                                                Some((&hash_alg, &expected_hash.0))) {
-                        Ok(()) => {
-                            // TODO this isn't windows friendly
-                            let mut storage_path = self.local_path.join("targets");
-                            storage_path.extend(util::url_path_to_path_components(target)?);
-
-                            {
-                                let parent = storage_path.parent()
-                                    .ok_or_else(|| Error::Generic("Path had no parent".to_string()))?;
-
-                                DirBuilder::new()
-                                    .recursive(true)
-                                    .create(parent)?;
-                            }
-
-                            fs::rename(out_path, storage_path.clone())?;
-
-                            Ok(storage_path)
-                        }
-                        Err(e) => {
-                            match fs::remove_file(out_path.clone()) {
-                                Ok(_) => Err(e),
-                                Err(e) => {
-                                    warn!("Error removing temp file {:?}: {}", out_path, e);
-                                    Err(Error::from(e))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        Err(Error::UnavailableTarget)
     }
 
     fn read_and_verify<R: Read, W: Write>(input: &mut R,
@@ -1002,7 +1005,7 @@ impl Tuf {
                             if *bytes_left == 0 {
                                 break;
                             } else if *bytes_left < 0 {
-                                return Err(Error::OversizedTarget);
+                                return Err(Error::UnavailableTarget);
                             }
                         }
                         None => (),
@@ -1017,7 +1020,7 @@ impl Tuf {
         match (generated_hash, hash_data) {
             (Some(generated_hash), Some((_, expected_hash))) if generated_hash.as_ref() !=
                                                                 expected_hash => {
-                Err(Error::TargetHashMismatch)
+                Err(Error::UnavailableTarget)
             }
             // this should never happen, so err if it does for safety
             (Some(_), None) => {
@@ -1092,7 +1095,7 @@ impl ConfigBuilder {
     }
 
     /// Where or not to initialize the local directory structures.
-    pub fn init(&mut self, init: bool) -> Self {
+    pub fn init(mut self, init: bool) -> Self {
         self.init = init;
         self
     }
