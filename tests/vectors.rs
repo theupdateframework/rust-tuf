@@ -353,3 +353,8 @@ fn vector_040() {
 fn vector_045() {
     run_test_vector("045")
 }
+
+#[test]
+fn vector_046() {
+    run_test_vector("046")
+}
