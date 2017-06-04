@@ -164,6 +164,11 @@ fn run_test_vector(test_path: &str) {
                     format!("Role: {}, err: {}", role, err))
         }
 
+        (Ok(ref tuf), &Some(ref err)) if err == &"UnavailableTarget".to_string() => {
+            assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()),
+                       Err(Error::UnavailableTarget));
+        }
+
         x => panic!("Unexpected failures: {:?}", x),
     }
 }
@@ -357,4 +362,14 @@ fn vector_045() {
 #[test]
 fn vector_046() {
     run_test_vector("046")
+}
+
+#[test]
+fn vector_047() {
+    run_test_vector("047")
+}
+
+#[test]
+fn vector_048() {
+    run_test_vector("048")
 }
