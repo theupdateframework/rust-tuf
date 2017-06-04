@@ -16,7 +16,7 @@ use error::Error;
 
 static HASH_PREFERENCES: &'static [HashType] = &[HashType::Sha512, HashType::Sha256];
 
-#[derive(Eq, PartialEq, Deserialize, Debug)]
+#[derive(Eq, PartialEq, Deserialize, Debug, Clone)]
 pub enum Role {
     Root,
     Targets,
@@ -52,38 +52,61 @@ impl Display for Role {
 }
 
 pub trait RoleType: Debug {
-    fn role() -> Role;
+    fn matches(role: &Role) -> bool;
 }
 
 #[derive(Debug)]
 pub struct Root {}
 impl RoleType for Root {
-    fn role() -> Role {
-        Role::Root
+    fn matches(role: &Role) -> bool {
+        match role {
+            &Role::Root => true,
+            _ => false,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Targets {}
 impl RoleType for Targets {
-    fn role() -> Role {
-        Role::Targets
+    fn matches(role: &Role) -> bool {
+        match role {
+            &Role::Targets => true,
+            _ => false,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Timestamp {}
 impl RoleType for Timestamp {
-    fn role() -> Role {
-        Role::Timestamp
+    fn matches(role: &Role) -> bool {
+        match role {
+            &Role::Timestamp => true,
+            _ => false,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Snapshot {}
 impl RoleType for Snapshot {
-    fn role() -> Role {
-        Role::Snapshot
+    fn matches(role: &Role) -> bool {
+        match role {
+            &Role::Snapshot => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct TargetsDelegation {}
+impl RoleType for TargetsDelegation {
+    fn matches(role: &Role) -> bool {
+        match role {
+            &Role::TargetsDelegation(_) => true,
+            _ => false,
+        }
     }
 }
 

@@ -63,6 +63,7 @@ impl Tuf {
                 Ok(modified_root) => {
                     Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
                                                                    &config.http_client,
+                                                                   &Role::Root,
                                                                    Some(1),
                                                                    modified_root.root.threshold,
                                                                    &modified_root.root.key_ids,
@@ -78,6 +79,7 @@ impl Tuf {
                         Self::read_root_with_keys(fetch_type, &config.http_client, &root_keys)?;
                     Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
                                                                    &config.http_client,
+                                                                   &Role::Root,
                                                                    Some(1),
                                                                    modified_root.root.threshold,
                                                                    &modified_root.root.key_ids,
@@ -115,6 +117,7 @@ impl Tuf {
             let root = Self::unverified_read_root(fetch_type, &config.http_client)?;
             Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
                                                            &config.http_client,
+                                                           &Role::Root,
                                                            None,
                                                            root.root.threshold,
                                                            &root.root.key_ids,
@@ -220,6 +223,7 @@ impl Tuf {
 
             let root = match Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
                                                                             &self.http_client,
+                                                                            &Role::Root,
                                                                             Some(i),
                                                                             self.root.root.threshold,
                                                                             &self.root.root.key_ids,
@@ -246,6 +250,7 @@ impl Tuf {
             // TODO this is not the most efficient way to do it, but it works
             match Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
                                                                  &self.http_client,
+                                                                 &Role::Root,
                                                                  Some(i),
                                                                  root.root.threshold,
                                                                  &root.root.key_ids,
@@ -312,6 +317,7 @@ impl Tuf {
         let timestamp =
             Self::get_metadata::<Timestamp, TimestampMetadata, File>(fetch_type,
                                                                      &self.http_client,
+                                                                     &Role::Timestamp,
                                                                      None,
                                                                      self.root.timestamp.threshold,
                                                                      &self.root.timestamp.key_ids,
@@ -414,6 +420,7 @@ impl Tuf {
                                                SnapshotMetadata,
                                                File>(fetch_type,
                                                      &self.http_client,
+                                                     &Role::Snapshot,
                                                      None,
                                                      self.root.snapshot.threshold,
                                                      &self.root.snapshot.key_ids,
@@ -519,6 +526,7 @@ impl Tuf {
 
         let targets = Self::get_metadata::<Targets, TargetsMetadata, File>(fetch_type,
                                                                            &self.http_client,
+                                                                           &Role::Targets,
                                                                            None,
                                                                            self.root.targets.threshold,
                                                                            &self.root.targets.key_ids,
@@ -567,6 +575,7 @@ impl Tuf {
 
     fn get_metadata<R: RoleType, M: Metadata<R>, W: Write>(fetch_type: &FetchType,
                                                               http_client: &Client,
+                                                              role: &Role,
                                                               metadata_version: Option<i32>,
                                                               threshold: i32,
                                                               trusted_ids: &[KeyId],
@@ -585,7 +594,7 @@ impl Tuf {
             &FetchType::Cache(ref local_path) => {
                 let path = local_path.join("metadata")
                     .join("current")
-                    .join(format!("{}{}.json", metadata_version_str, R::role()));
+                    .join(format!("{}{}.json", metadata_version_str, role));
                 info!("Reading metadata from local path: {:?}", path);
 
                 let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
@@ -599,7 +608,7 @@ impl Tuf {
                 buf
             }
             &FetchType::File(ref path) => {
-                let path = path.join(format!("{}{}.json", metadata_version_str, R::role()));
+                let path = path.join(format!("{}{}.json", metadata_version_str, role));
                 info!("Reading metadata from path: {:?}", path);
 
                 let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
@@ -613,7 +622,7 @@ impl Tuf {
                 buf
             }
             &FetchType::Http(ref url) => {
-                let url = url.join(&format!("{}{}.json", metadata_version_str, R::role()))?;
+                let url = url.join(&format!("{}{}.json", metadata_version_str, role))?;
                 let mut resp = http_client.get(url).send()?;
                 let mut buf = Vec::new();
 
@@ -627,13 +636,13 @@ impl Tuf {
         };
 
         let signed = json::from_slice(&buf)?;
-        let safe_bytes = Self::verify_meta::<R>(signed, threshold, trusted_ids, available_keys)?;
+        let safe_bytes = Self::verify_meta::<R>(signed, role, threshold, trusted_ids, available_keys)?;
         let meta: M = json::from_slice(&safe_bytes)?;
 
         // TODO this will be a problem with updating root metadata and this function probably
         // needs an arg like `allow_expired`.
         if meta.expires() <= &UTC::now() {
-            return Err(Error::ExpiredMetadata(R::role()));
+            return Err(Error::ExpiredMetadata(role.clone()));
         }
 
         match out {
@@ -731,6 +740,7 @@ impl Tuf {
     }
 
     fn verify_meta<R: RoleType>(signed: SignedMetadata<R>,
+                                role: &Role,
                                 threshold: i32,
                                 trusted_ids: &[KeyId],
                                 available_keys: &HashMap<KeyId, Key>)
@@ -745,7 +755,7 @@ impl Tuf {
             .len();
 
         if signed.signatures.len() != unique_count {
-            return Err(Error::NonUniqueSignatures(R::role()));
+            return Err(Error::NonUniqueSignatures(role.clone()));
         }
 
         let keys = trusted_ids.iter()
@@ -767,7 +777,7 @@ impl Tuf {
         for sig in signed.signatures.iter() {
             if let Some(key) = keys.get(&sig.key_id) {
                 debug!("Verifying role {:?} with key ID {:?}",
-                       R::role(),
+                       role,
                        sig.key_id);
 
                 match key.verify(&sig.method, &bytes, &sig.sig) {
@@ -784,13 +794,13 @@ impl Tuf {
         }
 
         info!("Threshold not met: {}/{}", valid_sigs, threshold);
-        return Err(Error::UnmetThreshold(R::role()));
+        return Err(Error::UnmetThreshold(role.clone()));
     }
 
     // TODO have this return an interator or some sort and not a vec because lazy eval ftw
     fn find_target_metadata_chain(&self, target: &str) -> Result<Vec<(bool, TargetsMetadata)>, Error> {
         fn recursively_find_target(tuf: &Tuf,
-                                   buf: &mut Vec<(bool, TargetsMetadata)>,
+                                   mut buf: &mut Vec<(bool, TargetsMetadata)>,
                                    terminate: bool,
                                    targets: TargetsMetadata,
                                    target: &str) {
@@ -809,13 +819,14 @@ impl Tuf {
                                     }
                                     None => return // TODO err msg
                                 };
-
+                                
                                 // TODO extract hash/len from snapshot and use in verification
                                 if delegation.could_have_target(&target) {
                                     match Tuf::get_metadata::<Targets,
                                                               TargetsMetadata,
                                                               File>(&tuf.remote.as_fetch(),
                                                                   &tuf.http_client,
+                                                                  &Role::TargetsDelegation(delegation.name.clone()),
                                                                   None,
                                                                   delegation.threshold,
                                                                   &delegation.key_ids,
@@ -824,7 +835,8 @@ impl Tuf {
                                                                   None,
                                                                   &mut None) {
                                             Ok(meta) => {
-                                                panic!()
+                                                // TODO terminating hardcoded to false
+                                                recursively_find_target(&tuf, &mut buf, false, meta, target);
                                             }
                                             Err(e) => warn!("Error fetching metadata: {:?}", e),
                                         }
@@ -846,7 +858,7 @@ impl Tuf {
                 // TODO cloned = sadness
                 Ok(buf.iter().cloned().filter(|&(_, ref t)| t.targets.contains_key(target)).collect())
             }
-            None => Err(Error::MissingMetadata(Targets::role()))
+            None => Err(Error::MissingMetadata(Role::Targets))
         }
     }
 
@@ -860,6 +872,7 @@ impl Tuf {
                 Some(meta) => meta,
                 None => continue,
             };
+
 
             let (hash_alg, expected_hash): (&HashType, HashValue) = HashType::preferences().iter()
                 .fold(None, |res, pref| {
