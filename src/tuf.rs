@@ -295,6 +295,7 @@ impl Tuf {
             };
 
             // set to None to untrust old metadata
+            // TODO delete old metadata
             // TODO check that these resets are in line with the Mercury paper
             self.targets = None;
             self.timestamp = None;

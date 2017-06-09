@@ -169,6 +169,11 @@ fn run_test_vector(test_path: &str) {
                        Err(Error::UnavailableTarget));
         }
 
+        (Ok(ref tuf), &Some(ref err))
+            if err == &"UnmetThreshold::Delegation".to_string() => {
+            assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()), Err(Error::UnavailableTarget));
+        }
+
         x => panic!("Unexpected failures: {:?}", x),
     }
 }
@@ -372,4 +377,20 @@ fn vector_047() {
 #[test]
 fn vector_048() {
     run_test_vector("048")
+}
+
+#[test]
+fn vector_049() {
+    run_test_vector("049")
+}
+
+
+#[test]
+fn vector_050() {
+    run_test_vector("050")
+}
+
+#[test]
+fn vector_051() {
+    run_test_vector("051")
 }
