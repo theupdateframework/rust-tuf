@@ -5,6 +5,7 @@ extern crate serde_derive;
 extern crate serde_json as json;
 extern crate tempdir;
 extern crate tuf;
+extern crate url;
 
 use data_encoding::HEXLOWER;
 use std::fs::File;
@@ -13,6 +14,7 @@ use std::path::PathBuf;
 use tempdir::TempDir;
 use tuf::{Tuf, Config, Error, RemoteRepo};
 use tuf::meta::{Key, KeyValue, KeyType};
+use url::Url;
 
 
 fn load_vector_meta() -> String {
@@ -46,7 +48,12 @@ struct RootKeyData {
     typ: String,
 }
 
-fn run_test_vector(test_path: &str) {
+enum TestType {
+    File,
+    Http
+}
+
+fn run_test_vector(test_path: &str, test_type: TestType) {
     let temp_dir = TempDir::new("rust-tuf").expect("couldn't make temp dir");
     let temp_path = temp_dir.into_path();
 
@@ -93,9 +100,13 @@ fn run_test_vector(test_path: &str) {
         })
         .collect();
 
-    let config = Config::build()
-        .remote(RemoteRepo::File(vector_path.join("repo")))
-        .local_path(temp_path.clone())
+    let config = match test_type {
+        TestType::File => Config::build()
+            .remote(RemoteRepo::File(vector_path.join("repo"))),
+        TestType::Http => Config::build()
+            .remote(RemoteRepo::Http(Url::parse(
+                        &format!("http://localhost:8080/{}/repo", test_path)).expect("bad url"))),
+    }.local_path(temp_path.clone())
         .finish()
         .expect("bad config");
 
@@ -178,234 +189,78 @@ fn run_test_vector(test_path: &str) {
     }
 }
 
-#[test]
-fn vector_001() {
-    run_test_vector("001")
+
+macro_rules! test_cases {
+    ($name: expr, $md: ident) => {
+        mod $md {
+            use $crate::{run_test_vector, TestType};
+
+            #[test]
+            fn file_test() {
+                run_test_vector($name, TestType::File)
+            }
+
+            // TODO no idea how windows shell scipting works
+            #[cfg(not(windows))]
+            #[test]
+            fn http_test() {
+                run_test_vector($name, TestType::Http)
+            }
+        }
+    }
 }
 
-#[test]
-fn vector_002() {
-    run_test_vector("002")
-}
-
-// TODO 003
-// TODO 004
-
-#[test]
-fn vector_005() {
-    run_test_vector("005")
-}
-
-// TODO 006
-
-#[test]
-fn vector_007() {
-    run_test_vector("007")
-}
-
-#[test]
-fn vector_008() {
-    run_test_vector("008")
-}
-
-#[test]
-fn vector_009() {
-    run_test_vector("009")
-}
-
-#[test]
-fn vector_010() {
-    run_test_vector("010")
-}
-
-#[test]
-fn vector_011() {
-    run_test_vector("011")
-}
-
-#[test]
-fn vector_012() {
-    run_test_vector("012")
-}
-
-#[test]
-fn vector_013() {
-    run_test_vector("013")
-}
-
-#[test]
-fn vector_014() {
-    run_test_vector("014")
-}
-
-#[test]
-fn vector_015() {
-    run_test_vector("015")
-}
-
-#[test]
-fn vector_016() {
-    run_test_vector("016")
-}
-
-#[test]
-fn vector_017() {
-    run_test_vector("017")
-}
-
-#[test]
-fn vector_018() {
-    run_test_vector("018")
-}
-
-#[test]
-fn vector_019() {
-    run_test_vector("019")
-}
-
-#[test]
-fn vector_020() {
-    run_test_vector("020")
-}
-
-#[test]
-fn vector_021() {
-    run_test_vector("021")
-}
-
-#[test]
-fn vector_022() {
-    run_test_vector("022")
-}
-
-#[test]
-fn vector_023() {
-    run_test_vector("023")
-}
-
-#[test]
-fn vector_024() {
-    run_test_vector("024")
-}
-
-#[test]
-fn vector_025() {
-    run_test_vector("025")
-}
-
-#[test]
-fn vector_026() {
-    run_test_vector("026")
-}
-
-// TODO 027
-// TODO 028
-
-#[test]
-fn vector_029() {
-    run_test_vector("029")
-}
-
-#[test]
-fn vector_030() {
-    run_test_vector("030")
-}
-
-#[test]
-fn vector_031() {
-    run_test_vector("031")
-}
-
-#[test]
-fn vector_032() {
-    run_test_vector("032")
-}
-
-#[test]
-fn vector_033() {
-    run_test_vector("033")
-}
-
-#[test]
-fn vector_034() {
-    run_test_vector("034")
-}
-
-// TODO 035
-// TODO 036
-
-#[test]
-fn vector_037() {
-    run_test_vector("037")
-}
-
-#[test]
-fn vector_038() {
-    run_test_vector("038")
-}
-
-#[test]
-fn vector_039() {
-    run_test_vector("039")
-}
-
-#[test]
-fn vector_040() {
-    run_test_vector("040")
-}
-
-// TODO 041
-// TODO 042
-// TODO 043
-// TODO 044
-
-#[test]
-fn vector_045() {
-    run_test_vector("045")
-}
-
-#[test]
-fn vector_046() {
-    run_test_vector("046")
-}
-
-#[test]
-fn vector_047() {
-    run_test_vector("047")
-}
-
-#[test]
-fn vector_048() {
-    run_test_vector("048")
-}
-
-#[test]
-fn vector_049() {
-    run_test_vector("049")
-}
-
-
-#[test]
-fn vector_050() {
-    run_test_vector("050")
-}
-
-#[test]
-fn vector_051() {
-    run_test_vector("051")
-}
-
-#[test]
-fn vector_052() {
-    run_test_vector("052")
-}
-
-#[test]
-fn vector_053() {
-    run_test_vector("053")
-}
-
-#[test]
-fn vector_054() {
-    run_test_vector("054")
-}
+test_cases!("001", _001);
+test_cases!("002", _002);
+// test_cases!("003", _003);
+// test_cases!("004", _004);
+test_cases!("005", _005);
+// test_cases!("006", _006);
+test_cases!("007", _007);
+test_cases!("008", _008);
+test_cases!("009", _009);
+test_cases!("010", _010);
+test_cases!("011", _011);
+test_cases!("012", _012);
+test_cases!("013", _013);
+test_cases!("014", _014);
+test_cases!("015", _015);
+test_cases!("016", _016);
+test_cases!("017", _017);
+test_cases!("018", _018);
+test_cases!("019", _019);
+test_cases!("020", _020);
+test_cases!("021", _021);
+test_cases!("022", _022);
+test_cases!("023", _023);
+test_cases!("024", _024);
+test_cases!("025", _025);
+test_cases!("026", _026);
+// test_cases!("027", _027);
+// test_cases!("028", _028);
+test_cases!("029", _029);
+test_cases!("030", _030);
+test_cases!("031", _031);
+test_cases!("032", _032);
+test_cases!("033", _033);
+test_cases!("034", _034);
+// test_cases!("035", _035);
+// test_cases!("036", _036);
+test_cases!("037", _037);
+test_cases!("038", _038);
+test_cases!("039", _039);
+test_cases!("040", _040);
+// test_cases!("041", _041);
+// test_cases!("042", _042);
+// test_cases!("043", _043);
+// test_cases!("044", _044);
+test_cases!("045", _045);
+test_cases!("046", _046);
+test_cases!("047", _047);
+test_cases!("048", _048);
+test_cases!("049", _049);
+test_cases!("050", _050);
+test_cases!("051", _051);
+test_cases!("052", _052);
+test_cases!("053", _053);
+test_cases!("054", _054);
