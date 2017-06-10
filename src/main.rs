@@ -41,9 +41,6 @@ fn run_main(matches: ArgMatches) -> Result<(), Error> {
     } else if let Some(_) = matches.subcommand_matches("init") {
         let path = PathBuf::from(matches.value_of("path").unwrap());
         cmd_init(&path)
-    } else if let Some(_) = matches.subcommand_matches("list") {
-        let mut tuf = Tuf::new(config)?;
-        cmd_list(&mut tuf)
     } else if let Some(_) = matches.subcommand_matches("update") {
         let mut tuf = Tuf::new(config)?;
         cmd_update(&mut tuf)
@@ -97,7 +94,6 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
                 .required(true)
                 .help("The full (non-local) path of the target to verify")))
         .subcommand(SubCommand::with_name("init").about("Initializes a new TUF repo"))
-        .subcommand(SubCommand::with_name("list").about("Lists available targets"))
         .subcommand(SubCommand::with_name("update").about("Updates metadata from remotes"))
         .subcommand(SubCommand::with_name("verify")
             .about("Verifies a target")
@@ -114,17 +110,6 @@ fn cmd_fetch(tuf: &Tuf, target: &str) -> Result<(), Error> {
 
 fn cmd_init(local_path: &PathBuf) -> Result<(), Error> {
     Tuf::initialize(local_path)
-}
-
-fn cmd_list(tuf: &mut Tuf) -> Result<(), Error> {
-    let mut targets = tuf.list_targets();
-    targets.sort();
-
-    for target in targets.iter() {
-        println!("{}", target);
-    }
-
-    Ok(())
 }
 
 fn cmd_update(tuf: &mut Tuf) -> Result<(), Error> {

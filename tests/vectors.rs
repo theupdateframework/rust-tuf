@@ -7,7 +7,7 @@ extern crate tempdir;
 extern crate tuf;
 
 use data_encoding::HEXLOWER;
-use std::fs::{self, File, DirBuilder};
+use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use tempdir::TempDir;
@@ -101,7 +101,6 @@ fn run_test_vector(test_path: &str) {
 
     match (Tuf::from_root_keys(root_keys, config), &test_vector.error) {
         (Ok(ref tuf), &None) => {
-            assert_eq!(tuf.list_targets(), vec!["targets/file.txt".to_string()]);
             // first time pulls remote
             assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()), Ok(()));
             assert!(temp_path.join("targets").join("targets").join("file.txt").exists());
@@ -111,12 +110,12 @@ fn run_test_vector(test_path: &str) {
 
         (Ok(ref tuf), &Some(ref err)) if err == &"TargetHashMismatch".to_string() => {
             assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()),
-                       Err(Error::TargetHashMismatch));
+                       Err(Error::UnavailableTarget));
         }
 
         (Ok(ref tuf), &Some(ref err)) if err == &"OversizedTarget".to_string() => {
             assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()),
-                       Err(Error::OversizedTarget));
+                       Err(Error::UnavailableTarget));
         }
 
         (Err(Error::ExpiredMetadata(ref role)), &Some(ref err))
@@ -159,6 +158,22 @@ fn run_test_vector(test_path: &str) {
                     format!("Role: {}, err: {}", role, err))
         }
 
+        (Err(Error::NonUniqueSignatures(ref role)), &Some(ref err)) if err.starts_with("NonUniqueSignatures::") => {
+            assert!(err.to_lowercase()
+                        .ends_with(role.to_string().as_str()),
+                    format!("Role: {}, err: {}", role, err))
+        }
+
+        (Ok(ref tuf), &Some(ref err)) if err == &"UnavailableTarget".to_string() => {
+            assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()),
+                       Err(Error::UnavailableTarget));
+        }
+
+        (Ok(ref tuf), &Some(ref err))
+            if err == &"UnmetThreshold::Delegation".to_string() => {
+            assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()), Err(Error::UnavailableTarget));
+        }
+
         x => panic!("Unexpected failures: {:?}", x),
     }
 }
@@ -173,25 +188,15 @@ fn vector_002() {
     run_test_vector("002")
 }
 
-#[ignore]
-fn vector_003() {
-    run_test_vector("003")
-}
-
-#[ignore]
-fn vector_004() {
-    run_test_vector("004")
-}
+// TODO 003
+// TODO 004
 
 #[test]
 fn vector_005() {
     run_test_vector("005")
 }
 
-#[ignore]
-fn vector_006() {
-    run_test_vector("006")
-}
+// TODO 006
 
 #[test]
 fn vector_007() {
@@ -293,15 +298,8 @@ fn vector_026() {
     run_test_vector("026")
 }
 
-#[ignore]
-fn vector_027() {
-    run_test_vector("027")
-}
-
-#[ignore]
-fn vector_028() {
-    run_test_vector("028")
-}
+// TODO 027
+// TODO 028
 
 #[test]
 fn vector_029() {
@@ -331,4 +329,83 @@ fn vector_033() {
 #[test]
 fn vector_034() {
     run_test_vector("034")
+}
+
+// TODO 035
+// TODO 036
+
+#[test]
+fn vector_037() {
+    run_test_vector("037")
+}
+
+#[test]
+fn vector_038() {
+    run_test_vector("038")
+}
+
+#[test]
+fn vector_039() {
+    run_test_vector("039")
+}
+
+#[test]
+fn vector_040() {
+    run_test_vector("040")
+}
+
+// TODO 041
+// TODO 042
+// TODO 043
+// TODO 044
+
+#[test]
+fn vector_045() {
+    run_test_vector("045")
+}
+
+#[test]
+fn vector_046() {
+    run_test_vector("046")
+}
+
+#[test]
+fn vector_047() {
+    run_test_vector("047")
+}
+
+#[test]
+fn vector_048() {
+    run_test_vector("048")
+}
+
+#[test]
+fn vector_049() {
+    run_test_vector("049")
+}
+
+
+#[test]
+fn vector_050() {
+    run_test_vector("050")
+}
+
+#[test]
+fn vector_051() {
+    run_test_vector("051")
+}
+
+#[test]
+fn vector_052() {
+    run_test_vector("052")
+}
+
+#[test]
+fn vector_053() {
+    run_test_vector("053")
+}
+
+#[test]
+fn vector_054() {
+    run_test_vector("054")
 }
