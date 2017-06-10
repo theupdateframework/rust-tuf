@@ -798,82 +798,20 @@ impl Tuf {
         return Err(Error::UnmetThreshold(role.clone()));
     }
 
-    // TODO have this return an interator or some sort and not a vec because lazy eval ftw
-    fn find_target_metadata_chain(&self, target: &str) -> Result<Vec<(bool, TargetsMetadata)>, Error> {
-        fn recursively_find_target(tuf: &Tuf,
-                                   mut buf: &mut Vec<(bool, TargetsMetadata)>,
-                                   terminate: bool,
-                                   targets: TargetsMetadata,
-                                   target: &str) {
-            match targets.targets.get(target) {
-                Some(_) => buf.push((terminate, targets)),
-                None => {
-                    match targets.delegations {
-                        Some(ref delegations) => {
-                            for delegation in delegations.roles.iter() {
-                                let version = match tuf.snapshot {
-                                    Some(ref snapshot) => {
-                                        match snapshot.meta.get(&format!("{}.json", delegation.name)) {
-                                            Some(meta) => meta.version,
-                                            None => return // TODO err msg
-                                        }
-                                    }
-                                    None => return // TODO err msg
-                                };
-                                
-                                // TODO extract hash/len from snapshot and use in verification
-                                if delegation.could_have_target(&target) {
-                                    match Tuf::get_metadata::<Targets,
-                                                              TargetsMetadata,
-                                                              File>(&tuf.remote.as_fetch(),
-                                                                  &tuf.http_client,
-                                                                  &Role::TargetsDelegation(delegation.name.clone()),
-                                                                  None,
-                                                                  delegation.threshold,
-                                                                  &delegation.key_ids,
-                                                                  &delegations.keys,
-                                                                  None,
-                                                                  None,
-                                                                  &mut None) {
-                                            Ok(meta) => {
-                                                // TODO terminating hardcoded to false
-                                                recursively_find_target(&tuf, &mut buf, false, meta, target);
-                                            }
-                                            Err(e) => warn!("Error fetching metadata: {:?}", e),
-                                        }
-                                } else {
-                                    continue
-                                }
-                            }
-                        },
-                        None => (),
-                    }
-                }
-            }
-        }
-
-        match self.targets {
-            Some(ref targets) => {
-                let mut buf = Vec::new();
-                recursively_find_target(&self, &mut buf, false, targets.clone(), target);
-                // TODO cloned = sadness
-                Ok(buf.iter().cloned().filter(|&(_, ref t)| t.targets.contains_key(target)).collect())
-            }
-            None => Err(Error::MissingMetadata(Role::Targets))
-        }
-    }
-
     /// Reads a target from local storage or fetches it from a remote repository. Verifies the
     /// target. Fails if the target is missing, or if the metadata chain that leads to it cannot
     /// be verified.
     // TODO ? stronger input type
     pub fn fetch_target(&self, target: &str) -> Result<PathBuf, Error> {
-        for &(terminate, ref targets_meta) in self.find_target_metadata_chain(target)?.iter() {
+        let metadata_chain = match self.targets {
+            Some(ref targets) => TargetPathIterator::new(&self, targets.clone(), target),
+            None => return Err(Error::MissingMetadata(Role::Targets)),
+        };
+        for ref targets_meta in metadata_chain {
             let target_meta = match targets_meta.targets.get(target) {
                 Some(meta) => meta,
                 None => continue,
             };
-
 
             let (hash_alg, expected_hash): (&HashType, HashValue) = HashType::preferences().iter()
                 .fold(None, |res, pref| {
@@ -1144,6 +1082,109 @@ impl FetchType {
         match self {
             &FetchType::Cache(_) => true,
             _ => false,
+        }
+    }
+}
+
+
+struct TargetPathIterator<'a> {
+    tuf: &'a Tuf,
+    targets: TargetsMetadata,
+    target: &'a str,
+    terminate: bool,
+    targets_checked: bool,
+    roles_index: usize,
+    sub_iter: Option<Box<TargetPathIterator<'a>>>,
+}
+
+impl<'a> TargetPathIterator<'a> {
+    fn new(tuf: &'a Tuf, targets: TargetsMetadata, target: &'a str) -> Self {
+        TargetPathIterator {
+            tuf: tuf,
+            targets: targets,
+            target: target,
+            terminate: false,
+            targets_checked: false,
+            roles_index: 0,
+            sub_iter: None,
+        }
+    }
+}
+
+impl<'a> Iterator for TargetPathIterator<'a> {
+    type Item = TargetsMetadata;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.terminate {
+            return None
+        }
+
+        match self.targets.targets.get(self.target) {
+            Some(_) if !self.targets_checked => {
+                self.targets_checked = true;
+                Some(self.targets.clone())
+            },
+            _ => {
+                match self.targets.delegations {
+                    Some(ref delegations) => {
+                        for delegation in delegations.roles.iter().skip(self.roles_index) {
+                            if delegation.terminating {
+                                self.terminate = true;
+                            }
+
+                            self.roles_index += 1;
+
+                            let version = match self.tuf.snapshot {
+                                Some(ref snapshot) => {
+                                    match snapshot.meta.get(&format!("{}.json", delegation.name)) {
+                                        Some(meta) => meta.version,
+                                        None => continue // TODO err msg
+                                    }
+                                }
+                                None => continue // TODO err msg
+                            };
+
+                            // TODO extract hash/len from snapshot and use in verification
+                            if delegation.could_have_target(&self.target) {
+                                match Tuf::get_metadata::<Targets,
+                                                          TargetsMetadata,
+                                                          File>(&self.tuf.remote.as_fetch(),
+                                                              &self.tuf.http_client,
+                                                              &Role::TargetsDelegation(delegation.name.clone()),
+                                                              None,
+                                                              delegation.threshold,
+                                                              &delegation.key_ids,
+                                                              &delegations.keys,
+                                                              None,
+                                                              None,
+                                                              &mut None) {
+                                        Ok(meta) => {
+                                            // TODO there is probably a better way to do this
+                                            let mut iter = TargetPathIterator::new(&self.tuf,
+                                                                                   meta.clone(),
+                                                                                   self.target);
+                                            let res = iter.next();
+                                            if delegation.terminating && res.is_none() {
+                                                return None
+                                            } else if res.is_some() {
+                                                self.sub_iter = Some(Box::new(iter));
+                                                return res
+                                            } else {
+                                                return None
+                                            }
+                                            break
+                                        }
+                                        Err(e) => warn!("Error fetching metadata: {:?}", e),
+                                    }
+                            } else {
+                                continue
+                            }
+                        }
+                        return None
+                    },
+                    None => return None,
+                }
+            }
         }
     }
 }

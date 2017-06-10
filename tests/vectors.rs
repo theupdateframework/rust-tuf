@@ -394,3 +394,18 @@ fn vector_050() {
 fn vector_051() {
     run_test_vector("051")
 }
+
+#[test]
+fn vector_052() {
+    run_test_vector("052")
+}
+
+#[test]
+fn vector_053() {
+    run_test_vector("053")
+}
+
+#[test]
+fn vector_054() {
+    run_test_vector("054")
+}
