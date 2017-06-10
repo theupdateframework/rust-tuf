@@ -1134,10 +1134,32 @@ impl<'a> Iterator for TargetPathIterator<'a> {
 
                             self.roles_index += 1;
 
-                            let version = match self.tuf.snapshot {
+                            let (version, length, hash_data) = match self.tuf.snapshot {
                                 Some(ref snapshot) => {
                                     match snapshot.meta.get(&format!("{}.json", delegation.name)) {
-                                        Some(meta) => meta.version,
+                                        Some(meta) => {
+                                            let hash_data = match meta.hashes {
+                                                Some(ref hashes) => {
+                                                    match HashType::preferences().iter()
+                                                        .fold(None, |res, pref| {
+                                                            res.or_else(|| if let Some(hash) = hashes.get(&pref) {
+                                                                Some((pref, hash))
+                                                            } else {
+                                                                None
+                                                            })
+                                                        }) {
+                                                            Some(pair) => Some(pair.clone()),
+                                                            None => {
+                                                                warn!("No suitable hash algorithms. Refusing to trust metadata: {:?}",
+                                                                      delegation.name);
+                                                                continue
+                                                            }
+                                                        }
+                                                },
+                                                None => None,
+                                            };
+                                            (meta.version, meta.length, hash_data)
+                                        },
                                         None => continue // TODO err msg
                                     }
                                 }
@@ -1155,11 +1177,16 @@ impl<'a> Iterator for TargetPathIterator<'a> {
                                                               delegation.threshold,
                                                               &delegation.key_ids,
                                                               &delegations.keys,
-                                                              None,
-                                                              None,
+                                                              length,
+                                                              hash_data.map(|(a, h)| (a, &*h.0)),
                                                               &mut None) {
                                         Ok(meta) => {
-                                            // TODO there is probably a better way to do this
+                                            if meta.version != version {
+                                                warn!("The metadata for {:?} had version {} but snapshot reported {}",
+                                                      delegation.name, meta.version, version);
+                                                continue
+                                            }
+
                                             let mut iter = TargetPathIterator::new(&self.tuf,
                                                                                    meta.clone(),
                                                                                    self.target);
@@ -1170,9 +1197,8 @@ impl<'a> Iterator for TargetPathIterator<'a> {
                                                 self.sub_iter = Some(Box::new(iter));
                                                 return res
                                             } else {
-                                                return None
+                                                continue
                                             }
-                                            break
                                         }
                                         Err(e) => warn!("Error fetching metadata: {:?}", e),
                                     }

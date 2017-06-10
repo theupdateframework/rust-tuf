@@ -100,17 +100,6 @@ impl RoleType for Snapshot {
 }
 
 #[derive(Debug)]
-pub struct TargetsDelegation {}
-impl RoleType for TargetsDelegation {
-    fn matches(role: &Role) -> bool {
-        match role {
-            &Role::TargetsDelegation(_) => true,
-            _ => false,
-        }
-    }
-}
-
-#[derive(Debug)]
 pub struct SignedMetadata<R: RoleType> {
     pub signatures: Vec<Signature>,
     pub signed: json::Value,
