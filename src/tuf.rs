@@ -623,7 +623,12 @@ impl Tuf {
                 buf
             }
             &FetchType::Http(ref url) => {
-                let url = url.join(&format!("{}{}.json", metadata_version_str, role))?;
+                let mut url = url.clone();
+                {
+                    url.path_segments_mut()
+                        .map_err(|_| Error::Generic("URL path could not be mutated".to_string()))?
+                        .push(&format!("{}{}.json", metadata_version_str, role));
+                }
                 let mut resp = http_client.get(url).send()?;
                 let mut buf = Vec::new();
 
@@ -675,7 +680,12 @@ impl Tuf {
                 buf
             }
             &FetchType::Http(ref url) => {
-                let url = url.join("root.json")?;
+                let mut url = url.clone();
+                {
+                    url.path_segments_mut()
+                        .map_err(|_| Error::Generic("URL path could not be mutated".to_string()))?
+                        .push("root.json");
+                }
                 let mut resp = http_client.get(url).send()?;
                 let mut buf = Vec::new();
                 resp.read_to_end(&mut buf).map(|_| ())?;
@@ -715,7 +725,12 @@ impl Tuf {
                 buf
             }
             &FetchType::Http(ref url) => {
-                let url = url.join("1.root.json")?;
+                let mut url = url.clone();
+                {
+                    url.path_segments_mut()
+                        .map_err(|_| Error::Generic("URL path could not be mutated".to_string()))?
+                        .push("1.root.json");
+                }
                 let mut resp = http_client.get(url).send()?;
                 let mut buf = Vec::new();
                 resp.read_to_end(&mut buf).map(|_| ())?;
