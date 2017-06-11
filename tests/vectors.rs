@@ -8,9 +8,9 @@ extern crate tuf;
 extern crate url;
 
 use data_encoding::HEXLOWER;
-use std::fs::File;
-use std::io::Read;
-use std::path::PathBuf;
+use std::fs::{self, File, DirEntry};
+use std::io::{self, Read};
+use std::path::{PathBuf, Path};
 use tempdir::TempDir;
 use tuf::{Tuf, Config, Error, RemoteRepo};
 use tuf::meta::{Key, KeyValue, KeyType};
@@ -38,6 +38,7 @@ struct VectorMeta {
 struct VectorMetaEntry {
     repo: String,
     error: Option<String>,
+    is_success: bool,
     root_keys: Vec<RootKeyData>,
 }
 
@@ -51,6 +52,20 @@ struct RootKeyData {
 enum TestType {
     File,
     Http
+}
+
+fn ensure_empty(path: &Path) {
+    if !path.is_dir() {
+        panic!("Path wasn't a dir: {:?}", path)
+    }
+
+    let res = fs::read_dir(path).expect("couldn't read dir").collect::<Vec<io::Result<DirEntry>>>();
+    if !res.is_empty() {
+        panic!("Temp dir not empty: {:?}", res)
+    }
+    if !res.iter().all(|x| x.is_ok()) {
+        panic!("Temp dir errors: {:?}", res)
+    }
 }
 
 fn run_test_vector(test_path: &str, test_type: TestType) {
@@ -186,6 +201,10 @@ fn run_test_vector(test_path: &str, test_type: TestType) {
         }
 
         x => panic!("Unexpected failures: {:?}", x),
+    }
+    ensure_empty(&temp_path.join("temp"));
+    if !test_vector.is_success {
+        ensure_empty(&temp_path.join("targets"))
     }
 }
 

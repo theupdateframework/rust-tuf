@@ -12,8 +12,6 @@ use std::path::PathBuf;
 use _tuf::{Tuf, Config, Error, RemoteRepo};
 use url::Url;
 
-// TODO logging
-
 fn main() {
     let matches = parser().get_matches();
     env_logger::init().unwrap();
@@ -33,6 +31,7 @@ fn run_main(matches: ArgMatches) -> Result<(), Error> {
         .unwrap();
     let config = Config::build().remote(remote)
         .local_path(PathBuf::from(matches.value_of("path").unwrap()))
+        .init(false)
         .finish()?;
 
     if let Some(matches) = matches.subcommand_matches("fetch") {

@@ -153,12 +153,14 @@ extern crate url;
 extern crate untrusted;
 extern crate uuid;
 
+#[macro_use]
+mod util;
+
 mod cjson;
 mod http;
 mod metadata;
 mod error;
 mod tuf;
-mod util;
 
 pub use tuf::*;
 pub use error::*;

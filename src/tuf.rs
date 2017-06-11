@@ -7,7 +7,7 @@ use ring::digest::{SHA256, SHA512};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, DirBuilder};
 use std::io::{Read, Write, Seek, SeekFrom};
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use url::Url;
 use uuid::Uuid;
 
@@ -17,7 +17,7 @@ use http;
 use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, SignedMetadata,
                RootMetadata, TargetsMetadata, TimestampMetadata, SnapshotMetadata, HashType,
                HashValue, KeyId, Key};
-use util;
+use util::{self, TempFile};
 
 /// A remote TUF repository.
 #[derive(Debug)]
@@ -117,7 +117,9 @@ impl Tuf {
 
         let root = {
             let fetch_type = &FetchType::Cache(config.local_path.clone());
-            let root = Self::unverified_read_root(fetch_type, &config.http_client)?;
+            let (_, root) =
+                Self::unverified_read_root(fetch_type, &config.http_client, None)?;
+
             Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
                                                            &config.http_client,
                                                            &Role::Root,
@@ -166,12 +168,8 @@ impl Tuf {
 
     // TODO clean function that cleans up local_path for old targets, old dirs, etc
 
-    fn temp_file(&self) -> Result<(File, PathBuf), Error> {
-        let uuid = Uuid::new_v4();
-        let path = self.local_path.as_path().join("temp").join(uuid.hyphenated().to_string());
-
-        debug!("Creating temp file: {:?}", path);
-        Ok((File::create(path.clone())?, path.to_path_buf()))
+    fn temp_file(&self) -> Result<TempFile, Error> {
+        Ok(TempFile::new(self.local_path.join("temp"))?)
     }
 
     /// Update the metadata from local and remote sources.
@@ -214,92 +212,63 @@ impl Tuf {
     fn update_root(&mut self, fetch_type: &FetchType) -> Result<(), Error> {
         debug!("Updating root metadata");
 
-        let temp_root = Self::unverified_read_root(fetch_type, &self.http_client)?;
+        let (_, temp_root) =
+            Self::unverified_read_root(fetch_type, &self.http_client, Some(self.local_path.as_path()))?;
 
+        // handle the edge case where we never enter the update look
+        // AND the first piece of metadata is expired
         if temp_root.version == 1 && self.root.expires() <= &UTC::now() {
             return Err(Error::ExpiredMetadata(Role::Root));
         }
 
         // TODO reuse temp root as last one
         for i in (self.root.version + 1)..(temp_root.version + 1) {
-            let (mut out, out_path) = if !fetch_type.is_cache() {
-                let (file, path) = self.temp_file()?;
-                (Some(file), Some(path))
+            let mut temp_file = if !fetch_type.is_cache() {
+                Some(self.temp_file()?)
             } else {
-                (None, None)
+                None
             };
 
-            let root = match Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
-                                                                            &self.http_client,
-                                                                            &Role::Root,
-                                                                            Some(i),
-                                                                            true,
-                                                                            self.root.root.threshold,
-                                                                            &self.root.root.key_ids,
-                                                                            &self.root.keys,
-                                                                            None,
-                                                                            None,
-                                                                            &mut out) {
-                Ok(root) => root,
-                Err(e) => {
-                    match out_path {
-                        Some(out_path) => {
-                            match fs::remove_file(out_path.clone()) {
-                                Ok(_) => (),
-                                Err(e) => warn!("Error removing temp file {:?}: {}", out_path, e),
-                            }
-                        }
-                        None => (),
-                    }
-                    return Err(e);
-                }
-            };
+            let root = Self::get_metadata::<Root, RootMetadata, TempFile>(fetch_type,
+                                                                      &self.http_client,
+                                                                      &Role::Root,
+                                                                      Some(i),
+                                                                      true,
+                                                                      self.root.root.threshold,
+                                                                      &self.root.root.key_ids,
+                                                                      &self.root.keys,
+                                                                      None,
+                                                                      None,
+                                                                      &mut temp_file)?;
 
             // verify root again against itself (for cross signing)
             // TODO this is not the most efficient way to do it, but it works
-            match Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
-                                                                 &self.http_client,
-                                                                 &Role::Root,
-                                                                 Some(i),
-                                                                 false,
-                                                                 root.root.threshold,
-                                                                 &root.root.key_ids,
-                                                                 &root.keys,
-                                                                 None,
-                                                                 None,
-                                                                 &mut None::<File>) {
-                Ok(root_again) => {
-                    if root != root_again {
-                        // TODO better error message
-                        return Err(Error::Generic(format!("Cross singning of root version {} \
-                                                           failed",
-                                                          i)));
-                    }
-                }
-                Err(e) => {
-                    match out_path {
-                        Some(out_path) => {
-                            match fs::remove_file(out_path.clone()) {
-                                Ok(_) => (),
-                                Err(e) => warn!("Error removing temp file {:?}: {}", out_path, e),
-                            }
-                        }
-                        None => (),
-                    }
-                    return Err(e);
-                }
-            };
+            let root_again =
+                Self::get_metadata::<Root, RootMetadata, File>(fetch_type,
+                                                               &self.http_client,
+                                                               &Role::Root,
+                                                               Some(i),
+                                                               false,
+                                                               root.root.threshold,
+                                                               &root.root.key_ids,
+                                                               &root.keys,
+                                                               None,
+                                                               None,
+                                                               &mut None::<File>)?;
+            if root != root_again {
+                // TODO better error message
+                return Err(Error::Generic(format!("Cross singning of root version {} failed", i)));
+            }
 
             info!("Rotated to root metadata version {}", i);
             self.root = root;
 
-            match out_path {
-                Some(out_path) => {
-                    fs::rename(out_path,
-                               self.local_path
-                                   .join("metadata")
-                                   .join("archive")
-                                   .join(format!("{}.root.json", i)))?
+            match temp_file {
+                Some(temp_file) => {
+                    temp_file.persist(&self.local_path
+                                           .join("metadata")
+                                           .join("archive")
+                                           .join(format!("{}.root.json", i)))?
                 }
                 None => (),
             };
@@ -318,15 +287,14 @@ impl Tuf {
     fn update_timestamp(&mut self, fetch_type: &FetchType) -> Result<bool, Error> {
         debug!("Updating timestamp metadata");
 
-        let (mut out, out_path) = if !fetch_type.is_cache() {
-            let (file, path) = self.temp_file()?;
-            (Some(file), Some(path))
+        let mut temp_file = if !fetch_type.is_cache() {
+            Some(self.temp_file()?)
         } else {
-            (None, None)
+            None
         };
 
         let timestamp =
-            Self::get_metadata::<Timestamp, TimestampMetadata, File>(fetch_type,
+            Self::get_metadata::<Timestamp, TimestampMetadata, TempFile>(fetch_type,
                                                                      &self.http_client,
                                                                      &Role::Timestamp,
                                                                      None,
@@ -336,15 +304,10 @@ impl Tuf {
                                                                      &self.root.keys,
                                                                      None,
                                                                      None,
-                                                                     &mut out)?;
+                                                                     &mut temp_file)?;
 
         match self.timestamp {
             Some(ref t) if t.version > timestamp.version => {
-                match out_path {
-                    Some(out_path) => fs::remove_file(out_path)?,
-                    None => (),
-                };
-
                 return Err(Error::VersionDecrease(Role::Timestamp));
             }
             Some(ref t) if t.version == timestamp.version => return Ok(false),
@@ -355,24 +318,13 @@ impl Tuf {
             if let Some(ref timestamp_meta) = timestamp.meta.get("snapshot.json") {
                 if timestamp_meta.version > timestamp.version {
                     info!("Timestamp metadata is up to date");
-
-                    match out_path {
-                        Some(out_path) => {
-                            match fs::remove_file(out_path.clone()) {
-                                Ok(_) => (),
-                                Err(e) => warn!("Error removing temp file {:?}: {}", out_path, e),
-                            }
-                        }
-                        None => (),
-                    };
-
                     return Ok(false);
                 }
             }
         }
 
-        match out_path {
-            Some(out_path) => {
+        match temp_file {
+            Some(temp_file) => {
                 let current_path = self.local_path
                     .join("metadata")
                     .join("current")
@@ -386,7 +338,7 @@ impl Tuf {
                                    .join("timestamp.json"))?;
                 };
 
-                fs::rename(out_path, current_path)?
+                temp_file.persist(&current_path)?
             }
             None => (),
         };
@@ -421,16 +373,15 @@ impl Tuf {
             })
             .ok_or_else(|| Error::NoSupportedHashAlgorithms)?;
 
-        let (mut out, out_path) = if !fetch_type.is_cache() {
-            let (file, path) = self.temp_file()?;
-            (Some(file), Some(path))
+        let mut temp_file = if !fetch_type.is_cache() {
+            Some(self.temp_file()?)
         } else {
-            (None, None)
+            None
         };
 
         let snapshot = Self::get_metadata::<Snapshot,
                                                SnapshotMetadata,
-                                               File>(fetch_type,
+                                               TempFile>(fetch_type,
                                                      &self.http_client,
                                                      &Role::Snapshot,
                                                      None,
@@ -440,16 +391,12 @@ impl Tuf {
                                                      &self.root.keys,
                                                      Some(meta.length),
                                                      Some((&hash_alg, &expected_hash.0)),
-                                                     &mut out)?;
+                                                     &mut temp_file)?;
 
         // TODO ? check downloaded version matches what was in the timestamp.json
 
         match self.snapshot {
             Some(ref s) if s.version > snapshot.version => {
-                match out_path {
-                    Some(out_path) => fs::remove_file(out_path)?,
-                    None => (),
-                };
                 return Err(Error::VersionDecrease(Role::Snapshot));
             }
             Some(ref s) if s.version == snapshot.version => return Ok(false),
@@ -462,19 +409,14 @@ impl Tuf {
                 if let Some(ref targets) = self.targets {
                     if snapshot_meta.version > targets.version {
                         info!("Snapshot metadata is up to date");
-
-                        match out_path {
-                            Some(out_path) => fs::remove_file(out_path)?,
-                            None => (),
-                        };
                         return Ok(false);
                     }
                 }
             }
         }
 
-        match out_path {
-            Some(out_path) => {
+        match temp_file {
+            Some(temp_file) => {
                 let current_path = self.local_path
                     .join("metadata")
                     .join("current")
@@ -488,7 +430,7 @@ impl Tuf {
                                    .join("snapshot.json"))?;
                 };
 
-                fs::rename(out_path, current_path)?
+                temp_file.persist(&current_path)?
             }
             None => (),
         };
@@ -530,14 +472,13 @@ impl Tuf {
 
         let hash_data = hash_data.map(|(t, v)| (t, v.0.as_slice()));
 
-        let (mut out, out_path) = if !fetch_type.is_cache() {
-            let (file, path) = self.temp_file()?;
-            (Some(file), Some(path))
+        let mut temp_file = if !fetch_type.is_cache() {
+            Some(self.temp_file()?)
         } else {
-            (None, None)
+            None
         };
 
-        let targets = Self::get_metadata::<Targets, TargetsMetadata, File>(fetch_type,
+        let targets = Self::get_metadata::<Targets, TargetsMetadata, TempFile>(fetch_type,
                                                                            &self.http_client,
                                                                            &Role::Targets,
                                                                            None,
@@ -547,25 +488,20 @@ impl Tuf {
                                                                            &self.root.keys,
                                                                            meta.length,
                                                                            hash_data,
-                                                                           &mut out)?;
+                                                                           &mut temp_file)?;
 
         // TODO ? check downloaded version matches what was in the snapshot.json
 
         match self.targets {
             Some(ref t) if t.version > targets.version => {
-                match out_path {
-                    Some(out_path) => fs::remove_file(out_path)?,
-                    None => (),
-                };
-
                 return Err(Error::VersionDecrease(Role::Targets));
             }
             Some(ref t) if t.version == targets.version => return Ok(()),
             _ => self.targets = Some(targets),
         }
 
-        match out_path {
-            Some(out_path) => {
+        match temp_file {
+            Some(temp_file) => {
                 let current_path = self.local_path
                     .join("metadata")
                     .join("current")
@@ -579,7 +515,7 @@ impl Tuf {
                                    .join("targets.json"))?;
                 };
 
-                fs::rename(out_path, current_path)?
+                temp_file.persist(&current_path)?
             }
             None => (),
         };
@@ -602,7 +538,6 @@ impl Tuf {
                                                            -> Result<M, Error> {
 
         debug!("Loading metadata from {:?}", fetch_type);
-        println!("loading meta {:?} {:?} {:?}", role, metadata_version, allow_expired);
         let metadata_version_str = metadata_version.map(|x| format!("{}.", x))
             .unwrap_or_else(|| "".to_string());
 
@@ -673,9 +608,10 @@ impl Tuf {
     }
 
     fn unverified_read_root(fetch_type: &FetchType,
-                            http_client: &Client)
-                            -> Result<RootMetadata, Error> {
-        let buf: Vec<u8> = match fetch_type {
+                            http_client: &Client,
+                            local_path: Option<&Path>)
+                            -> Result<(Option<TempFile>, RootMetadata), Error> {
+        let (temp_file, buf): (Option<TempFile>, Vec<u8>) = match fetch_type {
             &FetchType::Cache(ref local_path) => {
                 let path = local_path.join("metadata")
                     .join("current")
@@ -683,16 +619,38 @@ impl Tuf {
                 let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
                 let mut buf = Vec::new();
                 file.read_to_end(&mut buf).map(|_| ())?;
-                buf
+                (None, buf)
             }
             &FetchType::File(ref path) => {
-                let path = path.join("root.json");
-                let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
+                let local_path = local_path.ok_or_else(|| {
+                    let msg = "Programming error. No local path supplied for remote file read";
+                    error!("{}", msg);
+                    Error::Generic(msg.to_string())
+                })?;
+                let dest_path = local_path.join("temp")
+                    .join(Uuid::new_v4().hyphenated().to_string());
+
+                let src_path = path.join("root.json");
+                fs::copy(src_path, dest_path.clone())?;
+
+                let mut temp_file = TempFile::from_existing(dest_path)
+                    .map_err(|e| Error::from_io(e, &path))?;
                 let mut buf = Vec::new();
-                file.read_to_end(&mut buf).map(|_| ())?;
-                buf
+                temp_file.read_to_end(&mut buf).map(|_| ())?;
+                temp_file.seek(SeekFrom::Start(0))
+                    .map_err(|e| Error::from_io(e, &path))?;
+
+                (Some(temp_file), buf)
             }
             &FetchType::Http(ref url) => {
+                let local_path = local_path.ok_or_else(|| {
+                    let msg = "Programming error. No local path supplied for remote HTTP read";
+                    error!("{}", msg);
+                    Error::Generic(msg.to_string())
+                })?;
+
+                let mut temp_file = TempFile::new(local_path.to_path_buf())?;
+
                 let mut url = url.clone();
                 {
                     url.path_segments_mut()
@@ -702,13 +660,17 @@ impl Tuf {
                 let mut resp = http::get(http_client, &url)?;
                 let mut buf = Vec::new();
                 resp.read_to_end(&mut buf).map(|_| ())?;
-                buf
+
+                temp_file.write_all(&buf).map(|_| ())?;
+                temp_file.seek(SeekFrom::Start(0))?;
+
+                (Some(temp_file), buf)
             }
         };
 
         let signed: SignedMetadata<Root> = json::from_slice(&buf)?;
         let root_str = signed.signed.to_string();
-        Ok(json::from_str(&root_str)?)
+        Ok((temp_file, json::from_str(&root_str)?))
     }
 
     /// Read the root.json metadata and replace keys for the root role with the keys that are given
@@ -864,7 +826,7 @@ impl Tuf {
                 let _ = file.seek(SeekFrom::Start(0))?;
                 return Ok(path);
             } else {
-                let (out, out_path) = self.temp_file()?;
+                let mut temp_file = self.temp_file()?;
 
                 match self.remote {
                     RemoteRepo::File(ref path) => {
@@ -873,7 +835,7 @@ impl Tuf {
                         let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
 
                         match Self::read_and_verify(&mut file,
-                                                    &mut Some(out),
+                                                    &mut Some(temp_file.file_mut()?),
                                                     Some(target_meta.length),
                                                     Some((&hash_alg, &expected_hash.0))) {
                             Ok(()) => {
@@ -889,15 +851,10 @@ impl Tuf {
                                         .create(parent)?;
                                 }
 
-                                fs::rename(out_path, storage_path.clone())?;
+                                temp_file.persist(&storage_path)?;
                                 return Ok(storage_path)
                             }
-                            Err(e) => {
-                                match fs::remove_file(out_path.clone()) {
-                                    Ok(_) => warn!("Error verifying target: {:?}", e),
-                                    Err(e) => warn!("Error removing temp file {:?}: {}", out_path, e),
-                                }
-                            }
+                            Err(e) => warn!("Error verifying target: {:?}", e),
                         }
                     }
                     RemoteRepo::Http(ref url) => {
@@ -911,7 +868,7 @@ impl Tuf {
                         let mut resp = http::get(&self.http_client, &url)?;
 
                         match Self::read_and_verify(&mut resp,
-                                                    &mut Some(out),
+                                                    &mut Some(temp_file.file_mut()?),
                                                     Some(target_meta.length),
                                                     Some((&hash_alg, &expected_hash.0))) {
                             Ok(()) => {
@@ -928,16 +885,11 @@ impl Tuf {
                                         .create(parent)?;
                                 }
 
-                                fs::rename(out_path, storage_path.clone())?;
+                                temp_file.persist(&storage_path)?;
 
                                 return Ok(storage_path)
                             }
-                            Err(e) => {
-                                match fs::remove_file(out_path.clone()) {
-                                    Ok(_) => warn!("Error verifying target: {:?}", e),
-                                    Err(e) => warn!("Error removing temp file {:?}: {}", out_path, e),
-                                }
-                            }
+                            Err(e) => warn!("Error verifying target: {:?}", e),
                         }
                     }
                 }
