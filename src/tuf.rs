@@ -65,6 +65,7 @@ impl Tuf {
                                                                    &config.http_client,
                                                                    &Role::Root,
                                                                    Some(1),
+                                                                   true,
                                                                    modified_root.root.threshold,
                                                                    &modified_root.root.key_ids,
                                                                    &modified_root.keys,
@@ -81,6 +82,7 @@ impl Tuf {
                                                                    &config.http_client,
                                                                    &Role::Root,
                                                                    Some(1),
+                                                                   true,
                                                                    modified_root.root.threshold,
                                                                    &modified_root.root.key_ids,
                                                                    &modified_root.keys,
@@ -119,6 +121,7 @@ impl Tuf {
                                                            &config.http_client,
                                                            &Role::Root,
                                                            None,
+                                                           true,
                                                            root.root.threshold,
                                                            &root.root.key_ids,
                                                            &root.keys,
@@ -212,6 +215,10 @@ impl Tuf {
 
         let temp_root = Self::unverified_read_root(fetch_type, &self.http_client)?;
 
+        if temp_root.version == 1 && self.root.expires() <= &UTC::now() {
+            return Err(Error::ExpiredMetadata(Role::Root));
+        }
+
         // TODO reuse temp root as last one
         for i in (self.root.version + 1)..(temp_root.version + 1) {
             let (mut out, out_path) = if !fetch_type.is_cache() {
@@ -225,6 +232,7 @@ impl Tuf {
                                                                             &self.http_client,
                                                                             &Role::Root,
                                                                             Some(i),
+                                                                            true,
                                                                             self.root.root.threshold,
                                                                             &self.root.root.key_ids,
                                                                             &self.root.keys,
@@ -252,6 +260,7 @@ impl Tuf {
                                                                  &self.http_client,
                                                                  &Role::Root,
                                                                  Some(i),
+                                                                 false,
                                                                  root.root.threshold,
                                                                  &root.root.key_ids,
                                                                  &root.keys,
@@ -320,6 +329,7 @@ impl Tuf {
                                                                      &self.http_client,
                                                                      &Role::Timestamp,
                                                                      None,
+                                                                     false,
                                                                      self.root.timestamp.threshold,
                                                                      &self.root.timestamp.key_ids,
                                                                      &self.root.keys,
@@ -423,6 +433,7 @@ impl Tuf {
                                                      &self.http_client,
                                                      &Role::Snapshot,
                                                      None,
+                                                     false,
                                                      self.root.snapshot.threshold,
                                                      &self.root.snapshot.key_ids,
                                                      &self.root.keys,
@@ -529,6 +540,7 @@ impl Tuf {
                                                                            &self.http_client,
                                                                            &Role::Targets,
                                                                            None,
+                                                                           false,
                                                                            self.root.targets.threshold,
                                                                            &self.root.targets.key_ids,
                                                                            &self.root.keys,
@@ -575,19 +587,21 @@ impl Tuf {
     }
 
     fn get_metadata<R: RoleType, M: Metadata<R>, W: Write>(fetch_type: &FetchType,
-                                                              http_client: &Client,
-                                                              role: &Role,
-                                                              metadata_version: Option<i32>,
-                                                              threshold: i32,
-                                                              trusted_ids: &[KeyId],
-                                                              available_keys: &HashMap<KeyId, Key>,
-                                                              size: Option<i64>,
-                                                              hash_data: Option<(&HashType,
-                                                                                 &[u8])>,
-                                                              mut out: &mut Option<W>)
-                                                              -> Result<M, Error> {
+                                                           http_client: &Client,
+                                                           role: &Role,
+                                                           metadata_version: Option<i32>,
+                                                           allow_expired: bool,
+                                                           threshold: i32,
+                                                           trusted_ids: &[KeyId],
+                                                           available_keys: &HashMap<KeyId, Key>,
+                                                           size: Option<i64>,
+                                                           hash_data: Option<(&HashType,
+                                                                              &[u8])>,
+                                                           mut out: &mut Option<W>)
+                                                           -> Result<M, Error> {
 
         debug!("Loading metadata from {:?}", fetch_type);
+        println!("loading meta {:?} {:?} {:?}", role, metadata_version, allow_expired);
         let metadata_version_str = metadata_version.map(|x| format!("{}.", x))
             .unwrap_or_else(|| "".to_string());
 
@@ -645,9 +659,7 @@ impl Tuf {
         let safe_bytes = Self::verify_meta::<R>(signed, role, threshold, trusted_ids, available_keys)?;
         let meta: M = json::from_slice(&safe_bytes)?;
 
-        // TODO this will be a problem with updating root metadata and this function probably
-        // needs an arg like `allow_expired`.
-        if meta.expires() <= &UTC::now() {
+        if !allow_expired && meta.expires() <= &UTC::now() {
             return Err(Error::ExpiredMetadata(role.clone()));
         }
 
@@ -1189,6 +1201,7 @@ impl<'a> Iterator for TargetPathIterator<'a> {
                                                               &self.tuf.http_client,
                                                               &Role::TargetsDelegation(delegation.name.clone()),
                                                               None,
+                                                              false,
                                                               delegation.threshold,
                                                               &delegation.key_ids,
                                                               &delegations.keys,
