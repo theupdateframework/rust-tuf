@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use cjson;
 use error::Error;
+use http;
 use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, SignedMetadata,
                RootMetadata, TargetsMetadata, TimestampMetadata, SnapshotMetadata, HashType,
                HashValue, KeyId, Key};
@@ -643,7 +644,7 @@ impl Tuf {
                         .map_err(|_| Error::Generic("URL path could not be mutated".to_string()))?
                         .push(&format!("{}{}.json", metadata_version_str, role));
                 }
-                let mut resp = http_client.get(url).send()?;
+                let mut resp = http::get(http_client, &url)?;
                 let mut buf = Vec::new();
 
                 match (size, hash_data) {
@@ -698,7 +699,7 @@ impl Tuf {
                         .map_err(|_| Error::Generic("URL path could not be mutated".to_string()))?
                         .push("root.json");
                 }
-                let mut resp = http_client.get(url).send()?;
+                let mut resp = http::get(http_client, &url)?;
                 let mut buf = Vec::new();
                 resp.read_to_end(&mut buf).map(|_| ())?;
                 buf
@@ -743,7 +744,7 @@ impl Tuf {
                         .map_err(|_| Error::Generic("URL path could not be mutated".to_string()))?
                         .push("1.root.json");
                 }
-                let mut resp = http_client.get(url).send()?;
+                let mut resp = http::get(http_client, &url)?;
                 let mut buf = Vec::new();
                 resp.read_to_end(&mut buf).map(|_| ())?;
                 buf
@@ -907,7 +908,7 @@ impl Tuf {
                                 .extend(util::url_path_to_path_components(&target)?);
                         }
                         let url = util::url_to_hyper_url(&url)?;
-                        let mut resp = self.http_client.get(url).send()?;
+                        let mut resp = http::get(&self.http_client, &url)?;
 
                         match Self::read_and_verify(&mut resp,
                                                     &mut Some(out),

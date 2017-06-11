@@ -154,6 +154,7 @@ extern crate untrusted;
 extern crate uuid;
 
 mod cjson;
+mod http;
 mod metadata;
 mod error;
 mod tuf;
