@@ -68,7 +68,7 @@ fn ensure_empty(path: &Path) {
     }
 }
 
-fn run_test_vector(test_path: &str, test_type: TestType) {
+fn run_test_vector(test_path: &str, test_type: TestType, pin_root_keys: bool) {
     let temp_dir = TempDir::new("rust-tuf").expect("couldn't make temp dir");
     let temp_path = temp_dir.into_path();
 
@@ -93,28 +93,6 @@ fn run_test_vector(test_path: &str, test_type: TestType) {
     println!("The test vector path is: {}",
              vector_path.to_string_lossy().into_owned());
 
-    let root_keys = test_vector.root_keys
-        .iter()
-        .map(|k| {
-            let file_path = vector_path.join("keys").join(k.path.clone());
-            let mut file = File::open(file_path).expect("couldn't open file");
-            let mut key = String::new();
-            file.read_to_string(&mut key).expect("couldn't read key");
-
-            match k.typ.as_ref() {
-                "ed25519" => {
-                    let val = HEXLOWER.decode(key.replace("\n", "").as_ref())
-                        .expect("key value not hex");
-                    Key {
-                        typ: KeyType::Ed25519,
-                        value: KeyValue(val),
-                    }
-                }
-                x => panic!("unknown key type: {}", x),
-            }
-        })
-        .collect();
-
     let config = match test_type {
         TestType::File => Config::build()
             .remote(RemoteRepo::File(vector_path.join("repo"))),
@@ -125,7 +103,39 @@ fn run_test_vector(test_path: &str, test_type: TestType) {
         .finish()
         .expect("bad config");
 
-    match (Tuf::from_root_keys(root_keys, config), &test_vector.error) {
+    let tuf = if pin_root_keys {
+        let root_keys = test_vector.root_keys
+            .iter()
+            .map(|k| {
+                let file_path = vector_path.join("keys").join(k.path.clone());
+                let mut file = File::open(file_path).expect("couldn't open file");
+                let mut key = String::new();
+                file.read_to_string(&mut key).expect("couldn't read key");
+
+                match k.typ.as_ref() {
+                    "ed25519" => {
+                        let val = HEXLOWER.decode(key.replace("\n", "").as_ref())
+                            .expect("key value not hex");
+                        Key {
+                            typ: KeyType::Ed25519,
+                            value: KeyValue(val),
+                        }
+                    }
+                    x => panic!("unknown key type: {}", x),
+                }
+            })
+            .collect();
+        Tuf::from_root_keys(root_keys, config)
+    } else {
+        Tuf::initialize(&temp_path)
+            .expect("failed to initialize");
+        fs::copy(vector_path.join("repo").join("1.root.json"),
+                 temp_path.join("metadata").join("current").join("root.json"))
+            .expect("failed to copy root.json");
+        Tuf::new(config)
+    };
+
+    match (tuf, &test_vector.error) {
         (Ok(ref tuf), &None) => {
             // first time pulls remote
             assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()), Ok(()));
@@ -215,15 +225,27 @@ macro_rules! test_cases {
             use $crate::{run_test_vector, TestType};
 
             #[test]
-            fn file_test() {
-                run_test_vector($name, TestType::File)
+            fn file_pinned() {
+                run_test_vector($name, TestType::File, true)
+            }
+
+            #[test]
+            fn file_unpinned() {
+                run_test_vector($name, TestType::File, false)
             }
 
             // TODO no idea how windows shell scipting works
             #[cfg(not(windows))]
             #[test]
-            fn http_test() {
-                run_test_vector($name, TestType::Http)
+            fn http_pinned() {
+                run_test_vector($name, TestType::Http, true)
+            }
+
+            // TODO no idea how windows shell scipting works
+            #[cfg(not(windows))]
+            #[test]
+            fn http_unpinned() {
+                run_test_vector($name, TestType::Http, false)
             }
         }
     }
