@@ -3,10 +3,16 @@ sudo: enabled
 dist: trust
 
 language: rust
+cache: cargo
 rust:
   - stable
   - beta
   - nightly
+
+env:
+  global:
+    # for codecov.io
+    - RUSTFLAGS="-C link-dead-code"
 
 install:
   - sudo add-apt-repository -y ppa:fkrull/deadsnakes
@@ -22,3 +28,22 @@ script:
   - RUST_BACKTRACE=full cargo build --verbose --features=cli
   - ./tests/tuf-test-vectors/server.py --path tuf &>/dev/null &
   - RUST_BACKTRACE=full cargo test --verbose --features=cli
+
+after_failure:
+  - cat Cargo.lock
+
+after_success: |
+  sudo apt-get install -y libcurl4-openssl-dev libelf-dev libdw-dev cmake gcc binutils-dev &&
+  wget https://github.com/SimonKagstrom/kcov/archive/master.tar.gz &&
+  tar xzf master.tar.gz &&
+  cd kcov-master &&
+  mkdir build &&
+  cd build &&
+  cmake .. &&
+  make &&
+  sudo make install &&
+  cd ../.. &&
+  rm -rf kcov-master &&
+  for file in target/debug/*-*[^\.d]; do mkdir -p "target/cov/$(basename $file)"; kcov --exclude-pattern=/.cargo,/usr/lib --verify "target/cov/$(basename $file)" "$file"; done &&
+  bash <(curl -s https://codecov.io/bash) &&
+  echo "Uploaded code coverage"

@@ -1,7 +1,10 @@
 use hyper;
+use std::fs::{self, File};
+use std::io::{self, Read, Write, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use url::Url;
 use url::percent_encoding::percent_decode;
+use uuid::Uuid;
 
 use error::Error;
 
@@ -37,6 +40,85 @@ pub fn url_path_to_path_components(url_path: &str) -> Result<Vec<String>, Error>
 pub fn url_to_hyper_url(url: &Url) -> Result<hyper::Url, Error> {
     Ok(hyper::Url::parse(url.as_str())?)
 }
+
+
+#[derive(Debug)]
+struct TempFileInner {
+    path: PathBuf,
+    file: File,
+}
+
+#[derive(Debug)]
+pub struct TempFile(Option<TempFileInner>);
+
+impl TempFile {
+    pub fn new(prefix: PathBuf) -> Result<Self, io::Error> {
+        let path = prefix.join(Uuid::new_v4().hyphenated().to_string());
+        Ok(TempFile(Some(TempFileInner {
+            path: path.clone(),
+            file: File::create(path)?,
+        })))
+    }
+
+    pub fn from_existing(path: PathBuf) -> Result<Self, io::Error> {
+        Ok(TempFile(Some( TempFileInner {
+            path: path.clone(),
+            file: File::open(path)?,
+        })))
+    }
+
+    pub fn file_mut(&mut self) -> Result<&mut File, io::Error> {
+        match self.0 {
+            Some(ref mut inner) => Ok(&mut inner.file),
+            None => Err(io::Error::new(io::ErrorKind::Other, "invalid TempFile reference"))
+        }
+    }
+
+    pub fn persist(mut self, dest: &Path) -> Result<(), io::Error> {
+        match self.0.take() {
+            Some(inner) => fs::rename(inner.path, dest),
+            None => Err(io::Error::new(io::ErrorKind::Other, "invalid TempFile reference")),
+        }
+    }
+}
+
+impl Write for TempFile {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+        self.file_mut()?.write(buf)
+    }
+
+    fn flush(&mut self) -> Result<(), io::Error> {
+        self.file_mut()?.flush()
+    }
+}
+
+impl Read for TempFile {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+        self.file_mut()?.read(buf)
+    }
+}
+
+impl Seek for TempFile {
+    fn seek(&mut self, pos: SeekFrom) -> Result<u64, io::Error> {
+        self.file_mut()?.seek(pos)
+    }
+}
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        match self.0.take() {
+            Some(inner) => {
+                drop(inner.file);
+                match fs::remove_file(inner.path) {
+                    Ok(()) => (),
+                    Err(e) => warn!("Failed to delete tempfile: {:?}", e),
+                }
+            },
+            None => (),
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod test {

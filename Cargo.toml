@@ -1,6 +1,6 @@
 [package]
 name = "tuf"
-version = "0.1.4"
+version = "0.1.5"
 authors = [ "heartsucker <heartsucker@autistici.org>" ]
 description = "Library for The Update Framework (TUF)"
 homepage = "https://github.com/heartsucker/rust-tuf"
@@ -14,6 +14,7 @@ categories = [ "cryptography" ]
 [badges]
 travis-ci = { repository = "heartsucker/rust-tuf", branch = "master" }
 appveyor = { repository = "heartsucker/rust-tuf", branch = "master", service = "github" }
+codecov = { repository = "heartsucker/rust-tuf", branch = "master", service = "github" }
 
 [lib]
 name = "tuf"
