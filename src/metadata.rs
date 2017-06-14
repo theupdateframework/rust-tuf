@@ -5,7 +5,7 @@ use pem;
 use ring;
 use ring::digest::{digest, SHA256};
 use ring::signature::{ED25519, RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA512};
-use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
+use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter, Debug};
 use std::marker::PhantomData;
@@ -18,12 +18,13 @@ use rsa::convert_to_pkcs1;
 
 static HASH_PREFERENCES: &'static [HashType] = &[HashType::Sha512, HashType::Sha256];
 
-#[derive(Eq, PartialEq, Deserialize, Debug)]
+#[derive(Eq, PartialEq, Deserialize, Debug, Clone)]
 pub enum Role {
     Root,
     Targets,
     Timestamp,
     Snapshot,
+    TargetsDelegation(String),
 }
 
 impl FromStr for Role {
@@ -47,43 +48,56 @@ impl Display for Role {
             Role::Targets => write!(f, "{}", "targets"),
             Role::Snapshot => write!(f, "{}", "snapshot"),
             Role::Timestamp => write!(f, "{}", "timestamp"),
+            Role::TargetsDelegation(ref s) => write!(f, "{}", s),
         }
     }
 }
 
 pub trait RoleType: Debug {
-    fn role() -> Role;
+    fn matches(role: &Role) -> bool;
 }
 
 #[derive(Debug)]
 pub struct Root {}
 impl RoleType for Root {
-    fn role() -> Role {
-        Role::Root
+    fn matches(role: &Role) -> bool {
+        match role {
+            &Role::Root => true,
+            _ => false,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Targets {}
 impl RoleType for Targets {
-    fn role() -> Role {
-        Role::Targets
+    fn matches(role: &Role) -> bool {
+        match role {
+            &Role::Targets => true,
+            _ => false,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Timestamp {}
 impl RoleType for Timestamp {
-    fn role() -> Role {
-        Role::Timestamp
+    fn matches(role: &Role) -> bool {
+        match role {
+            &Role::Timestamp => true,
+            _ => false,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Snapshot {}
 impl RoleType for Snapshot {
-    fn role() -> Role {
-        Role::Snapshot
+    fn matches(role: &Role) -> bool {
+        match role {
+            &Role::Snapshot => true,
+            _ => false,
+        }
     }
 }
 
@@ -94,8 +108,8 @@ pub struct SignedMetadata<R: RoleType> {
     _role: PhantomData<R>,
 }
 
-impl<R: RoleType> Deserialize for SignedMetadata<R> {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de, R: RoleType> Deserialize<'de> for SignedMetadata<R> {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
             match (object.remove("signatures"), object.remove("signed")) {
                 (Some(a @ json::Value::Array(_)), Some(v @ json::Value::Object(_))) => {
@@ -118,32 +132,21 @@ impl<R: RoleType> Deserialize for SignedMetadata<R> {
     }
 }
 
-pub trait Metadata<R: RoleType>: Deserialize {
+pub trait Metadata<R: RoleType>: DeserializeOwned {
     fn expires(&self) -> &DateTime<UTC>;
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RootMetadata {
-    // TODO consistent_snapshot: bool,
+    consistent_snapshot: bool,
     expires: DateTime<UTC>,
     pub version: i32,
     pub keys: HashMap<KeyId, Key>,
-    root: RoleDefinition,
-    targets: RoleDefinition,
-    timestamp: RoleDefinition,
-    snapshot: RoleDefinition,
-}
-
-impl RootMetadata {
-    pub fn role_definition<R: RoleType>(&self) -> &RoleDefinition {
-        match R::role() {
-            Role::Root => &self.root,
-            Role::Targets => &self.targets,
-            Role::Timestamp => &self.timestamp,
-            Role::Snapshot => &self.snapshot,
-        }
-    }
+    pub root: RoleDefinition,
+    pub targets: RoleDefinition,
+    pub timestamp: RoleDefinition,
+    pub snapshot: RoleDefinition,
 }
 
 impl Metadata<Root> for RootMetadata {
@@ -152,8 +155,8 @@ impl Metadata<Root> for RootMetadata {
     }
 }
 
-impl Deserialize for RootMetadata {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for RootMetadata {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
             let typ = json::from_value::<Role>(object.remove("_type")
                     .ok_or_else(|| DeserializeError::custom("Field '_type' missing"))?)
@@ -178,6 +181,11 @@ impl Deserialize for RootMetadata {
             let version = json::from_value(object.remove("version")
                     .ok_or_else(|| DeserializeError::custom("Field 'version' missing"))?).map_err(|e| {
                     DeserializeError::custom(format!("Field 'version' did not have a valid format: {}", e))
+                })?;
+
+            let consistent_snapshot = json::from_value(object.remove("consistent_snapshot")
+                    .ok_or_else(|| DeserializeError::custom("Field 'consistent_snapshot' missing"))?).map_err(|e| {
+                    DeserializeError::custom(format!("Field 'consistent_snapshot' did not have a valid format: {}", e))
                 })?;
 
             let mut roles = object.remove("roles")
@@ -212,6 +220,7 @@ impl Deserialize for RootMetadata {
                 })?;
 
             Ok(RootMetadata {
+                consistent_snapshot,
                 expires: expires,
                 version: version,
                 keys: keys,
@@ -232,8 +241,8 @@ pub struct RoleDefinition {
     pub threshold: i32,
 }
 
-impl Deserialize for RoleDefinition {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for RoleDefinition {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
             let key_ids = json::from_value(object.remove("keyids")
                     .ok_or_else(|| DeserializeError::custom("Field 'keyids' missing"))?).map_err(|e| {
@@ -260,7 +269,7 @@ impl Deserialize for RoleDefinition {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TargetsMetadata {
     expires: DateTime<UTC>,
     pub version: i32,
@@ -274,8 +283,8 @@ impl Metadata<Targets> for TargetsMetadata {
     }
 }
 
-impl Deserialize for TargetsMetadata {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for TargetsMetadata {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
             let delegations = match object.remove("delegations") {
                 // TODO this should accept null / empty object too
@@ -335,8 +344,8 @@ impl Metadata<Timestamp> for TimestampMetadata {
     }
 }
 
-impl Deserialize for TimestampMetadata {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for TimestampMetadata {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
 
             let expires = json::from_value(object.remove("expires")
@@ -383,8 +392,8 @@ impl Metadata<Snapshot> for SnapshotMetadata {
     }
 }
 
-impl Deserialize for SnapshotMetadata {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for SnapshotMetadata {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
             let expires = json::from_value(object.remove("expires")
                     .ok_or_else(|| DeserializeError::custom("Field 'expires' missing"))?).map_err(|e| {
@@ -424,8 +433,8 @@ pub struct Signature {
     pub sig: SignatureValue,
 }
 
-impl Deserialize for Signature {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for Signature {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
             match (object.remove("keyid"), object.remove("method"), object.remove("sig")) {
                 (Some(k), Some(m), Some(s)) => {
@@ -458,13 +467,16 @@ impl Deserialize for Signature {
 /// A public key
 #[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct Key {
+    /// The type of keys.
     #[serde(rename = "keytype")]
     pub typ: KeyType,
+    /// The key's value.
     #[serde(rename = "keyval")]
     pub value: KeyValue,
 }
 
 impl Key {
+    /// Use the given key to verify a signature over a byte array.
     pub fn verify(&self,
                   scheme: &SignatureScheme,
                   msg: &[u8],
@@ -476,7 +488,9 @@ impl Key {
                 _ => scheme.verify(&self.value, msg, sig),
             }
         } else {
-            Err(Error::SignatureSchemeMismatch)
+            Err(Error::Generic(format!("Signature scheme mismatch: Key {:?}, Scheme {:?}",
+                                       self,
+                                       scheme)))
         }
     }
 }
@@ -484,8 +498,11 @@ impl Key {
 /// Types of public keys.
 #[derive(Clone, PartialEq, Debug)]
 pub enum KeyType {
+    /// [Ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) signature scheme.
     Ed25519,
+    /// [RSA](https://en.wikipedia.org/wiki/RSA_%28cryptosystem%29)
     Rsa,
+    /// Internal representation of an unsupported key type.
     Unsupported(String),
 }
 
@@ -512,8 +529,8 @@ impl FromStr for KeyType {
     }
 }
 
-impl Deserialize for KeyType {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for KeyType {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         if let json::Value::String(ref s) = Deserialize::deserialize(de)? {
             s.parse().map_err(|_| unreachable!())
         } else {
@@ -526,9 +543,11 @@ impl Deserialize for KeyType {
 /// The raw bytes of a public key.
 #[derive(Clone, PartialEq, Debug)]
 pub struct KeyValue {
+    /// The key's raw bytes.
     pub value: Vec<u8>,
-    // the original needs to be kept around key ID calculation
+    /// The key's original value, needed for ID calculation
     pub original: String,
+    /// The key's type,
     pub typ: KeyType,
 }
 
@@ -545,8 +564,8 @@ impl KeyValue {
     }
 }
 
-impl Deserialize for KeyValue {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for KeyValue {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         match Deserialize::deserialize(de)? {
             json::Value::String(ref s) => {
                 // TODO this is pretty shaky
@@ -595,8 +614,8 @@ impl Deserialize for KeyValue {
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
 pub struct KeyId(pub String);
 
-impl Deserialize for KeyId {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for KeyId {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         match Deserialize::deserialize(de)? {
             json::Value::String(s) => Ok(KeyId(s)),
             _ => Err(DeserializeError::custom("Key ID was not a string")),
@@ -608,8 +627,8 @@ impl Deserialize for KeyId {
 #[derive(Clone, PartialEq, Debug)]
 pub struct SignatureValue(Vec<u8>);
 
-impl Deserialize for SignatureValue {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for SignatureValue {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         match Deserialize::deserialize(de)? {
             json::Value::String(ref s) => {
                 HEXLOWER.decode(s.as_ref())
@@ -660,8 +679,8 @@ impl FromStr for SignatureScheme {
     }
 }
 
-impl Deserialize for SignatureScheme {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for SignatureScheme {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         if let json::Value::String(ref s) = Deserialize::deserialize(de)? {
             s.parse().map_err(|_| unreachable!())
         } else {
@@ -712,8 +731,8 @@ impl FromStr for HashType {
     }
 }
 
-impl Deserialize for HashType {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for HashType {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         if let json::Value::String(ref s) = Deserialize::deserialize(de)? {
             s.parse().map_err(|_| unreachable!())
         } else {
@@ -725,9 +744,8 @@ impl Deserialize for HashType {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct HashValue(pub Vec<u8>);
-
-impl Deserialize for HashValue {
-    fn deserialize<D: Deserializer>(de: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for HashValue {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         match Deserialize::deserialize(de)? {
             json::Value::String(ref s) => {
                 HEXLOWER.decode(s.as_ref())
@@ -740,26 +758,131 @@ impl Deserialize for HashValue {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-// TODO this is a dumb name
 pub struct TargetInfo {
     pub length: i64,
     pub hashes: HashMap<HashType, HashValue>,
-    pub custom: Option<HashMap<String, String>>, // TODO json value
+    pub custom: Option<HashMap<String, json::Value>>,
 }
 
 
 #[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct Delegations {
-    keys: Vec<KeyId>,
-    roles: Vec<DelegatedRole>,
+    pub keys: HashMap<KeyId, Key>,
+    pub roles: Vec<DelegatedRole>,
 }
 
 
-#[derive(Clone, PartialEq, Debug, Deserialize)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct DelegatedRole {
-    name: String,
-    key_ids: Vec<KeyId>,
-    threshold: i32,
-    // TODO path_hash_prefixes
-    paths: Vec<String>,
+    pub name: String,
+    pub key_ids: Vec<KeyId>,
+    pub threshold: i32,
+    pub terminating: bool,
+    paths: TargetPaths,
+}
+
+impl DelegatedRole {
+    pub fn could_have_target(&self, target: &str) -> bool {
+        match self.paths {
+            TargetPaths::Patterns(ref patterns) => {
+                for path in patterns.iter() {
+                    let path_str = path.as_str();
+                    if path_str == target {
+                        return true
+                    } else if path_str.ends_with("/") && target.starts_with(path_str) {
+                         return true
+                    }
+                }
+                return false
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DelegatedRole {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
+            match (object.remove("name"), object.remove("keyids"),
+                   object.remove("threshold"), object.remove("terminating"),
+                   object.remove("paths"), object.remove("path_hash_prefixes")) {
+                (Some(n), Some(ks), Some(t), Some(term), Some(ps), None) => {
+                    let name =
+                        json::from_value(n).map_err(|e| {
+                                DeserializeError::custom(format!("Failed at name: {}", e))
+                            })?;
+
+                    let key_ids =
+                        json::from_value(ks).map_err(|e| {
+                                DeserializeError::custom(format!("Failed at keyids: {}", e))
+                            })?;
+
+                    let threshold =
+                        json::from_value(t).map_err(|e| {
+                                DeserializeError::custom(format!("Failed at treshold: {}", e))
+                            })?;
+
+                    let terminating =
+                        json::from_value(term).map_err(|e| {
+                                DeserializeError::custom(format!("Failed at treshold: {}", e))
+                            })?;
+
+                    let paths: Vec<String> =
+                        json::from_value(ps).map_err(|e| {
+                                DeserializeError::custom(format!("Failed at treshold: {}", e))
+                            })?;
+
+                    Ok(DelegatedRole {
+                        name: name,
+                        key_ids: key_ids,
+                        threshold: threshold,
+                        terminating: terminating,
+                        paths: TargetPaths::Patterns(paths),
+                    })
+                }
+                (_, _, _, _, Some(_), Some(_)) =>
+                    Err(DeserializeError::custom("Fields 'paths' or 'pash_hash_prefixes' are mutually exclusive".to_string())),
+                (_, _, _, _, _, Some(_)) =>
+                    Err(DeserializeError::custom("'pash_hash_prefixes' is not yet supported".to_string())),
+                _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
+            }
+        } else {
+            Err(DeserializeError::custom("Delegated role was not an object".to_string()))
+        }
+    }
+}
+
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum TargetPaths {
+    Patterns(Vec<String>),
+    // TODO HashPrefixes(Vec<String>),
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn delegated_role_could_have_target() {
+        let vectors = vec![
+            ("foo", "foo", true),
+            ("foo/", "foo/bar", true),
+            ("foo", "foo/bar", false),
+            ("foo/bar", "foo/baz", false),
+            ("foo/bar/", "foo/bar/baz", true),
+        ];
+
+        for &(prefix, target, success) in vectors.iter() {
+            let delegation = DelegatedRole {
+                name: "".to_string(),
+                key_ids: Vec::new(),
+                threshold: 1,
+                terminating: false,
+                paths: TargetPaths::Patterns(vec![prefix.to_string()]),
+            };
+
+            assert!(!success ^ delegation.could_have_target(target),
+                    format!("Prefix {} should have target {}: {}", prefix, target, success))
+        };
+    }
 }

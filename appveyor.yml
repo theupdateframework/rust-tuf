@@ -9,7 +9,6 @@ matrix:
   fast_finish: true
 
 environment:
-  # TODO have matrix expand to include stable, beta, and nightly
   matrix:
     # Rust - Stable
     - TARGET: i686-pc-windows-gnu
@@ -39,7 +38,6 @@ environment:
       BITS: 64
 
 install:
-  # Install Rust
   - curl -sSf -o rustup-init.exe https://win.rustup.rs/
   - rustup-init.exe -y --default-host %TARGET%
   - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin
@@ -51,12 +49,12 @@ test_script:
   - rustup.exe default %RUST_VERSION%
   - rustc -V
   - cargo -V
-  # TODO ? use make
-  - cargo build --target %TARGET%
-  - cargo test --target %TARGET%
+  - git submodule update --init --recursive
+  - cargo build --verbose --features=cli --target %TARGET%
+  - SET RUST_BACKTRACE=full
+  - cargo test --verbose --features=cli --target %TARGET%
 
-# TODO on failure cat Cargo.lock (but only we can't use make)
+# TODO on failure cat Cargo.lock
 
 cache:
-  - target
-  - C:\Users\appveyor\.cargo\registry
+  - C:\Users\appveyor\.cargo\bin
