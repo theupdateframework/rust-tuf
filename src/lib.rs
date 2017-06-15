@@ -156,9 +156,7 @@ extern crate uuid;
 #[macro_use]
 mod util;
 
-mod asn1;
 mod cjson;
-mod der;
 mod error;
 mod http;
 mod metadata;

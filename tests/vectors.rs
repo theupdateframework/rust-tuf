@@ -139,9 +139,9 @@ fn run_test_vector(test_path: &str, test_type: TestType, pin_root_keys: bool) {
                         let val = pem::parse(key.clone())
                             .expect("key value not pem");
                         Key {
-                            typ: KeyType::Ed25519,
+                            typ: KeyType::Rsa,
                             value: KeyValue {
-                                typ: KeyType::Ed25519,   
+                                typ: KeyType::Rsa,   
                                 value: val.contents,
                                 original: key,
                             },
@@ -188,6 +188,11 @@ fn run_test_vector(test_path: &str, test_type: TestType, pin_root_keys: bool) {
         }
 
         (Err(Error::UnmetThreshold(ref role)), &Some(ref err))
+            if err == &"IllegalRsaKeySize".to_string() => {
+            ()
+        }
+
+        (Err(Error::UnmetThreshold(_)), &Some(ref err))
             if err.starts_with("UnmetThreshold::") => {
             assert!(err.to_lowercase()
                         .ends_with(role.to_string().as_str()),

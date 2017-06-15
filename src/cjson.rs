@@ -3,7 +3,7 @@ use json;
 use std::collections::BTreeMap;
 use std::io;
 
-pub fn canonicalize(jsn: json::Value) -> Result<Vec<u8>, String> {
+pub fn canonicalize(jsn: &json::Value) -> Result<Vec<u8>, String> {
     let converted = convert(jsn)?;
     let mut buf = Vec::new();
     let _ = converted.write(&mut buf); // Vec<u8> impl always succeeds (or panics).
@@ -74,32 +74,32 @@ enum Number {
     U64(u64),
 }
 
-fn convert(jsn: json::Value) -> Result<Value, String> {
+fn convert(jsn: &json::Value) -> Result<Value, String> {
     match jsn {
-        json::Value::Null => Ok(Value::Null),
-        json::Value::Bool(b) => Ok(Value::Bool(b)),
-        json::Value::Number(n) => {
+        &json::Value::Null => Ok(Value::Null),
+        &json::Value::Bool(b) => Ok(Value::Bool(b)),
+        &json::Value::Number(ref n) => {
             n.as_i64()
                 .map(Number::I64)
                 .or(n.as_u64().map(Number::U64))
                 .map(Value::Number)
                 .ok_or_else(|| String::from("only i64 and u64 are supported"))
         }
-        json::Value::Array(arr) => {
+        &json::Value::Array(ref arr) => {
             let mut out = Vec::new();
-            for res in arr.iter().cloned().map(|v| convert(v)) {
+            for res in arr.iter().map(|v| convert(v)) {
                 out.push(res?)
             }
             Ok(Value::Array(out))
         }
-        json::Value::Object(obj) => {
+        &json::Value::Object(ref obj) => {
             let mut out = BTreeMap::new();
             for (k, v) in obj.iter() {
-                let _ = out.insert(k.clone(), convert(v.clone())?);
+                let _ = out.insert(k.clone(), convert(v)?);
             }
             Ok(Value::Object(out))
         }
-        json::Value::String(s) => Ok(Value::String(s)),
+        &json::Value::String(ref s) => Ok(Value::String(s.clone())),
     }
 }
 
@@ -209,7 +209,7 @@ mod test {
         let mut cjsn = String::new();
         file.read_to_string(&mut cjsn).expect("couldn't read root.cjson");
 
-        let jsn = json::from_str(&buf).expect("not json");
+        let ref jsn = json::from_str(&buf).expect("not json");
         let out = canonicalize(jsn).expect("couldn't canonicalize");
         let out = ::std::str::from_utf8(&out).expect("not utf-8");
 

@@ -1,22 +1,25 @@
 //! Helper module for RSA key encoding / decoding.
 
+mod der;
+
 use untrusted::Input;
 
-use asn1::{self, Asn1};
-use der::{self, Tag};
+use self::der::{Tag, Der};
 
+/// Corresponds to `1.2.840.113549.1.1.1 rsaEncryption(PKCS #1)`
 const RSA_PKCS1_OID: &'static [u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01];
 
 pub fn convert_to_pkcs1<'a>(input: &[u8]) -> Vec<u8> {
+    // if we ever move away from `ring`, this needs to do an explicit key size check (>= 2048)
     from_pkcs1(input)
         .or_else(|| from_spki(input))
         .unwrap_or_else(|| input.to_vec())
 }
 
 fn from_pkcs1(input: &[u8]) -> Option<Vec<u8>> {
-    let _input = Input::from(input.clone());
-    _input.read_all(asn1::Error, |i| {
-            der::nested(i, Tag::Sequence, asn1::Error, |i| {
+    let _input = Input::from(&input);
+    _input.read_all(der::Error, |i| {
+            der::nested(i, Tag::Sequence, der::Error, |i| {
                 let _ = der::positive_integer(i)?;
                 let _ = der::positive_integer(i)?;
                 // if the input was already pkcs1, just return it
@@ -27,43 +30,42 @@ fn from_pkcs1(input: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn from_spki(input: &[u8]) -> Option<Vec<u8>> {
-    let _input = Input::from(input.clone());
-    _input.read_all(asn1::Error, |i| {
-            der::nested(i, Tag::Sequence, asn1::Error, |i| {
-                der::nested(i, Tag::Sequence, asn1::Error, |i| {
+    let _input = Input::from(&input);
+    _input.read_all(der::Error, |i| {
+            der::nested(i, Tag::Sequence, der::Error, |i| {
+                der::nested(i, Tag::Sequence, der::Error, |i| {
                     let oid = der::expect_tag_and_get_value(i, Tag::OID)?;
                     if oid != Input::from(RSA_PKCS1_OID) {
-                        return Err(asn1::Error);
+                        return Err(der::Error);
                     }
 
                     let _ = der::expect_tag_and_get_value(i, Tag::Null)?;
                     Ok(())
                 })?;
 
-                println!(">>>>>> A");
-                der::nested(i, Tag::BitString, asn1::Error, |i| {
-                    println!(">>>>>> B");
-                    //assert_eq!(i.read_byte().map_err(|_| asn1::Error)?, 0); // TODO wtf why
-
-                    der::nested(i, Tag::Sequence, asn1::Error, |i| {
-                        println!(">>>>>> C");
-                        let n = der::positive_integer(i)?;
-                        let e = der::positive_integer(i)?;
-                        write_pkcs1(n, e)
-                    })
+                der::nested(i, Tag::BitString, der::Error, |i| {
+                    // wtf why
+                    let _ = der::expect_tag_and_get_value(i, Tag::EOC)?;
+                    Ok(i.skip_to_end().iter().cloned().collect())
+                    //der::nested(i, Tag::Sequence, der::Error, |i| {
+                    //    let n = der::positive_integer(i)?;
+                    //    let e = der::positive_integer(i)?;
+                    //    write_pkcs1(n, e)
+                    //})
                 })
             })
         })
         .ok()
 }
 
-fn write_pkcs1(n: Input, e: Input) -> Result<Vec<u8>, asn1::Error> {
+#[allow(dead_code)]
+fn write_pkcs1(n: Input, e: Input) -> Result<Vec<u8>, der::Error> {
     let mut output = Vec::new();
     {
-        let mut asn1 = Asn1::new(&mut output);
-        asn1.write_sequence(|_asn1| {
-                _asn1.write_integer(n)?;
-                _asn1.write_integer(e)
+        let mut _der = Der::new(&mut output);
+        _der.write_sequence(|_der| {
+                _der.write_integer(n)?;
+                _der.write_integer(e)
             })?;
     }
 
@@ -118,18 +120,21 @@ mod test {
     }
 
     #[test]
-    fn pkcs1_noop_conversion() {
+    fn pkcs1_noop_conversion_1() {
         let contents = read_file("./tests/rsa/pkcs1-1.pub");
         let contents = pem::parse(&contents).expect("not PEM").contents;
         assert_eq!(convert_to_pkcs1(&contents), contents);
+    }
 
+    #[test]
+    fn pkcs1_noop_conversion_2() {
         let contents = read_file("./tests/rsa/pkcs1-2.pub");
         let contents = pem::parse(&contents).expect("not PEM").contents;
         assert_eq!(convert_to_pkcs1(&contents), contents);
     }
 
     #[test]
-    fn pkcs1_from_spki_conversion() {
+    fn pkcs1_from_spki_conversion_1() {
         let spki = read_file("./tests/rsa/spki-1.pub");
         let spki = pem::parse(&spki).expect("not PEM").contents;
 
@@ -138,11 +143,23 @@ mod test {
 
         for (i, (a, b)) in convert_to_pkcs1(&spki).iter().zip(pkcs1.iter()).enumerate() {
             println!("{} {} {}", i, a, b);
-            if a != b {
-                //break;
-            }
         }
 
-        assert_eq!(convert_to_pkcs1(&spki), pkcs1);
+        assert!(convert_to_pkcs1(&spki) == pkcs1);
+    }
+
+    #[test]
+    fn pkcs1_from_spki_conversion_2() {
+        let spki = read_file("./tests/rsa/spki-2.pub");
+        let spki = pem::parse(&spki).expect("not PEM").contents;
+
+        let pkcs1 = read_file("./tests/rsa/pkcs1-2.pub");
+        let pkcs1 = pem::parse(&pkcs1).expect("not PEM").contents;
+
+        for (i, (a, b)) in convert_to_pkcs1(&spki).iter().zip(pkcs1.iter()).enumerate() {
+            println!("{} {} {}", i, a, b);
+        }
+
+        assert!(convert_to_pkcs1(&spki) == pkcs1);
     }
 }

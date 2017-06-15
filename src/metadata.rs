@@ -53,11 +53,11 @@ impl Display for Role {
     }
 }
 
-pub trait RoleType: Debug {
+pub trait RoleType: Debug + Clone{
     fn matches(role: &Role) -> bool;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Root {}
 impl RoleType for Root {
     fn matches(role: &Role) -> bool {
@@ -68,7 +68,7 @@ impl RoleType for Root {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Targets {}
 impl RoleType for Targets {
     fn matches(role: &Role) -> bool {
@@ -79,7 +79,7 @@ impl RoleType for Targets {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Timestamp {}
 impl RoleType for Timestamp {
     fn matches(role: &Role) -> bool {
@@ -90,7 +90,7 @@ impl RoleType for Timestamp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Snapshot {}
 impl RoleType for Snapshot {
     fn matches(role: &Role) -> bool {
@@ -101,8 +101,8 @@ impl RoleType for Snapshot {
     }
 }
 
-#[derive(Debug)]
-pub struct SignedMetadata<R: RoleType> {
+#[derive(Debug, Clone)]
+pub struct SignedMetadata<R: RoleType + Clone> {
     pub signatures: Vec<Signature>,
     pub signed: json::Value,
     _role: PhantomData<R>,
@@ -557,7 +557,7 @@ impl KeyValue {
         match self.typ {
             KeyType::Unsupported(_) => KeyId(String::from("error")), // TODO this feels wrong, but we check this everywhere else
             _ => {
-                let key_value = canonicalize(json::Value::String(self.original.clone())).unwrap(); // TODO unwrap
+                let key_value = canonicalize(&json::Value::String(self.original.clone())).unwrap(); // TODO unwrap
                 KeyId(HEXLOWER.encode(digest(&SHA256, &key_value).as_ref()))
             }
         }
@@ -674,6 +674,8 @@ impl FromStr for SignatureScheme {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "ed25519" => Ok(SignatureScheme::Ed25519),
+            "rsassa-pss-sha256" => Ok(SignatureScheme::RsaSsaPssSha256),
+            "rsassa-pss-sha512" => Ok(SignatureScheme::RsaSsaPssSha512),
             typ => Ok(SignatureScheme::Unsupported(typ.into())),
         }
     }
