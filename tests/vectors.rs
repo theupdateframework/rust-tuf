@@ -187,12 +187,12 @@ fn run_test_vector(test_path: &str, test_type: TestType, pin_root_keys: bool) {
                     format!("Role: {}, err: {}", role, err))
         }
 
-        (Err(Error::UnmetThreshold(ref role)), &Some(ref err))
+        (Err(Error::UnmetThreshold(_)), &Some(ref err))
             if err == &"IllegalRsaKeySize".to_string() => {
             ()
         }
 
-        (Err(Error::UnmetThreshold(_)), &Some(ref err))
+        (Err(Error::UnmetThreshold(ref role)), &Some(ref err))
             if err.starts_with("UnmetThreshold::") => {
             assert!(err.to_lowercase()
                         .ends_with(role.to_string().as_str()),
