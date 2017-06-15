@@ -143,11 +143,11 @@ extern crate hyper;
 extern crate itoa;
 #[macro_use]
 extern crate log;
+extern crate pem;
 extern crate ring;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
 extern crate serde_json as json;
 extern crate url;
 extern crate untrusted;
@@ -157,9 +157,10 @@ extern crate uuid;
 mod util;
 
 mod cjson;
+mod error;
 mod http;
 mod metadata;
-mod error;
+mod rsa;
 mod tuf;
 
 pub use tuf::*;

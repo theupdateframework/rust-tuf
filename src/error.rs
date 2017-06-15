@@ -8,6 +8,8 @@ use metadata::Role;
 /// Error type for all TUF related errors.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
+    /// ASN.1 parse errors.
+    Asn1,
     /// Errors for converting JSON to canonical JSON.
     CanonicalJsonError(String),
     /// The metadata for the given role has expired.

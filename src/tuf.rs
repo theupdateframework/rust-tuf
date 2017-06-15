@@ -392,7 +392,6 @@ impl Tuf {
                                                      Some(meta.length),
                                                      Some((&hash_alg, &expected_hash.0)),
                                                      &mut temp_file)?;
-
         // TODO ? check downloaded version matches what was in the timestamp.json
 
         match self.snapshot {
@@ -591,9 +590,10 @@ impl Tuf {
             }
         };
 
-        let signed = json::from_slice(&buf)?;
-        let safe_bytes = Self::verify_meta::<R>(signed, role, threshold, trusted_ids, available_keys)?;
-        let meta: M = json::from_slice(&safe_bytes)?;
+        let signed: SignedMetadata<R> = json::from_slice(&buf)?;
+        // TODO clone
+        Self::verify_meta::<R>(signed.clone(), role, threshold, trusted_ids, available_keys)?;
+        let meta: M = json::from_value(signed.signed)?;
 
         if !allow_expired && meta.expires() <= &UTC::now() {
             return Err(Error::ExpiredMetadata(role.clone()));
@@ -721,7 +721,8 @@ impl Tuf {
                 if let Some(&mut json::Value::Object(ref mut root)) = roles.get_mut("root") {
                     if let Some(&mut json::Value::Array(ref mut key_ids)) = root.get_mut("keyids") {
                         key_ids.clear();
-                        key_ids.extend(root_keys.iter().map(|k| json!(k.value.key_id().0)));
+                        key_ids.extend(root_keys.iter()
+                            .map(|k| json::Value::String(k.value.key_id().0)));
                     }
                 }
             }
@@ -735,9 +736,9 @@ impl Tuf {
                                 threshold: i32,
                                 trusted_ids: &[KeyId],
                                 available_keys: &HashMap<KeyId, Key>)
-                                -> Result<Vec<u8>, Error> {
+                                -> Result<(), Error> {
         let bytes =
-            cjson::canonicalize(signed.signed).map_err(|err| Error::CanonicalJsonError(err))?;
+            cjson::canonicalize(&signed.signed).map_err(|err| Error::CanonicalJsonError(err))?;
 
         let unique_count = signed.signatures
             .iter()
@@ -755,7 +756,7 @@ impl Tuf {
                 if let Some(key) = k {
                     m.insert(id, key);
                 } else {
-                    debug!("Unknown key ID: {:?}", id);
+                    debug!("unknown key id: {:?}", id);
                 }
                 m
             });
@@ -779,7 +780,7 @@ impl Tuf {
                     Err(e) => warn!("Failed to verify with key ID {:?}: {:?}", &sig.key_id, e),
                 }
                 if valid_sigs == threshold {
-                    return Ok(bytes);
+                    return Ok(());
                 }
             }
         }
