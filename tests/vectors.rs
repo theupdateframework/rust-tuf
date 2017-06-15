@@ -1,4 +1,5 @@
 extern crate data_encoding;
+extern crate pem;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -11,6 +12,7 @@ use data_encoding::HEXLOWER;
 use std::fs::{self, File, DirEntry};
 use std::io::{self, Read};
 use std::path::{PathBuf, Path};
+use std::str;
 use tempdir::TempDir;
 use tuf::{Tuf, Config, Error, RemoteRepo};
 use tuf::meta::{Key, KeyValue, KeyType};
@@ -68,7 +70,7 @@ fn ensure_empty(path: &Path) {
     }
 }
 
-fn run_test_vector(test_path: &str, test_type: TestType) {
+fn run_test_vector(test_path: &str, test_type: TestType, pin_root_keys: bool) {
     let temp_dir = TempDir::new("rust-tuf").expect("couldn't make temp dir");
     let temp_path = temp_dir.into_path();
 
@@ -93,28 +95,6 @@ fn run_test_vector(test_path: &str, test_type: TestType) {
     println!("The test vector path is: {}",
              vector_path.to_string_lossy().into_owned());
 
-    let root_keys = test_vector.root_keys
-        .iter()
-        .map(|k| {
-            let file_path = vector_path.join("keys").join(k.path.clone());
-            let mut file = File::open(file_path).expect("couldn't open file");
-            let mut key = String::new();
-            file.read_to_string(&mut key).expect("couldn't read key");
-
-            match k.typ.as_ref() {
-                "ed25519" => {
-                    let val = HEXLOWER.decode(key.replace("\n", "").as_ref())
-                        .expect("key value not hex");
-                    Key {
-                        typ: KeyType::Ed25519,
-                        value: KeyValue(val),
-                    }
-                }
-                x => panic!("unknown key type: {}", x),
-            }
-        })
-        .collect();
-
     let config = match test_type {
         TestType::File => Config::build()
             .remote(RemoteRepo::File(vector_path.join("repo"))),
@@ -125,7 +105,63 @@ fn run_test_vector(test_path: &str, test_type: TestType) {
         .finish()
         .expect("bad config");
 
-    match (Tuf::from_root_keys(root_keys, config), &test_vector.error) {
+    let tuf = if pin_root_keys {
+        let root_keys = test_vector.root_keys
+            .iter()
+            .map(|k| {
+                let file_path = vector_path.join("keys").join(k.path.clone());
+                let mut file = File::open(file_path)
+                    .expect("couldn't open file");
+                let mut buf = Vec::new();
+                file.read_to_end(&mut buf).expect("couldn't read key");
+
+                let len = buf.len();
+                if buf[len - 1] == b'\n' {
+                    buf.truncate(len - 1)
+                }
+
+                let key = str::from_utf8(&buf).expect("not utf-8").to_string();
+
+                match k.typ.as_ref() {
+                    "ed25519" => {
+                        let val = HEXLOWER.decode(key.replace("\n", "").as_ref())
+                            .expect("key value not hex");
+                        Key {
+                            typ: KeyType::Ed25519,
+                            value: KeyValue {
+                                typ: KeyType::Ed25519,   
+                                value: val,
+                                original: key,
+                            },
+                        }
+                    }
+                    "rsa" => {
+                        let val = pem::parse(key.clone())
+                            .expect("key value not pem");
+                        Key {
+                            typ: KeyType::Rsa,
+                            value: KeyValue {
+                                typ: KeyType::Rsa,   
+                                value: val.contents,
+                                original: key,
+                            },
+                        }
+                    }
+                    x => panic!("unknown key type: {}", x),
+                }
+            })
+            .collect();
+        Tuf::from_root_keys(root_keys, config)
+    } else {
+        Tuf::initialize(&temp_path)
+            .expect("failed to initialize");
+        fs::copy(vector_path.join("repo").join("1.root.json"),
+                 temp_path.join("metadata").join("current").join("root.json"))
+            .expect("failed to copy root.json");
+        Tuf::new(config)
+    };
+
+    match (tuf, &test_vector.error) {
         (Ok(ref tuf), &None) => {
             // first time pulls remote
             assert_eq!(tuf.fetch_target("targets/file.txt").map(|_| ()), Ok(()));
@@ -149,6 +185,11 @@ fn run_test_vector(test_path: &str, test_type: TestType) {
             assert!(err.to_lowercase()
                         .ends_with(role.to_string().as_str()),
                     format!("Role: {}, err: {}", role, err))
+        }
+
+        (Err(Error::UnmetThreshold(_)), &Some(ref err))
+            if err == &"IllegalRsaKeySize".to_string() => {
+            ()
         }
 
         (Err(Error::UnmetThreshold(ref role)), &Some(ref err))
@@ -215,15 +256,27 @@ macro_rules! test_cases {
             use $crate::{run_test_vector, TestType};
 
             #[test]
-            fn file_test() {
-                run_test_vector($name, TestType::File)
+            fn file_pinned() {
+                run_test_vector($name, TestType::File, true)
+            }
+
+            #[test]
+            fn file_unpinned() {
+                run_test_vector($name, TestType::File, false)
             }
 
             // TODO no idea how windows shell scipting works
             #[cfg(not(windows))]
             #[test]
-            fn http_test() {
-                run_test_vector($name, TestType::Http)
+            fn http_pinned() {
+                run_test_vector($name, TestType::Http, true)
+            }
+
+            // TODO no idea how windows shell scipting works
+            #[cfg(not(windows))]
+            #[test]
+            fn http_unpinned() {
+                run_test_vector($name, TestType::Http, false)
             }
         }
     }
@@ -231,10 +284,10 @@ macro_rules! test_cases {
 
 test_cases!("001", _001);
 test_cases!("002", _002);
-// test_cases!("003", _003);
-// test_cases!("004", _004);
+test_cases!("003", _003);
+test_cases!("004", _004);
 test_cases!("005", _005);
-// test_cases!("006", _006);
+test_cases!("006", _006);
 test_cases!("007", _007);
 test_cases!("008", _008);
 test_cases!("009", _009);
@@ -255,24 +308,24 @@ test_cases!("023", _023);
 test_cases!("024", _024);
 test_cases!("025", _025);
 test_cases!("026", _026);
-// test_cases!("027", _027);
-// test_cases!("028", _028);
+test_cases!("027", _027);
+test_cases!("028", _028);
 test_cases!("029", _029);
 test_cases!("030", _030);
 test_cases!("031", _031);
 test_cases!("032", _032);
 test_cases!("033", _033);
 test_cases!("034", _034);
-// test_cases!("035", _035);
-// test_cases!("036", _036);
+test_cases!("035", _035);
+test_cases!("036", _036);
 test_cases!("037", _037);
 test_cases!("038", _038);
 test_cases!("039", _039);
 test_cases!("040", _040);
-// test_cases!("041", _041);
-// test_cases!("042", _042);
-// test_cases!("043", _043);
-// test_cases!("044", _044);
+test_cases!("041", _041);
+test_cases!("042", _042);
+test_cases!("043", _043);
+test_cases!("044", _044);
 test_cases!("045", _045);
 test_cases!("046", _046);
 test_cases!("047", _047);

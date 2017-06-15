@@ -1,6 +1,6 @@
 # rust-tuf
 
-[![Travis build Status](https://travis-ci.org/heartsucker/rust-tuf.svg?branch=master)](https://travis-ci.org/heartsucker/rust-tuf) [![Appveyor build status](https://ci.appveyor.com/api/projects/status/kfyvpkdvn5ap7dqc/branch/master?svg=true)](https://ci.appveyor.com/project/heartsucker/rust-tuf/branch/master)[![codecov](https://codecov.io/gh/heartsucker/rust-tuf/branch/master/graph/badge.svg)](https://codecov.io/gh/heartsucker/rust-tuf)
+[![Travis build Status](https://travis-ci.org/heartsucker/rust-tuf.svg?branch=master)](https://travis-ci.org/heartsucker/rust-tuf) [![Appveyor build status](https://ci.appveyor.com/api/projects/status/kfyvpkdvn5ap7dqc/branch/master?svg=true)](https://ci.appveyor.com/project/heartsucker/rust-tuf/branch/master) [![codecov](https://codecov.io/gh/heartsucker/rust-tuf/branch/master/graph/badge.svg)](https://codecov.io/gh/heartsucker/rust-tuf)
 
 A Rust implementation of [The Update Framework (TUF)](https://theupdateframework.github.io/).
 
