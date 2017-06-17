@@ -142,7 +142,7 @@ mod test {
     }
 
     fn init_temp(temp: &Path) {
-        let dir = PathBuf::from("metadata").join("current");
+        let dir = PathBuf::from("metadata");
         DirBuilder::new()
             .recursive(true)
             .create(temp.join(dir.clone()))
@@ -150,7 +150,7 @@ mod test {
 
         let copy_path = vector_path().join("root.json");
         fs::copy(copy_path,
-                 temp.join("metadata").join("current").join("root.json"))
+                 temp.join("metadata").join("root.json"))
             .expect(&format!("copy failed for target"));
     }
 

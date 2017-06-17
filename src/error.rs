@@ -1,3 +1,5 @@
+//! Error types and converters.
+
 use hyper;
 use json;
 use std::path::Path;

@@ -156,7 +156,7 @@ fn run_test_vector(test_path: &str, test_type: TestType, pin_root_keys: bool) {
         Tuf::initialize(&temp_path)
             .expect("failed to initialize");
         fs::copy(vector_path.join("repo").join("1.root.json"),
-                 temp_path.join("metadata").join("current").join("root.json"))
+                 temp_path.join("metadata").join("root.json"))
             .expect("failed to copy root.json");
         Tuf::new(config)
     };

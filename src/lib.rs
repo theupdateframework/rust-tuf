@@ -152,16 +152,15 @@ extern crate serde_json as json;
 extern crate url;
 extern crate untrusted;
 extern crate uuid;
-
-#[macro_use]
-mod util;
+extern crate walkdir;
 
 mod cjson;
-mod error;
+pub mod error;
 mod http;
 mod metadata;
 mod rsa;
-mod tuf;
+pub mod tuf;
+mod util;
 
 pub use tuf::*;
 pub use error::*;

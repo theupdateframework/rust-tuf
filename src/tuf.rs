@@ -1,3 +1,5 @@
+//! Structs and functions for interacting with TUF repositories.
+
 use chrono::UTC;
 use json;
 use hyper::Url as HyperUrl;
@@ -10,13 +12,14 @@ use std::io::{Read, Write, Seek, SeekFrom};
 use std::path::{PathBuf, Path};
 use url::Url;
 use uuid::Uuid;
+use walkdir::WalkDir;
 
 use cjson;
 use error::Error;
 use http;
 use metadata::{Role, RoleType, Root, Targets, Timestamp, Snapshot, Metadata, SignedMetadata,
                RootMetadata, TargetsMetadata, TimestampMetadata, SnapshotMetadata, HashType,
-               HashValue, KeyId, Key};
+               HashValue, KeyId, Key, DelegatedRole};
 use util::{self, TempFile};
 
 /// A remote TUF repository.
@@ -48,6 +51,8 @@ pub struct Tuf {
     targets: Option<TargetsMetadata>,
     timestamp: Option<TimestampMetadata>,
     snapshot: Option<SnapshotMetadata>,
+    delegated_targets: HashMap<String, TargetsMetadata>,
+    delegated_roles: HashMap<String, DelegatedRole>,
 }
 
 impl Tuf {
@@ -102,6 +107,8 @@ impl Tuf {
             targets: None,
             timestamp: None,
             snapshot: None,
+            delegated_roles: HashMap::new(),
+            delegated_targets: HashMap::new(),
         };
 
         tuf.update()?;
@@ -141,6 +148,8 @@ impl Tuf {
             targets: None,
             timestamp: None,
             snapshot: None,
+            delegated_roles: HashMap::new(),
+            delegated_targets: HashMap::new(),
         };
         tuf.update()?;
 
@@ -152,8 +161,7 @@ impl Tuf {
         info!("Initializing local storage: {}",
               local_path.to_string_lossy());
 
-        for dir in vec![PathBuf::from("metadata").join("current"),
-                        PathBuf::from("metadata").join("archive"),
+        for dir in vec![PathBuf::from("metadata"),
                         PathBuf::from("targets"),
                         PathBuf::from("temp")]
             .iter() {
@@ -189,8 +197,10 @@ impl Tuf {
         let fetch_type = &self.remote.as_fetch();
         self.update_root(fetch_type)?;
 
-        if self.update_timestamp(fetch_type)? && self.update_snapshot(fetch_type)? {
-            self.update_targets(fetch_type)
+        if self.update_timestamp(fetch_type)? {
+            let old_snapshot = self.update_snapshot(fetch_type)?;
+            self.update_targets(fetch_type)?;
+            self.update_delegations(old_snapshot, fetch_type)
         } else {
             Ok(())
         }
@@ -202,8 +212,10 @@ impl Tuf {
 
         self.update_root(fetch_type)?;
 
-        if self.update_timestamp(fetch_type)? && self.update_snapshot(fetch_type)? {
-            self.update_targets(fetch_type)
+        if self.update_timestamp(fetch_type)? {
+            let old_snapshot = self.update_snapshot(fetch_type)?;
+            self.update_targets(fetch_type)?;
+            self.update_delegations(old_snapshot, fetch_type)
         } else {
             Ok(())
         }
@@ -267,18 +279,12 @@ impl Tuf {
                 Some(temp_file) => {
                     temp_file.persist(&self.local_path
                                            .join("metadata")
-                                           .join("archive")
                                            .join(format!("{}.root.json", i)))?
                 }
                 None => (),
             };
 
-            // set to None to untrust old metadata
-            // TODO delete old metadata
-            // TODO check that these resets are in line with the Mercury paper
-            self.targets = None;
-            self.timestamp = None;
-            self.snapshot = None;
+            self.purge_metadata()?;
         }
 
         Ok(())
@@ -327,15 +333,10 @@ impl Tuf {
             Some(temp_file) => {
                 let current_path = self.local_path
                     .join("metadata")
-                    .join("current")
                     .join("timestamp.json");
 
                 if current_path.exists() {
-                    fs::rename(current_path.clone(),
-                               self.local_path
-                                   .join("metadata")
-                                   .join("archive")
-                                   .join("timestamp.json"))?;
+                    fs::remove_file(&current_path)?;
                 };
 
                 temp_file.persist(&current_path)?
@@ -346,7 +347,7 @@ impl Tuf {
         Ok(true)
     }
 
-    fn update_snapshot(&mut self, fetch_type: &FetchType) -> Result<bool, Error> {
+    fn update_snapshot(&mut self, fetch_type: &FetchType) -> Result<Option<SnapshotMetadata>, Error> {
         debug!("Updating snapshot metadata");
 
         let meta = match self.timestamp {
@@ -394,39 +395,25 @@ impl Tuf {
                                                      &mut temp_file)?;
         // TODO ? check downloaded version matches what was in the timestamp.json
 
-        match self.snapshot {
+        let old_snapshot = match self.snapshot {
             Some(ref s) if s.version > snapshot.version => {
                 return Err(Error::VersionDecrease(Role::Snapshot));
             }
-            Some(ref s) if s.version == snapshot.version => return Ok(false),
-            _ => self.snapshot = Some(snapshot),
-        }
-
-        // TODO this needs to be extended once we do delegations
-        if let Some(ref snapshot) = self.snapshot {
-            if let Some(ref snapshot_meta) = snapshot.meta.get("targets.json") {
-                if let Some(ref targets) = self.targets {
-                    if snapshot_meta.version > targets.version {
-                        info!("Snapshot metadata is up to date");
-                        return Ok(false);
-                    }
-                }
-            }
-        }
+            _ => {
+                let old_snapshot = self.snapshot.take();
+                self.snapshot = Some(snapshot);
+                old_snapshot
+            },
+        };
 
         match temp_file {
             Some(temp_file) => {
                 let current_path = self.local_path
                     .join("metadata")
-                    .join("current")
                     .join("snapshot.json");
 
                 if current_path.exists() {
-                    fs::rename(current_path.clone(),
-                               self.local_path
-                                   .join("metadata")
-                                   .join("archive")
-                                   .join("snapshot.json"))?;
+                    fs::remove_file(&current_path)?;
                 };
 
                 temp_file.persist(&current_path)?
@@ -434,7 +421,7 @@ impl Tuf {
             None => (),
         };
 
-        Ok(true)
+        Ok(old_snapshot)
     }
 
     fn update_targets(&mut self, fetch_type: &FetchType) -> Result<(), Error> {
@@ -503,15 +490,10 @@ impl Tuf {
             Some(temp_file) => {
                 let current_path = self.local_path
                     .join("metadata")
-                    .join("current")
                     .join("targets.json");
 
                 if current_path.exists() {
-                    fs::rename(current_path.clone(),
-                               self.local_path
-                                   .join("metadata")
-                                   .join("archive")
-                                   .join("targets.json"))?;
+                    fs::remove_file(&current_path)?;
                 };
 
                 temp_file.persist(&current_path)?
@@ -519,6 +501,11 @@ impl Tuf {
             None => (),
         };
 
+        Ok(())
+    }
+
+    fn update_delegations(&mut self, old_snapshot: Option<SnapshotMetadata>, fetch_type: &FetchType) -> Result<(), Error> {
+        // TODO
         Ok(())
     }
 
@@ -543,16 +530,26 @@ impl Tuf {
         let buf: Vec<u8> = match fetch_type {
             &FetchType::Cache(ref local_path) => {
                 let path = local_path.join("metadata")
-                    .join("current")
                     .join(format!("{}{}.json", metadata_version_str, role));
                 info!("Reading metadata from local path: {:?}", path);
 
-                let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
+                let mut file = File::open(&path).map_err(|e| Error::from_io(e, &path))?;
                 let mut buf = Vec::new();
 
                 match (size, hash_data) {
                     (None, None) => file.read_to_end(&mut buf).map(|_| ())?,
-                    _ => Self::read_and_verify(&mut file, &mut Some(&mut buf), size, hash_data)?,
+                    _ => match Self::read_and_verify(&mut file, &mut Some(&mut buf), size, hash_data) {
+                        Ok(()) => (),
+                        Err(e) => {
+                            debug!("Removing file because it failed to validate: {:?}", path);
+                            match fs::remove_file(&path) {
+                                Ok(()) => (),
+                                Err(e) => warn!("Failed to remove file {:?} after failed validation: {:?}",
+                                                path, e),
+                            }
+                            return Err(e)
+                        }
+                    },
                 };
 
                 buf
@@ -614,7 +611,6 @@ impl Tuf {
         let (temp_file, buf): (Option<TempFile>, Vec<u8>) = match fetch_type {
             &FetchType::Cache(ref local_path) => {
                 let path = local_path.join("metadata")
-                    .join("current")
                     .join("root.json");
                 let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
                 let mut buf = Vec::new();
@@ -682,7 +678,6 @@ impl Tuf {
         let buf: Vec<u8> = match fetch_type {
             &FetchType::Cache(ref local_path) => {
                 let path = local_path.join("metadata")
-                    .join("archive")
                     .join("1.root.json");
 
                 debug!("Reading root.json from path: {:?}", path);
@@ -969,6 +964,62 @@ impl Tuf {
             }
             (Some(_), Some(_)) |
             (None, None) => Ok(()),
+        }
+    }
+
+    // TODO write integration tests for this
+    fn purge_metadata(&mut self) -> Result<(), Error> {
+        info!("Purging old metadata");
+
+        self.snapshot = None;
+        self.targets = None;
+        self.timestamp = None;
+        self.delegated_roles.clear();
+        self.delegated_targets.clear();
+
+        let current_path = self.local_path.join("metadata");
+    
+        for entry in WalkDir::new(&current_path).into_iter().filter_map(|e| e.ok()) {
+            if !entry.file_type().is_file() {
+                continue
+            }
+
+            if !entry.path().to_string_lossy().ends_with("root.json") {
+                debug!("Removing file {:?}", entry.path());
+                fs::remove_file(entry.path())?;
+            }
+        }
+
+        for entry in WalkDir::new(&current_path).min_depth(1).into_iter().filter_map(|e| e.ok()) {
+            if entry.file_type().is_dir() {
+                match fs::remove_dir(entry.path()) {
+                    Ok(()) => (),
+                    Err(e) => println!("Failed to remove dir {:?}: {:?}", entry.path(), e),
+                };
+            }
+        }
+
+        Ok(())
+    }
+
+    fn try_remove_meta(&self, meta_url_path: &str) {
+        match util::url_path_to_path_components(meta_url_path) {
+            Ok(path) => {
+                let mut full_path = self.local_path.join("metadata");
+                full_path.extend(path);
+
+                if !full_path.exists() {
+                    debug!("Path {:?} does not exist, so not removing", full_path);
+                }
+
+                match fs::remove_file(full_path.clone()) {
+                    Ok(()) => (),
+                    Err(e) => warn!("Failed to remove meta path {:?}: {:?}",
+                                    full_path, e),
+                }
+            }
+            Err(e) => warn!("Could not turn URL path {:?} into an FS path: {:?}",
+                            meta_url_path, e),
         }
     }
 }
