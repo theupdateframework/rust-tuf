@@ -524,37 +524,44 @@ impl Tuf {
             None => (),
         }
 
-        // set these up to do a breadth first traversal of the delegation graph
-        let mut visited = HashSet::new();
-        let mut to_visit: VecDeque<(Option<String>, String)> = VecDeque::new();
-        match &self.targets {
-            &Some(ref targets) => match &targets.delegations {
-                &Some(ref delegations) => for role in delegations.roles.iter() {
-                    to_visit.push_back((None, role.name.clone()));
-                },
-                &None => return Ok(())
-            },
+        let targets = match &self.targets {
+            &Some(ref t) => t,
             &None => return Err(Error::MissingMetadata(Role::Targets)),
         };
 
-        println!("snap meta {:?}", snapshot.meta.keys());
-        println!("to visit {:?}", to_visit);
+        let delegations = match &targets.delegations {
+            &Some(ref d) => d,
+            &None => return Ok(()),
+        };
+
+        // set these up to do a breadth first traversal of the delegation graph
+        let mut visited = HashSet::new();
+        let mut to_visit: VecDeque<(Option<String>, DelegatedRole)> = VecDeque::new();
+        
+        for role in delegations.roles.iter() {
+            to_visit.push_back((None, role.clone()));
+        }
 
         // Mr. La Forge, engage.
         while let Some((parent, role)) = to_visit.pop_front() {
-            if visited.contains(&role) {
+            if visited.contains(&role.name) {
                 continue
             };
+            visited.insert(role.name.clone());
 
-            match (self.delegations.get(&role), snapshot.meta.get(&format!("{}.json", role))) {
+            let result = match (self.delegations.get(&role.name), snapshot.meta.get(&format!("{}.json", role.name))) {
                 (None, None) => continue,
                 (Some(_), None) => continue,
-                (Some(container), Some(meta)) if container.targets.version == meta.version =>
-                    panic!("Delegation {} is up to date with what snapshot metadata reports",
-                           container.role_definition.name),
-                (Some(container), Some(meta)) if container.targets.version > meta.version =>
-                    panic!("Delegation {} is ahead of what snapshot metadata reports. {} vs. {}",
-                          container.role_definition.name, container.targets.version, meta.version),
+                (Some(container), Some(meta)) if container.targets.version == meta.version => {
+                    warn!("Delegation {} is up to date with what snapshot metadata reports",
+                           container.role_definition.name);
+                    continue
+                }
+                (Some(container), Some(meta)) if container.targets.version > meta.version => {
+                    warn!("Delegation {} is ahead of what snapshot metadata reports. {} vs. {}",
+                          container.role_definition.name, container.targets.version, meta.version);
+                    continue
+                }
                 (_, Some(meta)) => {
                     let parent_container = match parent {
                         Some(p) => match &self.delegations.get(&p) {
@@ -597,18 +604,24 @@ impl Tuf {
                     };
 
                     let (threshold, key_ids, available_keys) = match &parent_container {
-                        &Some(parent) => 
+                        &Some(parent) => {
                             (parent.role_definition.threshold,
                              &parent.role_definition.key_ids,
-                             parent.targets.delegations.clone().map(|d| d.keys).unwrap_or_else(|| HashMap::new())),
-                        &None => (self.root.targets.threshold, &self.root.targets.key_ids, self.root.keys.clone())
+                             parent.targets.delegations.clone().map(|d| d.keys).unwrap_or_else(|| HashMap::new()))
+                        }
+                        &None => {
+                            match delegations.roles.iter().filter(|d| d.name == role.name).next() {
+                                Some(role_def) => (role_def.threshold, &role_def.key_ids, delegations.keys.clone()),
+                                None => continue,
+                            }
+                        }
                     };
 
                     match Tuf::get_metadata::<Targets,
                                               TargetsMetadata,
                                               TempFile>(&self.remote.as_fetch(),
                                                         &self.http_client,
-                                                        &Role::TargetsDelegation(role.clone()),
+                                                        &Role::TargetsDelegation(role.name.clone()),
                                                         None,
                                                         false,
                                                         threshold,
@@ -618,19 +631,42 @@ impl Tuf {
                                                         hash_data.map(|(a, h)| (a, &*h.0)),
                                                         &mut temp_file) {
                         Ok(meta) => {
+                            let container = match parent_container {
+                                Some(p) => p.clone(),
+                                None => match &delegations.roles.iter()
+                                    .filter(|d| d.name == role.name)
+                                    .next()
+                                    .cloned()
+                                    .map(|ref p| {
+                                        DelegatedRoleContainer {
+                                            parent: Some(role.name.clone()),
+                                            targets: meta,
+                                            role_definition: p.clone(),
+                                        }
+                                    }) {
+                                        &Some(ref c) => c,
+                                        &None => continue
+                                    }
+                            };
+
                             match meta.delegations {
                                 Some(delegations) => for r in delegations.roles.iter() {
-                                    to_visit.push_back((Some(role.clone()), r.name.clone()));
+                                    to_visit.push_back((Some(role.name.clone()), r.clone()));
                                 },
                                 None => (),
-                            }
-                        }
-                        Err(e) => warn!("Failed to get metadat for role {}: {:?}", role, e),
-                    }
+                            };
 
-                    visited.insert(role);
+                            (role.name, container)
+                        }
+                        Err(e) => {
+                            warn!("Failed to get metadata for role {}: {:?}", role.name, e);
+                            continue
+                        }
+                    }
                 }
-            }
+            };
+
+            self.delegations.insert(result.0, result.1.clone());
         }
         
         Ok(())
@@ -1120,7 +1156,7 @@ impl Tuf {
             if entry.file_type().is_dir() {
                 match fs::remove_dir(entry.path()) {
                     Ok(()) => (),
-                    Err(e) => println!("Failed to remove dir {:?}: {:?}", entry.path(), e),
+                    Err(e) => info!("Failed to remove dir {:?}: {:?}", entry.path(), e),
                 };
             }
         }
@@ -1292,75 +1328,24 @@ impl<'a> Iterator for TargetPathIterator<'a> {
 
                             self.roles_index += 1;
 
-                            let (version, length, hash_data) = match self.tuf.snapshot {
-                                Some(ref snapshot) => {
-                                    match snapshot.meta.get(&format!("{}.json", delegation.name)) {
-                                        Some(meta) => {
-                                            let hash_data = match meta.hashes {
-                                                Some(ref hashes) => {
-                                                    match HashType::preferences().iter()
-                                                        .fold(None, |res, pref| {
-                                                            res.or_else(|| if let Some(hash) = hashes.get(&pref) {
-                                                                Some((pref, hash))
-                                                            } else {
-                                                                None
-                                                            })
-                                                        }) {
-                                                            Some(pair) => Some(pair.clone()),
-                                                            None => {
-                                                                warn!("No suitable hash algorithms. Refusing to trust metadata: {:?}",
-                                                                      delegation.name);
-                                                                continue
-                                                            }
-                                                        }
-                                                },
-                                                None => None,
-                                            };
-                                            (meta.version, meta.length, hash_data)
-                                        },
-                                        None => continue // TODO err msg
-                                    }
-                                }
-                                None => continue // TODO err msg
+                            let meta = match self.tuf.delegations.get(&delegation.name) {
+                                Some(container) => container.targets.clone(),
+                                None => continue,
                             };
 
-                            // TODO extract hash/len from snapshot and use in verification
                             if delegation.could_have_target(&self.target) {
-                                match Tuf::get_metadata::<Targets,
-                                                          TargetsMetadata,
-                                                          File>(&self.tuf.remote.as_fetch(),
-                                                              &self.tuf.http_client,
-                                                              &Role::TargetsDelegation(delegation.name.clone()),
-                                                              None,
-                                                              false,
-                                                              delegation.threshold,
-                                                              &delegation.key_ids,
-                                                              &delegations.keys,
-                                                              length,
-                                                              hash_data.map(|(a, h)| (a, &*h.0)),
-                                                              &mut None) {
-                                        Ok(meta) => {
-                                            if meta.version != version {
-                                                warn!("The metadata for {:?} had version {} but snapshot reported {}",
-                                                      delegation.name, meta.version, version);
-                                                continue
-                                            }
-
-                                            let mut iter = TargetPathIterator::new(&self.tuf,
-                                                                                   meta.clone(),
-                                                                                   self.target);
-                                            let res = iter.next();
-                                            if delegation.terminating && res.is_none() {
-                                                return None
-                                            } else if res.is_some() {
-                                                self.sub_iter = Some(Box::new(iter));
-                                                return res
-                                            } else {
-                                                continue
-                                            }
-                                        }
-                                        Err(e) => warn!("Error fetching metadata: {:?}", e),
-                                    }
+                                let mut iter = TargetPathIterator::new(&self.tuf,
+                                                                       meta,
+                                                                       self.target);
+                                let res = iter.next();
+                                if delegation.terminating && res.is_none() {
+                                    return None
+                                } else if res.is_some() {
+                                    self.sub_iter = Some(Box::new(iter));
+                                    return res
+                                } else {
+                                    continue
+                                }
                             } else {
                                 continue
                             }
@@ -1374,9 +1359,9 @@ impl<'a> Iterator for TargetPathIterator<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct DelegatedRoleContainer {
     role_definition: DelegatedRole,
     targets: TargetsMetadata,
-    parent: String,
+    parent: Option<String>,
 }
