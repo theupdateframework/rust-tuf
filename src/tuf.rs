@@ -7,6 +7,7 @@ use hyper::client::Client;
 use ring::digest;
 use ring::digest::{SHA256, SHA512};
 use std::collections::{HashMap, HashSet};
+use std::collections::vec_deque::VecDeque;
 use std::fs::{self, File, DirBuilder};
 use std::io::{Read, Write, Seek, SeekFrom};
 use std::path::{PathBuf, Path};
@@ -51,8 +52,7 @@ pub struct Tuf {
     targets: Option<TargetsMetadata>,
     timestamp: Option<TimestampMetadata>,
     snapshot: Option<SnapshotMetadata>,
-    delegated_targets: HashMap<String, TargetsMetadata>,
-    delegated_roles: HashMap<String, DelegatedRole>,
+    delegations: HashMap<String, DelegatedRoleContainer>,
 }
 
 impl Tuf {
@@ -107,8 +107,7 @@ impl Tuf {
             targets: None,
             timestamp: None,
             snapshot: None,
-            delegated_roles: HashMap::new(),
-            delegated_targets: HashMap::new(),
+            delegations: HashMap::new(),
         };
 
         tuf.update()?;
@@ -148,8 +147,7 @@ impl Tuf {
             targets: None,
             timestamp: None,
             snapshot: None,
-            delegated_roles: HashMap::new(),
-            delegated_targets: HashMap::new(),
+            delegations: HashMap::new(),
         };
         tuf.update()?;
 
@@ -504,8 +502,137 @@ impl Tuf {
         Ok(())
     }
 
+    // TODO omg so much cloning had to happen just to make the work
+    // come back later and clean this up once all the features are stable
     fn update_delegations(&mut self, old_snapshot: Option<SnapshotMetadata>, fetch_type: &FetchType) -> Result<(), Error> {
-        // TODO
+        let snapshot = match self.snapshot.clone() {
+            Some(s) => s,
+            None => return Err(Error::MissingMetadata(Role::Snapshot)),
+        };
+
+        match old_snapshot {
+            Some(ref old_snapshot) => {
+                for old in old_snapshot.meta.keys().collect::<HashSet<&String>>()
+                                       .difference(&snapshot.meta.keys().collect::<HashSet<&String>>()) {
+                    debug!("Purging no longer trusted delegation {}", old);
+                    match self.delegations.remove(*old) {
+                        Some(old) => self.try_remove_meta(&old.role_definition.name),
+                        None => (),
+                    }
+                }
+            }
+            None => (),
+        }
+
+        // set these up to do a breadth first traversal of the delegation graph
+        let mut visited = HashSet::new();
+        let mut to_visit: VecDeque<(Option<String>, String)> = VecDeque::new();
+        match &self.targets {
+            &Some(ref targets) => match &targets.delegations {
+                &Some(ref delegations) => for role in delegations.roles.iter() {
+                    to_visit.push_back((None, role.name.clone()));
+                },
+                &None => return Ok(())
+            },
+            &None => return Err(Error::MissingMetadata(Role::Targets)),
+        };
+
+        println!("snap meta {:?}", snapshot.meta.keys());
+        println!("to visit {:?}", to_visit);
+
+        // Mr. La Forge, engage.
+        while let Some((parent, role)) = to_visit.pop_front() {
+            if visited.contains(&role) {
+                continue
+            };
+
+            match (self.delegations.get(&role), snapshot.meta.get(&format!("{}.json", role))) {
+                (None, None) => continue,
+                (Some(_), None) => continue,
+                (Some(container), Some(meta)) if container.targets.version == meta.version =>
+                    panic!("Delegation {} is up to date with what snapshot metadata reports",
+                           container.role_definition.name),
+                (Some(container), Some(meta)) if container.targets.version > meta.version =>
+                    panic!("Delegation {} is ahead of what snapshot metadata reports. {} vs. {}",
+                          container.role_definition.name, container.targets.version, meta.version),
+                (_, Some(meta)) => {
+                    let parent_container = match parent {
+                        Some(p) => match &self.delegations.get(&p) {
+                            &Some(p) => Some(p),
+                            &None => continue,
+                        },
+                        None => None
+                    };
+
+                    let hash_data = match meta.hashes {
+                        Some(ref hashes) => {
+                            match HashType::preferences().iter()
+                                .fold(None, |res, pref| {
+                                    res.or_else(|| if let Some(hash) = hashes.get(&pref) {
+                                        Some((pref, hash))
+                                    } else {
+                                        None
+                                    })
+                                }) {
+                                    Some(pair) => Some(pair.clone()),
+                                    None => {
+                                        warn!("No suitable hash algorithms. Refusing to trust metadata.");
+                                        continue
+                                    }
+                                }
+                        },
+                        None => None,
+                    };
+
+                    let mut temp_file = if !fetch_type.is_cache() {
+                        match self.temp_file() {
+                            Ok(t) => Some(t),
+                            Err(e) => {
+                                warn!("Failed to create temp file for delegation: {:?}", e);
+                                continue
+                            }
+                        }
+                    } else {
+                        None
+                    };
+
+                    let (threshold, key_ids, available_keys) = match &parent_container {
+                        &Some(parent) => 
+                            (parent.role_definition.threshold,
+                             &parent.role_definition.key_ids,
+                             parent.targets.delegations.clone().map(|d| d.keys).unwrap_or_else(|| HashMap::new())),
+                        &None => (self.root.targets.threshold, &self.root.targets.key_ids, self.root.keys.clone())
+                    };
+
+                    match Tuf::get_metadata::<Targets,
+                                              TargetsMetadata,
+                                              TempFile>(&self.remote.as_fetch(),
+                                                        &self.http_client,
+                                                        &Role::TargetsDelegation(role.clone()),
+                                                        None,
+                                                        false,
+                                                        threshold,
+                                                        key_ids,
+                                                        &available_keys,
+                                                        meta.length,
+                                                        hash_data.map(|(a, h)| (a, &*h.0)),
+                                                        &mut temp_file) {
+                        Ok(meta) => {
+                            match meta.delegations {
+                                Some(delegations) => for r in delegations.roles.iter() {
+                                    to_visit.push_back((Some(role.clone()), r.name.clone()));
+                                },
+                                None => (),
+                            }
+                        }
+                        Err(e) => warn!("Failed to get metadat for role {}: {:?}", role, e),
+                    }
+
+                    visited.insert(role);
+                }
+            }
+        }
+        
         Ok(())
     }
 
@@ -974,8 +1101,7 @@ impl Tuf {
         self.snapshot = None;
         self.targets = None;
         self.timestamp = None;
-        self.delegated_roles.clear();
-        self.delegated_targets.clear();
+        self.delegations.clear();
 
         let current_path = self.local_path.join("metadata");
     
@@ -1246,4 +1372,11 @@ impl<'a> Iterator for TargetPathIterator<'a> {
             }
         }
     }
+}
+
+#[derive(Debug)]
+struct DelegatedRoleContainer {
+    role_definition: DelegatedRole,
+    targets: TargetsMetadata,
+    parent: String,
 }

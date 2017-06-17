@@ -379,7 +379,7 @@ impl<'de> Deserialize<'de> for TimestampMetadata {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SnapshotMetadata {
     expires: DateTime<UTC>,
     pub version: i32,
