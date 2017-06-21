@@ -52,7 +52,7 @@ pub struct Tuf {
     targets: Option<TargetsMetadata>,
     timestamp: Option<TimestampMetadata>,
     snapshot: Option<SnapshotMetadata>,
-    delegations: HashMap<String, DelegatedRoleContainer>,
+    delegations: HashMap<String, TargetsMetadata>,
 }
 
 impl Tuf {
@@ -389,7 +389,7 @@ impl Tuf {
                                                      &self.root.snapshot.key_ids,
                                                      &self.root.keys,
                                                      Some(meta.length),
-                                                     Some((&hash_alg, &expected_hash.0)),
+                                                     Some((&hash_alg, &expected_hash)),
                                                      &mut temp_file)?;
         // TODO ? check downloaded version matches what was in the timestamp.json
 
@@ -454,8 +454,6 @@ impl Tuf {
             None => None,
         };
 
-        let hash_data = hash_data.map(|(t, v)| (t, v.0.as_slice()));
-
         let mut temp_file = if !fetch_type.is_cache() {
             Some(self.temp_file()?)
         } else {
@@ -502,12 +500,15 @@ impl Tuf {
         Ok(())
     }
 
-    // TODO omg so much cloning had to happen just to make the work
-    // come back later and clean this up once all the features are stable
     fn update_delegations(&mut self, old_snapshot: Option<SnapshotMetadata>, fetch_type: &FetchType) -> Result<(), Error> {
-        let snapshot = match self.snapshot.clone() {
-            Some(s) => s,
-            None => return Err(Error::MissingMetadata(Role::Snapshot)),
+        let snapshot = match &self.snapshot {
+            &Some(ref s) => s,
+            &None => return Err(Error::MissingMetadata(Role::Snapshot)),
+        };
+
+        let targets = match &self.targets {
+            &Some(ref t) => t,
+            &None => return Err(Error::MissingMetadata(Role::Targets)),
         };
 
         match old_snapshot {
@@ -516,7 +517,7 @@ impl Tuf {
                                        .difference(&snapshot.meta.keys().collect::<HashSet<&String>>()) {
                     debug!("Purging no longer trusted delegation {}", old);
                     match self.delegations.remove(*old) {
-                        Some(old) => self.try_remove_meta(&old.role_definition.name),
+                        Some(_) => self.try_remove_meta(&old),
                         None => (),
                     }
                 }
@@ -524,17 +525,11 @@ impl Tuf {
             None => (),
         }
 
-        let targets = match &self.targets {
-            &Some(ref t) => t,
-            &None => return Err(Error::MissingMetadata(Role::Targets)),
-        };
-
         let delegations = match &targets.delegations {
             &Some(ref d) => d,
             &None => return Ok(()),
         };
 
-        // set these up to do a breadth first traversal of the delegation graph
         let mut visited = HashSet::new();
         let mut to_visit: VecDeque<(Option<String>, DelegatedRole)> = VecDeque::new();
         
@@ -542,131 +537,117 @@ impl Tuf {
             to_visit.push_back((None, role.clone()));
         }
 
-        // Mr. La Forge, engage.
         while let Some((parent, role)) = to_visit.pop_front() {
             if visited.contains(&role.name) {
                 continue
             };
             visited.insert(role.name.clone());
 
-            let result = match (self.delegations.get(&role.name), snapshot.meta.get(&format!("{}.json", role.name))) {
-                (None, None) => continue,
-                (Some(_), None) => continue,
-                (Some(container), Some(meta)) if container.targets.version == meta.version => {
-                    warn!("Delegation {} is up to date with what snapshot metadata reports",
-                           container.role_definition.name);
+            let snapshot_meta = match snapshot.meta.get(&role.name) {
+                Some(ref s) => s.clone(),
+                None => {
+                    info!("Role {} was not found in snapshot metadata. Refusing to update.",
+                          role.name);
                     continue
                 }
-                (Some(container), Some(meta)) if container.targets.version > meta.version => {
-                    warn!("Delegation {} is ahead of what snapshot metadata reports. {} vs. {}",
-                          container.role_definition.name, container.targets.version, meta.version);
-                    continue
-                }
-                (_, Some(meta)) => {
-                    let parent_container = match parent {
-                        Some(p) => match &self.delegations.get(&p) {
-                            &Some(p) => Some(p),
-                            &None => continue,
-                        },
-                        None => None
-                    };
+            };
+			let hash_data = match snapshot_meta.hashes {
+				Some(ref hashes) => {
+					match HashType::preferences().iter()
+						.fold(None, |res, pref| {
+							res.or_else(|| if let Some(hash) = hashes.get(&pref) {
+								Some((pref, hash))
+							} else {
+								None
+							})
+						}) {
+							Some(pair) => Some(pair.clone()),
+							None => {
+								warn!("No suitable hash algorithms. Refusing to trust metadata: {}",
+									  role.name);
+								continue
+							}
+						}
+				},
+				None => None,
+			};
 
-                    let hash_data = match meta.hashes {
-                        Some(ref hashes) => {
-                            match HashType::preferences().iter()
-                                .fold(None, |res, pref| {
-                                    res.or_else(|| if let Some(hash) = hashes.get(&pref) {
-                                        Some((pref, hash))
-                                    } else {
-                                        None
-                                    })
-                                }) {
-                                    Some(pair) => Some(pair.clone()),
-                                    None => {
-                                        warn!("No suitable hash algorithms. Refusing to trust metadata.");
-                                        continue
+            
+            let new_meta = match self.delegations.get(&role.name) {
+                Some(delegation) if delegation.version == snapshot_meta.version => {
+                    info!("Delegation {} is up to date", role.name);
+                    continue
+                },
+                Some(delegation) if delegation.version > snapshot_meta.version => {
+                    warn!("Delegation {} is ahead of what snapshot metadata reports: {} vs {}",
+                          role.name, delegation.version, snapshot_meta.version);
+                    continue
+                },
+                _ => {
+                    match parent.and_then(|ref p| self.delegations.get(p)).unwrap_or(targets).delegations {
+                        Some(ref parent) => {
+                            match parent.roles.iter().filter(|r| r.name == role.name).next() {
+                                Some(ref role_definition) => {
+									let mut temp_file = if !fetch_type.is_cache() {
+										match self.temp_file() {
+											Ok(t) => Some(t),
+											Err(e) => {
+												warn!("Failed to create temp file for delegation: {:?}", e);
+												continue
+											}
+										}
+									} else {
+										None
+									};
+
+                                    match Self::get_metadata::<Targets,
+                                                               TargetsMetadata,
+                                                               TempFile>(fetch_type,
+                                                                         &self.http_client,
+                                                                         &Role::TargetsDelegation(role.name.clone()),
+                                                                         None,
+                                                                         false,
+                                                                         role_definition.threshold,
+                                                                         &role_definition.key_ids,
+                                                                         &parent.keys,
+                                                                         snapshot_meta.length,
+                                                                         hash_data,
+                                                                         &mut temp_file) {
+                                        Ok(m) => {
+                                            if m.version != snapshot_meta.version {
+                                                warn!("Retrieved metdata for delegation {} did not match version \
+                                                      found in snapshot metadata. {} vs. {}",
+                                                      role.name, m.version, snapshot_meta.version);
+                                                continue
+                                            }
+                                            m
+                                        },
+                                        Err(e) => {
+                                            warn!("Failed to get metadata for role {}: {:?}",
+                                                  role.name, e);
+                                            continue
+                                        }
                                     }
                                 }
-                        },
-                        None => None,
-                    };
-
-                    let mut temp_file = if !fetch_type.is_cache() {
-                        match self.temp_file() {
-                            Ok(t) => Some(t),
-                            Err(e) => {
-                                warn!("Failed to create temp file for delegation: {:?}", e);
-                                continue
-                            }
-                        }
-                    } else {
-                        None
-                    };
-
-                    let (threshold, key_ids, available_keys) = match &parent_container {
-                        &Some(parent) => {
-                            (parent.role_definition.threshold,
-                             &parent.role_definition.key_ids,
-                             parent.targets.delegations.clone().map(|d| d.keys).unwrap_or_else(|| HashMap::new()))
-                        }
-                        &None => {
-                            match delegations.roles.iter().filter(|d| d.name == role.name).next() {
-                                Some(role_def) => (role_def.threshold, &role_def.key_ids, delegations.keys.clone()),
-                                None => continue,
-                            }
-                        }
-                    };
-
-                    match Tuf::get_metadata::<Targets,
-                                              TargetsMetadata,
-                                              TempFile>(&self.remote.as_fetch(),
-                                                        &self.http_client,
-                                                        &Role::TargetsDelegation(role.name.clone()),
-                                                        None,
-                                                        false,
-                                                        threshold,
-                                                        key_ids,
-                                                        &available_keys,
-                                                        meta.length,
-                                                        hash_data.map(|(a, h)| (a, &*h.0)),
-                                                        &mut temp_file) {
-                        Ok(meta) => {
-                            let container = match parent_container {
-                                Some(p) => p.clone(),
-                                None => match &delegations.roles.iter()
-                                    .filter(|d| d.name == role.name)
-                                    .next()
-                                    .cloned()
-                                    .map(|ref p| {
-                                        DelegatedRoleContainer {
-                                            parent: Some(role.name.clone()),
-                                            targets: meta,
-                                            role_definition: p.clone(),
-                                        }
-                                    }) {
-                                        &Some(ref c) => c,
-                                        &None => continue
-                                    }
-                            };
-
-                            match meta.delegations {
-                                Some(delegations) => for r in delegations.roles.iter() {
-                                    to_visit.push_back((Some(role.name.clone()), r.clone()));
+                                None => {
+                                    error!("The claimed parent to the role {} does not exist. \
+                                            This is likely a programming error.",
+                                            role.name);
+                                    continue
                                 },
-                                None => (),
-                            };
-
-                            (role.name, container)
+                            }
                         }
-                        Err(e) => {
-                            warn!("Failed to get metadata for role {}: {:?}", role.name, e);
+                        None => {
+                            error!("The claimed parent to the role {} does not exist. \
+                                    This is likely a programming error.",
+                                    role.name);
                             continue
-                        }
+                        },
                     }
                 }
             };
 
-            self.delegations.insert(result.0, result.1.clone());
+            self.delegations.insert(role.name, new_meta);
         }
         
         Ok(())
@@ -682,7 +663,7 @@ impl Tuf {
                                                            available_keys: &HashMap<KeyId, Key>,
                                                            size: Option<i64>,
                                                            hash_data: Option<(&HashType,
-                                                                              &[u8])>,
+                                                                              &HashValue)>,
                                                            mut out: &mut Option<W>)
                                                            -> Result<M, Error> {
 
@@ -974,14 +955,14 @@ impl Tuf {
 
             // TODO correctly split path
             let path = self.local_path.join("targets").join(util::url_path_to_os_path(target)?);
-            info!("reading target from local path: {:?}", path);
+            info!("Reading target from local path: {:?}", path);
 
             if path.exists() {
                 let mut file = File::open(path.clone()).map_err(|e| Error::from_io(e, &path))?;
                 Self::read_and_verify(&mut file,
                                       &mut None::<&mut File>,
                                       Some(target_meta.length),
-                                      Some((&hash_alg, &expected_hash.0)))?;
+                                      Some((&hash_alg, &expected_hash)))?;
                 let _ = file.seek(SeekFrom::Start(0))?;
                 return Ok(path);
             } else {
@@ -996,7 +977,7 @@ impl Tuf {
                         match Self::read_and_verify(&mut file,
                                                     &mut Some(temp_file.file_mut()?),
                                                     Some(target_meta.length),
-                                                    Some((&hash_alg, &expected_hash.0))) {
+                                                    Some((&hash_alg, &expected_hash))) {
                             Ok(()) => {
                                 let mut storage_path = self.local_path.join("targets");
                                 storage_path.extend(util::url_path_to_path_components(target)?);
@@ -1029,7 +1010,7 @@ impl Tuf {
                         match Self::read_and_verify(&mut resp,
                                                     &mut Some(temp_file.file_mut()?),
                                                     Some(target_meta.length),
-                                                    Some((&hash_alg, &expected_hash.0))) {
+                                                    Some((&hash_alg, &expected_hash))) {
                             Ok(()) => {
                                 // TODO this isn't windows friendly
                                 let mut storage_path = self.local_path.join("targets");
@@ -1061,7 +1042,7 @@ impl Tuf {
     fn read_and_verify<R: Read, W: Write>(input: &mut R,
                                           output: &mut Option<W>,
                                           size: Option<i64>,
-                                          hash_data: Option<(&HashType, &[u8])>)
+                                          hash_data: Option<(&HashType, &HashValue)>)
                                           -> Result<(), Error> {
         let mut context = match hash_data {
             Some((&HashType::Sha512, _)) => Some(digest::Context::new(&SHA512)),
@@ -1109,8 +1090,8 @@ impl Tuf {
         let generated_hash = context.map(|c| c.finish());
 
         match (generated_hash, hash_data) {
-            (Some(generated_hash), Some((_, expected_hash))) if generated_hash.as_ref() !=
-                                                                expected_hash => {
+            (Some(generated_hash), Some((_, expected_hash))) if *generated_hash.as_ref() !=
+                                                                *expected_hash.0 => {
                 Err(Error::UnavailableTarget)
             }
             // this should never happen, so err if it does for safety
@@ -1165,6 +1146,7 @@ impl Tuf {
     }
 
     fn try_remove_meta(&self, meta_url_path: &str) {
+        debug!("Attempting to remove metadata: {}", meta_url_path);
         match util::url_path_to_path_components(meta_url_path) {
             Ok(path) => {
                 let mut full_path = self.local_path.join("metadata");
@@ -1329,7 +1311,7 @@ impl<'a> Iterator for TargetPathIterator<'a> {
                             self.roles_index += 1;
 
                             let meta = match self.tuf.delegations.get(&delegation.name) {
-                                Some(container) => container.targets.clone(),
+                                Some(targets) => targets.clone(),
                                 None => continue,
                             };
 
@@ -1357,11 +1339,4 @@ impl<'a> Iterator for TargetPathIterator<'a> {
             }
         }
     }
-}
-
-#[derive(Debug, Clone)]
-struct DelegatedRoleContainer {
-    role_definition: DelegatedRole,
-    targets: TargetsMetadata,
-    parent: Option<String>,
 }
