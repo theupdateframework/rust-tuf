@@ -1,8 +1,6 @@
-use hyper;
 use std::fs::{self, File};
 use std::io::{self, Read, Write, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use url::Url;
 use url::percent_encoding::percent_decode;
 use uuid::Uuid;
 
@@ -34,11 +32,6 @@ pub fn url_path_to_path_components(url_path: &str) -> Result<Vec<String>, Error>
         out.push(component);
     }
     Ok(out)
-}
-
-/// Converts a `url::Url` into a `hyper::Url`.
-pub fn url_to_hyper_url(url: &Url) -> Result<hyper::Url, Error> {
-    Ok(hyper::Url::parse(url.as_str())?)
 }
 
 

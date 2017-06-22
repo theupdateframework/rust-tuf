@@ -2,7 +2,7 @@
 
 use chrono::UTC;
 use json;
-use hyper::Url as HyperUrl;
+use hyper::Url;
 use hyper::client::Client;
 use ring::digest;
 use ring::digest::{SHA256, SHA512};
@@ -11,7 +11,6 @@ use std::collections::vec_deque::VecDeque;
 use std::fs::{self, File, DirBuilder};
 use std::io::{Read, Write, Seek, SeekFrom};
 use std::path::{PathBuf, Path};
-use url::Url;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -1023,7 +1022,6 @@ impl Tuf {
                                 .map_err(|_| Error::Generic("URL path could not be mutated".to_string()))?
                                 .extend(util::url_path_to_path_components(&target)?);
                         }
-                        let url = util::url_to_hyper_url(&url)?;
                         let mut resp = http::get(&self.http_client, &url)?;
 
                         match Self::read_and_verify(&mut resp,
@@ -1269,7 +1267,7 @@ impl ConfigBuilder {
 enum FetchType {
     Cache(PathBuf),
     File(PathBuf),
-    Http(HyperUrl),
+    Http(Url),
 }
 
 impl FetchType {

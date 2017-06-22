@@ -1,4 +1,5 @@
 extern crate data_encoding;
+extern crate hyper;
 extern crate pem;
 extern crate serde;
 #[macro_use]
@@ -6,9 +7,9 @@ extern crate serde_derive;
 extern crate serde_json as json;
 extern crate tempdir;
 extern crate tuf;
-extern crate url;
 
 use data_encoding::HEXLOWER;
+use hyper::Url;
 use std::fs::{self, File, DirEntry};
 use std::io::{self, Read};
 use std::path::{PathBuf, Path};
@@ -16,7 +17,6 @@ use std::str;
 use tempdir::TempDir;
 use tuf::{Tuf, Config, Error, RemoteRepo};
 use tuf::meta::{Key, KeyValue, KeyType};
-use url::Url;
 
 
 fn load_vector_meta() -> String {
