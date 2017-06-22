@@ -5,14 +5,13 @@ set -uex
 
 cd "$(dirname "$(readlink -f "$0")")/.."
 
+cargo build --features=cli
+
 declare -r bin="target/debug/tuf"
 temp=$(mktemp -d)
 declare -r temp
 declare -r repo="tests/tuf-test-vectors/tuf/$1/repo"
 
-cargo build --features=cli
-
-set +e
 export RUST_LOG='tuf=debug'
 
 "$bin" -p "$temp" -f "$repo" init

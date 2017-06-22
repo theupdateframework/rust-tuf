@@ -543,7 +543,7 @@ impl Tuf {
             };
             visited.insert(role.name.clone());
 
-            let snapshot_meta = match snapshot.meta.get(&role.name) {
+            let snapshot_meta = match snapshot.meta.get(&format!("{}.json", role.name)) {
                 Some(ref s) => s.clone(),
                 None => {
                     info!("Role {} was not found in snapshot metadata. Refusing to update.",
@@ -620,6 +620,22 @@ impl Tuf {
                                                       role.name, m.version, snapshot_meta.version);
                                                 continue
                                             }
+
+
+                                            // TODO this doesn't work if `/` is in the name? Need to URL escape it.
+                                            let path = self.local_path.join("metadata")
+                                                .join(format!("{}.json", role.name));
+                                            
+                                            match temp_file {
+                                                Some(temp_file) =>  {
+                                                    if path.exists() {
+                                                        fs::remove_file(&path)?;
+                                                    }
+
+                                                    temp_file.persist(&path)?;
+                                                }
+                                                None => (),
+                                            }
                                             m
                                         },
                                         Err(e) => {
@@ -673,6 +689,7 @@ impl Tuf {
 
         let buf: Vec<u8> = match fetch_type {
             &FetchType::Cache(ref local_path) => {
+                // TODO this doesn't work if `/` is in the name? Need to URL escape it.
                 let path = local_path.join("metadata")
                     .join(format!("{}{}.json", metadata_version_str, role));
                 info!("Reading metadata from local path: {:?}", path);
@@ -699,6 +716,7 @@ impl Tuf {
                 buf
             }
             &FetchType::File(ref path) => {
+                // TODO this doesn't work if `/` is in the name? Need to URL escape it.
                 let path = path.join(format!("{}{}.json", metadata_version_str, role));
                 info!("Reading metadata from path: {:?}", path);
 
@@ -715,6 +733,7 @@ impl Tuf {
             &FetchType::Http(ref url) => {
                 let mut url = url.clone();
                 {
+                    // TODO this doesn't work if `/` is in the name? Need to URL escape it.
                     url.path_segments_mut()
                         .map_err(|_| Error::Generic("URL path could not be mutated".to_string()))?
                         .push(&format!("{}{}.json", metadata_version_str, role));
@@ -934,7 +953,7 @@ impl Tuf {
     // TODO ? stronger input type
     pub fn fetch_target(&self, target: &str) -> Result<PathBuf, Error> {
         let metadata_chain = match self.targets {
-            Some(ref targets) => TargetPathIterator::new(&self, targets.clone(), target),
+            Some(ref targets) => TargetPathIterator::new(&self, &targets, target),
             None => return Err(Error::MissingMetadata(Role::Targets)),
         };
         for ref targets_meta in metadata_chain {
@@ -1265,16 +1284,17 @@ impl FetchType {
 
 struct TargetPathIterator<'a> {
     tuf: &'a Tuf,
-    targets: TargetsMetadata,
+    targets: &'a TargetsMetadata,
     target: &'a str,
     terminate: bool,
     targets_checked: bool,
     roles_index: usize,
+    visited: HashSet<&'a str>,
     sub_iter: Option<Box<TargetPathIterator<'a>>>,
 }
 
 impl<'a> TargetPathIterator<'a> {
-    fn new(tuf: &'a Tuf, targets: TargetsMetadata, target: &'a str) -> Self {
+    fn new(tuf: &'a Tuf, targets: &'a TargetsMetadata, target: &'a str) -> Self {
         TargetPathIterator {
             tuf: tuf,
             targets: targets,
@@ -1282,61 +1302,41 @@ impl<'a> TargetPathIterator<'a> {
             terminate: false,
             targets_checked: false,
             roles_index: 0,
+            visited: HashSet::new(),
             sub_iter: None,
         }
     }
 }
 
 impl<'a> Iterator for TargetPathIterator<'a> {
-    type Item = TargetsMetadata;
+    type Item = &'a TargetsMetadata;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.terminate {
-            return None
-        }
-
-        match self.targets.targets.get(self.target) {
-            Some(_) if !self.targets_checked => {
-                self.targets_checked = true;
-                Some(self.targets.clone())
-            },
-            _ => {
-                match self.targets.delegations {
-                    Some(ref delegations) => {
-                        for delegation in delegations.roles.iter().skip(self.roles_index) {
-                            if delegation.terminating {
-                                self.terminate = true;
-                            }
-
-                            self.roles_index += 1;
-
-                            let meta = match self.tuf.delegations.get(&delegation.name) {
-                                Some(targets) => targets.clone(),
-                                None => continue,
-                            };
-
-                            if delegation.could_have_target(&self.target) {
-                                let mut iter = TargetPathIterator::new(&self.tuf,
-                                                                       meta,
-                                                                       self.target);
-                                let res = iter.next();
-                                if delegation.terminating && res.is_none() {
-                                    return None
-                                } else if res.is_some() {
-                                    self.sub_iter = Some(Box::new(iter));
-                                    return res
-                                } else {
-                                    continue
-                                }
-                            } else {
-                                continue
-                            }
-                        }
-                        return None
-                    },
-                    None => return None,
-                }
+        if !self.targets_checked {
+            self.targets_checked = true;
+            if self.targets.targets.contains_key(self.target) {
+                return Some(&self.targets)
             }
         }
+
+        let delegations = match self.targets.delegations {
+            Some(ref d) => d,
+            None => return None,
+        };
+
+        for role in delegations.roles.iter().skip(self.roles_index) {
+            self.roles_index += 1;
+            if self.visited.contains(&*role.name) {
+                continue
+            }
+            self.visited.insert(&role.name);
+
+            match self.tuf.delegations.get(&role.name) {
+                Some(ref targets_meta) => panic!(), //recurse
+                None => continue,
+            };
+        }
+
+        panic!()
     }
 }
