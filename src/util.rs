@@ -48,22 +48,22 @@ impl TempFile {
     pub fn new(prefix: PathBuf) -> Result<Self, io::Error> {
         let path = prefix.join(Uuid::new_v4().hyphenated().to_string());
         Ok(TempFile(Some(TempFileInner {
-            path: path.clone(),
-            file: File::create(path)?,
-        })))
+                             path: path.clone(),
+                             file: File::create(path)?,
+                         })))
     }
 
     pub fn from_existing(path: PathBuf) -> Result<Self, io::Error> {
-        Ok(TempFile(Some( TempFileInner {
-            path: path.clone(),
-            file: File::open(path)?,
-        })))
+        Ok(TempFile(Some(TempFileInner {
+                             path: path.clone(),
+                             file: File::open(path)?,
+                         })))
     }
 
     pub fn file_mut(&mut self) -> Result<&mut File, io::Error> {
         match self.0 {
             Some(ref mut inner) => Ok(&mut inner.file),
-            None => Err(io::Error::new(io::ErrorKind::Other, "invalid TempFile reference"))
+            None => Err(io::Error::new(io::ErrorKind::Other, "invalid TempFile reference")),
         }
     }
 
@@ -106,12 +106,11 @@ impl Drop for TempFile {
                     Ok(()) => (),
                     Err(e) => warn!("Failed to delete tempfile: {:?}", e),
                 }
-            },
+            }
             None => (),
         }
     }
 }
-
 
 #[cfg(test)]
 mod test {

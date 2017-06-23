@@ -59,7 +59,8 @@ impl Value {
                         buf.push(b',');
                     }
                     first = false;
-                    escape_str(&mut buf, &k).map_err(|err| format!("Write error: {}", err))?;
+                    escape_str(&mut buf, &k)
+                        .map_err(|err| format!("Write error: {}", err))?;
                     buf.push(b':');
                     v.write(&mut buf)?;
                 }
@@ -203,11 +204,13 @@ mod test {
     fn root_json() {
         let mut file = File::open("./tests/cjson/root.json").expect("couldn't open root.json");
         let mut buf = String::new();
-        file.read_to_string(&mut buf).expect("couldn't read root.json");
+        file.read_to_string(&mut buf)
+            .expect("couldn't read root.json");
 
         let mut file = File::open("./tests/cjson/root.cjson").expect("couldn't open root.cjson");
         let mut cjsn = String::new();
-        file.read_to_string(&mut cjsn).expect("couldn't read root.cjson");
+        file.read_to_string(&mut cjsn)
+            .expect("couldn't read root.cjson");
 
         let ref jsn = json::from_str(&buf).expect("not json");
         let out = canonicalize(jsn).expect("couldn't canonicalize");

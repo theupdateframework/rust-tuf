@@ -18,7 +18,8 @@ pub fn convert_to_pkcs1<'a>(input: &[u8]) -> Vec<u8> {
 
 fn from_pkcs1(input: &[u8]) -> Option<Vec<u8>> {
     let _input = Input::from(&input);
-    _input.read_all(der::Error, |i| {
+    _input
+        .read_all(der::Error, |i| {
             der::nested(i, Tag::Sequence, der::Error, |i| {
                 let _ = der::positive_integer(i)?;
                 let _ = der::positive_integer(i)?;
@@ -31,7 +32,8 @@ fn from_pkcs1(input: &[u8]) -> Option<Vec<u8>> {
 
 fn from_spki(input: &[u8]) -> Option<Vec<u8>> {
     let _input = Input::from(&input);
-    _input.read_all(der::Error, |i| {
+    _input
+        .read_all(der::Error, |i| {
             der::nested(i, Tag::Sequence, der::Error, |i| {
                 der::nested(i, Tag::Sequence, der::Error, |i| {
                     let oid = der::expect_tag_and_get_value(i, Tag::OID)?;
@@ -64,9 +66,9 @@ fn write_pkcs1(n: Input, e: Input) -> Result<Vec<u8>, der::Error> {
     {
         let mut _der = Der::new(&mut output);
         _der.write_sequence(|_der| {
-                _der.write_integer(n)?;
-                _der.write_integer(e)
-            })?;
+                                _der.write_integer(n)?;
+                                _der.write_integer(e)
+                            })?;
     }
 
     Ok(output)

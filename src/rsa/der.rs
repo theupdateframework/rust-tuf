@@ -50,7 +50,7 @@ pub fn read_tag_and_get_value<'a>
     let tag = input.read_byte()?;
 
     if tag as usize == Tag::EOC as usize {
-        return Ok((tag, untrusted::Input::from(&[])))
+        return Ok((tag, untrusted::Input::from(&[])));
     }
 
     if (tag & 0x1F) == 0x1F {
@@ -137,15 +137,15 @@ fn nonnegative_integer<'a>(input: &mut untrusted::Reader<'a>,
 
             let r = input.skip_to_end();
             r.read_all(ring::error::Unspecified, |input| {
-                let second_byte = input.read_byte()?;
-                if (second_byte & 0x80) == 0 {
-                    // A leading zero is only allowed when the value's high bit
-                    // is set.
-                    return Err(ring::error::Unspecified);
-                }
-                let _ = input.skip_to_end();
-                Ok(())
-            })?;
+                    let second_byte = input.read_byte()?;
+                    if (second_byte & 0x80) == 0 {
+                        // A leading zero is only allowed when the value's high bit
+                        // is set.
+                        return Err(ring::error::Unspecified);
+                    }
+                    let _ = input.skip_to_end();
+                    Ok(())
+                })?;
             check_minimum(r, min_value)?;
             return Ok(r);
         }
@@ -226,7 +226,8 @@ impl<'a, W: Write> Der<'a, W> {
         self.writer.write_all(&[Tag::Integer as u8])?;
         let mut buf = Vec::new();
 
-        input.read_all(Error, |read| {
+        input
+            .read_all(Error, |read| {
                 while let Ok(byte) = read.read_byte() {
                     buf.push(byte);
                 }
@@ -291,28 +292,29 @@ mod tests {
           (&[0x02, 0x02, 0x00, 0xfe], 0xfe),
           (&[0x02, 0x02, 0x00, 0xff], 0xff)];
 
-    static BAD_NONNEGATIVE_INTEGERS: &'static [&'static [u8]] = &[&[], // At end of input
-                                                                  &[0x02], // Tag only
-                                                                  &[0x02, 0x00], // Empty value
+    static BAD_NONNEGATIVE_INTEGERS: &'static [&'static [u8]] =
+        &[&[], // At end of input
+          &[0x02], // Tag only
+          &[0x02, 0x00], // Empty value
 
-                                                                  // Length mismatch
-                                                                  &[0x02, 0x00, 0x01],
-                                                                  &[0x02, 0x01],
-                                                                  &[0x02, 0x01, 0x00, 0x01],
-                                                                  &[0x02, 0x01, 0x01, 0x00], // Would be valid if last byte is ignored.
-                                                                  &[0x02, 0x02, 0x01],
+          // Length mismatch
+          &[0x02, 0x00, 0x01],
+          &[0x02, 0x01],
+          &[0x02, 0x01, 0x00, 0x01],
+          &[0x02, 0x01, 0x01, 0x00], // Would be valid if last byte is ignored.
+          &[0x02, 0x02, 0x01],
 
-                                                                  // Negative values
-                                                                  &[0x02, 0x01, 0x80],
-                                                                  &[0x02, 0x01, 0xfe],
-                                                                  &[0x02, 0x01, 0xff],
+          // Negative values
+          &[0x02, 0x01, 0x80],
+          &[0x02, 0x01, 0xfe],
+          &[0x02, 0x01, 0xff],
 
-                                                                  // Values that have an unnecessary leading 0x00
-                                                                  &[0x02, 0x02, 0x00, 0x00],
-                                                                  &[0x02, 0x02, 0x00, 0x01],
-                                                                  &[0x02, 0x02, 0x00, 0x02],
-                                                                  &[0x02, 0x02, 0x00, 0x7e],
-                                                                  &[0x02, 0x02, 0x00, 0x7f]];
+          // Values that have an unnecessary leading 0x00
+          &[0x02, 0x02, 0x00, 0x00],
+          &[0x02, 0x02, 0x00, 0x01],
+          &[0x02, 0x02, 0x00, 0x02],
+          &[0x02, 0x02, 0x00, 0x7e],
+          &[0x02, 0x02, 0x00, 0x7f]];
 
     #[test]
     fn test_positive_integer() {

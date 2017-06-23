@@ -20,18 +20,8 @@ codecov = { repository = "heartsucker/rust-tuf", branch = "master", service = "g
 name = "tuf"
 path = "./src/lib.rs"
 
-[[bin]]
-name = "tuf"
-path = "./src/main.rs"
-doc = false
-required-features = [ "cli" ]
-
-[features]
-cli = [ "clap" ]
-
 [dependencies]
 chrono = { version = "0.3.1", features = [ "serde" ] }
-clap = { version = "2.23", optional = true }
 data-encoding = "2.0.0-rc.1"
 env_logger = "0.4.3"
 hyper = "0.10.10"
