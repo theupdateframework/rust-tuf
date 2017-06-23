@@ -22,6 +22,7 @@ extern crate ring;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
 extern crate serde_json as json;
 #[cfg(test)]
 extern crate tempdir;

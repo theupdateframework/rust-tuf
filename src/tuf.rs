@@ -13,13 +13,22 @@ pub struct Tuf<D: DataInterchange, R: RawData<D>> {
 }
 
 impl<D: DataInterchange, R: RawData<D>> Tuf<D, R> {
-    pub fn from_root_pinned(root: &SignedMetadata<D, R, RootMetadata>,
+    pub fn from_root_pinned(mut signed_root: SignedMetadata<D, R, RootMetadata>,
                             root_key_ids: &[KeyId])
                             -> Result<Self, Error> {
+        signed_root
+            .signatures_mut()
+            .retain(|s| root_key_ids.contains(s.key_id()));
+        let canonical_bytes = signed_root.signed().canonicalize()?;
+        let root = signed_root.signed().deserialize::<RootMetadata>()?;
+
+        let mut valid = 0;
+        for sig in signed_root.signatures() {}
+
         panic!() // TODO
     }
 
-    pub fn from_root(root: &SignedMetadata<D, R, RootMetadata>) -> Result<Self, Error> {
+    pub fn from_root(signed_root: SignedMetadata<D, R, RootMetadata>) -> Result<Self, Error> {
         panic!() // TODO
     }
 }

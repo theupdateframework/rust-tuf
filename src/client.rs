@@ -1,5 +1,6 @@
 use repository::Repository;
 
+use Result;
 use metadata::interchange::{RawData, DataInterchange};
 use tuf::Tuf;
 
@@ -20,4 +21,7 @@ impl<'a, D, R, Local, Remote> Client<'a, D, R, Local, Remote>
           Local: 'a + Repository<D, R>,
           Remote: 'a + Repository<D, R>
 {
+    pub fn update(&mut self) -> Result<()> {
+        panic!() // TODO
+    }
 }

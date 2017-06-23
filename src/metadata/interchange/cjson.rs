@@ -15,7 +15,6 @@ enum Value {
     Bool(bool),
     Null,
     Number(Number),
-    // TODO this needs to be &[u8] and not String
     Object(BTreeMap<String, Value>),
     String(String),
 }

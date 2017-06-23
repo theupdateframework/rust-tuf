@@ -25,11 +25,11 @@ pub const CONSTRUCTED: u8 = 1 << 5;
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[repr(u8)]
 pub enum Tag {
-    EOC = 0x00,
+    Eoc = 0x00,
     Integer = 0x02,
     BitString = 0x03,
     Null = 0x05,
-    OID = 0x06,
+    Oid = 0x06,
     Sequence = CONSTRUCTED | 0x10, // 0x30
 }
 
@@ -49,7 +49,7 @@ pub fn read_tag_and_get_value<'a>
      -> Result<(u8, untrusted::Input<'a>), ring::error::Unspecified> {
     let tag = input.read_byte()?;
 
-    if tag as usize == Tag::EOC as usize {
+    if tag as usize == Tag::Eoc as usize {
         return Ok((tag, untrusted::Input::from(&[])));
     }
 
@@ -89,8 +89,6 @@ pub fn read_tag_and_get_value<'a>
     Ok((tag, inner))
 }
 
-// TODO: investigate taking decoder as a reference to reduce generated code
-// size.
 pub fn nested<'a, F, R, E: Copy>(input: &mut untrusted::Reader<'a>,
                                  tag: Tag,
                                  error: E,
@@ -222,9 +220,17 @@ impl<'a, W: Write> Der<'a, W> {
         Ok(())
     }
 
-    pub fn write_integer(&mut self, input: untrusted::Input) -> Result<(), Error> {
-        self.writer.write_all(&[Tag::Integer as u8])?;
+    pub fn write_null(&mut self) -> Result<(), Error> {
+        Ok(self.writer.write_all(&[Tag::Null as u8, 0])?)
+    }
+
+    pub fn write_element(&mut self, tag: Tag, input: untrusted::Input) -> Result<(), Error> {
+        self.writer.write_all(&[tag as u8])?;
         let mut buf = Vec::new();
+
+        if tag == Tag::BitString {
+            buf.push(0x00);
+        }
 
         input
             .read_all(Error, |read| {
@@ -259,7 +265,7 @@ impl<'a, W: Write> Der<'a, W> {
 
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
     use untrusted;
 

@@ -46,7 +46,7 @@ impl DataInterchange for JsonDataInterchange {
 
 pub trait RawData<D: DataInterchange>: Sized {
     fn canonicalize(&self) -> Result<Vec<u8>>;
-    fn deserialize<M: Metadata>(self) -> Result<M>;
+    fn deserialize<M: Metadata>(&self) -> Result<M>;
     fn serialize<M: Metadata>(metadata: &M) -> Result<Self>;
 }
 
@@ -59,8 +59,8 @@ impl RawData<JsonDataInterchange> for JsonRawData {
         cjson::canonicalize(&self.raw_json).map_err(|e| Error::Generic(e))
     }
 
-    fn deserialize<M: Metadata>(self) -> Result<M> {
-        Ok(json::from_value(self.raw_json)?)
+    fn deserialize<M: Metadata>(&self) -> Result<M> {
+        Ok(json::from_value(self.raw_json.clone())?)
     }
 
     fn serialize<M: Metadata>(metadata: &M) -> Result<Self> {
