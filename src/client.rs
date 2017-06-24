@@ -5,10 +5,11 @@ use metadata::interchange::{RawData, DataInterchange};
 use tuf::Tuf;
 
 pub struct Client<'a, D, R, Local, Remote>
-    where D: 'a + DataInterchange,
-          R: 'a + RawData<D>,
-          Local: 'a + Repository<D, R>,
-          Remote: 'a + Repository<D, R>
+where
+    D: 'a + DataInterchange,
+    R: 'a + RawData<D>,
+    Local: 'a + Repository<D, R>,
+    Remote: 'a + Repository<D, R>,
 {
     tuf: &'a mut Tuf<D, R>,
     local: &'a mut Local,
@@ -16,10 +17,11 @@ pub struct Client<'a, D, R, Local, Remote>
 }
 
 impl<'a, D, R, Local, Remote> Client<'a, D, R, Local, Remote>
-    where D: 'a + DataInterchange,
-          R: 'a + RawData<D>,
-          Local: 'a + Repository<D, R>,
-          Remote: 'a + Repository<D, R>
+where
+    D: 'a + DataInterchange,
+    R: 'a + RawData<D>,
+    Local: 'a + Repository<D, R>,
+    Remote: 'a + Repository<D, R>,
 {
     pub fn update(&mut self) -> Result<()> {
         panic!() // TODO

@@ -13,7 +13,7 @@ pub fn from_pkcs1(input: &[u8]) -> Option<Vec<u8>> {
     let _input = Input::from(&input);
     _input
         .read_all(der::Error, |i| {
-            der::nested(i, Tag::Sequence, der::Error, |i| {
+            der::read_nested(i, Tag::Sequence, der::Error, |i| {
                 let _ = der::positive_integer(i)?;
                 let _ = der::positive_integer(i)?;
                 // if the input was already pkcs1, just return it
@@ -27,8 +27,8 @@ pub fn from_spki(input: &[u8]) -> Option<Vec<u8>> {
     let _input = Input::from(&input);
     _input
         .read_all(der::Error, |i| {
-            der::nested(i, Tag::Sequence, der::Error, |i| {
-                der::nested(i, Tag::Sequence, der::Error, |i| {
+            der::read_nested(i, Tag::Sequence, der::Error, |i| {
+                der::read_nested(i, Tag::Sequence, der::Error, |i| {
                     let oid = der::expect_tag_and_get_value(i, Tag::Oid)?;
                     if oid != Input::from(RSA_PKCS1_OID) {
                         return Err(der::Error);
@@ -38,7 +38,7 @@ pub fn from_spki(input: &[u8]) -> Option<Vec<u8>> {
                     Ok(())
                 })?;
 
-                der::nested(i, Tag::BitString, der::Error, |i| {
+                der::read_nested(i, Tag::BitString, der::Error, |i| {
                     let _ = der::expect_tag_and_get_value(i, Tag::Eoc)?;
                     Ok(i.skip_to_end().iter().cloned().collect())
                 })
@@ -53,9 +53,9 @@ fn write_pkcs1(n: Input, e: Input) -> Result<Vec<u8>, der::Error> {
     {
         let mut _der = Der::new(&mut output);
         _der.write_sequence(|_der| {
-                                _der.write_element(Tag::Integer, n)?;
-                                _der.write_element(Tag::Integer, e)
-                            })?;
+            _der.write_element(Tag::Integer, n)?;
+            _der.write_element(Tag::Integer, e)
+        })?;
     }
 
     Ok(output)
@@ -66,12 +66,14 @@ pub fn write_spki(pkcs1: &[u8]) -> Result<Vec<u8>, der::Error> {
     {
         let mut _der = Der::new(&mut output);
         _der.write_sequence(|_der| {
-                                _der.write_sequence(|_der| {
-                        _der.write_element(Tag::Oid, Input::from(RSA_PKCS1_OID))?;
-                        _der.write_null()
-                    })?;
-                                _der.write_element(Tag::BitString, Input::from(pkcs1))
-                            })?;
+            _der.write_sequence(|_der| {
+                _der.write_element(Tag::Oid, Input::from(RSA_PKCS1_OID))?;
+                _der.write_null()
+            })?;
+            _der.write_bit_string(|_der| {
+                _der.write_raw(Input::from(pkcs1))
+            })
+        })?;
     }
 
     Ok(output)

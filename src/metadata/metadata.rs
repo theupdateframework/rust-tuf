@@ -39,9 +39,10 @@ pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignedMetadata<D, R, M>
-    where D: DataInterchange,
-          R: RawData<D>,
-          M: Metadata
+where
+    D: DataInterchange,
+    R: RawData<D>,
+    M: Metadata,
 {
     signatures: Vec<Signature>,
     signed: R,
@@ -50,9 +51,10 @@ pub struct SignedMetadata<D, R, M>
 }
 
 impl<D, R, M> SignedMetadata<D, R, M>
-    where D: DataInterchange,
-          R: RawData<D>,
-          M: Metadata
+where
+    D: DataInterchange,
+    R: RawData<D>,
+    M: Metadata,
 {
     pub fn signatures(&self) -> &[Signature] {
         &self.signatures
@@ -112,7 +114,8 @@ impl Debug for KeyId {
 
 impl Serialize for KeyId {
     fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         let mut s = ser.serialize_tuple_struct("KeyId", 1)?;
         s.serialize_field(&HEXLOWER.encode(&self.0))?;
@@ -137,11 +140,10 @@ pub enum SignatureScheme {
 impl ToString for SignatureScheme {
     fn to_string(&self) -> String {
         match self {
-                &SignatureScheme::Ed25519 => "ed25519",
-                &SignatureScheme::RsaSsaPssSha256 => "rsassa-pss-sha256",
-                &SignatureScheme::RsaSsaPssSha512 => "rsassa-pss-sha512",
-            }
-            .to_string()
+            &SignatureScheme::Ed25519 => "ed25519",
+            &SignatureScheme::RsaSsaPssSha256 => "rsassa-pss-sha256",
+            &SignatureScheme::RsaSsaPssSha512 => "rsassa-pss-sha512",
+        }.to_string()
     }
 }
 
@@ -160,7 +162,8 @@ impl FromStr for SignatureScheme {
 
 impl Serialize for SignatureScheme {
     fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         ser.serialize_str(&self.to_string())
     }
@@ -194,7 +197,8 @@ impl Debug for SignatureValue {
 
 impl Serialize for SignatureValue {
     fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         let mut s = ser.serialize_tuple_struct("SignatureValue", 1)?;
         s.serialize_field(&HEXLOWER.encode(&self.0))?;
@@ -235,16 +239,16 @@ impl FromStr for KeyType {
 impl ToString for KeyType {
     fn to_string(&self) -> String {
         match self {
-                &KeyType::Ed25519 => "ed25519",
-                &KeyType::Rsa => "rsa",
-            }
-            .to_string()
+            &KeyType::Ed25519 => "ed25519",
+            &KeyType::Rsa => "rsa",
+        }.to_string()
     }
 }
 
 impl Serialize for KeyType {
     fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         ser.serialize_str(&self.to_string())
     }
@@ -294,7 +298,8 @@ impl PublicKey {
 
 impl Serialize for PublicKey {
     fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         shims::PublicKey::from(self)
             .map_err(|e| SerializeError::custom(format!("{:?}", e)))?
@@ -305,9 +310,9 @@ impl Serialize for PublicKey {
 impl<'de> Deserialize<'de> for PublicKey {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::PublicKey = Deserialize::deserialize(de)?;
-        intermediate
-            .try_into()
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
     }
 }
 
@@ -331,16 +336,6 @@ pub enum KeyFormat {
     Spki,
 }
 
-impl KeyFormat {
-    pub fn encode(&self, pub_key: &PublicKeyValue) -> Result<String> {
-        match self {
-            &KeyFormat::HexLower => Ok(HEXLOWER.encode(&pub_key.0)),
-            &KeyFormat::Pkcs1 => panic!(), // TODO
-            &KeyFormat::Spki => panic!(), // TODO
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct RoleDefinition {}
 
@@ -356,11 +351,12 @@ mod test {
     fn parse_spki_json() {
         let mut jsn = json!({"keytype": "rsa", "keyval": {}});
 
-        let mut file = File::open(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                                      .join("tests")
-                                      .join("rsa")
-                                      .join("spki-1.pub"))
-                .unwrap();
+        let mut file = File::open(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests")
+                .join("rsa")
+                .join("spki-1.pub"),
+        ).unwrap();
         let mut buf = String::new();
         file.read_to_string(&mut buf).unwrap();
 
@@ -374,6 +370,7 @@ mod test {
 
         let key: PublicKey = json::from_value(jsn.clone()).unwrap();
         assert_eq!(key.typ(), &KeyType::Rsa);
+        assert_eq!(key.format(), &KeyFormat::Spki);
 
         let deserialized: json::Value = json::to_value(key).unwrap();
         assert_eq!(deserialized, jsn);
@@ -383,11 +380,12 @@ mod test {
     fn parse_pkcs1_json() {
         let mut jsn = json!({"keytype": "rsa", "keyval": {}});
 
-        let mut file = File::open(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                                      .join("tests")
-                                      .join("rsa")
-                                      .join("pkcs1-1.pub"))
-                .unwrap();
+        let mut file = File::open(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests")
+                .join("rsa")
+                .join("pkcs1-1.pub"),
+        ).unwrap();
         let mut buf = String::new();
         file.read_to_string(&mut buf).unwrap();
 
@@ -401,6 +399,7 @@ mod test {
 
         let key: PublicKey = json::from_value(jsn.clone()).unwrap();
         assert_eq!(key.typ(), &KeyType::Rsa);
+        assert_eq!(key.format(), &KeyFormat::Pkcs1);
 
         let deserialized: json::Value = json::to_value(key).unwrap();
         assert_eq!(deserialized, jsn);
@@ -421,6 +420,7 @@ mod test {
 
         let key: PublicKey = json::from_value(jsn.clone()).unwrap();
         assert_eq!(key.typ(), &KeyType::Ed25519);
+        assert_eq!(key.format(), &KeyFormat::HexLower);
 
         let deserialized: json::Value = json::to_value(key).unwrap();
         assert_eq!(deserialized, jsn);

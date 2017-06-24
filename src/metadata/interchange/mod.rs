@@ -14,12 +14,14 @@ pub trait DataInterchange {
     fn suffix() -> &'static str;
 
     fn to_writer<W, T: ?Sized>(writer: W, value: &T) -> Result<()>
-        where W: Write,
-              T: Serialize;
+    where
+        W: Write,
+        T: Serialize;
 
     fn from_reader<R, T>(rdr: R) -> Result<T>
-        where R: Read,
-              T: DeserializeOwned;
+    where
+        R: Read,
+        T: DeserializeOwned;
 }
 
 pub struct JsonDataInterchange {}
@@ -29,15 +31,17 @@ impl DataInterchange for JsonDataInterchange {
     }
 
     fn to_writer<W, T: ?Sized>(writer: W, value: &T) -> Result<()>
-        where W: Write,
-              T: Serialize
+    where
+        W: Write,
+        T: Serialize,
     {
         Ok(json::to_writer(writer, value)?)
     }
 
     fn from_reader<R, T>(rdr: R) -> Result<T>
-        where R: Read,
-              T: DeserializeOwned
+    where
+        R: Read,
+        T: DeserializeOwned,
     {
         Ok(json::from_reader(rdr)?)
     }

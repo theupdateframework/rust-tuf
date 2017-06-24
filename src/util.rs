@@ -27,7 +27,9 @@ pub fn url_path_to_path_components(url_path: &str) -> Result<Vec<String>, Error>
     for component in url_path.split("/") {
         let component = percent_decode(component.as_bytes())
             .decode_utf8()
-            .map_err(|e| Error::Generic(format!("Path component not utf-8: {:?}", e)))?
+            .map_err(|e| {
+                Error::Generic(format!("Path component not utf-8: {:?}", e))
+            })?
             .into_owned();
         out.push(component);
     }
@@ -48,29 +50,35 @@ impl TempFile {
     pub fn new(prefix: PathBuf) -> Result<Self, io::Error> {
         let path = prefix.join(Uuid::new_v4().hyphenated().to_string());
         Ok(TempFile(Some(TempFileInner {
-                             path: path.clone(),
-                             file: File::create(path)?,
-                         })))
+            path: path.clone(),
+            file: File::create(path)?,
+        })))
     }
 
     pub fn from_existing(path: PathBuf) -> Result<Self, io::Error> {
         Ok(TempFile(Some(TempFileInner {
-                             path: path.clone(),
-                             file: File::open(path)?,
-                         })))
+            path: path.clone(),
+            file: File::open(path)?,
+        })))
     }
 
     pub fn file_mut(&mut self) -> Result<&mut File, io::Error> {
         match self.0 {
             Some(ref mut inner) => Ok(&mut inner.file),
-            None => Err(io::Error::new(io::ErrorKind::Other, "invalid TempFile reference")),
+            None => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "invalid TempFile reference",
+            )),
         }
     }
 
     pub fn persist(mut self, dest: &Path) -> Result<(), io::Error> {
         match self.0.take() {
             Some(inner) => fs::rename(inner.path, dest),
-            None => Err(io::Error::new(io::ErrorKind::Other, "invalid TempFile reference")),
+            None => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "invalid TempFile reference",
+            )),
         }
     }
 }
@@ -127,8 +135,10 @@ mod test {
     #[cfg(not(target_os = "windows"))]
     fn test_url_path_to_os_path_percent_nix() {
         let path = "/tmp/test%20stuff";
-        assert_eq!(url_path_to_os_path(path),
-                   Ok(PathBuf::from("/tmp/test stuff")));
+        assert_eq!(
+            url_path_to_os_path(path),
+            Ok(PathBuf::from("/tmp/test stuff"))
+        );
     }
 
     #[test]
@@ -142,18 +152,24 @@ mod test {
     #[cfg(target_os = "windows")]
     fn test_url_path_to_os_path_spaces_win() {
         let path = r"C:/tmp/test%20stuff";
-        assert_eq!(url_path_to_os_path(path),
-                   Ok(PathBuf::from(r"C:\tmp\test stuff")));
+        assert_eq!(
+            url_path_to_os_path(path),
+            Ok(PathBuf::from(r"C:\tmp\test stuff"))
+        );
     }
 
     #[test]
     fn test_url_path_to_path_components() {
         let path = "test/foo";
-        assert_eq!(url_path_to_path_components(path),
-                   Ok(vec!["test".into(), "foo".into()]));
+        assert_eq!(
+            url_path_to_path_components(path),
+            Ok(vec!["test".into(), "foo".into()])
+        );
 
         let path = "test/foo%20bar";
-        assert_eq!(url_path_to_path_components(path),
-                   Ok(vec!["test".into(), "foo bar".into()]));
+        assert_eq!(
+            url_path_to_path_components(path),
+            Ok(vec!["test".into(), "foo bar".into()])
+        );
     }
 }

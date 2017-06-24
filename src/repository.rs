@@ -12,15 +12,17 @@ use metadata::{MetadataVersion, RootMetadata};
 use metadata::interchange::{RawData, DataInterchange};
 
 pub trait Repository<D, R>
-    where D: DataInterchange,
-          R: RawData<D>
+where
+    D: DataInterchange,
+    R: RawData<D>,
 {
     fn initialize(&mut self) -> Result<()>;
     fn store_root(&mut self, root: &RootMetadata, version: &MetadataVersion) -> Result<()>;
-    fn retrieve_root(&mut self,
-                     max_size: Option<usize>,
-                     version: &MetadataVersion)
-                     -> Result<RootMetadata>;
+    fn retrieve_root(
+        &mut self,
+        max_size: Option<usize>,
+        version: &MetadataVersion,
+    ) -> Result<RootMetadata>;
 
     fn safe_read<Re: Read>(read: &mut Re, max_size: Option<usize>) -> Result<Vec<u8>> {
         match max_size {
@@ -39,8 +41,9 @@ pub trait Repository<D, R>
 }
 
 pub struct FileSystemRepository<D, R>
-    where D: DataInterchange,
-          R: RawData<D>
+where
+    D: DataInterchange,
+    R: RawData<D>,
 {
     local_path: PathBuf,
     _interchange: PhantomData<D>,
@@ -48,8 +51,9 @@ pub struct FileSystemRepository<D, R>
 }
 
 impl<D, R> FileSystemRepository<D, R>
-    where D: DataInterchange,
-          R: RawData<D>
+where
+    D: DataInterchange,
+    R: RawData<D>,
 {
     fn new(local_path: PathBuf) -> Self {
         FileSystemRepository {
@@ -61,14 +65,15 @@ impl<D, R> FileSystemRepository<D, R>
 }
 
 impl<D, R> Repository<D, R> for FileSystemRepository<D, R>
-    where D: DataInterchange,
-          R: RawData<D>
+where
+    D: DataInterchange,
+    R: RawData<D>,
 {
     fn initialize(&mut self) -> Result<()> {
         for p in &["metadata", "targets"] {
-            DirBuilder::new()
-                .recursive(true)
-                .create(self.local_path.join(p))?
+            DirBuilder::new().recursive(true).create(
+                self.local_path.join(p),
+            )?
         }
 
         Ok(())
@@ -89,10 +94,11 @@ impl<D, R> Repository<D, R> for FileSystemRepository<D, R>
         Ok(())
     }
 
-    fn retrieve_root(&mut self,
-                     max_size: Option<usize>,
-                     version: &MetadataVersion)
-                     -> Result<RootMetadata> {
+    fn retrieve_root(
+        &mut self,
+        max_size: Option<usize>,
+        version: &MetadataVersion,
+    ) -> Result<RootMetadata> {
         let root_version = format!("{}root{}", version.prefix(), D::suffix());
         let path = self.local_path.join("metadata").join(&root_version);
         let mut file = File::open(&path)?;
@@ -102,8 +108,9 @@ impl<D, R> Repository<D, R> for FileSystemRepository<D, R>
 }
 
 pub struct HttpRepository<D, R>
-    where D: DataInterchange,
-          R: RawData<D>
+where
+    D: DataInterchange,
+    R: RawData<D>,
 {
     url: Url,
     client: Client,
@@ -113,8 +120,9 @@ pub struct HttpRepository<D, R>
 }
 
 impl<D, R> HttpRepository<D, R>
-    where D: DataInterchange,
-          R: RawData<D>
+where
+    D: DataInterchange,
+    R: RawData<D>,
 {
     pub fn new(url: Url, client: Client, user_agent_prefix: Option<String>) -> Self {
         let user_agent = match user_agent_prefix {
@@ -141,21 +149,25 @@ impl<D, R> HttpRepository<D, R>
 }
 
 impl<D, R> Repository<D, R> for HttpRepository<D, R>
-    where D: DataInterchange,
-          R: RawData<D>
+where
+    D: DataInterchange,
+    R: RawData<D>,
 {
     fn initialize(&mut self) -> Result<()> {
         Ok(())
     }
 
     fn store_root(&mut self, root: &RootMetadata, version: &MetadataVersion) -> Result<()> {
-        Err(Error::Generic("Http repo store root not implemented".to_string()))
+        Err(Error::Generic(
+            "Http repo store root not implemented".to_string(),
+        ))
     }
 
-    fn retrieve_root(&mut self,
-                     max_size: Option<usize>,
-                     version: &MetadataVersion)
-                     -> Result<RootMetadata> {
+    fn retrieve_root(
+        &mut self,
+        max_size: Option<usize>,
+        version: &MetadataVersion,
+    ) -> Result<RootMetadata> {
         let root_version = format!("{}root{}", version.prefix(), D::suffix());
         let mut resp = self.get(&root_version)?;
         let buf = Self::safe_read(&mut resp, max_size)?;
