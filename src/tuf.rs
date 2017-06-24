@@ -21,10 +21,13 @@ impl<D: DataInterchange, R: RawData<D>> Tuf<D, R> {
             root_key_ids.contains(s.key_id())
         });
         let canonical_bytes = signed_root.signed().canonicalize()?;
-        let root = signed_root.signed().deserialize::<RootMetadata>()?;
 
         let mut valid = 0;
-        for sig in signed_root.signatures() {}
+        for sig in signed_root.signatures() {
+             
+        }
+
+        let root = signed_root.signed().deserialize::<RootMetadata>()?;
 
         panic!() // TODO
     }

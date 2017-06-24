@@ -70,9 +70,7 @@ pub fn write_spki(pkcs1: &[u8]) -> Result<Vec<u8>, der::Error> {
                 _der.write_element(Tag::Oid, Input::from(RSA_PKCS1_OID))?;
                 _der.write_null()
             })?;
-            _der.write_bit_string(|_der| {
-                _der.write_raw(Input::from(pkcs1))
-            })
+            _der.write_bit_string(|_der| _der.write_raw(Input::from(pkcs1)))
         })?;
     }
 

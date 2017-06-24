@@ -181,9 +181,11 @@ mod test {
 
     #[test]
     fn write_arr() {
-        let jsn = Value::Array(vec![Value::String(String::from("wat")),
-                                    Value::String(String::from("lol")),
-                                    Value::String(String::from("no"))]);
+        let jsn = Value::Array(vec![
+            Value::String(String::from("wat")),
+            Value::String(String::from("lol")),
+            Value::String(String::from("no")),
+        ]);
         let mut out = Vec::new();
         jsn.write(&mut out).expect("write failed");
         assert_eq!(&out, b"[\"wat\",\"lol\",\"no\"]");
@@ -192,8 +194,10 @@ mod test {
     #[test]
     fn write_obj() {
         let mut map = BTreeMap::new();
-        let arr = Value::Array(vec![Value::String(String::from("haha")),
-                                    Value::String(String::from("omg so tired"))]);
+        let arr = Value::Array(vec![
+            Value::String(String::from("haha")),
+            Value::String(String::from("omg so tired")),
+        ]);
         let _ = map.insert(String::from("lol"), arr);
         let jsn = Value::Object(map);
         let mut out = Vec::new();

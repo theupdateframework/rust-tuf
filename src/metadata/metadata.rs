@@ -1,11 +1,16 @@
+use chrono::DateTime;
+use chrono::offset::Utc;
 use data_encoding::HEXLOWER;
+use ring;
 use ring::digest::{self, SHA256};
+use ring::signature::{ED25519, RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA512};
 use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
 use serde::ser::{Serialize, Serializer, SerializeTupleStruct, Error as SerializeError};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
 use std::str::FromStr;
+use untrusted::Input;
 
 use Result;
 use error::Error;
@@ -17,6 +22,19 @@ pub fn calculate_key_id(public_key: &PublicKeyValue) -> KeyId {
     context.update(&public_key.0);
     KeyId(context.finish().as_ref().to_vec())
 }
+
+#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Role {
+    #[serde(rename = "root")]
+    Root,
+    #[serde(rename = "snapshot")]
+    Snapshot,
+    #[serde(rename = "targets")]
+    Targets,
+    #[serde(rename = "timestamp")]
+    Timestamp,
+}
+
 
 #[derive(Debug)]
 pub enum MetadataVersion {
@@ -69,13 +87,95 @@ where
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq)]
 pub struct RootMetadata {
+    version: u32,
+    expires: DateTime<Utc>,
+    consistent_snapshot: bool,
     keys: HashMap<KeyId, PublicKey>,
-    roles: HashMap<String, RoleDefinition>,
+    root: RoleDefinition,
+    snapshot: RoleDefinition,
+    targets: RoleDefinition,
+    timestamp: RoleDefinition,
+}
+
+impl RootMetadata {
+    pub fn new(
+        version: u32,
+        expires: DateTime<Utc>,
+        consistent_snapshot: bool,
+        keys: HashMap<KeyId, PublicKey>,
+        root: RoleDefinition,
+        snapshot: RoleDefinition,
+        targets: RoleDefinition,
+        timestamp: RoleDefinition,
+    ) -> Self {
+        RootMetadata {
+            version: version,
+            expires: expires,
+            consistent_snapshot: consistent_snapshot,
+            keys: keys,
+            root: root,
+            snapshot: snapshot,
+            targets: targets,
+            timestamp: timestamp,
+        }
+    }
+
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    pub fn expires(&self) -> &DateTime<Utc> {
+        &self.expires
+    }
+
+    pub fn consistent_snapshot(&self) -> bool {
+        self.consistent_snapshot
+    }
+
+    pub fn keys(&self) -> &HashMap<KeyId, PublicKey> {
+        &self.keys
+    }
+
+    pub fn root(&self) -> &RoleDefinition {
+        &self.root
+    }
+
+    pub fn snapshot(&self) -> &RoleDefinition {
+        &self.snapshot
+    }
+
+    pub fn targets(&self) -> &RoleDefinition {
+        &self.targets
+    }
+
+    pub fn timestamp(&self) -> &RoleDefinition {
+        &self.timestamp
+    }
 }
 
 impl Metadata for RootMetadata {}
+
+impl Serialize for RootMetadata {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        shims::RootMetadata::from(self)
+            .map_err(|e| SerializeError::custom(format!("{:?}", e)))?
+            .serialize(ser)
+    }
+}
+
+impl<'de> Deserialize<'de> for RootMetadata {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::RootMetadata = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Signature {
@@ -93,7 +193,7 @@ impl Signature {
 /// A `KeyId` is calculated as `sha256(public_key_bytes)`. The TUF spec says that it should be
 /// `sha256(cjson(encoded(public_key_bytes)))`, but this is meaningless once the spec moves away
 /// from using only JSON as the data interchange format.
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct KeyId(Vec<u8>);
 
 impl KeyId {
@@ -136,6 +236,8 @@ pub enum SignatureScheme {
     RsaSsaPssSha256,
     RsaSsaPssSha512,
 }
+
+impl SignatureScheme {}
 
 impl ToString for SignatureScheme {
     fn to_string(&self) -> String {
@@ -261,7 +363,7 @@ impl<'de> Deserialize<'de> for KeyType {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PublicKey {
     typ: KeyType,
     format: KeyFormat,
@@ -294,6 +396,21 @@ impl PublicKey {
     pub fn value(&self) -> &PublicKeyValue {
         &self.value
     }
+
+    pub fn verify(&self, scheme: &SignatureScheme, msg: &[u8], sig: &SignatureValue) -> Result<()> {
+        let alg: &ring::signature::VerificationAlgorithm = match scheme {
+            &SignatureScheme::Ed25519 => &ED25519,
+            &SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
+            &SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
+        };
+
+        ring::signature::verify(
+            alg,
+            Input::from(&self.value.0),
+            Input::from(msg),
+            Input::from(&sig.0),
+        ).map_err(|_: ring::error::Unspecified| Error::BadSignature)
+    }
 }
 
 impl Serialize for PublicKey {
@@ -316,7 +433,7 @@ impl<'de> Deserialize<'de> for PublicKey {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PublicKeyValue(Vec<u8>);
 
 impl PublicKeyValue {
@@ -329,15 +446,59 @@ impl PublicKeyValue {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum KeyFormat {
     HexLower,
     Pkcs1,
     Spki,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct RoleDefinition {}
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoleDefinition {
+    threshold: u32,
+    key_ids: HashSet<KeyId>,
+}
+
+impl RoleDefinition {
+    pub fn new(threshold: u32, key_ids: HashSet<KeyId>) -> Result<Self> {
+        if threshold < 1 {
+            return Err(Error::Encode(format!("Illegal threshold: {}", threshold)));
+        }
+
+        Ok(RoleDefinition {
+            threshold: threshold,
+            key_ids: key_ids,
+        })
+    }
+
+    pub fn threshold(&self) -> u32 {
+        self.threshold
+    }
+
+    pub fn key_ids(&self) -> &HashSet<KeyId> {
+        &self.key_ids
+    }
+}
+
+impl Serialize for RoleDefinition {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        shims::RoleDefinition::from(self)
+            .map_err(|e| SerializeError::custom(format!("{:?}", e)))?
+            .serialize(ser)
+    }
+}
+
+impl<'de> Deserialize<'de> for RoleDefinition {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::RoleDefinition = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -349,7 +510,7 @@ mod test {
 
     #[test]
     fn parse_spki_json() {
-        let mut jsn = json!({"keytype": "rsa", "keyval": {}});
+        let mut jsn = json!({"type": "rsa", "value": {}});
 
         let mut file = File::open(
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -362,11 +523,11 @@ mod test {
 
         let _ = jsn.as_object_mut()
             .unwrap()
-            .get_mut("keyval")
+            .get_mut("value")
             .unwrap()
             .as_object_mut()
             .unwrap()
-            .insert("public".into(), json::Value::String(buf.clone()));
+            .insert("public".into(), json::Value::String(buf.trim().into()));
 
         let key: PublicKey = json::from_value(jsn.clone()).unwrap();
         assert_eq!(key.typ(), &KeyType::Rsa);
@@ -378,7 +539,7 @@ mod test {
 
     #[test]
     fn parse_pkcs1_json() {
-        let mut jsn = json!({"keytype": "rsa", "keyval": {}});
+        let mut jsn = json!({"type": "rsa", "value": {}});
 
         let mut file = File::open(
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -391,11 +552,11 @@ mod test {
 
         let _ = jsn.as_object_mut()
             .unwrap()
-            .get_mut("keyval")
+            .get_mut("value")
             .unwrap()
             .as_object_mut()
             .unwrap()
-            .insert("public".into(), json::Value::String(buf.clone()));
+            .insert("public".into(), json::Value::String(buf.trim().into()));
 
         let key: PublicKey = json::from_value(jsn.clone()).unwrap();
         assert_eq!(key.typ(), &KeyType::Rsa);
@@ -407,12 +568,12 @@ mod test {
 
     #[test]
     fn parse_hex_json() {
-        let mut jsn = json!({"keytype": "ed25519", "keyval": {}});
+        let mut jsn = json!({"type": "ed25519", "value": {}});
         let buf = "2bedead4feed".to_string();
 
         let _ = jsn.as_object_mut()
             .unwrap()
-            .get_mut("keyval")
+            .get_mut("value")
             .unwrap()
             .as_object_mut()
             .unwrap()

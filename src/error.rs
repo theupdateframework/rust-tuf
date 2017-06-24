@@ -11,10 +11,13 @@ use rsa::der;
 /// Error type for all TUF related errors.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
+    BadSignature,
     Decode(String),
+    Encode(String),
     Generic(String),
     Io(String),
     Serde(String),
+    Opaque(String),
     UnsupportedKeyFormat(String),
     UnsupportedKeyType(String),
     UnsupportedSignatureScheme(String),

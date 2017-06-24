@@ -1,51 +1,136 @@
+use chrono::DateTime;
+use chrono::offset::Utc;
 use data_encoding::HEXLOWER;
 use pem::{self, Pem};
+use std::collections::{HashMap, HashSet};
 
 use Result;
 use error::Error;
-use metadata::{self, KeyFormat, KeyType};
+use metadata;
 use rsa;
 
 #[derive(Serialize, Deserialize)]
+pub struct RootMetadata {
+    #[serde(rename = "type")]
+    typ: metadata::Role,
+    version: u32,
+    consistent_snapshot: bool,
+    expires: DateTime<Utc>,
+    keys: HashMap<metadata::KeyId, metadata::PublicKey>,
+    roles: HashMap<metadata::Role, metadata::RoleDefinition>,
+}
+
+impl RootMetadata {
+    pub fn from(root_metadata: &metadata::RootMetadata) -> Result<Self> {
+        let mut roles = HashMap::new();
+        let _ = roles.insert(metadata::Role::Root, root_metadata.root().clone());
+        let _ = roles.insert(metadata::Role::Snapshot, root_metadata.snapshot().clone());
+        let _ = roles.insert(metadata::Role::Targets, root_metadata.targets().clone());
+        let _ = roles.insert(metadata::Role::Timestamp, root_metadata.timestamp().clone());
+
+        Ok(RootMetadata {
+            typ: metadata::Role::Root,
+            version: root_metadata.version(),
+            expires: root_metadata.expires().clone(),
+            consistent_snapshot: root_metadata.consistent_snapshot(),
+            keys: root_metadata.keys().clone(),
+            roles: roles,
+        })
+    }
+
+    pub fn try_into(mut self) -> Result<metadata::RootMetadata> {
+        if self.typ != metadata::Role::Root {
+            return Err(Error::Decode(format!(
+                "Attempted to decode root metdata labeled as {:?}",
+                self.typ
+            )));
+        }
+
+        if self.version < 1 {
+            return Err(Error::Decode(format!(
+                "Metadata version must be greater than zero. Found: {}",
+                self.version
+            )));
+        }
+
+        let mut keys = HashMap::new();
+        for (key_id, value) in self.keys.drain() {
+            let calculated = metadata::calculate_key_id(value.value());
+            if key_id != calculated {
+                warn!(
+                    "Received key with ID {:?} but calculated it's value as {:?}. \
+                       Refusing to add it to the set of trusted keys.",
+                    key_id,
+                    calculated
+                );
+            } else {
+                debug!(
+                    "Found key with good ID {:?}. Adding it to the set of trusted keys.",
+                    key_id
+                );
+                keys.insert(key_id, value);
+            }
+        }
+
+        let root = self.roles.remove(&metadata::Role::Root).ok_or(
+            Error::Decode(
+                "Missing root role definition."
+                    .into(),
+            ),
+        )?;
+        if root.threshold() < 1 {
+            return Err(Error::Decode(format!(
+                "The root role had an illegal threshold: {}",
+                root.threshold()
+            )));
+        }
+        panic!()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct PublicKey {
-    #[serde(rename = "keytype")]
+    #[serde(rename = "type")]
     typ: metadata::KeyType,
-    #[serde(rename = "keyval")]
-    public_key: PublicKeyValue,
+    value: PublicKeyValue,
 }
 
 impl PublicKey {
     pub fn from(public_key: &metadata::PublicKey) -> Result<Self> {
         let key_str = match public_key.format() {
-            &KeyFormat::HexLower => HEXLOWER.encode(&*public_key.value().value()),
-            &KeyFormat::Pkcs1 => {
+            &metadata::KeyFormat::HexLower => HEXLOWER.encode(&*public_key.value().value()),
+            &metadata::KeyFormat::Pkcs1 => {
                 pem::encode(&Pem {
                     tag: "RSA PUBLIC KEY".to_string(),
                     contents: public_key.value().value().to_vec(),
                 }).replace("\r", "")
+                    .trim()
+                    .into()
             }
-            &KeyFormat::Spki => {
+            &metadata::KeyFormat::Spki => {
                 pem::encode(&Pem {
                     tag: "PUBLIC KEY".to_string(),
                     contents: rsa::write_spki(&public_key.value().value().to_vec())?,
                 }).replace("\r", "")
+                    .trim()
+                    .into()
             }
         };
 
         Ok(PublicKey {
             typ: public_key.typ().clone(),
-            public_key: PublicKeyValue { public: key_str },
+            value: PublicKeyValue { public: key_str },
         })
     }
 
     pub fn try_into(self) -> Result<metadata::PublicKey> {
         let (key_bytes, format) = match self.typ {
-            KeyType::Ed25519 => {
-                let bytes = HEXLOWER.decode(self.public_key.public.as_bytes())?;
-                (bytes, KeyFormat::HexLower)
+            metadata::KeyType::Ed25519 => {
+                let bytes = HEXLOWER.decode(self.value.public.as_bytes())?;
+                (bytes, metadata::KeyFormat::HexLower)
             }
-            KeyType::Rsa => {
-                let _pem = pem::parse(self.public_key.public.as_bytes())?;
+            metadata::KeyType::Rsa => {
+                let _pem = pem::parse(self.value.public.as_bytes())?;
                 match _pem.tag.as_str() {
                     "RSA PUBLIC KEY" => {
                         let bytes = rsa::from_pkcs1(&_pem.contents).ok_or(
@@ -54,7 +139,7 @@ impl PublicKey {
                                     .into(),
                             ),
                         )?;
-                        (bytes, KeyFormat::Pkcs1)
+                        (bytes, metadata::KeyFormat::Pkcs1)
                     }
                     "PUBLIC KEY" => {
                         let bytes = rsa::from_spki(&_pem.contents).ok_or(
@@ -63,7 +148,7 @@ impl PublicKey {
                                     .into(),
                             ),
                         )?;
-                        (bytes, KeyFormat::Spki)
+                        (bytes, metadata::KeyFormat::Spki)
                     }
                     x => {
                         return Err(Error::UnsupportedKeyFormat(
@@ -85,87 +170,43 @@ struct PublicKeyValue {
     public: String,
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use json;
-    use std::fs::File;
-    use std::io::Read;
-    use std::path::PathBuf;
+#[derive(Serialize, Deserialize)]
+pub struct RoleDefinition {
+    threshold: u32,
+    key_ids: Vec<metadata::KeyId>,
+}
 
-    #[test]
-    fn parse_spki_json() {
-        let mut jsn = json!({"keytype": "rsa", "keyval": {}});
+impl RoleDefinition {
+    pub fn from(role: &metadata::RoleDefinition) -> Result<Self> {
+        let mut key_ids = role.key_ids()
+            .iter()
+            .cloned()
+            .collect::<Vec<metadata::KeyId>>();
+        key_ids.sort();
 
-        let mut file = File::open(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
-                .join("rsa")
-                .join("spki-1.pub"),
-        ).unwrap();
-        let mut buf = String::new();
-        file.read_to_string(&mut buf).unwrap();
-
-        let _ = jsn.as_object_mut()
-            .unwrap()
-            .get_mut("keyval")
-            .unwrap()
-            .as_object_mut()
-            .unwrap()
-            .insert("public".into(), json::Value::String(buf.clone()));
-
-        let key: PublicKey = json::from_value(jsn.clone()).unwrap();
-        assert_eq!(key.typ, KeyType::Rsa);
-
-        let deserialized: json::Value = json::to_value(key).unwrap();
-        assert_eq!(deserialized, jsn);
+        Ok(RoleDefinition {
+            threshold: role.threshold(),
+            key_ids: key_ids,
+        })
     }
 
-    #[test]
-    fn parse_pkcs1_json() {
-        let mut jsn = json!({"keytype": "rsa", "keyval": {}});
+    pub fn try_into(mut self) -> Result<metadata::RoleDefinition> {
+        let vec_len = self.key_ids.len();
+        if vec_len < 1 {
+            return Err(Error::Decode(
+                "Role defined with no assoiciated key IDs.".into(),
+            ));
+        }
 
-        let mut file = File::open(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
-                .join("rsa")
-                .join("pkcs1-1.pub"),
-        ).unwrap();
-        let mut buf = String::new();
-        file.read_to_string(&mut buf).unwrap();
+        let key_ids = self.key_ids
+            .drain(0..)
+            .collect::<HashSet<metadata::KeyId>>();
+        let dupes = vec_len - key_ids.len();
 
-        let _ = jsn.as_object_mut()
-            .unwrap()
-            .get_mut("keyval")
-            .unwrap()
-            .as_object_mut()
-            .unwrap()
-            .insert("public".into(), json::Value::String(buf.clone()));
+        if dupes != 0 {
+            return Err(Error::Decode(format!("Found {} duplicate key IDs.", dupes)));
+        }
 
-        let key: PublicKey = json::from_value(jsn.clone()).unwrap();
-        assert_eq!(key.typ, KeyType::Rsa);
-
-        let deserialized: json::Value = json::to_value(key).unwrap();
-        assert_eq!(deserialized, jsn);
-    }
-
-    #[test]
-    fn parse_hex_json() {
-        let mut jsn = json!({"keytype": "ed25519", "keyval": {}});
-        let buf = "2bedead4feed".to_string();
-
-        let _ = jsn.as_object_mut()
-            .unwrap()
-            .get_mut("keyval")
-            .unwrap()
-            .as_object_mut()
-            .unwrap()
-            .insert("public".into(), json::Value::String(buf.clone()));
-
-        let key: PublicKey = json::from_value(jsn.clone()).unwrap();
-        assert_eq!(key.typ, KeyType::Ed25519);
-
-        let deserialized: json::Value = json::to_value(key).unwrap();
-        assert_eq!(deserialized, jsn);
+        Ok(metadata::RoleDefinition::new(self.threshold, key_ids)?)
     }
 }
