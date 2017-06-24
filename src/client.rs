@@ -1,7 +1,7 @@
 use repository::Repository;
 
 use Result;
-use metadata::interchange::DataInterchange;
+use interchange::DataInterchange;
 use metadata::MetadataVersion;
 use tuf::Tuf;
 

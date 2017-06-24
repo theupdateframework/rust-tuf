@@ -31,16 +31,13 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 
 pub mod client;
 pub mod crypto;
-mod metadata;
+pub mod interchange;
+pub mod metadata;
 pub mod repository;
 mod rsa;
+mod shims;
 pub mod tuf;
 mod util;
 
 pub use tuf::*;
 pub use error::*;
-
-/// Module containing the various metadata components used by TUF.
-pub mod meta {
-    pub use metadata::*;
-}

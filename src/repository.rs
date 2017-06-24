@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use Result;
 use error::Error;
 use metadata::{SignedMetadata, MetadataVersion, RootMetadata, Unverified, Verified};
-use metadata::interchange::DataInterchange;
+use interchange::DataInterchange;
 
 pub trait Repository<D>
 where

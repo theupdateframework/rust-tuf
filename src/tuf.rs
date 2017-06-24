@@ -2,8 +2,9 @@
 use std::marker::PhantomData;
 
 use Result;
-use metadata::{SignedMetadata, RootMetadata, KeyId, VerificationStatus};
-use metadata::interchange::DataInterchange;
+use crypto::KeyId;
+use interchange::DataInterchange;
+use metadata::{SignedMetadata, RootMetadata, VerificationStatus};
 
 
 #[derive(Debug)]

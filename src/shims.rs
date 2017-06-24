@@ -5,6 +5,7 @@ use pem::{self, Pem};
 use std::collections::{HashMap, HashSet};
 
 use Result;
+use crypto;
 use error::Error;
 use metadata;
 use rsa;
@@ -16,7 +17,7 @@ pub struct RootMetadata {
     version: u32,
     consistent_snapshot: bool,
     expires: DateTime<Utc>,
-    keys: HashMap<metadata::KeyId, metadata::PublicKey>,
+    keys: HashMap<crypto::KeyId, crypto::PublicKey>,
     roles: HashMap<metadata::Role, metadata::RoleDefinition>,
 }
 
@@ -48,7 +49,7 @@ impl RootMetadata {
 
         let mut keys = Vec::new();
         for (key_id, value) in self.keys.drain() {
-            let calculated = metadata::calculate_key_id(value.value());
+            let calculated = crypto::calculate_key_id(value.value());
             if key_id != calculated {
                 warn!(
                     "Received key with ID {:?} but calculated it's value as {:?}. \
@@ -106,15 +107,15 @@ impl RootMetadata {
 #[derive(Serialize, Deserialize)]
 pub struct PublicKey {
     #[serde(rename = "type")]
-    typ: metadata::KeyType,
+    typ: crypto::KeyType,
     value: PublicKeyValue,
 }
 
 impl PublicKey {
-    pub fn from(public_key: &metadata::PublicKey) -> Result<Self> {
+    pub fn from(public_key: &crypto::PublicKey) -> Result<Self> {
         let key_str = match public_key.format() {
-            &metadata::KeyFormat::HexLower => HEXLOWER.encode(&*public_key.value().value()),
-            &metadata::KeyFormat::Pkcs1 => {
+            &crypto::KeyFormat::HexLower => HEXLOWER.encode(&*public_key.value().value()),
+            &crypto::KeyFormat::Pkcs1 => {
                 pem::encode(&Pem {
                     tag: "RSA PUBLIC KEY".to_string(),
                     contents: public_key.value().value().to_vec(),
@@ -122,7 +123,7 @@ impl PublicKey {
                     .trim()
                     .into()
             }
-            &metadata::KeyFormat::Spki => {
+            &crypto::KeyFormat::Spki => {
                 pem::encode(&Pem {
                     tag: "PUBLIC KEY".to_string(),
                     contents: rsa::write_spki(&public_key.value().value().to_vec())?,
@@ -138,13 +139,13 @@ impl PublicKey {
         })
     }
 
-    pub fn try_into(self) -> Result<metadata::PublicKey> {
+    pub fn try_into(self) -> Result<crypto::PublicKey> {
         let (key_bytes, format) = match self.typ {
-            metadata::KeyType::Ed25519 => {
+            crypto::KeyType::Ed25519 => {
                 let bytes = HEXLOWER.decode(self.value.public.as_bytes())?;
-                (bytes, metadata::KeyFormat::HexLower)
+                (bytes, crypto::KeyFormat::HexLower)
             }
-            metadata::KeyType::Rsa => {
+            crypto::KeyType::Rsa => {
                 let _pem = pem::parse(self.value.public.as_bytes())?;
                 match _pem.tag.as_str() {
                     "RSA PUBLIC KEY" => {
@@ -154,7 +155,7 @@ impl PublicKey {
                                     .into(),
                             ),
                         )?;
-                        (bytes, metadata::KeyFormat::Pkcs1)
+                        (bytes, crypto::KeyFormat::Pkcs1)
                     }
                     "PUBLIC KEY" => {
                         let bytes = rsa::from_spki(&_pem.contents).ok_or(
@@ -163,7 +164,7 @@ impl PublicKey {
                                     .into(),
                             ),
                         )?;
-                        (bytes, metadata::KeyFormat::Spki)
+                        (bytes, crypto::KeyFormat::Spki)
                     }
                     x => {
                         return Err(Error::UnsupportedKeyFormat(
@@ -174,9 +175,9 @@ impl PublicKey {
             }
         };
 
-        let key = metadata::PublicKeyValue::new(key_bytes);
+        let key = crypto::PublicKeyValue::new(key_bytes);
 
-        Ok(metadata::PublicKey::new(self.typ, format, key))
+        Ok(crypto::PublicKey::new(self.typ, format, key))
     }
 }
 
@@ -188,7 +189,7 @@ struct PublicKeyValue {
 #[derive(Serialize, Deserialize)]
 pub struct RoleDefinition {
     threshold: u32,
-    key_ids: Vec<metadata::KeyId>,
+    key_ids: Vec<crypto::KeyId>,
 }
 
 impl RoleDefinition {
@@ -196,7 +197,7 @@ impl RoleDefinition {
         let mut key_ids = role.key_ids()
             .iter()
             .cloned()
-            .collect::<Vec<metadata::KeyId>>();
+            .collect::<Vec<crypto::KeyId>>();
         key_ids.sort();
 
         Ok(RoleDefinition {
@@ -215,7 +216,7 @@ impl RoleDefinition {
 
         let key_ids = self.key_ids
             .drain(0..)
-            .collect::<HashSet<metadata::KeyId>>();
+            .collect::<HashSet<crypto::KeyId>>();
         let dupes = vec_len - key_ids.len();
 
         if dupes != 0 {
