@@ -132,7 +132,7 @@ where
                             signatures_needed -= 1;
                         }
                         Err(e) => {
-                            warn!("Bad signature from key ID {:?}", pub_key.key_id());
+                            warn!("Bad signature from key ID {:?}: {:?}", pub_key.key_id(), e);
                         }
                     }
                 }
@@ -333,8 +333,8 @@ impl Serialize for KeyId {
 
 impl<'de> Deserialize<'de> for KeyId {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
-        let mut string: String = Deserialize::deserialize(de)?;
-        KeyId::from_string(&string).map_err(|e| DeserializeError::custom("shit!".to_string()))
+        let string: String = Deserialize::deserialize(de)?;
+        KeyId::from_string(&string).map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -381,7 +381,7 @@ impl Serialize for SignatureScheme {
 
 impl<'de> Deserialize<'de> for SignatureScheme {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
-        let mut string: String = Deserialize::deserialize(de)?;
+        let string: String = Deserialize::deserialize(de)?;
         Ok(string.parse().unwrap())
     }
 }
@@ -418,7 +418,7 @@ impl Serialize for SignatureValue {
 
 impl<'de> Deserialize<'de> for SignatureValue {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
-        let mut string: String = Deserialize::deserialize(de)?;
+        let string: String = Deserialize::deserialize(de)?;
         SignatureValue::from_string(&string).map_err(|e| {
             DeserializeError::custom("Signature value was not valid hex lower".to_string())
         })
@@ -466,7 +466,7 @@ impl Serialize for KeyType {
 
 impl<'de> Deserialize<'de> for KeyType {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
-        let mut string: String = Deserialize::deserialize(de)?;
+        let string: String = Deserialize::deserialize(de)?;
         Ok(string.parse().unwrap())
     }
 }

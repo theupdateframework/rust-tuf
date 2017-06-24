@@ -2,7 +2,7 @@ use repository::Repository;
 
 use Result;
 use metadata::interchange::DataInterchange;
-use metadata::{MetadataVersion, SignedMetadata};
+use metadata::MetadataVersion;
 use tuf::Tuf;
 
 pub struct Client<D, L, R>

@@ -22,7 +22,10 @@ extern crate ring;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+#[cfg(test)]
 #[macro_use]
+extern crate serde_json as json;
+#[cfg(not(test))]
 extern crate serde_json as json;
 #[cfg(test)]
 extern crate tempdir;
@@ -36,7 +39,8 @@ pub mod error;
 /// Alias for `Result<T, Error>`.
 pub type Result<T> = ::std::result::Result<T, Error>;
 
-mod client;
+pub mod client;
+pub mod crypto;
 mod metadata;
 pub mod repository;
 mod rsa;
@@ -47,4 +51,6 @@ pub use tuf::*;
 pub use error::*;
 
 /// Module containing the various metadata components used by TUF.
-pub mod meta {}
+pub mod meta {
+    pub use metadata::*;
+}

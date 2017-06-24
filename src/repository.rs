@@ -2,7 +2,7 @@ use hyper::{Url, Client};
 use hyper::client::response::Response;
 use hyper::header::{Headers, UserAgent};
 use std::fs::{self, File, DirBuilder};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 
@@ -51,7 +51,7 @@ impl<D> FileSystemRepository<D>
 where
     D: DataInterchange,
 {
-    fn new(local_path: PathBuf) -> Self {
+    pub fn new(local_path: PathBuf) -> Self {
         FileSystemRepository {
             local_path: local_path,
             _interchange: PhantomData,
@@ -146,7 +146,7 @@ where
         Ok(())
     }
 
-    fn store_root(&mut self, root: &RootMetadata, version: &MetadataVersion) -> Result<()> {
+    fn store_root(&mut self, _: &RootMetadata, _: &MetadataVersion) -> Result<()> {
         Err(Error::Generic(
             "Http repo store root not implemented".to_string(),
         ))

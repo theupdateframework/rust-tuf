@@ -69,7 +69,7 @@ impl From<pem::Error> for Error {
 }
 
 impl From<der::Error> for Error {
-    fn from(err: der::Error) -> Error {
+    fn from(_: der::Error) -> Error {
         Error::Io("Error reading/writing DER".into())
     }
 }

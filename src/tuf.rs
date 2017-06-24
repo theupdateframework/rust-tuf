@@ -2,7 +2,6 @@
 use std::marker::PhantomData;
 
 use Result;
-use error::Error;
 use metadata::{SignedMetadata, RootMetadata, KeyId, VerificationStatus};
 use metadata::interchange::DataInterchange;
 
