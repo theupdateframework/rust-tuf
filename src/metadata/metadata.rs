@@ -180,13 +180,21 @@ impl<'de> Deserialize<'de> for RootMetadata {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Signature {
     key_id: KeyId,
-    method: SignatureScheme,
-    sig: SignatureValue,
+    scheme: SignatureScheme,
+    signature: SignatureValue,
 }
 
 impl Signature {
     pub fn key_id(&self) -> &KeyId {
         &self.key_id
+    }
+
+    pub fn scheme(&self) -> &SignatureScheme {
+         &self.scheme    
+    }
+
+    pub fn signature(&self) -> &SignatureValue {
+        &self.signature
     }
 }
 

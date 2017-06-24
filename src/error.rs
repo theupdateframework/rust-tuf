@@ -21,6 +21,7 @@ pub enum Error {
     UnsupportedKeyFormat(String),
     UnsupportedKeyType(String),
     UnsupportedSignatureScheme(String),
+    VerificationFailure(String),
 }
 
 impl From<json::error::Error> for Error {
