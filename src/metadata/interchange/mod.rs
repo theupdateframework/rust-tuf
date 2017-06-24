@@ -11,7 +11,15 @@ use metadata::Metadata;
 
 /// The format used for data interchange, serialization, and deserialization.
 pub trait DataInterchange {
+    type RawData: Serialize + DeserializeOwned;
+
     fn suffix() -> &'static str;
+
+    fn canonicalize(raw_data: &Self::RawData) -> Result<Vec<u8>>;
+
+    fn deserialize<M: Metadata>(raw_data: &Self::RawData) -> Result<M>;
+
+    fn serialize<M: Metadata>(metadata: &M) -> Result<Self::RawData>;
 
     fn to_writer<W, T: ?Sized>(writer: W, value: &T) -> Result<()>
     where
@@ -26,8 +34,22 @@ pub trait DataInterchange {
 
 pub struct JsonDataInterchange {}
 impl DataInterchange for JsonDataInterchange {
+    type RawData = json::Value;
+
     fn suffix() -> &'static str {
         "json"
+    }
+
+    fn canonicalize(raw_data: &Self::RawData) -> Result<Vec<u8>> {
+        cjson::canonicalize(raw_data).map_err(|e| Error::Generic(e))
+    }
+
+    fn deserialize<M: Metadata>(raw_data: &Self::RawData) -> Result<M> {
+        Ok(json::from_value(raw_data.clone())?)
+    }
+
+    fn serialize<M: Metadata>(metadata: &M) -> Result<Self::RawData> {
+        Ok(json::to_value(metadata)?)
     }
 
     fn to_writer<W, T: ?Sized>(writer: W, value: &T) -> Result<()>
@@ -44,30 +66,5 @@ impl DataInterchange for JsonDataInterchange {
         T: DeserializeOwned,
     {
         Ok(json::from_reader(rdr)?)
-    }
-}
-
-
-pub trait RawData<D: DataInterchange>: Sized {
-    fn canonicalize(&self) -> Result<Vec<u8>>;
-    fn deserialize<M: Metadata>(&self) -> Result<M>;
-    fn serialize<M: Metadata>(metadata: &M) -> Result<Self>;
-}
-
-pub struct JsonRawData {
-    raw_json: json::Value,
-}
-
-impl RawData<JsonDataInterchange> for JsonRawData {
-    fn canonicalize(&self) -> Result<Vec<u8>> {
-        cjson::canonicalize(&self.raw_json).map_err(|e| Error::Generic(e))
-    }
-
-    fn deserialize<M: Metadata>(&self) -> Result<M> {
-        Ok(json::from_value(self.raw_json.clone())?)
-    }
-
-    fn serialize<M: Metadata>(metadata: &M) -> Result<Self> {
-        Ok(JsonRawData { raw_json: json::to_value(metadata)? })
     }
 }

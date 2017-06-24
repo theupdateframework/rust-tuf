@@ -14,7 +14,7 @@ use untrusted::Input;
 
 use Result;
 use error::Error;
-use metadata::interchange::{RawData, DataInterchange};
+use metadata::interchange::DataInterchange;
 use metadata::shims;
 
 pub fn calculate_key_id(public_key: &PublicKeyValue) -> KeyId {
@@ -56,22 +56,20 @@ impl MetadataVersion {
 pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {}
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SignedMetadata<D, R, M>
+pub struct SignedMetadata<D, M>
 where
     D: DataInterchange,
-    R: RawData<D>,
     M: Metadata,
 {
     signatures: Vec<Signature>,
-    signed: R,
+    signed: D::RawData,
     _interchage: PhantomData<D>,
     _metadata: PhantomData<M>,
 }
 
-impl<D, R, M> SignedMetadata<D, R, M>
+impl<D, M> SignedMetadata<D, M>
 where
     D: DataInterchange,
-    R: RawData<D>,
     M: Metadata,
 {
     pub fn signatures(&self) -> &[Signature] {
@@ -82,7 +80,7 @@ where
         &mut self.signatures
     }
 
-    pub fn signed(&self) -> &R {
+    pub fn signed(&self) -> &D::RawData {
         &self.signed
     }
 }
@@ -190,7 +188,7 @@ impl Signature {
     }
 
     pub fn scheme(&self) -> &SignatureScheme {
-         &self.scheme    
+        &self.scheme
     }
 
     pub fn signature(&self) -> &SignatureValue {

@@ -8,30 +8,29 @@ use std::path::PathBuf;
 
 use Result;
 use error::Error;
-use metadata::{MetadataVersion, RootMetadata};
-use metadata::interchange::{RawData, DataInterchange};
+use metadata::{SignedMetadata, MetadataVersion, RootMetadata};
+use metadata::interchange::DataInterchange;
 
-pub trait Repository<D, R>
+pub trait Repository<D>
 where
     D: DataInterchange,
-    R: RawData<D>,
 {
     fn initialize(&mut self) -> Result<()>;
     fn store_root(&mut self, root: &RootMetadata, version: &MetadataVersion) -> Result<()>;
-    fn retrieve_root(
+    fn fetch_root(
         &mut self,
-        max_size: Option<usize>,
         version: &MetadataVersion,
-    ) -> Result<RootMetadata>;
+        max_size: &Option<usize>,
+    ) -> Result<SignedMetadata<D, RootMetadata>>;
 
-    fn safe_read<Re: Read>(read: &mut Re, max_size: Option<usize>) -> Result<Vec<u8>> {
+    fn safe_read<Re: Read>(read: &mut Re, max_size: &Option<usize>) -> Result<Vec<u8>> {
         match max_size {
-            Some(max_size) => {
+            &Some(max_size) => {
                 let mut buf = vec![0; max_size];
                 read.read_exact(&mut buf)?;
                 Ok(buf)
             }
-            None => {
+            &None => {
                 let mut buf = Vec::new();
                 let _ = read.read_to_end(&mut buf)?;
                 Ok(buf)
@@ -40,34 +39,29 @@ where
     }
 }
 
-pub struct FileSystemRepository<D, R>
+pub struct FileSystemRepository<D>
 where
     D: DataInterchange,
-    R: RawData<D>,
 {
     local_path: PathBuf,
     _interchange: PhantomData<D>,
-    _raw_data: PhantomData<R>,
 }
 
-impl<D, R> FileSystemRepository<D, R>
+impl<D> FileSystemRepository<D>
 where
     D: DataInterchange,
-    R: RawData<D>,
 {
     fn new(local_path: PathBuf) -> Self {
         FileSystemRepository {
             local_path: local_path,
             _interchange: PhantomData,
-            _raw_data: PhantomData,
         }
     }
 }
 
-impl<D, R> Repository<D, R> for FileSystemRepository<D, R>
+impl<D> Repository<D> for FileSystemRepository<D>
 where
     D: DataInterchange,
-    R: RawData<D>,
 {
     fn initialize(&mut self) -> Result<()> {
         for p in &["metadata", "targets"] {
@@ -94,11 +88,11 @@ where
         Ok(())
     }
 
-    fn retrieve_root(
+    fn fetch_root(
         &mut self,
-        max_size: Option<usize>,
         version: &MetadataVersion,
-    ) -> Result<RootMetadata> {
+        max_size: &Option<usize>,
+    ) -> Result<SignedMetadata<D, RootMetadata>> {
         let root_version = format!("{}root{}", version.prefix(), D::suffix());
         let path = self.local_path.join("metadata").join(&root_version);
         let mut file = File::open(&path)?;
@@ -107,22 +101,19 @@ where
     }
 }
 
-pub struct HttpRepository<D, R>
+pub struct HttpRepository<D>
 where
     D: DataInterchange,
-    R: RawData<D>,
 {
     url: Url,
     client: Client,
     user_agent: String,
     _interchange: PhantomData<D>,
-    _raw_data: PhantomData<R>,
 }
 
-impl<D, R> HttpRepository<D, R>
+impl<D> HttpRepository<D>
 where
     D: DataInterchange,
-    R: RawData<D>,
 {
     pub fn new(url: Url, client: Client, user_agent_prefix: Option<String>) -> Self {
         let user_agent = match user_agent_prefix {
@@ -135,7 +126,6 @@ where
             client: client,
             user_agent: user_agent,
             _interchange: PhantomData,
-            _raw_data: PhantomData,
         }
     }
 
@@ -148,10 +138,9 @@ where
     }
 }
 
-impl<D, R> Repository<D, R> for HttpRepository<D, R>
+impl<D> Repository<D> for HttpRepository<D>
 where
     D: DataInterchange,
-    R: RawData<D>,
 {
     fn initialize(&mut self) -> Result<()> {
         Ok(())
@@ -163,11 +152,11 @@ where
         ))
     }
 
-    fn retrieve_root(
+    fn fetch_root(
         &mut self,
-        max_size: Option<usize>,
         version: &MetadataVersion,
-    ) -> Result<RootMetadata> {
+        max_size: &Option<usize>,
+    ) -> Result<SignedMetadata<D, RootMetadata>> {
         let root_version = format!("{}root{}", version.prefix(), D::suffix());
         let mut resp = self.get(&root_version)?;
         let buf = Self::safe_read(&mut resp, max_size)?;
