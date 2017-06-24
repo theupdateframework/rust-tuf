@@ -15,6 +15,7 @@ pub enum Error {
     Decode(String),
     Encode(String),
     Generic(String),
+    IllegalArgument(String),
     Io(String),
     Serde(String),
     Opaque(String),

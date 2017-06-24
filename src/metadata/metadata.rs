@@ -23,6 +23,12 @@ pub fn calculate_key_id(public_key: &PublicKeyValue) -> KeyId {
     KeyId(context.finish().as_ref().to_vec())
 }
 
+pub trait VerificationStatus {}
+pub struct Verified {}
+impl VerificationStatus for Verified {}
+pub struct Unverified {}
+impl VerificationStatus for Unverified {}
+
 #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Role {
     #[serde(rename = "root")]
@@ -56,21 +62,24 @@ impl MetadataVersion {
 pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {}
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SignedMetadata<D, M>
+pub struct SignedMetadata<D, M, V>
 where
     D: DataInterchange,
     M: Metadata,
+    V: VerificationStatus,
 {
     signatures: Vec<Signature>,
     signed: D::RawData,
     _interchage: PhantomData<D>,
     _metadata: PhantomData<M>,
+    _verification: PhantomData<V>,
 }
 
-impl<D, M> SignedMetadata<D, M>
+impl<D, M, V> SignedMetadata<D, M, V>
 where
     D: DataInterchange,
     M: Metadata,
+    V: VerificationStatus,
 {
     pub fn signatures(&self) -> &[Signature] {
         &self.signatures
@@ -80,8 +89,90 @@ where
         &mut self.signatures
     }
 
-    pub fn signed(&self) -> &D::RawData {
+    pub fn unverified_signed(&self) -> &D::RawData {
         &self.signed
+    }
+
+    pub fn verify(
+        self,
+        threshold: u32,
+        authorized_key_ids: &HashSet<KeyId>,
+        available_keys: &HashMap<KeyId, PublicKey>,
+    ) -> Result<SignedMetadata<D, M, Verified>> {
+        if self.signatures.len() < 1 {
+            return Err(Error::VerificationFailure(
+                "The metadata was not signed with any authorized keys."
+                    .into(),
+            ));
+        }
+
+        if threshold < 1 {
+            return Err(Error::VerificationFailure(
+                "Threshold must be strictly greater than zero".into(),
+            ));
+        }
+
+        let canonical_bytes = D::canonicalize(&self.signed)?;
+
+        let mut signatures_needed = threshold;
+        for sig in self.signatures.iter() {
+            if !authorized_key_ids.contains(sig.key_id()) {
+                warn!(
+                    "Key ID {:?} is not authorized to sign root metadata.",
+                    sig.key_id()
+                );
+                continue;
+            }
+
+            match available_keys.get(sig.key_id()) {
+                Some(ref pub_key) => {
+                    match pub_key.verify(sig.scheme(), &canonical_bytes, sig.signature()) {
+                        Ok(()) => {
+                            debug!("Good signature from key ID {:?}", pub_key.key_id());
+                            signatures_needed -= 1;
+                        }
+                        Err(e) => {
+                            warn!("Bad signature from key ID {:?}", pub_key.key_id());
+                        }
+                    }
+                }
+                None => {
+                    warn!(
+                        "Key ID {:?} was not found in the set of available keys.",
+                        sig.key_id()
+                    );
+                }
+            }
+            if signatures_needed == 0 {
+                break;
+            }
+        }
+
+        if signatures_needed == 0 {
+            Ok(SignedMetadata {
+                signatures: self.signatures,
+                signed: self.signed,
+                _interchage: PhantomData,
+                _metadata: PhantomData,
+                _verification: PhantomData,
+            })
+        } else {
+            Err(Error::VerificationFailure(format!(
+                "Signature threshold not met: {}/{}",
+                threshold - signatures_needed,
+                threshold
+            )))
+        }
+    }
+}
+
+impl<D, M> SignedMetadata<D, M, Verified>
+where
+    D: DataInterchange,
+    M: Metadata,
+{
+    pub fn signed(&self) -> &D::RawData {
+        self.unverified_signed()
     }
 }
 
@@ -102,13 +193,24 @@ impl RootMetadata {
         version: u32,
         expires: DateTime<Utc>,
         consistent_snapshot: bool,
-        keys: HashMap<KeyId, PublicKey>,
+        mut keys: Vec<PublicKey>,
         root: RoleDefinition,
         snapshot: RoleDefinition,
         targets: RoleDefinition,
         timestamp: RoleDefinition,
-    ) -> Self {
-        RootMetadata {
+    ) -> Result<Self> {
+        if version < 1 {
+            return Err(Error::IllegalArgument(format!(
+                "Metadata version must be greater than zero. Found: {}",
+                version
+            )));
+        }
+
+        let keys = keys.drain(0..)
+            .map(|k| (k.key_id().clone(), k))
+            .collect::<HashMap<KeyId, PublicKey>>();
+
+        Ok(RootMetadata {
             version: version,
             expires: expires,
             consistent_snapshot: consistent_snapshot,
@@ -117,7 +219,7 @@ impl RootMetadata {
             snapshot: snapshot,
             targets: targets,
             timestamp: timestamp,
-        }
+        })
     }
 
     pub fn version(&self) -> u32 {
@@ -468,7 +570,7 @@ pub struct RoleDefinition {
 impl RoleDefinition {
     pub fn new(threshold: u32, key_ids: HashSet<KeyId>) -> Result<Self> {
         if threshold < 1 {
-            return Err(Error::Encode(format!("Illegal threshold: {}", threshold)));
+            return Err(Error::IllegalArgument(format!("Threshold: {}", threshold)));
         }
 
         Ok(RoleDefinition {

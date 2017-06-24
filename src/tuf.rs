@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use Result;
 use error::Error;
-use metadata::{SignedMetadata, RootMetadata, KeyId};
+use metadata::{SignedMetadata, RootMetadata, KeyId, VerificationStatus};
 use metadata::interchange::DataInterchange;
 
 
@@ -14,74 +14,51 @@ pub struct Tuf<D: DataInterchange> {
 }
 
 impl<D: DataInterchange> Tuf<D> {
-    pub fn from_root_pinned(
-        mut signed_root: SignedMetadata<D, RootMetadata>,
+    pub fn from_root_pinned<V>(
+        mut signed_root: SignedMetadata<D, RootMetadata, V>,
         root_key_ids: &[KeyId],
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        V: VerificationStatus,
+    {
         signed_root.signatures_mut().retain(|s| {
             root_key_ids.contains(s.key_id())
         });
         Self::from_root(signed_root)
     }
 
-    pub fn from_root(signed_root: SignedMetadata<D, RootMetadata>) -> Result<Self> {
-        if signed_root.signatures().len() < 1 {
-            return Err(Error::VerificationFailure(
-                "The root metadata was not signed with any authorized keys."
-                    .into(),
-            ));
-        }
-
-        let canonical_bytes = D::canonicalize(signed_root.signed())?;
-        let root = D::deserialize::<RootMetadata>(signed_root.signed())?;
-
-        let mut signatures_needed = root.root().threshold();
-        if signatures_needed < 1 {
-            return Err(Error::VerificationFailure(
-                "Threshold must be strictly greater than zero".into(),
-            ));
-        }
-
-        for sig in signed_root.signatures() {
-            if !root.root().key_ids().contains(sig.key_id()) {
-                warn!(
-                    "Key ID {:?} is not authorized to sign root metadata.",
-                    sig.key_id()
-                );
-                continue;
-            }
-
-            match root.keys().get(sig.key_id()) {
-                Some(ref pub_key) => {
-                    match pub_key.verify(sig.scheme(), &canonical_bytes, sig.signature()) {
-                        Ok(()) => {
-                            debug!("Good signature from key ID {:?}", pub_key.key_id());
-                            signatures_needed -= 1;
-                        }
-                        Err(e) => {
-                            warn!("Bad signature from key ID {:?}", pub_key.key_id());
-                        }
-                    }
-                }
-                None => {
-                    warn!(
-                        "Key ID {:?} was not found in the set of available keys.",
-                        sig.key_id()
-                    );
-                }
-            }
-            if signatures_needed == 0 {
-                break;
-            }
-        }
-
+    pub fn from_root<V>(signed_root: SignedMetadata<D, RootMetadata, V>) -> Result<Self>
+    where
+        V: VerificationStatus,
+    {
+        let root = D::deserialize::<RootMetadata>(signed_root.unverified_signed())?;
+        let _ = signed_root.verify(
+            root.root().threshold(),
+            root.root().key_ids(),
+            root.keys(),
+        )?;
         Ok(Tuf {
             root: root,
             _interchange: PhantomData,
         })
     }
 
-    pub fn update_root(&mut self, root: SignedMetadata<D, RootMetadata>) -> Result<()> {
-        panic!()
+    pub fn update_root<V>(&mut self, signed_root: SignedMetadata<D, RootMetadata, V>) -> Result<()>
+    where
+        V: VerificationStatus,
+    {
+        let signed_root = signed_root.verify(
+            self.root.root().threshold(),
+            self.root.root().key_ids(),
+            self.root.keys(),
+        )?;
+        let root = D::deserialize::<RootMetadata>(signed_root.unverified_signed())?;
+        let _ = signed_root.verify(
+            root.root().threshold(),
+            root.root().key_ids(),
+            root.keys(),
+        )?;
+        self.root = root;
+        Ok(())
     }
 }

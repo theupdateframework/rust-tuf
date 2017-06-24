@@ -46,14 +46,7 @@ impl RootMetadata {
             )));
         }
 
-        if self.version < 1 {
-            return Err(Error::Decode(format!(
-                "Metadata version must be greater than zero. Found: {}",
-                self.version
-            )));
-        }
-
-        let mut keys = HashMap::new();
+        let mut keys = Vec::new();
         for (key_id, value) in self.keys.drain() {
             let calculated = metadata::calculate_key_id(value.value());
             if key_id != calculated {
@@ -68,23 +61,45 @@ impl RootMetadata {
                     "Found key with good ID {:?}. Adding it to the set of trusted keys.",
                     key_id
                 );
-                keys.insert(key_id, value);
+                keys.push(value);
             }
         }
 
         let root = self.roles.remove(&metadata::Role::Root).ok_or(
             Error::Decode(
-                "Missing root role definition."
+                "Missing root role definition"
                     .into(),
             ),
         )?;
-        if root.threshold() < 1 {
-            return Err(Error::Decode(format!(
-                "The root role had an illegal threshold: {}",
-                root.threshold()
-            )));
-        }
-        panic!()
+        let snapshot = self.roles.remove(&metadata::Role::Snapshot).ok_or(
+            Error::Decode(
+                "Missing snapshot role definition"
+                    .into(),
+            ),
+        )?;
+        let targets = self.roles.remove(&metadata::Role::Targets).ok_or(
+            Error::Decode(
+                "Missing targets role definition"
+                    .into(),
+            ),
+        )?;
+        let timestamp = self.roles.remove(&metadata::Role::Timestamp).ok_or(
+            Error::Decode(
+                "Missing timestamp role definition"
+                    .into(),
+            ),
+        )?;
+
+        metadata::RootMetadata::new(
+            self.version,
+            self.expires,
+            self.consistent_snapshot,
+            keys,
+            root,
+            snapshot,
+            targets,
+            timestamp,
+        )
     }
 }
 

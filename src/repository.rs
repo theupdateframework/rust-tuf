@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use Result;
 use error::Error;
-use metadata::{SignedMetadata, MetadataVersion, RootMetadata};
+use metadata::{SignedMetadata, MetadataVersion, RootMetadata, Unverified};
 use metadata::interchange::DataInterchange;
 
 pub trait Repository<D>
@@ -21,7 +21,7 @@ where
         &mut self,
         version: &MetadataVersion,
         max_size: &Option<usize>,
-    ) -> Result<SignedMetadata<D, RootMetadata>>;
+    ) -> Result<SignedMetadata<D, RootMetadata, Unverified>>;
 
     fn safe_read<Re: Read>(read: &mut Re, max_size: &Option<usize>) -> Result<Vec<u8>> {
         match max_size {
@@ -92,7 +92,7 @@ where
         &mut self,
         version: &MetadataVersion,
         max_size: &Option<usize>,
-    ) -> Result<SignedMetadata<D, RootMetadata>> {
+    ) -> Result<SignedMetadata<D, RootMetadata, Unverified>> {
         let root_version = format!("{}root{}", version.prefix(), D::suffix());
         let path = self.local_path.join("metadata").join(&root_version);
         let mut file = File::open(&path)?;
@@ -156,7 +156,7 @@ where
         &mut self,
         version: &MetadataVersion,
         max_size: &Option<usize>,
-    ) -> Result<SignedMetadata<D, RootMetadata>> {
+    ) -> Result<SignedMetadata<D, RootMetadata, Unverified>> {
         let root_version = format!("{}root{}", version.prefix(), D::suffix());
         let mut resp = self.get(&root_version)?;
         let buf = Self::safe_read(&mut resp, max_size)?;

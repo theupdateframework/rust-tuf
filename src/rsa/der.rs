@@ -288,7 +288,7 @@ impl<'a, W: Write> Der<'a, W> {
 
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use untrusted;
 
