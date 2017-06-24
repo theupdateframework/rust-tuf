@@ -49,7 +49,6 @@ test_script:
   - rustup.exe default %RUST_VERSION%
   - rustc -V
   - cargo -V
-  - git submodule update --init --recursive
   - cargo build --verbose --target %TARGET%
   - SET RUST_BACKTRACE=full
   - cargo test --verbose --target %TARGET%
