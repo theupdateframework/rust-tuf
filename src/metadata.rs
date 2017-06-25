@@ -1,3 +1,5 @@
+//! Structures used to represent TUF metadata
+
 use chrono::DateTime;
 use chrono::offset::Utc;
 use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
@@ -12,33 +14,47 @@ use error::Error;
 use interchange::DataInterchange;
 use shims;
 
+/// Trait used to represent whether a piece of data is verified or not.
 pub trait VerificationStatus {}
+
+/// Type used to represent verified data.
 pub struct Verified {}
 impl VerificationStatus for Verified {}
+
+/// Type used to represent unverified data.
 pub struct Unverified {}
 impl VerificationStatus for Unverified {}
 
+/// The TUF role.
 #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Role {
+    /// The root role.
     #[serde(rename = "root")]
     Root,
+    /// The snapshot role.
     #[serde(rename = "snapshot")]
     Snapshot,
+    /// The targets role.
     #[serde(rename = "targets")]
     Targets,
+    /// The timestamp role.
     #[serde(rename = "timestamp")]
     Timestamp,
 }
 
-
+/// Enum used for addressing versioned TUF metadata.
 #[derive(Debug)]
 pub enum MetadataVersion {
+    /// The metadata is unversioned.
     None,
+    /// The metadata is addressed by a specific version number.
     Number(u32),
+    /// The metadata is addressed by a hash prefix. Used with TUF's consistent snapshot feature.
     Hash(String),
 }
 
 impl MetadataVersion {
+    /// Converts this struct into the string used for addressing metadata.
     pub fn prefix(&self) -> String {
         match self {
             &MetadataVersion::None => String::new(),
@@ -48,8 +64,10 @@ impl MetadataVersion {
     }
 }
 
+/// Top level trait used for role metadata.
 pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {}
 
+/// A piece of raw metadata with attached signatures.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SignedMetadata<D, M, V>
 where
@@ -70,18 +88,24 @@ where
     M: Metadata,
     V: VerificationStatus,
 {
+    /// An immutable reference to the signatures.
     pub fn signatures(&self) -> &[Signature] {
         &self.signatures
     }
 
+    /// A mutable reference to the signatures.
     pub fn signatures_mut(&mut self) -> &mut Vec<Signature> {
         &mut self.signatures
     }
 
+    /// An immutable reference to the unverified raw data.
+    /// 
+    /// *WARNING*: This data is untrusted.
     pub fn unverified_signed(&self) -> &D::RawData {
         &self.signed
     }
 
+    /// Verify this metadata and convert its type to `Verified`.
     pub fn verify(
         self,
         threshold: u32,
@@ -160,11 +184,13 @@ where
     D: DataInterchange,
     M: Metadata,
 {
+    /// An immutable reference to the verified raw data.
     pub fn signed(&self) -> &D::RawData {
         self.unverified_signed()
     }
 }
 
+/// Metdata for the root role.
 #[derive(Debug, PartialEq)]
 pub struct RootMetadata {
     version: u32,
@@ -178,6 +204,7 @@ pub struct RootMetadata {
 }
 
 impl RootMetadata {
+    /// Create new `RootMetadata`.
     pub fn new(
         version: u32,
         expires: DateTime<Utc>,
@@ -211,34 +238,43 @@ impl RootMetadata {
         })
     }
 
+    /// The version number.
     pub fn version(&self) -> u32 {
         self.version
     }
 
+    /// An immutable reference to the metadata's expiration `DateTime`.
     pub fn expires(&self) -> &DateTime<Utc> {
         &self.expires
     }
 
+    /// Whether or not this repository is currently implementing that TUF consistent snapshot
+    /// feature.
     pub fn consistent_snapshot(&self) -> bool {
         self.consistent_snapshot
     }
 
+    /// An immutable reference to the map of trusted keys.
     pub fn keys(&self) -> &HashMap<KeyId, PublicKey> {
         &self.keys
     }
 
+    /// An immutable reference to the root role's definition.
     pub fn root(&self) -> &RoleDefinition {
         &self.root
     }
 
+    /// An immutable reference to the snapshot role's definition.
     pub fn snapshot(&self) -> &RoleDefinition {
         &self.snapshot
     }
 
+    /// An immutable reference to the targets role's definition.
     pub fn targets(&self) -> &RoleDefinition {
         &self.targets
     }
 
+    /// An immutable reference to the timestamp role's definition.
     pub fn timestamp(&self) -> &RoleDefinition {
         &self.timestamp
     }
@@ -266,6 +302,7 @@ impl<'de> Deserialize<'de> for RootMetadata {
     }
 }
 
+/// The definition of what allows a role to be trusted.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RoleDefinition {
     threshold: u32,
@@ -273,6 +310,7 @@ pub struct RoleDefinition {
 }
 
 impl RoleDefinition {
+    /// Create a new `RoleDefinition` with a given threshold and set of authorized `KeyID`s.
     pub fn new(threshold: u32, key_ids: HashSet<KeyId>) -> Result<Self> {
         if threshold < 1 {
             return Err(Error::IllegalArgument(format!("Threshold: {}", threshold)));
@@ -284,10 +322,12 @@ impl RoleDefinition {
         })
     }
 
+    /// The threshold number of signatures required for the role to be trusted.
     pub fn threshold(&self) -> u32 {
         self.threshold
     }
 
+    /// An immutable reference to the set of `KeyID`s that are authorized to sign the role.
     pub fn key_ids(&self) -> &HashSet<KeyId> {
         &self.key_ids
     }

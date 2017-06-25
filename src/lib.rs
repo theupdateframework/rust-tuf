@@ -1,4 +1,13 @@
-// TODO #![deny(missing_docs)]
+//! This crate provides an API for talking to repositories that implement The Update Framework
+//! (TUF).
+//!
+//! If you are unfamiliar with TUF, you should read up on via the [official
+//! website](http://theupdateframework.github.io/). This crate aims to implement the entirety of
+//! the specification as defined at the [head of the `develop`
+//! branch](https://github.com/theupdateframework/tuf/blob/develop/docs/tuf-spec.txt) in the
+//! official TUF git repository.
+
+#![deny(missing_docs)]
 
 extern crate chrono;
 extern crate data_encoding;

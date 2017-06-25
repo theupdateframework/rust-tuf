@@ -1,4 +1,5 @@
 //! Error types and converters.
+
 use data_encoding::DecodeError;
 use hyper;
 use json;
@@ -11,18 +12,29 @@ use rsa::der;
 /// Error type for all TUF related errors.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
+    /// The metadata had a bad signature.
     BadSignature,
+    /// There was a problem decoding the metadata.
     Decode(String),
+    /// There was a problem encoding the metadata.
     Encode(String),
+    /// Generic catcher for all errors.
     Generic(String),
+    /// An illegal argument was passed into a function.
     IllegalArgument(String),
+    /// There was an IO error.
     Io(String),
+    /// The metadata or target was not found.
     NotFound,
-    Opaque(String),
+    /// There was an internal `serde` error.
     Serde(String),
+    /// The key format is not supported.
     UnsupportedKeyFormat(String),
+    /// The key type is not supported.
     UnsupportedKeyType(String),
+    /// The signature scheme is not supported.
     UnsupportedSignatureScheme(String),
+    /// The metadata or target failed to verify.
     VerificationFailure(String),
 }
 

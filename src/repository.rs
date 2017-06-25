@@ -1,3 +1,5 @@
+//! Interfaces for interacting with different types of TUF repositories.
+
 use hyper::{Url, Client};
 use hyper::client::response::Response;
 use hyper::header::{Headers, UserAgent};
@@ -12,23 +14,31 @@ use error::Error;
 use metadata::{SignedMetadata, MetadataVersion, RootMetadata, Unverified, Verified};
 use interchange::DataInterchange;
 
+/// Top-level trait that represents a TUF repository and contains all the ways it can be interacted
+/// with.
 pub trait Repository<D>
 where
     D: DataInterchange,
 {
+    /// Initialize the repository.
     fn initialize(&mut self) -> Result<()>;
+
+    /// Store signed root metadata.
     fn store_root(
         &mut self,
         root: &SignedMetadata<D, RootMetadata, Verified>,
         version: &MetadataVersion,
     ) -> Result<()>;
+
+    /// Fetch signed root metadata.
     fn fetch_root(
         &mut self,
         version: &MetadataVersion,
         max_size: &Option<usize>,
     ) -> Result<SignedMetadata<D, RootMetadata, Unverified>>;
 
-    fn safe_read<Re: Read>(read: &mut Re, max_size: &Option<usize>) -> Result<Vec<u8>> {
+    /// Read the from given reader, optionally capped at `max_size` bytes.
+    fn safe_read<R: Read>(read: &mut R, max_size: &Option<usize>) -> Result<Vec<u8>> {
         match max_size {
             &Some(max_size) => {
                 let mut buf = vec![0; max_size];
@@ -44,6 +54,7 @@ where
     }
 }
 
+/// A repository contained on the local file system.
 pub struct FileSystemRepository<D>
 where
     D: DataInterchange,
@@ -56,6 +67,7 @@ impl<D> FileSystemRepository<D>
 where
     D: DataInterchange,
 {
+    /// Create a new repository on the local file system.
     pub fn new(local_path: PathBuf) -> Self {
         FileSystemRepository {
             local_path: local_path,
@@ -83,7 +95,7 @@ where
         root: &SignedMetadata<D, RootMetadata, Verified>,
         version: &MetadataVersion,
     ) -> Result<()> {
-        let root_version = format!("{}root{}", version.prefix(), D::suffix());
+        let root_version = format!("{}root{}", version.prefix(), D::extension());
         let path = self.local_path.join("metadata").join(&root_version);
 
         if path.exists() {
@@ -102,7 +114,7 @@ where
         version: &MetadataVersion,
         max_size: &Option<usize>,
     ) -> Result<SignedMetadata<D, RootMetadata, Unverified>> {
-        let root_version = format!("{}root{}", version.prefix(), D::suffix());
+        let root_version = format!("{}root{}", version.prefix(), D::extension());
         let path = self.local_path.join("metadata").join(&root_version);
         let mut file = File::open(&path)?;
         let buf = Self::safe_read(&mut file, max_size)?;
@@ -110,6 +122,8 @@ where
     }
 }
 
+
+/// A repository accessible over HTTP.
 pub struct HttpRepository<D>
 where
     D: DataInterchange,
@@ -124,6 +138,9 @@ impl<D> HttpRepository<D>
 where
     D: DataInterchange,
 {
+    /// Create a new repository with the given `Url` and `Client`. Callers *should* include a
+    /// custom User-Agent prefix to maintainers of TUF repositories keep track of which client
+    /// versions exist in the field.
     pub fn new(url: Url, client: Client, user_agent_prefix: Option<String>) -> Self {
         let user_agent = match user_agent_prefix {
             Some(ua) => format!("{} (rust-tuf/{})", ua, env!("CARGO_PKG_VERSION")),
@@ -138,7 +155,7 @@ where
         }
     }
 
-    pub fn get(&self, path: &str) -> Result<Response> {
+    fn get(&self, path: &str) -> Result<Response> {
         let mut headers = Headers::new();
         headers.set(UserAgent(self.user_agent.clone()));
 
@@ -170,13 +187,15 @@ where
         version: &MetadataVersion,
         max_size: &Option<usize>,
     ) -> Result<SignedMetadata<D, RootMetadata, Unverified>> {
-        let root_version = format!("{}root{}", version.prefix(), D::suffix());
+        let root_version = format!("{}root{}", version.prefix(), D::extension());
         let mut resp = self.get(&root_version)?;
         let buf = Self::safe_read(&mut resp, max_size)?;
         Ok(D::from_reader(&*buf)?)
     }
 }
 
+
+/// An ephemeral repository contained solely in memory.
 pub struct EphemeralRepository<D>
 where
     D: DataInterchange,
@@ -189,6 +208,7 @@ impl<D> EphemeralRepository<D>
 where
     D: DataInterchange,
 {
+    /// Create a new ephemercal repository.
     pub fn new() -> Self {
         EphemeralRepository {
             metadata: HashMap::new(),
@@ -210,7 +230,7 @@ where
         root: &SignedMetadata<D, RootMetadata, Verified>,
         version: &MetadataVersion,
     ) -> Result<()> {
-        let root_version = format!("{}root{}", version.prefix(), D::suffix());
+        let root_version = format!("{}root{}", version.prefix(), D::extension());
         let mut buf = Vec::new();
         D::to_writer(&mut buf, root)?;
         let _ = self.metadata.insert(root_version, buf);
@@ -220,9 +240,9 @@ where
     fn fetch_root(
         &mut self,
         version: &MetadataVersion,
-        max_size: &Option<usize>,
+        _: &Option<usize>,
     ) -> Result<SignedMetadata<D, RootMetadata, Unverified>> {
-        let root_version = format!("{}root{}", version.prefix(), D::suffix());
+        let root_version = format!("{}root{}", version.prefix(), D::extension());
         match self.metadata.get(&root_version) {
             Some(bytes) => D::from_reader(&**bytes),
             None => Err(Error::NotFound),

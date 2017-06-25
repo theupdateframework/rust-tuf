@@ -1,3 +1,5 @@
+//! Contains structures and functions to aid in various TUF data interchange formats.
+
 mod cjson;
 
 use json;
@@ -7,36 +9,47 @@ use std::io::{Read, Write};
 
 use Result;
 use error::Error;
-use metadata::Metadata;
 
 /// The format used for data interchange, serialization, and deserialization.
 pub trait DataInterchange {
+    /// The type of data that is contained in the `signed` portion of metadata.
     type RawData: Serialize + DeserializeOwned;
 
-    fn suffix() -> &'static str;
+    /// The data interchange's extension.
+    fn extension() -> &'static str;
 
+    /// A function that canonicalizes data to allow for deterministic signatures.
     fn canonicalize(raw_data: &Self::RawData) -> Result<Vec<u8>>;
 
-    fn deserialize<M: Metadata>(raw_data: &Self::RawData) -> Result<M>;
+    /// Deserialize from `RawData`.
+    fn deserialize<T>(raw_data: &Self::RawData) -> Result<T>
+    where
+        T: DeserializeOwned;
 
-    fn serialize<M: Metadata>(metadata: &M) -> Result<Self::RawData>;
+    /// Serialize into `RawData`.
+    fn serialize<T>(data: &T) -> Result<Self::RawData>
+    where
+        T: Serialize;
 
+    /// Write a struct to a stream.
     fn to_writer<W, T: ?Sized>(writer: W, value: &T) -> Result<()>
     where
         W: Write,
         T: Serialize;
 
+    /// Read a struct from a stream.
     fn from_reader<R, T>(rdr: R) -> Result<T>
     where
         R: Read,
         T: DeserializeOwned;
 }
 
+/// JSON data interchange.
 pub struct JsonDataInterchange {}
 impl DataInterchange for JsonDataInterchange {
     type RawData = json::Value;
 
-    fn suffix() -> &'static str {
+    fn extension() -> &'static str {
         "json"
     }
 
@@ -44,12 +57,18 @@ impl DataInterchange for JsonDataInterchange {
         cjson::canonicalize(raw_data).map_err(|e| Error::Generic(e))
     }
 
-    fn deserialize<M: Metadata>(raw_data: &Self::RawData) -> Result<M> {
+    fn deserialize<T>(raw_data: &Self::RawData) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
         Ok(json::from_value(raw_data.clone())?)
     }
 
-    fn serialize<M: Metadata>(metadata: &M) -> Result<Self::RawData> {
-        Ok(json::to_value(metadata)?)
+    fn serialize<T>(data: &T) -> Result<Self::RawData>
+    where
+        T: Serialize,
+    {
+        Ok(json::to_value(data)?)
     }
 
     fn to_writer<W, T: ?Sized>(writer: W, value: &T) -> Result<()>
