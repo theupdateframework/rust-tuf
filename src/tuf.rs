@@ -52,6 +52,11 @@ impl<D: DataInterchange> Tuf<D> {
         })
     }
 
+    /// An immutable reference to the root metadata.
+    pub fn root(&self) -> &RootMetadata {
+        &self.root
+    }
+
     /// Verify and update the root metadata.
     pub fn update_root<V>(&mut self, signed_root: SignedMetadata<D, RootMetadata, V>) -> Result<()>
     where
@@ -67,16 +72,19 @@ impl<D: DataInterchange> Tuf<D> {
 
         match root.version() {
             x if x == self.root.version() => {
-                info!("Attempted to update root to new metadata with the same version. Refusing to update.")
-            },
+                info!(
+                    "Attempted to update root to new metadata with the same version. Refusing to update."
+                )
+            }
             x if x < self.root.version() => {
-                return Err(Error::VerificationFailure(format!("Attempted to roll back root at version {} to {}.", self.root.version(), x)))
+                return Err(Error::VerificationFailure(format!(
+                    "Attempted to roll back root at version {} to {}.",
+                    self.root.version(),
+                    x
+                )))
             }
             _ => (),
         }
-
-        // TODO this is allowed to be expired, which is ok for updating the root chain, but not ok
-        // for actually verifying anything else later
 
         let _ = signed_root.verify(
             root.root().threshold(),

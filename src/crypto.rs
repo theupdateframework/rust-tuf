@@ -226,7 +226,7 @@ impl PublicKey {
 
     /// Create a `PublicKey` from an RSA `PublicKeyValue`, either SPKI or PKCS#1.
     pub fn from_rsa(value: PublicKeyValue, format: KeyFormat) -> Result<Self> {
-        // TODO check n > 2048 bits
+        // TODO check n > 2048 bits (but this is ok because `ring` doesn't support less)
 
         let key_id = calculate_key_id(&value);
 

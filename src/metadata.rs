@@ -99,7 +99,7 @@ where
     }
 
     /// An immutable reference to the unverified raw data.
-    /// 
+    ///
     /// *WARNING*: This data is untrusted.
     pub fn unverified_signed(&self) -> &D::RawData {
         &self.signed

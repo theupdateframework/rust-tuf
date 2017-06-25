@@ -7,6 +7,7 @@ use pem;
 use std::io;
 use std::path::Path;
 
+use metadata::Role;
 use rsa::der;
 
 /// Error type for all TUF related errors.
@@ -18,6 +19,8 @@ pub enum Error {
     Decode(String),
     /// There was a problem encoding the metadata.
     Encode(String),
+    /// Metadata was expired.
+    ExpiredMetadata(Role),
     /// Generic catcher for all errors.
     Generic(String),
     /// An illegal argument was passed into a function.

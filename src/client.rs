@@ -1,10 +1,12 @@
 //! Clients for high level interactions with TUF repositories.
 
-use repository::Repository;
+use chrono::offset::Utc;
 
 use Result;
+use error::Error;
 use interchange::DataInterchange;
-use metadata::MetadataVersion;
+use metadata::{MetadataVersion, RootMetadata, Role};
+use repository::Repository;
 use tuf::Tuf;
 
 /// A client that interacts with TUF repositories.
@@ -37,28 +39,46 @@ where
         }
     }
 
-    /// Update TUF metadata from local and remote sources.
+    /// Update TUF metadata from local and remote repositories.
     pub fn update(&mut self) -> Result<()> {
         self.update_root()
     }
 
     fn update_root(&mut self) -> Result<()> {
-        // TODO this doesn't build the chain back up from scratch
-        let root = self.local.fetch_root(
-            &MetadataVersion::None,
-            &self.config.max_root_size,
-        )?;
-        self.tuf.update_root(root)?;
+        Self::update_root_chain(&mut self.tuf, &self.config.max_root_size, &mut self.local)?;
+        Self::update_root_chain(&mut self.tuf, &self.config.max_root_size, &mut self.remote)?;
 
-        // TODO this doesn't build the chain back up from scratch
-        let root = self.remote.fetch_root(
-            &MetadataVersion::None,
-            &self.config.max_root_size,
-        )?;
-        
-        // TODO store the newly fetched roots in the local repo
+        if self.tuf.root().expires() <= &Utc::now() {
+            Err(Error::ExpiredMetadata(Role::Root))
+        } else {
+            Ok(())
+        }
+    }
 
-        self.tuf.update_root(root)
+    fn update_root_chain<T>(tuf: &mut Tuf<D>, max_root_size: &Option<usize>, repo: &mut T) -> Result<()>
+    where
+        T: Repository<D>
+    {
+        let latest_root = repo.fetch_root(&MetadataVersion::None, max_root_size)?;
+        let latest_version = D::deserialize::<RootMetadata>(latest_root.unverified_signed())?
+            .version();
+
+        if latest_version < tuf.root().version() {
+            return Err(Error::VerificationFailure(format!(
+                "Latest root version is lower than current root version: {} < {}",
+                latest_version,
+                tuf.root().version()
+            )))
+        } else if latest_version == tuf.root().version() {
+            return Ok(())
+        }
+
+        for i in (tuf.root().version() + 1)..latest_version {
+            let signed = repo.fetch_root(&MetadataVersion::Number(i), max_root_size)?;
+            tuf.update_root(signed)?;
+        }
+
+        tuf.update_root(latest_root)
     }
 }
 
