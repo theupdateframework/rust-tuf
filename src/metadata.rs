@@ -376,6 +376,11 @@ impl<'de> Deserialize<'de> for RoleDefinition {
 pub struct MetadataPath(String);
 
 impl MetadataPath {
+    /// Create a metadata path from the given role.
+    pub fn from_role(role: &Role) -> Self {
+        MetadataPath(role.to_string())
+    }
+
     // TODO convert to/from paths/urls/etc
 }
 
@@ -492,6 +497,77 @@ impl MetadataDescription {
     /// An immutable reference to the optional calculated hashes of the described metadata.
     pub fn hashes(&self) -> Option<&HashMap<HashAlgorithm, HashValue>> {
         self.hashes.as_ref()
+    }
+}
+
+/// Metdata for the snapshot role.
+#[derive(Debug, PartialEq)]
+pub struct SnapshotMetadata {
+    version: u32,
+    expires: DateTime<Utc>,
+    meta: HashMap<MetadataPath, MetadataDescription>,
+}
+
+impl SnapshotMetadata {
+    /// Create new `SnapshotMetadata`.
+    pub fn new(
+        version: u32,
+        expires: DateTime<Utc>,
+        meta: HashMap<MetadataPath, MetadataDescription>,
+    ) -> Result<Self> {
+        if version < 1 {
+            return Err(Error::IllegalArgument(format!(
+                "Metadata version must be greater than zero. Found: {}",
+                version
+            )));
+        }
+
+        Ok(SnapshotMetadata {
+            version: version,
+            expires: expires,
+            meta: meta,
+        })
+    }
+
+    /// The version number.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// An immutable reference to the metadata's expiration `DateTime`.
+    pub fn expires(&self) -> &DateTime<Utc> {
+        &self.expires
+    }
+
+    /// An immutable reference to the metadata paths and descriptions.
+    pub fn meta(&self) -> &HashMap<MetadataPath, MetadataDescription> {
+        &self.meta
+    }
+}
+
+impl Metadata for SnapshotMetadata {
+    fn role() -> Role {
+        Role::Snapshot
+    }
+}
+
+impl Serialize for SnapshotMetadata {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        shims::SnapshotMetadata::from(self)
+            .map_err(|e| SerializeError::custom(format!("{:?}", e)))?
+            .serialize(ser)
+    }
+}
+
+impl<'de> Deserialize<'de> for SnapshotMetadata {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::SnapshotMetadata = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
     }
 }
 

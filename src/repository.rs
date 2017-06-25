@@ -3,13 +3,15 @@
 use hyper::{Url, Client};
 use hyper::client::response::Response;
 use hyper::header::{Headers, UserAgent};
+use ring::digest::{self, SHA256, SHA512};
 use std::collections::HashMap;
 use std::fs::{self, File, DirBuilder};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::marker::PhantomData;
 use std::path::PathBuf;
 
 use Result;
+use crypto::{HashAlgorithm, HashValue};
 use error::Error;
 use metadata::{SignedMetadata, MetadataVersion, Unverified, Verified, Role, Metadata};
 use interchange::DataInterchange;
@@ -39,6 +41,7 @@ where
         role: &Role,
         version: &MetadataVersion,
         max_size: &Option<usize>,
+        hash_data: Option<(&HashAlgorithm, &HashValue)>,
     ) -> Result<SignedMetadata<D, M, Unverified>>
     where
         M: Metadata;
@@ -49,19 +52,75 @@ where
         format!("{}{}{}", version.prefix(), role, D::extension())
     }
 
-    /// Read the from given reader, optionally capped at `max_size` bytes.
-    fn safe_read<R: Read>(read: &mut R, max_size: &Option<usize>) -> Result<Vec<u8>> {
-        match max_size {
-            &Some(max_size) => {
-                let mut buf = vec![0; max_size];
-                read.read_exact(&mut buf)?;
-                Ok(buf)
+    /// Read the from given reader, optionally capped at `max_size` bytes, optionally requiring
+    /// hashes to match.
+    fn safe_read<R, W>(
+        read: &mut R,
+        write: &mut W,
+        max_size: Option<i64>,
+        hash_data: Option<(&HashAlgorithm, &HashValue)>,
+    ) -> Result<()>
+    where
+        R: Read,
+        W: Write,
+    {
+        let mut context = match hash_data {
+            Some((&HashAlgorithm::Sha256, _)) => Some(digest::Context::new(&SHA256)),
+            Some((&HashAlgorithm::Sha512, _)) => Some(digest::Context::new(&SHA512)),
+            None => None,
+        };
+
+        let mut buf = [0; 1024];
+        let mut bytes_left = max_size.unwrap_or(::std::i64::MAX);
+
+        loop {
+            match read.read(&mut buf) {
+                Ok(read_bytes) => {
+                    if read_bytes == 0 {
+                        break;
+                    }
+
+                    bytes_left -= read_bytes as i64;
+                    if bytes_left < 0 {
+                        return Err(Error::VerificationFailure(
+                            "Read exceeded the maximum allowed bytes.".into(),
+                        ));
+                    }
+
+                    write.write_all(&buf[0..read_bytes])?;
+
+                    match context {
+                        Some(ref mut c) => c.update(&buf[0..read_bytes]),
+                        None => (),
+                    };
+                }
+                e @ Err(_) => e.map(|_| ())?,
             }
-            &None => {
-                let mut buf = Vec::new();
-                let _ = read.read_to_end(&mut buf)?;
-                Ok(buf)
+        }
+
+        let generated_hash = context.map(|c| c.finish());
+
+        match (generated_hash, hash_data) {
+            (Some(generated_hash), Some((_, expected_hash)))
+                if generated_hash.as_ref() != expected_hash.value() => {
+                Err(Error::VerificationFailure(
+                    "Generated hash did not match expected hash.".into(),
+                ))
             }
+            (Some(_), None) => {
+                let msg = "Hash calculated when no expected hash supplied. \
+                           This is a programming error. Please report this as a bug.";
+                error!("{}", msg);
+                Err(Error::Generic(msg.into()))
+            }
+            (None, Some(_)) => {
+                let msg = "No hash calculated when expected hash supplied. \
+                           This is a programming error. Please report this as a bug.";
+                error!("{}", msg);
+                Err(Error::Generic(msg.into()))
+            }
+            (Some(_), Some(_)) |
+            (None, None) => Ok(()),
         }
     }
 }
@@ -138,6 +197,7 @@ where
         role: &Role,
         version: &MetadataVersion,
         max_size: &Option<usize>,
+        hash_data: Option<(&HashAlgorithm, &HashValue)>,
     ) -> Result<SignedMetadata<D, M, Unverified>>
     where
         M: Metadata,
@@ -145,8 +205,9 @@ where
         let version_str = Self::version_string(role, version);
         let path = self.local_path.join("metadata").join(&version_str);
         let mut file = File::open(&path)?;
-        let buf = Self::safe_read(&mut file, max_size)?;
-        Ok(D::from_reader(&*buf)?)
+        let mut out = Vec::new();
+        Self::safe_read(&mut file, &mut out, max_size.map(|x| x as i64), hash_data)?;
+        Ok(D::from_reader(&*out)?)
     }
 }
 
@@ -226,14 +287,16 @@ where
         role: &Role,
         version: &MetadataVersion,
         max_size: &Option<usize>,
+        hash_data: Option<(&HashAlgorithm, &HashValue)>,
     ) -> Result<SignedMetadata<D, M, Unverified>>
     where
         M: Metadata,
     {
         let version_str = Self::version_string(role, version);
         let mut resp = self.get(&version_str)?;
-        let buf = Self::safe_read(&mut resp, max_size)?;
-        Ok(D::from_reader(&*buf)?)
+        let mut out = Vec::new();
+        Self::safe_read(&mut resp, &mut out, max_size.map(|x| x as i64), hash_data)?;
+        Ok(D::from_reader(&*out)?)
     }
 }
 
@@ -297,6 +360,7 @@ where
         role: &Role,
         version: &MetadataVersion,
         _: &Option<usize>,
+        _: Option<(&HashAlgorithm, &HashValue)>,
     ) -> Result<SignedMetadata<D, M, Unverified>>
     where
         M: Metadata,

@@ -66,29 +66,21 @@ impl RootMetadata {
             }
         }
 
-        let root = self.roles.remove(&metadata::Role::Root).ok_or(
-            Error::Decode(
-                "Missing root role definition"
-                    .into(),
-            ),
+        let root = self.roles.remove(&metadata::Role::Root).ok_or_else(|| {
+            Error::Decode("Missing root role definition".into())
+        })?;
+        let snapshot = self.roles.remove(&metadata::Role::Snapshot).ok_or_else(
+            || {
+                Error::Decode("Missing snapshot role definition".into())
+            },
         )?;
-        let snapshot = self.roles.remove(&metadata::Role::Snapshot).ok_or(
-            Error::Decode(
-                "Missing snapshot role definition"
-                    .into(),
-            ),
-        )?;
-        let targets = self.roles.remove(&metadata::Role::Targets).ok_or(
-            Error::Decode(
-                "Missing targets role definition"
-                    .into(),
-            ),
-        )?;
-        let timestamp = self.roles.remove(&metadata::Role::Timestamp).ok_or(
-            Error::Decode(
-                "Missing timestamp role definition"
-                    .into(),
-            ),
+        let targets = self.roles.remove(&metadata::Role::Targets).ok_or_else(|| {
+            Error::Decode("Missing targets role definition".into())
+        })?;
+        let timestamp = self.roles.remove(&metadata::Role::Timestamp).ok_or_else(
+            || {
+                Error::Decode("Missing timestamp role definition".into())
+            },
         )?;
 
         metadata::RootMetadata::new(
@@ -243,5 +235,36 @@ impl TimestampMetadata {
         }
 
         metadata::TimestampMetadata::new(self.version, self.expires, self.meta)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SnapshotMetadata {
+    #[serde(rename = "type")]
+    typ: metadata::Role,
+    version: u32,
+    expires: DateTime<Utc>,
+    meta: HashMap<metadata::MetadataPath, metadata::MetadataDescription>,
+}
+
+impl SnapshotMetadata {
+    pub fn from(metadata: &metadata::SnapshotMetadata) -> Result<Self> {
+        Ok(SnapshotMetadata {
+            typ: metadata::Role::Snapshot,
+            version: metadata.version(),
+            expires: metadata.expires().clone(),
+            meta: metadata.meta().clone(),
+        })
+    }
+
+    pub fn try_into(self) -> Result<metadata::SnapshotMetadata> {
+        if self.typ != metadata::Role::Snapshot {
+            return Err(Error::Decode(format!(
+                "Attempted to decode snapshot metdata labeled as {:?}",
+                self.typ
+            )));
+        }
+
+        metadata::SnapshotMetadata::new(self.version, self.expires, self.meta)
     }
 }

@@ -3,9 +3,10 @@
 use chrono::offset::Utc;
 
 use Result;
+use crypto;
 use error::Error;
 use interchange::DataInterchange;
-use metadata::{MetadataVersion, RootMetadata, Role};
+use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath};
 use repository::Repository;
 use tuf::Tuf;
 
@@ -45,8 +46,8 @@ where
     // TODO this might need to be split into `update_local` and `update_remote` to be useful to
     // implementers.
     pub fn update(&mut self) -> Result<bool> {
-        if self.update_root()? {
-            self.update_timestamp()
+        if self.update_root()? && self.update_timestamp()? {
+            self.update_snapshot()
         } else {
             Ok(false)
         }
@@ -78,6 +79,7 @@ where
             &Role::Root,
             &MetadataVersion::None,
             max_root_size,
+            None,
         )?;
         let latest_version = D::deserialize::<RootMetadata>(latest_root.unverified_signed())?
             .version();
@@ -100,6 +102,7 @@ where
                 &Role::Root,
                 &MetadataVersion::Number(i),
                 max_root_size,
+                None,
             )?;
             if !tuf.update_root(signed)? {
                 error!("{}", err_msg);
@@ -120,6 +123,7 @@ where
             &Role::Timestamp,
             &MetadataVersion::None,
             &self.config.max_timestamp_size,
+            None,
         )?;
         self.tuf.update_timestamp(ts)?;
 
@@ -127,8 +131,48 @@ where
             &Role::Timestamp,
             &MetadataVersion::None,
             &self.config.max_timestamp_size,
+            None,
         )?;
         self.tuf.update_timestamp(ts)
+    }
+
+    /// Returns `true` if an update occurred and `false` otherwise.
+    fn update_snapshot(&mut self) -> Result<bool> {
+        let snapshot_description = match self.tuf.timestamp() {
+            Some(ts) => {
+                match ts.meta().get(&MetadataPath::from_role(&Role::Timestamp)) {
+                    Some(d) => Ok(d),
+                    None => Err(Error::VerificationFailure(
+                        "Timestamp metadata did not contain a description of the \
+                                current snapshot metadata"
+                            .into(),
+                    )),
+                }
+            }
+            None => Err(Error::MissingMetadata(Role::Timestamp)),
+        }?
+            .clone();
+
+        let hashes = match snapshot_description.hashes() {
+            Some(hashes) => Some(crypto::hash_preference(hashes)?),
+            None => None,
+        };
+
+        let snap = self.local.fetch_metadata(
+            &Role::Snapshot,
+            &MetadataVersion::None,
+            &snapshot_description.length(),
+            hashes,
+        )?;
+        self.tuf.update_snapshot(snap)?;
+
+        let snap = self.remote.fetch_metadata(
+            &Role::Snapshot,
+            &MetadataVersion::None,
+            &snapshot_description.length(),
+            hashes,
+        )?;
+        self.tuf.update_snapshot(snap)
     }
 }
 

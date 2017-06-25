@@ -6,6 +6,7 @@ use ring::digest::{self, SHA256};
 use ring::signature::{ED25519, RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA512};
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use serde::ser::{Serialize, Serializer, SerializeTupleStruct, Error as SerializeError};
+use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::str::FromStr;
 use untrusted::Input;
@@ -14,6 +15,22 @@ use Result;
 use error::Error;
 use rsa;
 use shims;
+
+static HASH_ALG_PREFS: &'static [HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
+
+/// Given a map of hash algorithms and their values, get the prefered algorithm and the hash
+/// calculated by it. Returns an `Err` if there is no match.
+pub fn hash_preference<'a>(
+    hashes: &'a HashMap<HashAlgorithm, HashValue>,
+) -> Result<(&'static HashAlgorithm, &'a HashValue)> {
+    for alg in HASH_ALG_PREFS {
+        match hashes.get(alg) {
+            Some(v) => return Ok((alg, v)),
+            None => continue,
+        }
+    }
+    Err(Error::NoSupportedHashAlgorithm)
+}
 
 /// Calculate the given key's ID.
 ///
@@ -232,19 +249,17 @@ impl PublicKey {
 
         let pkcs1_value = match format {
             KeyFormat::Pkcs1 => {
-                let bytes = rsa::from_pkcs1(value.value()).ok_or(
+                let bytes = rsa::from_pkcs1(value.value()).ok_or_else(|| {
                     Error::IllegalArgument(
-                        "Key claimed to be PKCS1 but could not be parsed."
-                            .into(),
-                    ),
-                )?;
+                        "Key claimed to be PKCS1 but could not be parsed.".into(),
+                    )
+                })?;
                 PublicKeyValue(bytes)
             }
             KeyFormat::Spki => {
-                let bytes = rsa::from_spki(value.value()).ok_or(Error::IllegalArgument(
-                    "Key claimed to be SPKI but could not be parsed."
-                        .into(),
-                ))?;
+                let bytes = rsa::from_spki(value.value()).ok_or_else(|| {
+                    Error::IllegalArgument("Key claimed to be SPKI but could not be parsed.".into())
+                })?;
                 PublicKeyValue(bytes)
             }
             x => {
@@ -385,3 +400,10 @@ pub enum HashAlgorithm {
 /// Wrapper for the value of a hash digest.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HashValue(Vec<u8>);
+
+impl HashValue {
+    /// An immutable reference to the bytes of the hash value.
+    pub fn value(&self) -> &[u8] {
+        &self.0
+    }
+}

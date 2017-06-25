@@ -7,12 +7,14 @@ use Result;
 use crypto::KeyId;
 use error::Error;
 use interchange::DataInterchange;
-use metadata::{SignedMetadata, RootMetadata, VerificationStatus, TimestampMetadata, Role};
+use metadata::{SignedMetadata, RootMetadata, VerificationStatus, TimestampMetadata, Role,
+               SnapshotMetadata, MetadataPath};
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
 pub struct Tuf<D: DataInterchange> {
     root: RootMetadata,
+    snapshot: Option<SnapshotMetadata>,
     timestamp: Option<TimestampMetadata>,
     _interchange: PhantomData<D>,
 }
@@ -49,6 +51,7 @@ impl<D: DataInterchange> Tuf<D> {
         )?;
         Ok(Tuf {
             root: root,
+            snapshot: None,
             timestamp: None,
             _interchange: PhantomData,
         })
@@ -104,6 +107,8 @@ impl<D: DataInterchange> Tuf<D> {
             root.keys(),
         )?;
 
+        self.purge_metadata();
+
         self.root = root;
         Ok(true)
     }
@@ -139,6 +144,98 @@ impl<D: DataInterchange> Tuf<D> {
             Ok(false)
         } else {
             Ok(true)
+        }
+    }
+
+    /// Verify and update the snapshot metadata.
+    pub fn update_snapshot<V>(
+        &mut self,
+        signed_snapshot: SignedMetadata<D, SnapshotMetadata, V>,
+    ) -> Result<bool>
+    where
+        V: VerificationStatus,
+    {
+        let root = self.safe_root_ref()?;
+        let timestamp = self.safe_timestamp_ref()?;
+        let snapshot_description = timestamp
+            .meta()
+            .get(&MetadataPath::from_role(&Role::Snapshot))
+            .ok_or_else(|| {
+                Error::VerificationFailure(
+                    "Timestamp metadata had no description of the snapshot metadata".into(),
+                )
+            })?;
+
+        let signed_snapshot = signed_snapshot.verify(
+            root.snapshot().threshold(),
+            root.snapshot().key_ids(),
+            root.keys(),
+        )?;
+
+        let current_version = self.snapshot.as_ref().map(|t| t.version()).unwrap_or(0);
+        let snapshot: SnapshotMetadata = D::deserialize(&signed_snapshot.signed())?;
+
+        if snapshot.version() != snapshot_description.version() {
+            return Err(Error::VerificationFailure(format!(
+                "The timestamp metadata reported that the snapshot metadata should be at \
+                version {} but version {} was found instead.",
+                snapshot_description.version(),
+                snapshot.version()
+            )));
+        }
+
+        if snapshot.expires() <= &Utc::now() {
+            return Err(Error::ExpiredMetadata(Role::Snapshot));
+        }
+
+        if snapshot.version() < current_version {
+            Err(Error::VerificationFailure(format!(
+                "Attempted to roll back snapshot metdata at version {} to {}.",
+                current_version,
+                snapshot.version()
+            )))
+        } else if snapshot.version() == current_version {
+            Ok(false)
+        } else {
+            Ok(true)
+        }
+    }
+
+    fn purge_metadata(&mut self) {
+        self.snapshot = None;
+        self.timestamp = None;
+        // TODO include targets
+        // TODO include delegations
+    }
+
+    fn safe_root_ref(&self) -> Result<&RootMetadata> {
+        if self.root.expires() <= &Utc::now() {
+            return Err(Error::ExpiredMetadata(Role::Root));
+        }
+        Ok(&self.root)
+    }
+
+    fn safe_timestamp_ref(&self) -> Result<&TimestampMetadata> {
+        match &self.timestamp {
+            &Some(ref ts) => {
+                if self.root.expires() <= &Utc::now() {
+                    return Err(Error::ExpiredMetadata(Role::Root));
+                }
+                Ok(ts)
+            }
+            &None => Err(Error::MissingMetadata(Role::Timestamp)),
+        }
+    }
+
+    fn safe_snapshot_ref(&self) -> Result<&SnapshotMetadata> {
+        match &self.snapshot {
+            &Some(ref ts) => {
+                if self.root.expires() <= &Utc::now() {
+                    return Err(Error::ExpiredMetadata(Role::Root));
+                }
+                Ok(ts)
+            }
+            &None => Err(Error::MissingMetadata(Role::Snapshot)),
         }
     }
 }

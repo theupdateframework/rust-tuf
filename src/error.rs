@@ -29,6 +29,8 @@ pub enum Error {
     Io(String),
     /// The metadata was missing, so an operation could not be completed.
     MissingMetadata(Role),
+    /// There were no available hash algorithms.
+    NoSupportedHashAlgorithm,
     /// The metadata or target was not found.
     NotFound,
     /// There was an internal `serde` error.
