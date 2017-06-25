@@ -5,11 +5,11 @@ use chrono::offset::Utc;
 use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
 use serde::ser::{Serialize, Serializer, Error as SerializeError};
 use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
+use std::fmt::{self, Debug, Display};
 use std::marker::PhantomData;
 
 use Result;
-use crypto::{KeyId, PublicKey, Signature};
+use crypto::{KeyId, PublicKey, Signature, HashAlgorithm, HashValue};
 use error::Error;
 use interchange::DataInterchange;
 use shims;
@@ -42,6 +42,17 @@ pub enum Role {
     Timestamp,
 }
 
+impl Display for Role {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Role::Root => write!(f, "root"),
+            &Role::Snapshot => write!(f, "snapshot"),
+            &Role::Targets => write!(f, "targets"),
+            &Role::Timestamp => write!(f, "timestamp"),
+        }
+    }
+}
+
 /// Enum used for addressing versioned TUF metadata.
 #[derive(Debug)]
 pub enum MetadataVersion {
@@ -65,7 +76,10 @@ impl MetadataVersion {
 }
 
 /// Top level trait used for role metadata.
-pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {}
+pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {
+    /// The role associated with the metadata.
+    fn role() -> Role;
+}
 
 /// A piece of raw metadata with attached signatures.
 #[derive(Debug, Serialize, Deserialize)]
@@ -280,7 +294,11 @@ impl RootMetadata {
     }
 }
 
-impl Metadata for RootMetadata {}
+impl Metadata for RootMetadata {
+    fn role() -> Role {
+        Role::Root
+    }
+}
 
 impl Serialize for RootMetadata {
     fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
@@ -350,6 +368,130 @@ impl<'de> Deserialize<'de> for RoleDefinition {
         intermediate.try_into().map_err(|e| {
             DeserializeError::custom(format!("{:?}", e))
         })
+    }
+}
+
+/// Wrapper for a path to metadata.
+#[derive(Debug, Clone, PartialEq, Hash, Eq, Serialize, Deserialize)]
+pub struct MetadataPath(String);
+
+impl MetadataPath {
+    // TODO convert to/from paths/urls/etc
+}
+
+/// Metdata for the timestamp role.
+#[derive(Debug, PartialEq)]
+pub struct TimestampMetadata {
+    version: u32,
+    expires: DateTime<Utc>,
+    meta: HashMap<MetadataPath, MetadataDescription>,
+}
+
+impl TimestampMetadata {
+    /// Create new `TimestampMetadata`.
+    pub fn new(
+        version: u32,
+        expires: DateTime<Utc>,
+        meta: HashMap<MetadataPath, MetadataDescription>,
+    ) -> Result<Self> {
+        if version < 1 {
+            return Err(Error::IllegalArgument(format!(
+                "Metadata version must be greater than zero. Found: {}",
+                version
+            )));
+        }
+
+        Ok(TimestampMetadata {
+            version: version,
+            expires: expires,
+            meta: meta,
+        })
+    }
+
+    /// The version number.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// An immutable reference to the metadata's expiration `DateTime`.
+    pub fn expires(&self) -> &DateTime<Utc> {
+        &self.expires
+    }
+
+    /// An immutable reference to the metadata paths and descriptions.
+    pub fn meta(&self) -> &HashMap<MetadataPath, MetadataDescription> {
+        &self.meta
+    }
+}
+
+impl Metadata for TimestampMetadata {
+    fn role() -> Role {
+        Role::Timestamp
+    }
+}
+
+impl Serialize for TimestampMetadata {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        shims::TimestampMetadata::from(self)
+            .map_err(|e| SerializeError::custom(format!("{:?}", e)))?
+            .serialize(ser)
+    }
+}
+
+impl<'de> Deserialize<'de> for TimestampMetadata {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::TimestampMetadata = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
+    }
+}
+
+/// Description of a piece of metadata, used in verification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MetadataDescription {
+    version: u32,
+    length: Option<usize>,
+    hashes: Option<HashMap<HashAlgorithm, HashValue>>,
+}
+
+impl MetadataDescription {
+    /// Create a new `MetadataDescription`.
+    pub fn new(
+        version: u32,
+        length: Option<usize>,
+        hashes: Option<HashMap<HashAlgorithm, HashValue>>,
+    ) -> Result<Self> {
+        if version < 1 {
+            return Err(Error::IllegalArgument(format!(
+                "Metadata version must be greater than zero. Found: {}",
+                version
+            )));
+        }
+
+        Ok(MetadataDescription {
+            version: version,
+            length: length,
+            hashes: hashes,
+        })
+    }
+
+    /// The version of the described metadata.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// The optional length of the described metadata.
+    pub fn length(&self) -> Option<usize> {
+        self.length
+    }
+
+    /// An immutable reference to the optional calculated hashes of the described metadata.
+    pub fn hashes(&self) -> Option<&HashMap<HashAlgorithm, HashValue>> {
+        self.hashes.as_ref()
     }
 }
 

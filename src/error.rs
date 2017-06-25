@@ -27,6 +27,8 @@ pub enum Error {
     IllegalArgument(String),
     /// There was an IO error.
     Io(String),
+    /// The metadata was missing, so an operation could not be completed.
+    MissingMetadata(Role),
     /// The metadata or target was not found.
     NotFound,
     /// There was an internal `serde` error.

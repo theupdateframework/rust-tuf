@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use Result;
 use error::Error;
-use metadata::{SignedMetadata, MetadataVersion, RootMetadata, Unverified, Verified};
+use metadata::{SignedMetadata, MetadataVersion, Unverified, Verified, Role, Metadata};
 use interchange::DataInterchange;
 
 /// Top-level trait that represents a TUF repository and contains all the ways it can be interacted
@@ -23,19 +23,31 @@ where
     /// Initialize the repository.
     fn initialize(&mut self) -> Result<()>;
 
-    /// Store signed root metadata.
-    fn store_root(
+    /// Store signed metadata.
+    fn store_metadata<M>(
         &mut self,
-        root: &SignedMetadata<D, RootMetadata, Verified>,
+        role: &Role,
         version: &MetadataVersion,
-    ) -> Result<()>;
+        metadata: &SignedMetadata<D, M, Verified>,
+    ) -> Result<()>
+    where
+        M: Metadata;
 
-    /// Fetch signed root metadata.
-    fn fetch_root(
+    /// Fetch signed metadata.
+    fn fetch_metadata<M>(
         &mut self,
+        role: &Role,
         version: &MetadataVersion,
         max_size: &Option<usize>,
-    ) -> Result<SignedMetadata<D, RootMetadata, Unverified>>;
+    ) -> Result<SignedMetadata<D, M, Unverified>>
+    where
+        M: Metadata;
+
+    /// Get the version string that addresses the metadata.
+    fn version_string(role: &Role, version: &MetadataVersion) -> String {
+        // TODO this doesn't support delegations that could have `/` chars in them
+        format!("{}{}{}", version.prefix(), role, D::extension())
+    }
 
     /// Read the from given reader, optionally capped at `max_size` bytes.
     fn safe_read<R: Read>(read: &mut R, max_size: &Option<usize>) -> Result<Vec<u8>> {
@@ -90,32 +102,48 @@ where
         Ok(())
     }
 
-    fn store_root(
+    fn store_metadata<M>(
         &mut self,
-        root: &SignedMetadata<D, RootMetadata, Verified>,
+        role: &Role,
         version: &MetadataVersion,
-    ) -> Result<()> {
-        let root_version = format!("{}root{}", version.prefix(), D::extension());
-        let path = self.local_path.join("metadata").join(&root_version);
+        metadata: &SignedMetadata<D, M, Verified>,
+    ) -> Result<()>
+    where
+        M: Metadata,
+    {
+        if role != &M::role() {
+            return Err(Error::IllegalArgument(format!(
+                "Attempted to store {} metadata as {}.",
+                M::role(),
+                role
+            )));
+        }
+        let version_str = Self::version_string(role, version);
+        let path = self.local_path.join("metadata").join(&version_str);
 
         if path.exists() {
-            debug!("Root path exists. Deleting: {}", root_version);
+            debug!("Metadata path exists. Deleting: {:?}", path);
             fs::remove_file(&path)?
         }
 
         let mut file = File::create(&path)?;
-        D::to_writer(&mut file, root)?;
-
+        D::to_writer(&mut file, metadata)?;
         Ok(())
+
     }
 
-    fn fetch_root(
+    /// Fetch signed metadata.
+    fn fetch_metadata<M>(
         &mut self,
+        role: &Role,
         version: &MetadataVersion,
         max_size: &Option<usize>,
-    ) -> Result<SignedMetadata<D, RootMetadata, Unverified>> {
-        let root_version = format!("{}root{}", version.prefix(), D::extension());
-        let path = self.local_path.join("metadata").join(&root_version);
+    ) -> Result<SignedMetadata<D, M, Unverified>>
+    where
+        M: Metadata,
+    {
+        let version_str = Self::version_string(role, version);
+        let path = self.local_path.join("metadata").join(&version_str);
         let mut file = File::open(&path)?;
         let buf = Self::safe_read(&mut file, max_size)?;
         Ok(D::from_reader(&*buf)?)
@@ -172,23 +200,38 @@ where
         Ok(())
     }
 
-    fn store_root(
+    fn store_metadata<M>(
         &mut self,
-        _: &SignedMetadata<D, RootMetadata, Verified>,
+        role: &Role,
         _: &MetadataVersion,
-    ) -> Result<()> {
+        _: &SignedMetadata<D, M, Verified>,
+    ) -> Result<()>
+    where
+        M: Metadata,
+    {
+        if role != &M::role() {
+            return Err(Error::IllegalArgument(format!(
+                "Attempted to store {} metadata as {}.",
+                M::role(),
+                role
+            )));
+        }
         Err(Error::Generic(
             "Http repo store root not implemented".to_string(),
         ))
     }
 
-    fn fetch_root(
+    fn fetch_metadata<M>(
         &mut self,
+        role: &Role,
         version: &MetadataVersion,
         max_size: &Option<usize>,
-    ) -> Result<SignedMetadata<D, RootMetadata, Unverified>> {
-        let root_version = format!("{}root{}", version.prefix(), D::extension());
-        let mut resp = self.get(&root_version)?;
+    ) -> Result<SignedMetadata<D, M, Unverified>>
+    where
+        M: Metadata,
+    {
+        let version_str = Self::version_string(role, version);
+        let mut resp = self.get(&version_str)?;
         let buf = Self::safe_read(&mut resp, max_size)?;
         Ok(D::from_reader(&*buf)?)
     }
@@ -225,25 +268,41 @@ where
         Ok(())
     }
 
-    fn store_root(
+    fn store_metadata<M>(
         &mut self,
-        root: &SignedMetadata<D, RootMetadata, Verified>,
+        role: &Role,
         version: &MetadataVersion,
-    ) -> Result<()> {
-        let root_version = format!("{}root{}", version.prefix(), D::extension());
+        root: &SignedMetadata<D, M, Verified>,
+    ) -> Result<()>
+    where
+        M: Metadata,
+    {
+        if role != &M::role() {
+            return Err(Error::IllegalArgument(format!(
+                "Attempted to store {} metadata as {}.",
+                M::role(),
+                role
+            )));
+        }
+
+        let version_str = Self::version_string(role, version);
         let mut buf = Vec::new();
         D::to_writer(&mut buf, root)?;
-        let _ = self.metadata.insert(root_version, buf);
+        let _ = self.metadata.insert(version_str, buf);
         Ok(())
     }
 
-    fn fetch_root(
+    fn fetch_metadata<M>(
         &mut self,
+        role: &Role,
         version: &MetadataVersion,
         _: &Option<usize>,
-    ) -> Result<SignedMetadata<D, RootMetadata, Unverified>> {
-        let root_version = format!("{}root{}", version.prefix(), D::extension());
-        match self.metadata.get(&root_version) {
+    ) -> Result<SignedMetadata<D, M, Unverified>>
+    where
+        M: Metadata,
+    {
+        let version_str = Self::version_string(role, version);
+        match self.metadata.get(&version_str) {
             Some(bytes) => D::from_reader(&**bytes),
             None => Err(Error::NotFound),
         }

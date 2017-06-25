@@ -37,7 +37,7 @@ impl KeyId {
 }
 
 impl Debug for KeyId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "KeyId {{ \"{}\" }}", HEXLOWER.encode(&self.0))
     }
 }
@@ -127,7 +127,7 @@ impl SignatureValue {
 }
 
 impl Debug for SignatureValue {
-    fn fmt(&self, f: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "SignatureValue {{ \"{}\" }}", HEXLOWER.encode(&self.0))
     }
 }
@@ -370,3 +370,18 @@ impl Signature {
         &self.signature
     }
 }
+
+/// The available hash algorithms.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HashAlgorithm {
+    /// SHA256 as describe in [RFC-6234](https://tools.ietf.org/html/rfc6234)
+    #[serde(rename = "sha256")]
+    Sha256,
+    /// SHA512 as describe in [RFC-6234](https://tools.ietf.org/html/rfc6234)
+    #[serde(rename = "sha512")]
+    Sha512,
+}
+
+/// Wrapper for the value of a hash digest.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HashValue(Vec<u8>);

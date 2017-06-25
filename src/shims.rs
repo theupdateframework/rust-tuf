@@ -22,19 +22,19 @@ pub struct RootMetadata {
 }
 
 impl RootMetadata {
-    pub fn from(root_metadata: &metadata::RootMetadata) -> Result<Self> {
+    pub fn from(metadata: &metadata::RootMetadata) -> Result<Self> {
         let mut roles = HashMap::new();
-        let _ = roles.insert(metadata::Role::Root, root_metadata.root().clone());
-        let _ = roles.insert(metadata::Role::Snapshot, root_metadata.snapshot().clone());
-        let _ = roles.insert(metadata::Role::Targets, root_metadata.targets().clone());
-        let _ = roles.insert(metadata::Role::Timestamp, root_metadata.timestamp().clone());
+        let _ = roles.insert(metadata::Role::Root, metadata.root().clone());
+        let _ = roles.insert(metadata::Role::Snapshot, metadata.snapshot().clone());
+        let _ = roles.insert(metadata::Role::Targets, metadata.targets().clone());
+        let _ = roles.insert(metadata::Role::Timestamp, metadata.timestamp().clone());
 
         Ok(RootMetadata {
             typ: metadata::Role::Root,
-            version: root_metadata.version(),
-            expires: root_metadata.expires().clone(),
-            consistent_snapshot: root_metadata.consistent_snapshot(),
-            keys: root_metadata.keys().clone(),
+            version: metadata.version(),
+            expires: metadata.expires().clone(),
+            consistent_snapshot: metadata.consistent_snapshot(),
+            keys: metadata.keys().clone(),
             roles: roles,
         })
     }
@@ -212,5 +212,36 @@ impl RoleDefinition {
         }
 
         Ok(metadata::RoleDefinition::new(self.threshold, key_ids)?)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TimestampMetadata {
+    #[serde(rename = "type")]
+    typ: metadata::Role,
+    version: u32,
+    expires: DateTime<Utc>,
+    meta: HashMap<metadata::MetadataPath, metadata::MetadataDescription>,
+}
+
+impl TimestampMetadata {
+    pub fn from(metadata: &metadata::TimestampMetadata) -> Result<Self> {
+        Ok(TimestampMetadata {
+            typ: metadata::Role::Timestamp,
+            version: metadata.version(),
+            expires: metadata.expires().clone(),
+            meta: metadata.meta().clone(),
+        })
+    }
+
+    pub fn try_into(self) -> Result<metadata::TimestampMetadata> {
+        if self.typ != metadata::Role::Timestamp {
+            return Err(Error::Decode(format!(
+                "Attempted to decode timestamp metdata labeled as {:?}",
+                self.typ
+            )));
+        }
+
+        metadata::TimestampMetadata::new(self.version, self.expires, self.meta)
     }
 }
