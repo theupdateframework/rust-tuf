@@ -1,5 +1,8 @@
-.PHONY: help dev-docs
+.PHONY: help clean dev-docs
 .DEFAULT_GOAL := help
+
+clean: ## Remove temp/useless files
+	@find . -name '*.rs.bk' -type f -delete
 
 dev-docs: ## Generate the documentation for all modules (dev friendly)
 	@cargo rustdoc --all-features -- --no-defaults --passes "collapse-docs" --passes "unindent-comments"

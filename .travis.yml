@@ -25,9 +25,9 @@ install:
   - cd tests/tuf-test-vectors && make init && cd ../../
 
 script:
-  - RUST_BACKTRACE=full cargo build --verbose --features=cli
+  - RUST_BACKTRACE=full cargo build --verbose
   - ./tests/tuf-test-vectors/server.py --path tuf &>/dev/null &
-  - RUST_BACKTRACE=full cargo test --verbose --features=cli
+  - RUST_BACKTRACE=full cargo test --verbose
 
 after_failure:
   - cat Cargo.lock

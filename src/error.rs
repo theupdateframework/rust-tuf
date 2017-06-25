@@ -1,53 +1,47 @@
+//! Error types and converters.
+
+use data_encoding::DecodeError;
 use hyper;
 use json;
-use std::path::Path;
+use pem;
 use std::io;
+use std::path::Path;
 
-use metadata::Role;
+use rsa::der;
 
 /// Error type for all TUF related errors.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
-    /// ASN.1 parse errors.
-    Asn1,
-    /// Errors for converting JSON to canonical JSON.
-    CanonicalJsonError(String),
-    /// The metadata for the given role has expired.
-    ExpiredMetadata(Role),
-    /// Generic error type for more opaque error reporting.
+    /// The metadata had a bad signature.
+    BadSignature,
+    /// There was a problem decoding the metadata.
+    Decode(String),
+    /// There was a problem encoding the metadata.
+    Encode(String),
+    /// Generic catcher for all errors.
     Generic(String),
-    /// An HTTP or network error.
-    Http(String),
-    /// The TUF configuration was invalid.
-    InvalidConfig(String),
-    /// Wrapper for IO errors.
+    /// An illegal argument was passed into a function.
+    IllegalArgument(String),
+    /// There was an IO error.
     Io(String),
-    /// There was an error parsing JSON.
-    Json(String),
-    /// The calculated and provided hashes for the matadata did not match.
-    MetadataHashMismatch(Role),
-    /// A necessary piece of metadata was missing.
-    MissingMetadata(Role),
-    /// The signed metadata had duplicate signatures from a particular key.
-    NonUniqueSignatures(Role),
-    /// The metadata did not provide any hash algorithms that this library can calculate.
-    NoSupportedHashAlgorithms,
-    /// A piece of metadata exceeded the provided or maximum allowed size.
-    OversizedMetadata(Role),
-    /// The calculated and provided hashes for the target did not match.
-    UnknownRole(String),
-    /// The target does not exist in valid metadata or could not be verified.
-    UnavailableTarget,
-    /// The role did not have enough signatures to meet the required threshold.
-    UnmetThreshold(Role),
-    /// The key type was not supported by this library.
+    /// The metadata or target was not found.
+    NotFound,
+    /// There was an internal `serde` error.
+    Serde(String),
+    /// The key format is not supported.
+    UnsupportedKeyFormat(String),
+    /// The key type is not supported.
     UnsupportedKeyType(String),
-    /// The signature scheme was not supported by this library.
+    /// The signature scheme is not supported.
     UnsupportedSignatureScheme(String),
-    /// There was an error in the verification process.
+    /// The metadata or target failed to verify.
     VerificationFailure(String),
-    /// A piece of metadata decreased its version when not allowed.
-    VersionDecrease(Role),
+}
+
+impl From<json::error::Error> for Error {
+    fn from(err: json::error::Error) -> Error {
+        Error::Serde(format!("{:?}", err))
+    }
 }
 
 impl Error {
@@ -63,20 +57,32 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<json::Error> for Error {
-    fn from(err: json::Error) -> Error {
-        Error::Json(format!("{:?}", err))
-    }
-}
-
 impl From<hyper::error::Error> for Error {
     fn from(err: hyper::error::Error) -> Error {
-        Error::Http(format!("{:?}", err))
+        Error::Generic(format!("{:?}", err))
     }
 }
 
 impl From<hyper::error::ParseError> for Error {
     fn from(err: hyper::error::ParseError) -> Error {
         Error::Generic(format!("{:?}", err))
+    }
+}
+
+impl From<DecodeError> for Error {
+    fn from(err: DecodeError) -> Error {
+        Error::Decode(format!("{:?}", err))
+    }
+}
+
+impl From<pem::Error> for Error {
+    fn from(err: pem::Error) -> Error {
+        Error::Decode(format!("{:?}", err))
+    }
+}
+
+impl From<der::Error> for Error {
+    fn from(_: der::Error) -> Error {
+        Error::Io("Error reading/writing DER".into())
     }
 }

@@ -1,8 +1,6 @@
-use hyper;
 use std::fs::{self, File};
 use std::io::{self, Read, Write, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use url::Url;
 use url::percent_encoding::percent_decode;
 use uuid::Uuid;
 
@@ -29,16 +27,13 @@ pub fn url_path_to_path_components(url_path: &str) -> Result<Vec<String>, Error>
     for component in url_path.split("/") {
         let component = percent_decode(component.as_bytes())
             .decode_utf8()
-            .map_err(|e| Error::Generic(format!("Path component not utf-8: {:?}", e)))?
+            .map_err(|e| {
+                Error::Generic(format!("Path component not utf-8: {:?}", e))
+            })?
             .into_owned();
         out.push(component);
     }
     Ok(out)
-}
-
-/// Converts a `url::Url` into a `hyper::Url`.
-pub fn url_to_hyper_url(url: &Url) -> Result<hyper::Url, Error> {
-    Ok(hyper::Url::parse(url.as_str())?)
 }
 
 
@@ -61,7 +56,7 @@ impl TempFile {
     }
 
     pub fn from_existing(path: PathBuf) -> Result<Self, io::Error> {
-        Ok(TempFile(Some( TempFileInner {
+        Ok(TempFile(Some(TempFileInner {
             path: path.clone(),
             file: File::open(path)?,
         })))
@@ -70,14 +65,20 @@ impl TempFile {
     pub fn file_mut(&mut self) -> Result<&mut File, io::Error> {
         match self.0 {
             Some(ref mut inner) => Ok(&mut inner.file),
-            None => Err(io::Error::new(io::ErrorKind::Other, "invalid TempFile reference"))
+            None => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "invalid TempFile reference",
+            )),
         }
     }
 
     pub fn persist(mut self, dest: &Path) -> Result<(), io::Error> {
         match self.0.take() {
             Some(inner) => fs::rename(inner.path, dest),
-            None => Err(io::Error::new(io::ErrorKind::Other, "invalid TempFile reference")),
+            None => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "invalid TempFile reference",
+            )),
         }
     }
 }
@@ -113,12 +114,11 @@ impl Drop for TempFile {
                     Ok(()) => (),
                     Err(e) => warn!("Failed to delete tempfile: {:?}", e),
                 }
-            },
+            }
             None => (),
         }
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -135,8 +135,10 @@ mod test {
     #[cfg(not(target_os = "windows"))]
     fn test_url_path_to_os_path_percent_nix() {
         let path = "/tmp/test%20stuff";
-        assert_eq!(url_path_to_os_path(path),
-                   Ok(PathBuf::from("/tmp/test stuff")));
+        assert_eq!(
+            url_path_to_os_path(path),
+            Ok(PathBuf::from("/tmp/test stuff"))
+        );
     }
 
     #[test]
@@ -150,18 +152,24 @@ mod test {
     #[cfg(target_os = "windows")]
     fn test_url_path_to_os_path_spaces_win() {
         let path = r"C:/tmp/test%20stuff";
-        assert_eq!(url_path_to_os_path(path),
-                   Ok(PathBuf::from(r"C:\tmp\test stuff")));
+        assert_eq!(
+            url_path_to_os_path(path),
+            Ok(PathBuf::from(r"C:\tmp\test stuff"))
+        );
     }
 
     #[test]
     fn test_url_path_to_path_components() {
         let path = "test/foo";
-        assert_eq!(url_path_to_path_components(path),
-                   Ok(vec!["test".into(), "foo".into()]));
+        assert_eq!(
+            url_path_to_path_components(path),
+            Ok(vec!["test".into(), "foo".into()])
+        );
 
         let path = "test/foo%20bar";
-        assert_eq!(url_path_to_path_components(path),
-                   Ok(vec!["test".into(), "foo bar".into()]));
+        assert_eq!(
+            url_path_to_path_components(path),
+            Ok(vec!["test".into(), "foo bar".into()])
+        );
     }
 }
