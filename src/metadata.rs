@@ -204,7 +204,7 @@ where
     }
 }
 
-/// Metdata for the root role.
+/// Metadata for the root role.
 #[derive(Debug, PartialEq)]
 pub struct RootMetadata {
     version: u32,
@@ -384,7 +384,7 @@ impl MetadataPath {
     // TODO convert to/from paths/urls/etc
 }
 
-/// Metdata for the timestamp role.
+/// Metadata for the timestamp role.
 #[derive(Debug, PartialEq)]
 pub struct TimestampMetadata {
     version: u32,
@@ -500,7 +500,7 @@ impl MetadataDescription {
     }
 }
 
-/// Metdata for the snapshot role.
+/// Metadata for the snapshot role.
 #[derive(Debug, PartialEq)]
 pub struct SnapshotMetadata {
     version: u32,
@@ -565,6 +565,89 @@ impl Serialize for SnapshotMetadata {
 impl<'de> Deserialize<'de> for SnapshotMetadata {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::SnapshotMetadata = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
+    }
+}
+
+
+/// Wrapper for a path to a target.
+#[derive(Debug, Clone, PartialEq, Hash, Eq, Serialize, Deserialize)]
+pub struct TargetPath(String);
+
+/// Description of a target, used in verification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TargetDescription {
+    length: u64,
+    hashes: HashMap<HashAlgorithm, HashValue>,
+}
+
+/// Metadata for the targets role.
+#[derive(Debug, PartialEq)]
+pub struct TargetsMetadata {
+    version: u32,
+    expires: DateTime<Utc>,
+    targets: HashMap<TargetPath, TargetDescription>,
+}
+
+impl TargetsMetadata {
+    /// Create new `TargetsMetadata`.
+    pub fn new(
+        version: u32,
+        expires: DateTime<Utc>,
+        targets: HashMap<TargetPath, TargetDescription>,
+    ) -> Result<Self> {
+        if version < 1 {
+            return Err(Error::IllegalArgument(format!(
+                "Metadata version must be greater than zero. Found: {}",
+                version
+            )));
+        }
+
+        Ok(TargetsMetadata {
+            version: version,
+            expires: expires,
+            targets: targets,
+        })
+    }
+
+    /// The version number.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// An immutable reference to the metadata's expiration `DateTime`.
+    pub fn expires(&self) -> &DateTime<Utc> {
+        &self.expires
+    }
+
+    /// An immutable reference descriptions of targets.
+    pub fn targets(&self) -> &HashMap<TargetPath, TargetDescription> {
+        &self.targets
+    }
+}
+
+impl Metadata for TargetsMetadata {
+    fn role() -> Role {
+        Role::Targets
+    }
+}
+
+impl Serialize for TargetsMetadata {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        shims::TargetsMetadata::from(self)
+            .map_err(|e| SerializeError::custom(format!("{:?}", e)))?
+            .serialize(ser)
+    }
+}
+
+impl<'de> Deserialize<'de> for TargetsMetadata {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::TargetsMetadata = Deserialize::deserialize(de)?;
         intermediate.try_into().map_err(|e| {
             DeserializeError::custom(format!("{:?}", e))
         })

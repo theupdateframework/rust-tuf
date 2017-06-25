@@ -189,7 +189,7 @@ impl Config {
     }
 }
 
-/// Helper for building a validating a TUF `Config`.
+/// Helper for building and validating a TUF `Config`.
 pub struct ConfigBuilder {
     max_root_size: Option<usize>,
     max_timestamp_size: Option<usize>,

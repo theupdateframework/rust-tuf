@@ -268,3 +268,35 @@ impl SnapshotMetadata {
         metadata::SnapshotMetadata::new(self.version, self.expires, self.meta)
     }
 }
+
+
+#[derive(Serialize, Deserialize)]
+pub struct TargetsMetadata {
+    #[serde(rename = "type")]
+    typ: metadata::Role,
+    version: u32,
+    expires: DateTime<Utc>,
+    targets: HashMap<metadata::TargetPath, metadata::TargetDescription>,
+}
+
+impl TargetsMetadata {
+    pub fn from(metadata: &metadata::TargetsMetadata) -> Result<Self> {
+        Ok(TargetsMetadata {
+            typ: metadata::Role::Targets,
+            version: metadata.version(),
+            expires: metadata.expires().clone(),
+            targets: metadata.targets().clone(),
+        })
+    }
+
+    pub fn try_into(self) -> Result<metadata::TargetsMetadata> {
+        if self.typ != metadata::Role::Targets {
+            return Err(Error::Decode(format!(
+                "Attempted to decode targets metdata labeled as {:?}",
+                self.typ
+            )));
+        }
+
+        metadata::TargetsMetadata::new(self.version, self.expires, self.targets)
+    }
+}
