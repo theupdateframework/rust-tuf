@@ -64,6 +64,11 @@ impl<D: DataInterchange> Tuf<D> {
         &self.root
     }
 
+    /// An immutable reference to the optional snapshot metadata.
+    pub fn snapshot(&self) -> Option<&SnapshotMetadata> {
+        self.snapshot.as_ref()
+    }
+
     /// An immutable reference to the optional targets metadata.
     pub fn targets(&self) -> Option<&TargetsMetadata> {
         self.targets.as_ref()
@@ -202,9 +207,9 @@ impl<D: DataInterchange> Tuf<D> {
                     "Attempted to roll back snapshot metadata at version {} to {}.",
                     current_version,
                     snapshot.version()
-                )))
+                )));
             } else if snapshot.version() == current_version {
-                return Ok(false)
+                return Ok(false);
             } else {
                 snapshot
             }
@@ -261,9 +266,9 @@ impl<D: DataInterchange> Tuf<D> {
                     "Attempted to roll back targets metadata at version {} to {}.",
                     current_version,
                     targets.version()
-                )))
+                )));
             } else if targets.version() == current_version {
-                return Ok(false)
+                return Ok(false);
             } else {
                 targets
             }

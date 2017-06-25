@@ -49,6 +49,11 @@ pub struct JsonDataInterchange {}
 impl DataInterchange for JsonDataInterchange {
     type RawData = json::Value;
 
+    /// ```
+    /// use tuf::interchange::{DataInterchange, JsonDataInterchange};
+    ///
+    /// assert_eq!(JsonDataInterchange::extension(), "json");
+    /// ```
     fn extension() -> &'static str {
         "json"
     }

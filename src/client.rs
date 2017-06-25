@@ -1,7 +1,5 @@
 //! Clients for high level interactions with TUF repositories.
 
-use chrono::offset::Utc;
-
 use Result;
 use crypto;
 use error::Error;
@@ -40,38 +38,66 @@ where
         }
     }
 
-    /// Update TUF metadata from local and remote repositories.
+    /// Update TUF metadata from the local repository.
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
-    // TODO this might need to be split into `update_local` and `update_remote` to be useful to
-    // implementers.
-    pub fn update(&mut self) -> Result<bool> {
-        if self.update_root()? && self.update_timestamp()? {
-            self.update_snapshot()
-        } else {
-            Ok(false)
-        }
+    pub fn update_local(&mut self) -> Result<bool> {
+        let r = Self::update_root(&mut self.tuf, &mut self.local, &self.config.max_root_size)?;
+        let ts = match Self::update_timestamp(
+            &mut self.tuf,
+            &mut self.local,
+            &self.config.max_timestamp_size,
+        ) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!(
+                    "Error updating timestamp metadata from local sources: {:?}",
+                    e
+                );
+                false
+            }
+        };
+        let sn = match Self::update_snapshot(&mut self.tuf, &mut self.local) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!(
+                    "Error updating snapshot metadata from local sources: {:?}",
+                    e
+                );
+                false
+            }
+        };
+        let ta = match Self::update_targets(&mut self.tuf, &mut self.local) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!(
+                    "Error updating targets metadata from local sources: {:?}",
+                    e
+                );
+                false
+            }
+        };
+
+        Ok(r || ts || sn || ta)
+    }
+
+    /// Update TUF metadata from the remote repository.
+    ///
+    /// Returns `true` if an update occurred and `false` otherwise.
+    pub fn update_remote(&mut self) -> Result<bool> {
+        Ok(
+            Self::update_root(&mut self.tuf, &mut self.remote, &self.config.max_root_size)? ||
+                Self::update_timestamp(
+                    &mut self.tuf,
+                    &mut self.remote,
+                    &self.config.max_timestamp_size,
+                )? || Self::update_snapshot(&mut self.tuf, &mut self.remote)? ||
+                Self::update_targets(&mut self.tuf, &mut self.local)?,
+        )
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_root(&mut self) -> Result<bool> {
-        let local_updated =
-            Self::update_root_chain(&mut self.tuf, &self.config.max_root_size, &mut self.local)?;
-        let remote_updated =
-            Self::update_root_chain(&mut self.tuf, &self.config.max_root_size, &mut self.remote)?;
-
-        if self.tuf.root().expires() <= &Utc::now() {
-            Err(Error::ExpiredMetadata(Role::Root))
-        } else {
-            Ok(local_updated || remote_updated)
-        }
-    }
-
-    fn update_root_chain<T>(
-        tuf: &mut Tuf<D>,
-        max_root_size: &Option<usize>,
-        repo: &mut T,
-    ) -> Result<bool>
+    fn update_root<T>(tuf: &mut Tuf<D>, repo: &mut T, max_root_size: &Option<usize>) -> Result<bool>
     where
         T: Repository<D>,
     {
@@ -118,33 +144,35 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_timestamp(&mut self) -> Result<bool> {
-        let ts = self.local.fetch_metadata(
+    fn update_timestamp<T>(
+        tuf: &mut Tuf<D>,
+        repo: &mut T,
+        max_timestamp_size: &Option<usize>,
+    ) -> Result<bool>
+    where
+        T: Repository<D>,
+    {
+        let ts = repo.fetch_metadata(
             &Role::Timestamp,
             &MetadataVersion::None,
-            &self.config.max_timestamp_size,
+            max_timestamp_size,
             None,
         )?;
-        self.tuf.update_timestamp(ts)?;
-
-        let ts = self.remote.fetch_metadata(
-            &Role::Timestamp,
-            &MetadataVersion::None,
-            &self.config.max_timestamp_size,
-            None,
-        )?;
-        self.tuf.update_timestamp(ts)
+        tuf.update_timestamp(ts)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_snapshot(&mut self) -> Result<bool> {
-        let snapshot_description = match self.tuf.timestamp() {
+    fn update_snapshot<T>(tuf: &mut Tuf<D>, repo: &mut T) -> Result<bool>
+    where
+        T: Repository<D>,
+    {
+        let snapshot_description = match tuf.timestamp() {
             Some(ts) => {
                 match ts.meta().get(&MetadataPath::from_role(&Role::Timestamp)) {
                     Some(d) => Ok(d),
                     None => Err(Error::VerificationFailure(
                         "Timestamp metadata did not contain a description of the \
-                                current snapshot metadata"
+                                current snapshot metadata."
                             .into(),
                     )),
                 }
@@ -158,25 +186,52 @@ where
             None => None,
         };
 
-        let snap = self.local.fetch_metadata(
+        let snap = repo.fetch_metadata(
             &Role::Snapshot,
             &MetadataVersion::None,
             &snapshot_description.length(),
             hashes,
         )?;
-        self.tuf.update_snapshot(snap)?;
+        tuf.update_snapshot(snap)
+    }
 
-        let snap = self.remote.fetch_metadata(
-            &Role::Snapshot,
+    /// Returns `true` if an update occurred and `false` otherwise.
+    fn update_targets<T>(tuf: &mut Tuf<D>, repo: &mut T) -> Result<bool>
+    where
+        T: Repository<D>,
+    {
+        let targets_description = match tuf.snapshot() {
+            Some(sn) => {
+                match sn.meta().get(&MetadataPath::from_role(&Role::Targets)) {
+                    Some(d) => Ok(d),
+                    None => Err(Error::VerificationFailure(
+                        "Snapshot metadata did not contain a description of the \
+                                current targets metadata."
+                            .into(),
+                    )),
+                }
+            }
+            None => Err(Error::MissingMetadata(Role::Snapshot)),
+        }?
+            .clone();
+
+        let hashes = match targets_description.hashes() {
+            Some(hashes) => Some(crypto::hash_preference(hashes)?),
+            None => None,
+        };
+
+        let targets = repo.fetch_metadata(
+            &Role::Targets,
             &MetadataVersion::None,
-            &snapshot_description.length(),
+            &targets_description.length(),
             hashes,
         )?;
-        self.tuf.update_snapshot(snap)
+        tuf.update_targets(targets)
     }
 }
 
 /// Configuration for a TUF `Client`.
+#[derive(Debug)]
 pub struct Config {
     max_root_size: Option<usize>,
     max_timestamp_size: Option<usize>,
@@ -190,6 +245,7 @@ impl Config {
 }
 
 /// Helper for building and validating a TUF `Config`.
+#[derive(Debug, PartialEq)]
 pub struct ConfigBuilder {
     max_root_size: Option<usize>,
     max_timestamp_size: Option<usize>,
@@ -218,6 +274,16 @@ impl ConfigBuilder {
 }
 
 impl Default for ConfigBuilder {
+    /// ```
+    /// use tuf::client::ConfigBuilder;
+    ///
+    /// let default = ConfigBuilder::default();
+    /// let config = ConfigBuilder::default()
+    ///     .max_root_size(Some(1024 * 1024))
+    ///     .max_timestamp_size(Some(32 * 1024));
+    /// assert_eq!(config, default);
+    /// assert!(default.finish().is_ok())
+    /// ```
     fn default() -> Self {
         ConfigBuilder {
             max_root_size: Some(1024 * 1024),
