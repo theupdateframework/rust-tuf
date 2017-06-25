@@ -1,12 +1,13 @@
 //! Components needed to verify TUF metadata and targets.
 
+use chrono::offset::Utc;
 use std::marker::PhantomData;
 
 use Result;
 use crypto::KeyId;
 use error::Error;
 use interchange::DataInterchange;
-use metadata::{SignedMetadata, RootMetadata, VerificationStatus, TimestampMetadata};
+use metadata::{SignedMetadata, RootMetadata, VerificationStatus, TimestampMetadata, Role};
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
