@@ -20,7 +20,7 @@ where
     fn store_root(
         &mut self,
         root: &SignedMetadata<D, RootMetadata, Verified>,
-        version: &MetadataVersion
+        version: &MetadataVersion,
     ) -> Result<()>;
     fn fetch_root(
         &mut self,
@@ -81,7 +81,7 @@ where
     fn store_root(
         &mut self,
         root: &SignedMetadata<D, RootMetadata, Verified>,
-        version: &MetadataVersion
+        version: &MetadataVersion,
     ) -> Result<()> {
         let root_version = format!("{}root{}", version.prefix(), D::suffix());
         let path = self.local_path.join("metadata").join(&root_version);
@@ -158,7 +158,7 @@ where
     fn store_root(
         &mut self,
         _: &SignedMetadata<D, RootMetadata, Verified>,
-        _: &MetadataVersion
+        _: &MetadataVersion,
     ) -> Result<()> {
         Err(Error::Generic(
             "Http repo store root not implemented".to_string(),
@@ -208,7 +208,7 @@ where
     fn store_root(
         &mut self,
         root: &SignedMetadata<D, RootMetadata, Verified>,
-        version: &MetadataVersion
+        version: &MetadataVersion,
     ) -> Result<()> {
         let root_version = format!("{}root{}", version.prefix(), D::suffix());
         let mut buf = Vec::new();
@@ -224,9 +224,7 @@ where
     ) -> Result<SignedMetadata<D, RootMetadata, Unverified>> {
         let root_version = format!("{}root{}", version.prefix(), D::suffix());
         match self.metadata.get(&root_version) {
-            Some(bytes) => {
-                D::from_reader(&**bytes)
-            },
+            Some(bytes) => D::from_reader(&**bytes),
             None => Err(Error::NotFound),
         }
     }

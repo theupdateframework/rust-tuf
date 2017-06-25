@@ -10,6 +10,7 @@ use untrusted::Input;
 
 use Result;
 use error::Error;
+use rsa;
 use shims;
 
 pub fn calculate_key_id(public_key: &PublicKeyValue) -> KeyId {
@@ -25,11 +26,7 @@ pub fn calculate_key_id(public_key: &PublicKeyValue) -> KeyId {
 pub struct KeyId(Vec<u8>);
 
 impl KeyId {
-    pub fn new(bytes: Vec<u8>) -> Self {
-        KeyId(bytes)
-    }
-
-    pub fn from_string(string: &str) -> Result<Self> {
+    fn from_string(string: &str) -> Result<Self> {
         Ok(KeyId(HEXLOWER.decode(string.as_bytes())?))
     }
 }
@@ -64,8 +61,6 @@ pub enum SignatureScheme {
     RsaSsaPssSha256,
     RsaSsaPssSha512,
 }
-
-impl SignatureScheme {}
 
 impl ToString for SignatureScheme {
     fn to_string(&self) -> String {
@@ -140,7 +135,7 @@ impl<'de> Deserialize<'de> for SignatureValue {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let string: String = Deserialize::deserialize(de)?;
         SignatureValue::from_string(&string).map_err(|e| {
-            DeserializeError::custom("Signature value was not valid hex lower".to_string())
+            DeserializeError::custom(format!("Signature value was not valid hex lower: {:?}", e))
         })
     }
 }
@@ -200,13 +195,56 @@ pub struct PublicKey {
 }
 
 impl PublicKey {
-    pub fn new(typ: KeyType, format: KeyFormat, value: PublicKeyValue) -> Self {
-        PublicKey {
-            typ: typ,
-            format: format,
+    pub fn from_ed25519(value: PublicKeyValue) -> Result<Self> {
+        if value.value().len() != 32 {
+            return Err(Error::Decode(
+                "Ed25519 public key was not 32 bytes long".into(),
+            ));
+        }
+
+        Ok(PublicKey {
+            typ: KeyType::Ed25519,
+            format: KeyFormat::HexLower,
             key_id: calculate_key_id(&value),
             value: value,
-        }
+        })
+    }
+
+    pub fn from_rsa(value: PublicKeyValue, format: KeyFormat) -> Result<Self> {
+        // TODO check n > 2048 bits
+
+        let key_id = calculate_key_id(&value);
+
+        let pkcs1_value = match format {
+            KeyFormat::Pkcs1 => {
+                let bytes = rsa::from_pkcs1(value.value()).ok_or(
+                    Error::IllegalArgument(
+                        "Key claimed to be PKCS1 but could not be parsed."
+                            .into(),
+                    ),
+                )?;
+                PublicKeyValue(bytes)
+            }
+            KeyFormat::Spki => {
+                let bytes = rsa::from_spki(value.value()).ok_or(Error::IllegalArgument(
+                    "Key claimed to be SPKI but could not be parsed."
+                        .into(),
+                ))?;
+                PublicKeyValue(bytes)
+            }
+            x => {
+                return Err(Error::IllegalArgument(
+                    format!("RSA keys in format {:?} not supported.", x),
+                ))
+            }
+        };
+
+        Ok(PublicKey {
+            typ: KeyType::Rsa,
+            format: format,
+            key_id: key_id,
+            value: pkcs1_value,
+        })
     }
 
     pub fn typ(&self) -> &KeyType {
@@ -281,3 +319,23 @@ pub enum KeyFormat {
     Spki,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Signature {
+    key_id: KeyId,
+    scheme: SignatureScheme,
+    signature: SignatureValue,
+}
+
+impl Signature {
+    pub fn key_id(&self) -> &KeyId {
+        &self.key_id
+    }
+
+    pub fn scheme(&self) -> &SignatureScheme {
+        &self.scheme
+    }
+
+    pub fn signature(&self) -> &SignatureValue {
+        &self.signature
+    }
+}

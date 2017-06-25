@@ -1,4 +1,3 @@
-//! Structs and functions for interacting with TUF repositories.
 use std::marker::PhantomData;
 
 use Result;

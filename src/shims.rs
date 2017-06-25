@@ -140,31 +140,25 @@ impl PublicKey {
     }
 
     pub fn try_into(self) -> Result<crypto::PublicKey> {
-        let (key_bytes, format) = match self.typ {
+        match self.typ {
             crypto::KeyType::Ed25519 => {
                 let bytes = HEXLOWER.decode(self.value.public.as_bytes())?;
-                (bytes, crypto::KeyFormat::HexLower)
+                crypto::PublicKey::from_ed25519(crypto::PublicKeyValue::new(bytes))
             }
             crypto::KeyType::Rsa => {
                 let _pem = pem::parse(self.value.public.as_bytes())?;
                 match _pem.tag.as_str() {
                     "RSA PUBLIC KEY" => {
-                        let bytes = rsa::from_pkcs1(&_pem.contents).ok_or(
-                            Error::UnsupportedKeyFormat(
-                                "PEM claimed to PKCS1 but could not be parsed"
-                                    .into(),
-                            ),
-                        )?;
-                        (bytes, crypto::KeyFormat::Pkcs1)
+                        crypto::PublicKey::from_rsa(
+                            crypto::PublicKeyValue::new(_pem.contents),
+                            crypto::KeyFormat::Pkcs1,
+                        )
                     }
                     "PUBLIC KEY" => {
-                        let bytes = rsa::from_spki(&_pem.contents).ok_or(
-                            Error::UnsupportedKeyFormat(
-                                "PEM claimed to SPKI but could not be parsed"
-                                    .into(),
-                            ),
-                        )?;
-                        (bytes, crypto::KeyFormat::Spki)
+                        crypto::PublicKey::from_rsa(
+                            crypto::PublicKeyValue::new(_pem.contents),
+                            crypto::KeyFormat::Spki,
+                        )
                     }
                     x => {
                         return Err(Error::UnsupportedKeyFormat(
@@ -173,11 +167,7 @@ impl PublicKey {
                     }
                 }
             }
-        };
-
-        let key = crypto::PublicKeyValue::new(key_bytes);
-
-        Ok(crypto::PublicKey::new(self.typ, format, key))
+        }
     }
 }
 
@@ -214,9 +204,7 @@ impl RoleDefinition {
             ));
         }
 
-        let key_ids = self.key_ids
-            .drain(0..)
-            .collect::<HashSet<crypto::KeyId>>();
+        let key_ids = self.key_ids.drain(0..).collect::<HashSet<crypto::KeyId>>();
         let dupes = vec_len - key_ids.len();
 
         if dupes != 0 {

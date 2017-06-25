@@ -7,7 +7,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use Result;
-use crypto::{KeyId, PublicKey, SignatureScheme, SignatureValue};
+use crypto::{KeyId, PublicKey, Signature};
 use error::Error;
 use interchange::DataInterchange;
 use shims;
@@ -266,26 +266,6 @@ impl<'de> Deserialize<'de> for RootMetadata {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Signature {
-    key_id: KeyId,
-    scheme: SignatureScheme,
-    signature: SignatureValue,
-}
-
-impl Signature {
-    pub fn key_id(&self) -> &KeyId {
-        &self.key_id
-    }
-
-    pub fn scheme(&self) -> &SignatureScheme {
-        &self.scheme
-    }
-
-    pub fn signature(&self) -> &SignatureValue {
-        &self.signature
-    }
-}
 #[derive(Clone, Debug, PartialEq)]
 pub struct RoleDefinition {
     threshold: u32,
@@ -335,11 +315,12 @@ impl<'de> Deserialize<'de> for RoleDefinition {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use json;
     use std::fs::File;
     use std::io::Read;
     use std::path::PathBuf;
+
+    use crypto::{KeyType, PublicKey, KeyFormat};
 
     #[test]
     fn parse_spki_json() {
@@ -402,7 +383,7 @@ mod test {
     #[test]
     fn parse_hex_json() {
         let mut jsn = json!({"type": "ed25519", "value": {}});
-        let buf = "2bedead4feed".to_string();
+        let buf = "cf07711807f5176a4814613f3f348091dfc2b91f36b46a6abf6385f4ad14435b".to_string();
 
         let _ = jsn.as_object_mut()
             .unwrap()
