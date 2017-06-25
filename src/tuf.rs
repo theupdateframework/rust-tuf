@@ -1,6 +1,7 @@
 //! Components needed to verify TUF metadata and targets.
 
 use chrono::offset::Utc;
+use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use Result;
@@ -8,7 +9,7 @@ use crypto::KeyId;
 use error::Error;
 use interchange::DataInterchange;
 use metadata::{SignedMetadata, RootMetadata, VerificationStatus, TimestampMetadata, Role,
-               SnapshotMetadata, MetadataPath, TargetsMetadata};
+               SnapshotMetadata, MetadataPath, TargetsMetadata, TargetPath};
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
@@ -77,6 +78,18 @@ impl<D: DataInterchange> Tuf<D> {
     /// An immutable reference to the optional timestamp metadata.
     pub fn timestamp(&self) -> Option<&TimestampMetadata> {
         self.timestamp.as_ref()
+    }
+
+    /// Return the list of all available targets.
+    pub fn available_targets(&self) -> Result<HashSet<&TargetPath>> {
+        let _ = self.safe_root_ref()?; // ensure root still valid
+        // TODO add delegations
+        Ok(
+            self.safe_targets_ref()?
+                .targets()
+                .keys()
+                .collect::<HashSet<&TargetPath>>(),
+        )
     }
 
     /// Verify and update the root metadata.
