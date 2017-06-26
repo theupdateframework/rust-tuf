@@ -41,7 +41,7 @@ impl RootMetadata {
 
     pub fn try_into(mut self) -> Result<metadata::RootMetadata> {
         if self.typ != metadata::Role::Root {
-            return Err(Error::Decode(format!(
+            return Err(Error::Encoding(format!(
                 "Attempted to decode root metdata labeled as {:?}",
                 self.typ
             )));
@@ -67,19 +67,19 @@ impl RootMetadata {
         }
 
         let root = self.roles.remove(&metadata::Role::Root).ok_or_else(|| {
-            Error::Decode("Missing root role definition".into())
+            Error::Encoding("Missing root role definition".into())
         })?;
         let snapshot = self.roles.remove(&metadata::Role::Snapshot).ok_or_else(
             || {
-                Error::Decode("Missing snapshot role definition".into())
+                Error::Encoding("Missing snapshot role definition".into())
             },
         )?;
         let targets = self.roles.remove(&metadata::Role::Targets).ok_or_else(|| {
-            Error::Decode("Missing targets role definition".into())
+            Error::Encoding("Missing targets role definition".into())
         })?;
         let timestamp = self.roles.remove(&metadata::Role::Timestamp).ok_or_else(
             || {
-                Error::Decode("Missing timestamp role definition".into())
+                Error::Encoding("Missing timestamp role definition".into())
             },
         )?;
 
@@ -153,7 +153,7 @@ impl PublicKey {
                         )
                     }
                     x => {
-                        return Err(Error::UnsupportedKeyFormat(
+                        return Err(Error::Encoding(
                             format!("PEM with bad tag: {}", x),
                         ))
                     }
@@ -191,7 +191,7 @@ impl RoleDefinition {
     pub fn try_into(mut self) -> Result<metadata::RoleDefinition> {
         let vec_len = self.key_ids.len();
         if vec_len < 1 {
-            return Err(Error::Decode(
+            return Err(Error::Encoding(
                 "Role defined with no assoiciated key IDs.".into(),
             ));
         }
@@ -200,7 +200,7 @@ impl RoleDefinition {
         let dupes = vec_len - key_ids.len();
 
         if dupes != 0 {
-            return Err(Error::Decode(format!("Found {} duplicate key IDs.", dupes)));
+            return Err(Error::Encoding(format!("Found {} duplicate key IDs.", dupes)));
         }
 
         Ok(metadata::RoleDefinition::new(self.threshold, key_ids)?)
@@ -228,7 +228,7 @@ impl TimestampMetadata {
 
     pub fn try_into(self) -> Result<metadata::TimestampMetadata> {
         if self.typ != metadata::Role::Timestamp {
-            return Err(Error::Decode(format!(
+            return Err(Error::Encoding(format!(
                 "Attempted to decode timestamp metdata labeled as {:?}",
                 self.typ
             )));
@@ -259,7 +259,7 @@ impl SnapshotMetadata {
 
     pub fn try_into(self) -> Result<metadata::SnapshotMetadata> {
         if self.typ != metadata::Role::Snapshot {
-            return Err(Error::Decode(format!(
+            return Err(Error::Encoding(format!(
                 "Attempted to decode snapshot metdata labeled as {:?}",
                 self.typ
             )));
@@ -291,7 +291,7 @@ impl TargetsMetadata {
 
     pub fn try_into(self) -> Result<metadata::TargetsMetadata> {
         if self.typ != metadata::Role::Targets {
-            return Err(Error::Decode(format!(
+            return Err(Error::Encoding(format!(
                 "Attempted to decode targets metdata labeled as {:?}",
                 self.typ
             )));

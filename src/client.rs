@@ -132,13 +132,13 @@ where
             )?;
             if !tuf.update_root(signed)? {
                 error!("{}", err_msg);
-                return Err(Error::Generic(err_msg.into()));
+                return Err(Error::Programming(err_msg.into()));
             }
         }
 
         if !tuf.update_root(latest_root)? {
             error!("{}", err_msg);
-            return Err(Error::Generic(err_msg.into()));
+            return Err(Error::Programming(err_msg.into()));
         }
         Ok(true)
     }

@@ -106,7 +106,7 @@ impl FromStr for SignatureScheme {
             "ed25519" => Ok(SignatureScheme::Ed25519),
             "rsassa-pss-sha256" => Ok(SignatureScheme::RsaSsaPssSha256),
             "rsassa-pss-sha512" => Ok(SignatureScheme::RsaSsaPssSha512),
-            typ => Err(Error::UnsupportedSignatureScheme(typ.into())),
+            typ => Err(Error::Encoding(typ.into())),
         }
     }
 }
@@ -185,7 +185,7 @@ impl FromStr for KeyType {
         match s {
             "ed25519" => Ok(KeyType::Ed25519),
             "rsa" => Ok(KeyType::Rsa),
-            typ => Err(Error::UnsupportedKeyType(typ.into())),
+            typ => Err(Error::Encoding(typ.into())),
         }
     }
 }
@@ -228,7 +228,7 @@ impl PublicKey {
     /// Create a `PublicKey` from an Ed25519 `PublicKeyValue`.
     pub fn from_ed25519(value: PublicKeyValue) -> Result<Self> {
         if value.value().len() != 32 {
-            return Err(Error::Decode(
+            return Err(Error::Encoding(
                 "Ed25519 public key was not 32 bytes long".into(),
             ));
         }

@@ -59,7 +59,7 @@ impl DataInterchange for JsonDataInterchange {
     }
 
     fn canonicalize(raw_data: &Self::RawData) -> Result<Vec<u8>> {
-        cjson::canonicalize(raw_data).map_err(|e| Error::Generic(e))
+        cjson::canonicalize(raw_data).map_err(|e| Error::Opaque(e))
     }
 
     fn deserialize<T>(raw_data: &Self::RawData) -> Result<T>

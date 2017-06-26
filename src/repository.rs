@@ -111,13 +111,13 @@ where
                 let msg = "Hash calculated when no expected hash supplied. \
                            This is a programming error. Please report this as a bug.";
                 error!("{}", msg);
-                Err(Error::Generic(msg.into()))
+                Err(Error::Programming(msg.into()))
             }
             (None, Some(_)) => {
                 let msg = "No hash calculated when expected hash supplied. \
                            This is a programming error. Please report this as a bug.";
                 error!("{}", msg);
-                Err(Error::Generic(msg.into()))
+                Err(Error::Programming(msg.into()))
             }
             (Some(_), Some(_)) |
             (None, None) => Ok(()),
@@ -277,7 +277,7 @@ where
                 role
             )));
         }
-        Err(Error::Generic(
+        Err(Error::Opaque(
             "Http repo store root not implemented".to_string(),
         ))
     }

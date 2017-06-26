@@ -16,7 +16,7 @@ pub fn url_path_to_os_path(url_path: &str) -> Result<PathBuf, Error> {
 
     let url_path = percent_decode(url_path.as_bytes())
         .decode_utf8()
-        .map_err(|e| Error::Generic(format!("{}", e)))?
+        .map_err(|e| Error::Opaque(format!("{}", e)))?
         .into_owned();
 
     Ok(Path::new(&url_path).to_path_buf())
@@ -28,7 +28,7 @@ pub fn url_path_to_path_components(url_path: &str) -> Result<Vec<String>, Error>
         let component = percent_decode(component.as_bytes())
             .decode_utf8()
             .map_err(|e| {
-                Error::Generic(format!("Path component not utf-8: {:?}", e))
+                Error::Opaque(format!("Path component not utf-8: {:?}", e))
             })?
             .into_owned();
         out.push(component);

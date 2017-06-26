@@ -15,81 +15,72 @@ use rsa::der;
 pub enum Error {
     /// The metadata had a bad signature.
     BadSignature,
-    /// There was a problem decoding the metadata.
-    Decode(String),
-    /// There was a problem encoding the metadata.
-    Encode(String),
+    /// There was a problem encoding or decoding.
+    Encoding(String),
     /// Metadata was expired.
     ExpiredMetadata(Role),
-    /// Generic catcher for all errors.
-    Generic(String),
     /// An illegal argument was passed into a function.
     IllegalArgument(String),
-    /// There was an IO error.
-    Io(String),
     /// The metadata was missing, so an operation could not be completed.
     MissingMetadata(Role),
     /// There were no available hash algorithms.
     NoSupportedHashAlgorithm,
     /// The metadata or target was not found.
     NotFound,
-    /// There was an internal `serde` error.
-    Serde(String),
-    /// The key format is not supported.
-    UnsupportedKeyFormat(String),
-    /// The key type is not supported.
-    UnsupportedKeyType(String),
-    /// The signature scheme is not supported.
-    UnsupportedSignatureScheme(String),
+    /// Opaque error type, to be interpreted similar to HTTP 500. Something went wrong, and you may
+    /// or may not be able to do anything about it.
+    Opaque(String),
+    /// There was a library internal error. These errors are *ALWAYS* bugs and should be reported.
+    Programming(String),
     /// The metadata or target failed to verify.
     VerificationFailure(String),
 }
 
 impl From<json::error::Error> for Error {
     fn from(err: json::error::Error) -> Error {
-        Error::Serde(format!("{:?}", err))
+        Error::Encoding(format!("JSON: {:?}", err))
     }
 }
 
 impl Error {
     /// Helper to include the path that causd the error for FS I/O errors.
     pub fn from_io(err: io::Error, path: &Path) -> Error {
-        Error::Io(format!("Path {:?} : {:?}", path, err))
+        Error::Opaque(format!("Path {:?} : {:?}", path, err))
     }
 }
 
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Error {
-        Error::Io(format!("{:?}", err))
+        Error::Opaque(format!("IO: {:?}", err))
     }
 }
 
 impl From<hyper::error::Error> for Error {
     fn from(err: hyper::error::Error) -> Error {
-        Error::Generic(format!("{:?}", err))
+        Error::Opaque(format!("Hyper: {:?}", err))
     }
 }
 
 impl From<hyper::error::ParseError> for Error {
     fn from(err: hyper::error::ParseError) -> Error {
-        Error::Generic(format!("{:?}", err))
+        Error::Opaque(format!("Hyper: {:?}", err))
     }
 }
 
 impl From<DecodeError> for Error {
     fn from(err: DecodeError) -> Error {
-        Error::Decode(format!("{:?}", err))
+        Error::Encoding(format!("{:?}", err))
     }
 }
 
 impl From<pem::Error> for Error {
     fn from(err: pem::Error) -> Error {
-        Error::Decode(format!("{:?}", err))
+        Error::Encoding(format!("{:?}", err))
     }
 }
 
 impl From<der::Error> for Error {
     fn from(_: der::Error) -> Error {
-        Error::Io("Error reading/writing DER".into())
+        Error::Opaque("Error reading/writing DER".into())
     }
 }
