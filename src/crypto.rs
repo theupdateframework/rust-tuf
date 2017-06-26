@@ -3,12 +3,14 @@
 use data_encoding::HEXLOWER;
 use ring;
 use ring::digest::{self, SHA256};
-use ring::signature::{ED25519, RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA512};
+use ring::rand::SystemRandom;
+use ring::signature::{RSAKeyPair, RSASigningState, Ed25519KeyPair, ED25519, RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA512, RSA_PSS_SHA256, RSA_PSS_SHA512};
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use serde::ser::{Serialize, Serializer, SerializeTupleStruct, Error as SerializeError};
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::str::FromStr;
+use std::sync::Arc;
 use untrusted::Input;
 
 use Result;
@@ -215,6 +217,75 @@ impl<'de> Deserialize<'de> for KeyType {
     }
 }
 
+enum PrivateKeyType {
+    Ed25519(Ed25519KeyPair),
+    Rsa(Arc<RSAKeyPair>)
+}
+
+impl Debug for PrivateKeyType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            &PrivateKeyType::Ed25519(_) => "ed25519",
+            &PrivateKeyType::Rsa(_) => "rsa",
+        };
+        write!(f, "PrivateKeyType {{ \"{}\" }}", s)
+    }
+}
+
+/// A structure containing information about a public key.
+pub struct PrivateKey {
+    private: PrivateKeyType,
+}
+
+impl PrivateKey {
+    /// Create an Ed25519 private key from PKCS#8v2 DER bytes.
+    pub fn ed25519_from_pkcs8(der_key: &[u8]) -> Result<Self> {
+        let key = Ed25519KeyPair::from_pkcs8(Input::from(der_key))
+            .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
+        Ok(PrivateKey {
+            private: PrivateKeyType::Ed25519(key),
+        })
+    }
+
+    /// Create an RSA private key from PKCS#8v2 DER bytes.
+    pub fn rsa_from_pkcs8(der_key: &[u8]) -> Result<Self> {
+        let key = RSAKeyPair::from_pkcs8(Input::from(der_key))
+            .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
+        Ok(PrivateKey {
+            private: PrivateKeyType::Rsa(Arc::new(key)),
+        })
+    }
+
+    /// Sign a message with the given scheme.
+    pub fn sign(&self, msg: &[u8], scheme: &SignatureScheme) -> Result<SignatureValue> {
+        match (&self.private, scheme) {
+            (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha256) => {
+                let mut signing_state = RSASigningState::new(rsa.clone())
+                    .map_err(|_| Error::Opaque("Could not initialize RSA signing state.".into()))?;
+                let rng = SystemRandom::new();
+                let mut buf = vec![0; signing_state.key_pair().public_modulus_len()];
+                signing_state.sign(&RSA_PSS_SHA256, &rng, msg, &mut buf)
+                    .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
+                Ok(SignatureValue(buf))
+            }
+            (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha512) => {
+                let mut signing_state = RSASigningState::new(rsa.clone())
+                    .map_err(|_| Error::Opaque("Could not initialize RSA signing state.".into()))?;
+                let rng = SystemRandom::new();
+                let mut buf = vec![0; signing_state.key_pair().public_modulus_len()];
+                signing_state.sign(&RSA_PSS_SHA512, &rng, msg, &mut buf)
+                    .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
+                Ok(SignatureValue(buf))
+            }
+            (&PrivateKeyType::Ed25519(ref ed), &SignatureScheme::Ed25519) => {
+                Ok(SignatureValue(ed.sign(msg).as_ref().into()))
+            }
+            (k, s) => Err(Error::IllegalArgument(format!("Key {:?} can't be used with scheme {:?}", k, s)))
+        }
+    }
+}
+
+
 /// A structure containing information about a public key.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PublicKey {
@@ -405,5 +476,40 @@ impl HashValue {
     /// An immutable reference to the bytes of the hash value.
     pub fn value(&self) -> &[u8] {
         &self.0
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn rsa_2048_ead_pkcs8_and_sign() {
+        let der = include_bytes!("../tests/rsa/rsa-2048-private-key.pk8");
+        let key = PrivateKey::rsa_from_pkcs8(der.as_ref()).unwrap();
+        let msg = b"test";
+        let _ = key.sign(msg, &SignatureScheme::RsaSsaPssSha256).unwrap();
+        let _ = key.sign(msg, &SignatureScheme::RsaSsaPssSha512).unwrap();
+        assert!(key.sign(msg, &SignatureScheme::Ed25519).is_err());
+    }
+
+    #[test]
+    fn rsa_4096_read_pkcs8_and_sign() {
+        let der = include_bytes!("../tests/rsa/rsa-4096-private-key.pk8");
+        let key = PrivateKey::rsa_from_pkcs8(der.as_ref()).unwrap();
+        let msg = b"test";
+        let _ = key.sign(msg, &SignatureScheme::RsaSsaPssSha256).unwrap();
+        let _ = key.sign(msg, &SignatureScheme::RsaSsaPssSha512).unwrap();
+        assert!(key.sign(msg, &SignatureScheme::Ed25519).is_err());
+    }
+
+    #[test]
+    fn ed25519_read_pkcs8_and_sign() {
+        let der = include_bytes!("../tests/ed25519/ed25519-1.pk8");
+        let key = PrivateKey::ed25519_from_pkcs8(der.as_ref()).unwrap();
+        let msg = b"test";
+        let _ = key.sign(msg, &SignatureScheme::Ed25519).unwrap();
+        assert!(key.sign(msg, &SignatureScheme::RsaSsaPssSha256).is_err());
+        assert!(key.sign(msg, &SignatureScheme::RsaSsaPssSha512).is_err());
     }
 }
