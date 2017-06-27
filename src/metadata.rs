@@ -334,6 +334,10 @@ impl RoleDefinition {
             return Err(Error::IllegalArgument(format!("Threshold: {}", threshold)));
         }
 
+        if key_ids.is_empty() {
+            return Err(Error::IllegalArgument("Cannot define a role with no associated key IDs".into()));
+        }
+
         Ok(RoleDefinition {
             threshold: threshold,
             key_ids: key_ids,
