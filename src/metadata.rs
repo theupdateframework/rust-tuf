@@ -342,7 +342,7 @@ impl RoleDefinition {
 
         if key_ids.len() < threshold {
             return Err(Error::IllegalArgument(format!(
-                "Cannot have a threshold greater than the number of associated key IDs",
+                "Cannot have a threshold greater than the number of associated key IDs. {} vs. {}",
                 threshold,
                 key_ids.len()
             )));
