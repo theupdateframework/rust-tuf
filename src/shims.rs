@@ -152,11 +152,7 @@ impl PublicKey {
                             crypto::KeyFormat::Spki,
                         )
                     }
-                    x => {
-                        return Err(Error::Encoding(
-                            format!("PEM with bad tag: {}", x),
-                        ))
-                    }
+                    x => return Err(Error::Encoding(format!("PEM with bad tag: {}", x))),
                 }
             }
         }
@@ -200,7 +196,9 @@ impl RoleDefinition {
         let dupes = vec_len - key_ids.len();
 
         if dupes != 0 {
-            return Err(Error::Encoding(format!("Found {} duplicate key IDs.", dupes)));
+            return Err(Error::Encoding(
+                format!("Found {} duplicate key IDs.", dupes),
+            ));
         }
 
         Ok(metadata::RoleDefinition::new(self.threshold, key_ids)?)

@@ -76,7 +76,7 @@ impl DataInterchange for JsonDataInterchange {
     /// ```
     /// use tuf::interchange::{DataInterchange, JsonDataInterchange};
     /// use std::collections::HashMap;
-    /// 
+    ///
     /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
     /// let raw = JsonDataInterchange::from_reader(jsn).unwrap();
     /// let mut map = HashMap::new();
@@ -95,7 +95,7 @@ impl DataInterchange for JsonDataInterchange {
     /// ```
     /// use tuf::interchange::{DataInterchange, JsonDataInterchange};
     /// use std::collections::HashMap;
-    /// 
+    ///
     /// let arr = vec![1, 2, 3];
     /// let raw = JsonDataInterchange::serialize(&arr).unwrap();
     /// assert!(raw.is_array());

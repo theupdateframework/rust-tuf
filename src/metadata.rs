@@ -335,7 +335,17 @@ impl RoleDefinition {
         }
 
         if key_ids.is_empty() {
-            return Err(Error::IllegalArgument("Cannot define a role with no associated key IDs".into()));
+            return Err(Error::IllegalArgument(
+                "Cannot define a role with no associated key IDs".into(),
+            ));
+        }
+
+        if key_ids.len() < threshold {
+            return Err(Error::IllegalArgument(format!(
+                "Cannot have a threshold greater than the number of associated key IDs",
+                threshold,
+                key_ids.len()
+            )));
         }
 
         Ok(RoleDefinition {

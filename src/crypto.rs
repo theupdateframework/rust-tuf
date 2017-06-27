@@ -4,7 +4,9 @@ use data_encoding::HEXLOWER;
 use ring;
 use ring::digest::{self, SHA256};
 use ring::rand::SystemRandom;
-use ring::signature::{RSAKeyPair, RSASigningState, Ed25519KeyPair, ED25519, RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA512, RSA_PSS_SHA256, RSA_PSS_SHA512};
+use ring::signature::{RSAKeyPair, RSASigningState, Ed25519KeyPair, ED25519,
+                      RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA512, RSA_PSS_SHA256,
+                      RSA_PSS_SHA512};
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use serde::ser::{Serialize, Serializer, SerializeTupleStruct, Error as SerializeError};
 use std::collections::HashMap;
@@ -219,7 +221,7 @@ impl<'de> Deserialize<'de> for KeyType {
 
 enum PrivateKeyType {
     Ed25519(Ed25519KeyPair),
-    Rsa(Arc<RSAKeyPair>)
+    Rsa(Arc<RSAKeyPair>),
 }
 
 impl Debug for PrivateKeyType {
@@ -240,47 +242,53 @@ pub struct PrivateKey {
 impl PrivateKey {
     /// Create an Ed25519 private key from PKCS#8v2 DER bytes.
     pub fn ed25519_from_pkcs8(der_key: &[u8]) -> Result<Self> {
-        let key = Ed25519KeyPair::from_pkcs8(Input::from(der_key))
-            .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
-        Ok(PrivateKey {
-            private: PrivateKeyType::Ed25519(key),
-        })
+        let key = Ed25519KeyPair::from_pkcs8(Input::from(der_key)).map_err(
+            |_| {
+                Error::Encoding("Could not parse key as PKCS#8v2".into())
+            },
+        )?;
+        Ok(PrivateKey { private: PrivateKeyType::Ed25519(key) })
     }
 
     /// Create an RSA private key from PKCS#8v2 DER bytes.
     pub fn rsa_from_pkcs8(der_key: &[u8]) -> Result<Self> {
-        let key = RSAKeyPair::from_pkcs8(Input::from(der_key))
-            .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
-        Ok(PrivateKey {
-            private: PrivateKeyType::Rsa(Arc::new(key)),
-        })
+        let key = RSAKeyPair::from_pkcs8(Input::from(der_key)).map_err(|_| {
+            Error::Encoding("Could not parse key as PKCS#8v2".into())
+        })?;
+        Ok(PrivateKey { private: PrivateKeyType::Rsa(Arc::new(key)) })
     }
 
     /// Sign a message with the given scheme.
     pub fn sign(&self, msg: &[u8], scheme: &SignatureScheme) -> Result<SignatureValue> {
         match (&self.private, scheme) {
             (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha256) => {
-                let mut signing_state = RSASigningState::new(rsa.clone())
-                    .map_err(|_| Error::Opaque("Could not initialize RSA signing state.".into()))?;
+                let mut signing_state = RSASigningState::new(rsa.clone()).map_err(|_| {
+                    Error::Opaque("Could not initialize RSA signing state.".into())
+                })?;
                 let rng = SystemRandom::new();
                 let mut buf = vec![0; signing_state.key_pair().public_modulus_len()];
-                signing_state.sign(&RSA_PSS_SHA256, &rng, msg, &mut buf)
+                signing_state
+                    .sign(&RSA_PSS_SHA256, &rng, msg, &mut buf)
                     .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
                 Ok(SignatureValue(buf))
             }
             (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha512) => {
-                let mut signing_state = RSASigningState::new(rsa.clone())
-                    .map_err(|_| Error::Opaque("Could not initialize RSA signing state.".into()))?;
+                let mut signing_state = RSASigningState::new(rsa.clone()).map_err(|_| {
+                    Error::Opaque("Could not initialize RSA signing state.".into())
+                })?;
                 let rng = SystemRandom::new();
                 let mut buf = vec![0; signing_state.key_pair().public_modulus_len()];
-                signing_state.sign(&RSA_PSS_SHA512, &rng, msg, &mut buf)
+                signing_state
+                    .sign(&RSA_PSS_SHA512, &rng, msg, &mut buf)
                     .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
                 Ok(SignatureValue(buf))
             }
             (&PrivateKeyType::Ed25519(ref ed), &SignatureScheme::Ed25519) => {
                 Ok(SignatureValue(ed.sign(msg).as_ref().into()))
             }
-            (k, s) => Err(Error::IllegalArgument(format!("Key {:?} can't be used with scheme {:?}", k, s)))
+            (k, s) => Err(Error::IllegalArgument(
+                format!("Key {:?} can't be used with scheme {:?}", k, s),
+            )),
         }
     }
 }
