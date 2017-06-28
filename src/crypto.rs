@@ -52,7 +52,13 @@ pub fn calculate_key_id(public_key: &PublicKeyValue) -> KeyId {
 pub struct KeyId(Vec<u8>);
 
 impl KeyId {
-    fn from_string(string: &str) -> Result<Self> {
+    /// Parse a key ID from a hex-lower string.
+    pub fn from_string(string: &str) -> Result<Self> {
+        if string.len() != 64 {
+            return Err(Error::IllegalArgument(
+                "Hex key ID must be 64 characters long".into(),
+            ));
+        }
         Ok(KeyId(HEXLOWER.decode(string.as_bytes())?))
     }
 }

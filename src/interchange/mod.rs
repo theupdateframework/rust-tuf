@@ -74,16 +74,27 @@ impl DataInterchange for JsonDataInterchange {
     }
 
     /// ```
+    /// #[macro_use]
+    /// extern crate serde_derive;
+    /// #[macro_use]
+    /// extern crate serde_json;
+    /// extern crate tuf;
+    ///
     /// use tuf::interchange::{DataInterchange, JsonDataInterchange};
     /// use std::collections::HashMap;
     ///
-    /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
-    /// let raw = JsonDataInterchange::from_reader(jsn).unwrap();
-    /// let mut map = HashMap::new();
-    /// let _ = map.insert("foo".to_string(), "bar".to_string());
-    /// let _ = map.insert("baz".to_string(), "quux".to_string());
-    /// let de: HashMap<String, String> = JsonDataInterchange::deserialize(&raw).unwrap();
-    /// assert_eq!(de, map);
+    /// #[derive(Deserialize, Debug, PartialEq)]
+    /// struct Thing {
+    ///    foo: String,
+    ///    bar: String,
+    /// }
+    ///
+    /// fn main() {
+    ///     let jsn = json!({"foo": "wat", "bar": "lol"});
+    ///     let thing = Thing { foo: "wat".into(), bar: "lol".into() };
+    ///     let de: Thing = JsonDataInterchange::deserialize(&jsn).unwrap();
+    ///     assert_eq!(de, thing);
+    /// }
     /// ```
     fn deserialize<T>(raw_data: &Self::RawData) -> Result<T>
     where
@@ -93,17 +104,27 @@ impl DataInterchange for JsonDataInterchange {
     }
 
     /// ```
+    /// #[macro_use]
+    /// extern crate serde_derive;
+    /// #[macro_use]
+    /// extern crate serde_json;
+    /// extern crate tuf;
+    ///
     /// use tuf::interchange::{DataInterchange, JsonDataInterchange};
     /// use std::collections::HashMap;
     ///
-    /// let arr = vec![1, 2, 3];
-    /// let raw = JsonDataInterchange::serialize(&arr).unwrap();
-    /// assert!(raw.is_array());
+    /// #[derive(Serialize)]
+    /// struct Thing {
+    ///    foo: String,
+    ///    bar: String,
+    /// }
     ///
-    /// let mut map = HashMap::new();
-    /// let _ = map.insert("abc", 123);
-    /// let raw = JsonDataInterchange::serialize(&map).unwrap();
-    /// assert!(raw.is_object());
+    /// fn main() {
+    ///     let jsn = json!({"foo": "wat", "bar": "lol"});
+    ///     let thing = Thing { foo: "wat".into(), bar: "lol".into() };
+    ///     let se: serde_json::Value = JsonDataInterchange::serialize(&thing).unwrap();
+    ///     assert_eq!(se, jsn);
+    /// }
     /// ```
     fn serialize<T>(data: &T) -> Result<Self::RawData>
     where
