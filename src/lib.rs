@@ -51,7 +51,7 @@
 //!         Some("rustup/1.4.0".into()));
 //!
 //!     let config = Config::build().finish().unwrap();
-//!     let mut client = Client::new(tuf, config, local, remote);
+//!     let mut client = Client::new(tuf, config, local, remote).unwrap();
 //!     let _ = client.update_local().unwrap();
 //!     let _ = client.update_remote().unwrap();
 //! }

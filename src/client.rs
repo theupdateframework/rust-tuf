@@ -29,13 +29,16 @@ where
 {
     /// Create a new TUF client from the given `Tuf` (metadata storage) and local and remote
     /// repositories.
-    pub fn new(tuf: Tuf<D>, config: Config, local: L, remote: R) -> Self {
-        Client {
+    pub fn new(tuf: Tuf<D>, config: Config, mut local: L, mut remote: R) -> Result<Self> {
+        local.initialize()?;
+        remote.initialize()?;
+
+        Ok(Client {
             tuf: tuf,
             config: config,
             local: local,
             remote: remote,
-        }
+        })
     }
 
     /// Update TUF metadata from the local repository.
