@@ -32,10 +32,10 @@ ring = { version = "0.9.4", features = [ "rsa_signing" ] }
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
+tempfile = "2.1.5"
 url = "1.4"
 untrusted = "0.5"
 uuid = { version = "0.5", features = [ "v4" ] }
-walkdir = "1"
 
 [dev-dependencies]
 tempdir = "0.3"

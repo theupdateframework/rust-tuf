@@ -4,7 +4,7 @@ use Result;
 use crypto;
 use error::Error;
 use interchange::DataInterchange;
-use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath};
+use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath, TargetPath};
 use repository::Repository;
 use tuf::Tuf;
 
@@ -106,6 +106,7 @@ where
     {
         let latest_root = repo.fetch_metadata(
             &Role::Root,
+            &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::None,
             max_root_size,
             None,
@@ -129,6 +130,7 @@ where
         for i in (tuf.root().version() + 1)..latest_version {
             let signed = repo.fetch_metadata(
                 &Role::Root,
+                &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(i),
                 max_root_size,
                 None,
@@ -157,6 +159,7 @@ where
     {
         let ts = repo.fetch_metadata(
             &Role::Timestamp,
+            &MetadataPath::from_role(&Role::Timestamp),
             &MetadataVersion::None,
             max_timestamp_size,
             None,
@@ -191,6 +194,7 @@ where
 
         let snap = repo.fetch_metadata(
             &Role::Snapshot,
+            &MetadataPath::from_role(&Role::Snapshot),
             &MetadataVersion::None,
             &snapshot_description.length(),
             hashes,
@@ -225,11 +229,19 @@ where
 
         let targets = repo.fetch_metadata(
             &Role::Targets,
+            &MetadataPath::from_role(&Role::Targets),
             &MetadataVersion::None,
             &targets_description.length(),
             hashes,
         )?;
         tuf.update_targets(targets)
+    }
+
+    /// Fetch a target from the remote repo and write it to the local repo.
+    pub fn fetch_target(&mut self, target: &TargetPath) -> Result<()> {
+        let target_description = self.tuf.target_description(target)?;
+        let read = self.remote.fetch_target(target)?;
+        self.local.store_target(read, target, target_description)
     }
 }
 

@@ -6,6 +6,7 @@ use json;
 use pem;
 use std::io;
 use std::path::Path;
+use tempfile;
 
 use metadata::Role;
 use rsa::der;
@@ -32,6 +33,9 @@ pub enum Error {
     Opaque(String),
     /// There was a library internal error. These errors are *ALWAYS* bugs and should be reported.
     Programming(String),
+    /// The target is unavailable. This may mean it is either not in the metadata or the metadata
+    /// chain to the target cannot be fully verified.
+    TargetUnavailable,
     /// The metadata or target failed to verify.
     VerificationFailure(String),
 }
@@ -82,5 +86,11 @@ impl From<pem::Error> for Error {
 impl From<der::Error> for Error {
     fn from(_: der::Error) -> Error {
         Error::Opaque("Error reading/writing DER".into())
+    }
+}
+
+impl From <tempfile::PersistError> for Error {
+    fn from(err: tempfile::PersistError) -> Error {
+        Error::Opaque(format!("Error persisting temp file: {:?}", err))
     }
 }

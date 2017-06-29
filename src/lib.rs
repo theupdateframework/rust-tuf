@@ -43,7 +43,7 @@
 //!
 //!     let tuf = Tuf::<JsonDataInterchange>::from_root_pinned(root, &key_ids).unwrap();
 //!
-//!     let mut local = FileSystemRepository::new(PathBuf::from("~/.cargo/tuf"));
+//!     let mut local = FileSystemRepository::new(PathBuf::from("~/.rustup"));
 //!
 //!     let mut remote = HttpRepository::new(
 //!         Url::parse("https://static.rust-lang.org/").unwrap(),
@@ -78,10 +78,10 @@ extern crate serde_json as json;
 extern crate serde_json as json;
 #[cfg(test)]
 extern crate tempdir;
+extern crate tempfile;
 extern crate url;
 extern crate untrusted;
 extern crate uuid;
-extern crate walkdir;
 
 pub mod error;
 
@@ -96,7 +96,6 @@ pub mod repository;
 mod rsa;
 mod shims;
 pub mod tuf;
-mod util;
 
 pub use tuf::*;
 pub use error::*;

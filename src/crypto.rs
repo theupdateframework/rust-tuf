@@ -10,7 +10,7 @@ use ring::signature::{RSAKeyPair, RSASigningState, Ed25519KeyPair, ED25519,
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use serde::ser::{Serialize, Serializer, SerializeTupleStruct, Error as SerializeError};
 use std::collections::HashMap;
-use std::fmt::{self, Debug};
+use std::fmt::{self, Debug, Display};
 use std::str::FromStr;
 use std::sync::Arc;
 use untrusted::Input;
@@ -24,6 +24,20 @@ static HASH_ALG_PREFS: &'static [HashAlgorithm] = &[HashAlgorithm::Sha512, HashA
 
 /// Given a map of hash algorithms and their values, get the prefered algorithm and the hash
 /// calculated by it. Returns an `Err` if there is no match.
+///
+/// ```
+/// use std::collections::HashMap;
+/// use tuf::crypto::{hash_preference, HashValue, HashAlgorithm};
+///
+/// let mut map = HashMap::new();
+/// assert!(hash_preference(&map).is_err());
+///
+/// let _ = map.insert(HashAlgorithm::Sha512, HashValue::from_hex("abcd").unwrap());
+/// assert_eq!(hash_preference(&map).unwrap().0, &HashAlgorithm::Sha512);
+///
+/// let _ = map.insert(HashAlgorithm::Sha256, HashValue::from_hex("0123").unwrap());
+/// assert_eq!(hash_preference(&map).unwrap().0, &HashAlgorithm::Sha512);
+/// ```
 pub fn hash_preference<'a>(
     hashes: &'a HashMap<HashAlgorithm, HashValue>,
 ) -> Result<(&'static HashAlgorithm, &'a HashValue)> {
@@ -483,13 +497,40 @@ pub enum HashAlgorithm {
 }
 
 /// Wrapper for the value of a hash digest.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct HashValue(Vec<u8>);
 
 impl HashValue {
+    /// Parse a hex-lower string and return a `HashValue`.
+    ///
+    /// ```
+    /// use tuf::crypto::HashValue;
+    /// assert_eq!(HashValue::from_hex("abcd").unwrap().value(), &[0xab, 0xcd]);
+    /// ```
+    pub fn from_hex(s: &str) -> Result<Self> {
+       Ok(HashValue(HEXLOWER.decode(s.as_bytes())?))
+    }
+
+    /// Create a new `HashValue` from the given digest bytes.
+    pub fn new(bytes: Vec<u8>) -> Self {
+        HashValue(bytes)
+    }
+
     /// An immutable reference to the bytes of the hash value.
     pub fn value(&self) -> &[u8] {
         &self.0
+    }
+}
+
+impl Debug for HashValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "HashValue {{ \"{}\" }}", HEXLOWER.encode(&self.0))
+    }
+}
+
+impl Display for HashValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", HEXLOWER.encode(&self.0))
     }
 }
 

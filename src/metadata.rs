@@ -2,10 +2,12 @@
 
 use chrono::DateTime;
 use chrono::offset::Utc;
+use ring::digest::{self, SHA256, SHA512};
 use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
 use serde::ser::{Serialize, Serializer, Error as SerializeError};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display};
+use std::io::Read;
 use std::marker::PhantomData;
 
 use Result;
@@ -13,6 +15,117 @@ use crypto::{KeyId, PublicKey, Signature, HashAlgorithm, HashValue};
 use error::Error;
 use interchange::DataInterchange;
 use shims;
+
+static PATH_ILLEGAL_COMPONENTS: &'static [&str] = &[
+    "", // empty
+    ".", // current dir
+    "..", // parent dir
+    // TODO ? "0", // may translate to nul in windows
+];
+
+static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &'static [&str] = &[
+    // DOS device files 
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+    "KEYBD$",
+    "CLOCK$",
+    "SCREEN$",
+    "$IDLE$",
+    "CONFIG$",
+];
+
+static PATH_ILLEGAL_STRINGS: &'static [&str] = &[
+    "\\", // for windows compatibility
+    "<", 
+    ">",
+    "\"",
+    "|",
+    "?",
+    "*",
+    // control characters, all illegal in FAT
+    "\u{000}",
+    "\u{001}",
+    "\u{002}",
+    "\u{003}",
+    "\u{004}",
+    "\u{005}",
+    "\u{006}",
+    "\u{007}",
+    "\u{008}",
+    "\u{009}",
+    "\u{00a}",
+    "\u{00b}",
+    "\u{00c}",
+    "\u{00d}",
+    "\u{00e}",
+    "\u{00f}",
+    "\u{010}",
+    "\u{011}",
+    "\u{012}",
+    "\u{013}",
+    "\u{014}",
+    "\u{015}",
+    "\u{016}",
+    "\u{017}",
+    "\u{018}",
+    "\u{019}",
+    "\u{01a}",
+    "\u{01b}",
+    "\u{01c}",
+    "\u{01d}",
+    "\u{01e}",
+    "\u{01f}",
+    "\u{07f}",
+];
+
+fn safe_path(path: &str) -> Result<()> {
+    if path.starts_with("/") {
+        return Err(Error::IllegalArgument("Cannot start with '/'".into()))
+    }
+
+    for bad_str in PATH_ILLEGAL_STRINGS {
+        if path.contains(bad_str) {
+            return Err(Error::IllegalArgument(format!("Path cannot contain {:?}", bad_str)))
+        }
+    }
+
+    for component in path.split('/') {
+        for bad_str in PATH_ILLEGAL_COMPONENTS {
+            if component == *bad_str {
+                return Err(Error::IllegalArgument(format!("Path cannot have component {:?}", component)))
+            }
+        }
+
+        let component_lower = component.to_lowercase();
+        for bad_str in PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE {
+            if component_lower.as_str() == *bad_str {
+                return Err(Error::IllegalArgument(format!("Path cannot have component {:?}", component)))
+            }
+        }
+    }
+
+    Ok(())
+}
 
 /// Trait used to represent whether a piece of data is verified or not.
 pub trait VerificationStatus {}
@@ -42,6 +155,32 @@ pub enum Role {
     Timestamp,
 }
 
+impl Role {
+    /// Check if this role could be associated with a given path.
+    ///
+    /// ```
+    /// use tuf::metadata::{MetadataPath, Role};
+    ///
+    /// assert!(Role::Root.fuzzy_matches_path(&MetadataPath::from_role(&Role::Root)));
+    /// assert!(Role::Snapshot.fuzzy_matches_path(&MetadataPath::from_role(&Role::Snapshot)));
+    /// assert!(Role::Targets.fuzzy_matches_path(&MetadataPath::from_role(&Role::Targets)));
+    /// assert!(Role::Timestamp.fuzzy_matches_path(&MetadataPath::from_role(&Role::Timestamp)));
+    ///
+    /// assert!(!Role::Root.fuzzy_matches_path(&MetadataPath::from_role(&Role::Snapshot)));
+    /// assert!(!Role::Root.fuzzy_matches_path(&MetadataPath::new("wat".into()).unwrap()));
+    /// ```
+    pub fn fuzzy_matches_path(&self, path: &MetadataPath) -> bool {
+        match self {
+            &Role::Root if &path.0 == "root" => true,
+            &Role::Snapshot if &path.0 == "snapshot" => true,
+            &Role::Timestamp if &path.0 == "timestamp" => true,
+            &Role::Targets if &path.0 == "targets" => true,
+            // TODO delegation support
+            _ => false 
+        }
+    }
+}
+
 impl Display for Role {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -54,14 +193,14 @@ impl Display for Role {
 }
 
 /// Enum used for addressing versioned TUF metadata.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum MetadataVersion {
     /// The metadata is unversioned.
     None,
     /// The metadata is addressed by a specific version number.
     Number(u32),
     /// The metadata is addressed by a hash prefix. Used with TUF's consistent snapshot feature.
-    Hash(String),
+    Hash(HashValue),
 }
 
 impl MetadataVersion {
@@ -70,7 +209,7 @@ impl MetadataVersion {
         match self {
             &MetadataVersion::None => String::new(),
             &MetadataVersion::Number(ref x) => format!("{}.", x),
-            &MetadataVersion::Hash(ref s) => format!("{}.", s),
+            &MetadataVersion::Hash(ref v) => format!("{}.", v),
         }
     }
 }
@@ -114,7 +253,7 @@ where
 
     /// An immutable reference to the unverified raw data.
     ///
-    /// *WARNING*: This data is untrusted.
+    /// **WARNING**: This data is untrusted.
     pub fn unverified_signed(&self) -> &D::RawData {
         &self.signed
     }
@@ -385,17 +524,83 @@ impl<'de> Deserialize<'de> for RoleDefinition {
     }
 }
 
-/// Wrapper for a path to metadata.
-#[derive(Debug, Clone, PartialEq, Hash, Eq, Serialize, Deserialize)]
+/// Wrapper for a path to metadata
+#[derive(Debug, Clone, PartialEq, Hash, Eq, Serialize)]
 pub struct MetadataPath(String);
 
 impl MetadataPath {
-    /// Create a metadata path from the given role.
-    pub fn from_role(role: &Role) -> Self {
-        MetadataPath(role.to_string())
+    /// Create a new `MetadataPath` from a `String`.
+    ///
+    /// ```
+    /// use tuf::metadata::MetadataPath;
+    ///
+    /// assert!(MetadataPath::new("foo".into()).is_ok());
+    /// assert!(MetadataPath::new("/foo".into()).is_err());
+    /// assert!(MetadataPath::new("../foo".into()).is_err());
+    /// assert!(MetadataPath::new("foo/".into()).is_err());
+    /// assert!(MetadataPath::new("foo/..".into()).is_err());
+    /// assert!(MetadataPath::new("foo/../bar".into()).is_err());
+    /// assert!(MetadataPath::new("..foo".into()).is_ok());
+    /// assert!(MetadataPath::new("foo//bar".into()).is_err());
+    /// assert!(MetadataPath::new("foo/..bar".into()).is_ok());
+    /// assert!(MetadataPath::new("foo/bar..".into()).is_ok());
+    /// ```
+    pub fn new(path: String) -> Result<Self> {
+        safe_path(&path)?;
+        Ok(MetadataPath(path))
     }
 
-    // TODO convert to/from paths/urls/etc
+    /// Create a metadata path from the given role.
+    /// ```
+    /// use tuf::metadata::{Role, MetadataPath};
+    ///
+    /// assert_eq!(MetadataPath::from_role(&Role::Root),
+    ///            MetadataPath::new("root".into()))
+    /// assert_eq!(MetadataPath::from_role(&Role::Snapshot),
+    ///            MetadataPath::new("snapshot".into()))
+    /// assert_eq!(MetadataPath::from_role(&Role::Targets),
+    ///            MetadataPath::new("targets".into()))
+    /// assert_eq!(MetadataPath::from_role(&Role::Timestamp),
+    ///            MetadataPath::new("timestamp".into()))
+    /// ```
+    pub fn from_role(role: &Role) -> Self {
+        Self::new(format!("{}", role)).unwrap()
+    }
+
+    /// Split `MetadataPath` into components that can be joined to create URL paths, Unix paths, or
+    /// Windows paths.
+    ///
+    /// ```
+    /// use tuf::crypto::HashValue;
+    /// use tuf::interchange::JsonDataInterchange;
+    /// use tuf::metadata::{MetadataPath, MetadataVersion};
+    ///
+    /// let path = MetadataPath::new("foo/bar".into()).unwrap();
+    /// assert_eq!(path.components::<JsonDataInterchange>(&MetadataVersion::None),
+    ///            ["foo".to_string(), "bar.json".to_string()]);
+    /// assert_eq!(path.components::<JsonDataInterchange>(&MetadataVersion::Number(1)),
+    ///            ["foo".to_string(), "1.bar.json".to_string()]);
+    /// assert_eq!(path.components::<JsonDataInterchange>(&MetadataVersion::Hash(HashValue::from_hex("abcd").unwrap())),
+    ///            ["foo".to_string(), "abcd.bar.json".to_string()]);
+    /// ```
+    pub fn components<D>(&self, version: &MetadataVersion) -> Vec<String>
+    where
+        D: DataInterchange,
+    {
+        let mut buf: Vec<String> = self.0.split('/').map(|s| s.to_string()).collect();
+        let len = buf.len();
+        buf[len - 1] = format!("{}{}.{}", version.prefix(), buf[len - 1], D::extension());
+        buf
+    }
+}
+
+impl<'de> Deserialize<'de> for MetadataPath {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let s: String = Deserialize::deserialize(de)?;
+        MetadataPath::new(s).map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
+    }
 }
 
 /// Metadata for the timestamp role.
@@ -587,14 +792,122 @@ impl<'de> Deserialize<'de> for SnapshotMetadata {
 
 
 /// Wrapper for a path to a target.
-#[derive(Debug, Clone, PartialEq, Hash, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq, Serialize)]
 pub struct TargetPath(String);
+
+impl TargetPath {
+    /// Create a new `TargetPath` from a `String`.
+    ///
+    /// ```
+    /// use tuf::metadata::TargetPath;
+    ///
+    /// assert!(TargetPath::new("foo".into()).is_ok());
+    /// assert!(TargetPath::new("/foo".into()).is_err());
+    /// assert!(TargetPath::new("../foo".into()).is_err());
+    /// assert!(TargetPath::new("foo/".into()).is_err());
+    /// assert!(TargetPath::new("foo/..".into()).is_err());
+    /// assert!(TargetPath::new("foo/../bar".into()).is_err());
+    /// assert!(TargetPath::new("..foo".into()).is_ok());
+    /// assert!(TargetPath::new("foo//bar".into()).is_err());
+    /// assert!(TargetPath::new("foo/..bar".into()).is_ok());
+    /// assert!(TargetPath::new("foo/bar..".into()).is_ok());
+    /// ```
+    pub fn new(path: String) -> Result<Self> {
+        safe_path(&path)?;
+        Ok(TargetPath(path))
+    }
+
+    /// Split `TargetPath` into components that can be joined to create URL paths, Unix paths, or
+    /// Windows paths.
+    ///
+    /// ```
+    /// use tuf::metadata::TargetPath;
+    ///
+    /// let path = TargetPath::new("foo/bar".into()).unwrap();
+    /// assert_eq!(path.components(), ["foo".to_string(), "bar".to_string()]);
+    /// ```
+    pub fn components(&self) -> Vec<String> {
+        self.0.split('/').map(|s| s.to_string()).collect()
+    }
+}
+
+impl<'de> Deserialize<'de> for TargetPath {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let s: String = Deserialize::deserialize(de)?;
+        TargetPath::new(s).map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
+    }
+}
 
 /// Description of a target, used in verification.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TargetDescription {
     length: u64,
     hashes: HashMap<HashAlgorithm, HashValue>,
+}
+
+impl TargetDescription {
+    /// Read the from the given reader and calculate the length and hash values.
+    ///
+    /// ```
+    /// use tuf::crypto::{HashAlgorithm,HashValue};
+    /// use tuf::metadata::TargetDescription;
+    ///
+    /// let bytes: &[u8] = b"it was a pleasure to burn";
+    /// let target_description = TargetDescription::from_reader(bytes).unwrap();
+    ///
+    /// // $ printf 'it was a pleasure to burn' | sha256sum
+    /// let sha256 = HashValue::from_hex("45df7395bceb7567de2fb8272048b4e57f98bf64c2a72e2aa9933537bd99590b").unwrap();
+    /// // $ printf 'it was a pleasure to burn' | sha512sum
+    /// let sha512 = HashValue::from_hex("b6e231c0ac9b61dbc9a56b948fa76e6efa70864028cd607a84c248473aa7da339476d0d3060dfcd5bad5e0a054d7328ff064a1a09b9712d09fe4d9034c210981").unwrap();
+    ///
+    /// assert_eq!(target_description.length(), bytes.len() as u64);
+    /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
+    /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
+    /// ```
+    pub fn from_reader<R>(mut read: R) -> Result<Self>
+    where
+        R: Read,
+    {
+        let mut length = 0;
+        let mut sha256 = digest::Context::new(&SHA256);
+        let mut sha512 = digest::Context::new(&SHA512);
+
+        let mut buf = vec![0; 1024];
+        loop {
+            match read.read(&mut buf) {
+                Ok(read_bytes) => {
+                    if read_bytes == 0 {
+                        break;
+                    }
+
+                    length += read_bytes as u64;
+                    sha256.update(&buf[0..read_bytes]);
+                    sha512.update(&buf[0..read_bytes]);
+                }
+                e @ Err(_) => e.map(|_| ())?,
+            }
+        }
+
+        let mut hashes = HashMap::new();
+        let _ = hashes.insert(HashAlgorithm::Sha256, HashValue::new(sha256.finish().as_ref().to_vec()));
+        let _ = hashes.insert(HashAlgorithm::Sha512, HashValue::new(sha512.finish().as_ref().to_vec()));
+        Ok(TargetDescription {
+            length: length,
+            hashes: hashes,
+        })
+    }
+
+    /// The maximum length of the target.
+    pub fn length(&self) -> u64 {
+        self.length
+    }
+
+    /// An immutable reference to the list of calculated hashes.
+    pub fn hashes(&self) -> &HashMap<HashAlgorithm, HashValue> {
+        &self.hashes
+    }
 }
 
 /// Metadata for the targets role.

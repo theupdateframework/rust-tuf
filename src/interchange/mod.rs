@@ -1,4 +1,4 @@
-//! Contains structures and functions to aid in various TUF data interchange formats.
+//! Structures and functions to aid in various TUF data interchange formats.
 
 mod cjson;
 

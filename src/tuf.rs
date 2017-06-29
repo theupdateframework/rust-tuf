@@ -9,7 +9,7 @@ use crypto::KeyId;
 use error::Error;
 use interchange::DataInterchange;
 use metadata::{SignedMetadata, RootMetadata, VerificationStatus, TimestampMetadata, Role,
-               SnapshotMetadata, MetadataPath, TargetsMetadata, TargetPath};
+               SnapshotMetadata, MetadataPath, TargetsMetadata, TargetPath, TargetDescription};
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
@@ -39,7 +39,7 @@ impl<D: DataInterchange> Tuf<D> {
 
     /// Create a new `TUF` struct from a piece of metadata that is assumed to be trusted.
     ///
-    /// *WARNING*: This is trust-on-first-use (TOFU) and offers weaker security guarantees than the
+    /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than the
     /// related method `from_root_pinned`.
     pub fn from_root<V>(signed_root: SignedMetadata<D, RootMetadata, V>) -> Result<Self>
     where
@@ -193,13 +193,24 @@ impl<D: DataInterchange> Tuf<D> {
                     )
                 })?;
 
+            let current_version = self.snapshot.as_ref().map(|t| t.version()).unwrap_or(0);
+
+            if snapshot_description.version() < current_version {
+                return Err(Error::VerificationFailure(format!(
+                    "Attempted to roll back snapshot metadata at version {} to {}.",
+                    current_version,
+                    snapshot_description.version()
+                )));
+            } else if snapshot_description.version() == current_version {
+                return Ok(false);
+            }
+
             let signed_snapshot = signed_snapshot.verify(
                 root.snapshot().threshold(),
                 root.snapshot().key_ids(),
                 root.keys(),
             )?;
 
-            let current_version = self.snapshot.as_ref().map(|t| t.version()).unwrap_or(0);
             let snapshot: SnapshotMetadata = D::deserialize(&signed_snapshot.signed())?;
 
             if snapshot.version() != snapshot_description.version() {
@@ -215,17 +226,7 @@ impl<D: DataInterchange> Tuf<D> {
                 return Err(Error::ExpiredMetadata(Role::Snapshot));
             }
 
-            if snapshot.version() < current_version {
-                return Err(Error::VerificationFailure(format!(
-                    "Attempted to roll back snapshot metadata at version {} to {}.",
-                    current_version,
-                    snapshot.version()
-                )));
-            } else if snapshot.version() == current_version {
-                return Ok(false);
-            } else {
-                snapshot
-            }
+            snapshot
         };
 
         self.snapshot = Some(snapshot);
@@ -252,13 +253,24 @@ impl<D: DataInterchange> Tuf<D> {
                     )
                 })?;
 
+            let current_version = self.targets.as_ref().map(|t| t.version()).unwrap_or(0);
+
+            if targets_description.version() < current_version {
+                return Err(Error::VerificationFailure(format!(
+                    "Attempted to roll back targets metadata at version {} to {}.",
+                    current_version,
+                    targets_description.version()
+                )));
+            } else if targets_description.version() == current_version {
+                return Ok(false);
+            }
+
             let signed_targets = signed_targets.verify(
                 root.targets().threshold(),
                 root.targets().key_ids(),
                 root.keys(),
             )?;
 
-            let current_version = self.targets.as_ref().map(|t| t.version()).unwrap_or(0);
             let targets: TargetsMetadata = D::deserialize(&signed_targets.signed())?;
 
             if targets.version() != targets_description.version() {
@@ -273,22 +285,26 @@ impl<D: DataInterchange> Tuf<D> {
             if targets.expires() <= &Utc::now() {
                 return Err(Error::ExpiredMetadata(Role::Snapshot));
             }
-
-            if targets.version() < current_version {
-                return Err(Error::VerificationFailure(format!(
-                    "Attempted to roll back targets metadata at version {} to {}.",
-                    current_version,
-                    targets.version()
-                )));
-            } else if targets.version() == current_version {
-                return Ok(false);
-            } else {
-                targets
-            }
+            targets
         };
 
         self.targets = Some(targets);
         Ok(true)
+    }
+
+    /// Get a reference to the description needed to verify the target defined by the given
+    /// `TargetPath`. Returns an `Error` if the target is not defined in the trusted metadata. This
+    /// may mean the target exists somewhere in the metadata, but the chain of trust to that target
+    /// may be invalid or incomplete.
+    pub fn target_description(&self, target_path: &TargetPath) -> Result<&TargetDescription> {
+        let _ = self.safe_root_ref()?;
+        let _ = self.safe_snapshot_ref()?;
+        let targets = self.safe_targets_ref()?;
+
+        targets.targets().get(target_path)
+            .ok_or(Error::TargetUnavailable)
+
+        // TODO include searching delegations
     }
 
     fn purge_metadata(&mut self) {
