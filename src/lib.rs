@@ -15,14 +15,13 @@
 //! extern crate url;
 //!
 //! use hyper::client::Client as HttpClient;
-//! use std::fs::File;
 //! use std::path::PathBuf;
 //! use tuf::Tuf;
 //! use tuf::crypto::KeyId;
 //! use tuf::client::{Client, Config};
 //! use tuf::metadata::{RootMetadata, Unverified, SignedMetadata, Role, MetadataPath,
 //!     MetadataVersion};
-//! use tuf::interchange::{DataInterchange, JsonDataInterchange};
+//! use tuf::interchange::JsonDataInterchange;
 //! use tuf::repository::{Repository, FileSystemRepository, HttpRepository};
 //! use url::Url;
 //!
