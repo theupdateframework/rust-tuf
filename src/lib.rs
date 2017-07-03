@@ -20,7 +20,8 @@
 //! use tuf::Tuf;
 //! use tuf::crypto::KeyId;
 //! use tuf::client::{Client, Config};
-//! use tuf::metadata::{RootMetadata, Unverified, SignedMetadata};
+//! use tuf::metadata::{RootMetadata, Unverified, SignedMetadata, Role, MetadataPath,
+//!     MetadataVersion};
 //! use tuf::interchange::{DataInterchange, JsonDataInterchange};
 //! use tuf::repository::{Repository, FileSystemRepository, HttpRepository};
 //! use url::Url;
@@ -31,17 +32,10 @@
 //!     "85f6c314f168a8c3d92a57f2d9bb6ab495a4ac921f02d2e32befc7bc812bd904",
 //! ];
 //!
-//! fn get_original_root() -> File { unimplemented!() }
-//!
 //! fn main() {
-//!     let root: SignedMetadata<JsonDataInterchange, RootMetadata, Unverified> =
-//!         JsonDataInterchange::from_reader(get_original_root()).unwrap();
-//!
 //!     let key_ids: Vec<KeyId> = TRUSTED_ROOT_KEY_IDS.iter()
 //!         .map(|k| KeyId::from_string(k).unwrap())
 //!         .collect();
-//!
-//!     let tuf = Tuf::<JsonDataInterchange>::from_root_pinned(root, &key_ids).unwrap();
 //!
 //!     let mut local = FileSystemRepository::new(PathBuf::from("~/.rustup"));
 //!
@@ -51,6 +45,17 @@
 //!         Some("rustup/1.4.0".into()));
 //!
 //!     let config = Config::build().finish().unwrap();
+//!
+//!     // fetching this original root from the network is safe because
+//!     // we are using trusted, pinned keys to verify it
+//!     let root = remote.fetch_metadata(&Role::Root,
+//!                                      &MetadataPath::from_role(&Role::Root),
+//!                                      &MetadataVersion::None,
+//!                                      config.max_root_size(),
+//!                                      None).unwrap();
+//!
+//!     let tuf = Tuf::<JsonDataInterchange>::from_root_pinned(root, &key_ids).unwrap();
+//!
 //!     let mut client = Client::new(tuf, config, local, remote).unwrap();
 //!     let _ = client.update_local().unwrap();
 //!     let _ = client.update_remote().unwrap();

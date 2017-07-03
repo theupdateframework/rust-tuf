@@ -24,7 +24,7 @@ static PATH_ILLEGAL_COMPONENTS: &'static [&str] = &[
 ];
 
 static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &'static [&str] = &[
-    // DOS device files 
+    // DOS device files
     "CON",
     "PRN",
     "AUX",
@@ -56,7 +56,7 @@ static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &'static [&str] = &[
 
 static PATH_ILLEGAL_STRINGS: &'static [&str] = &[
     "\\", // for windows compatibility
-    "<", 
+    "<",
     ">",
     "\"",
     "|",
@@ -100,26 +100,32 @@ static PATH_ILLEGAL_STRINGS: &'static [&str] = &[
 
 fn safe_path(path: &str) -> Result<()> {
     if path.starts_with("/") {
-        return Err(Error::IllegalArgument("Cannot start with '/'".into()))
+        return Err(Error::IllegalArgument("Cannot start with '/'".into()));
     }
 
     for bad_str in PATH_ILLEGAL_STRINGS {
         if path.contains(bad_str) {
-            return Err(Error::IllegalArgument(format!("Path cannot contain {:?}", bad_str)))
+            return Err(Error::IllegalArgument(
+                format!("Path cannot contain {:?}", bad_str),
+            ));
         }
     }
 
     for component in path.split('/') {
         for bad_str in PATH_ILLEGAL_COMPONENTS {
             if component == *bad_str {
-                return Err(Error::IllegalArgument(format!("Path cannot have component {:?}", component)))
+                return Err(Error::IllegalArgument(
+                    format!("Path cannot have component {:?}", component),
+                ));
             }
         }
 
         let component_lower = component.to_lowercase();
         for bad_str in PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE {
             if component_lower.as_str() == *bad_str {
-                return Err(Error::IllegalArgument(format!("Path cannot have component {:?}", component)))
+                return Err(Error::IllegalArgument(
+                    format!("Path cannot have component {:?}", component),
+                ));
             }
         }
     }
@@ -176,7 +182,7 @@ impl Role {
             &Role::Timestamp if &path.0 == "timestamp" => true,
             &Role::Targets if &path.0 == "targets" => true,
             // TODO delegation support
-            _ => false 
+            _ => false,
         }
     }
 }
@@ -597,9 +603,7 @@ impl MetadataPath {
 impl<'de> Deserialize<'de> for MetadataPath {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let s: String = Deserialize::deserialize(de)?;
-        MetadataPath::new(s).map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
-        })
+        MetadataPath::new(s).map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -834,9 +838,7 @@ impl TargetPath {
 impl<'de> Deserialize<'de> for TargetPath {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let s: String = Deserialize::deserialize(de)?;
-        TargetPath::new(s).map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
-        })
+        TargetPath::new(s).map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -891,8 +893,14 @@ impl TargetDescription {
         }
 
         let mut hashes = HashMap::new();
-        let _ = hashes.insert(HashAlgorithm::Sha256, HashValue::new(sha256.finish().as_ref().to_vec()));
-        let _ = hashes.insert(HashAlgorithm::Sha512, HashValue::new(sha512.finish().as_ref().to_vec()));
+        let _ = hashes.insert(
+            HashAlgorithm::Sha256,
+            HashValue::new(sha256.finish().as_ref().to_vec()),
+        );
+        let _ = hashes.insert(
+            HashAlgorithm::Sha512,
+            HashValue::new(sha512.finish().as_ref().to_vec()),
+        );
         Ok(TargetDescription {
             length: length,
             hashes: hashes,

@@ -257,6 +257,16 @@ impl Config {
     pub fn build() -> ConfigBuilder {
         ConfigBuilder::default()
     }
+
+    /// Return the optional maximum root metadata size.
+    pub fn max_root_size(&self) -> &Option<usize> {
+        &self.max_root_size
+    }
+
+    /// Return the optional maximum timestamp metadata size.
+    pub fn max_timestamp_size(&self) -> &Option<usize> {
+        &self.max_timestamp_size
+    }
 }
 
 /// Helper for building and validating a TUF `Config`.

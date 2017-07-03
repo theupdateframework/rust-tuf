@@ -89,7 +89,7 @@ impl From<der::Error> for Error {
     }
 }
 
-impl From <tempfile::PersistError> for Error {
+impl From<tempfile::PersistError> for Error {
     fn from(err: tempfile::PersistError) -> Error {
         Error::Opaque(format!("Error persisting temp file: {:?}", err))
     }

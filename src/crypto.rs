@@ -508,7 +508,7 @@ impl HashValue {
     /// assert_eq!(HashValue::from_hex("abcd").unwrap().value(), &[0xab, 0xcd]);
     /// ```
     pub fn from_hex(s: &str) -> Result<Self> {
-       Ok(HashValue(HEXLOWER.decode(s.as_bytes())?))
+        Ok(HashValue(HEXLOWER.decode(s.as_bytes())?))
     }
 
     /// Create a new `HashValue` from the given digest bytes.

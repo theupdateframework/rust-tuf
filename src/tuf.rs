@@ -301,8 +301,9 @@ impl<D: DataInterchange> Tuf<D> {
         let _ = self.safe_snapshot_ref()?;
         let targets = self.safe_targets_ref()?;
 
-        targets.targets().get(target_path)
-            .ok_or(Error::TargetUnavailable)
+        targets.targets().get(target_path).ok_or(
+            Error::TargetUnavailable,
+        )
 
         // TODO include searching delegations
     }

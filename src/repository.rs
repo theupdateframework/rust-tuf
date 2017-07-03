@@ -15,7 +15,8 @@ use tempfile::NamedTempFile;
 use Result;
 use crypto::{self, HashAlgorithm, HashValue};
 use error::Error;
-use metadata::{SignedMetadata, MetadataVersion, Unverified, Verified, Role, Metadata, TargetPath, TargetDescription, MetadataPath};
+use metadata::{SignedMetadata, MetadataVersion, Unverified, Verified, Role, Metadata, TargetPath,
+               TargetDescription, MetadataPath};
 use interchange::DataInterchange;
 
 /// Top-level trait that represents a TUF repository and contains all the ways it can be interacted
@@ -54,7 +55,12 @@ where
         M: Metadata;
 
     /// Store the given target.
-    fn store_target<R>(&mut self, read: R, target_path: &TargetPath, target_description: &TargetDescription) -> Result<()>
+    fn store_target<R>(
+        &mut self,
+        read: R,
+        target_path: &TargetPath,
+        target_description: &TargetDescription,
+    ) -> Result<()>
     where
         R: Read;
 
@@ -66,7 +72,7 @@ where
     /// Perform a sanity check that `M`, `Role`, and `MetadataPath` all desrcribe the same entity.
     fn check<M>(role: &Role, meta_path: &MetadataPath) -> Result<()>
     where
-        M: Metadata
+        M: Metadata,
     {
         if role != &M::role() {
             return Err(Error::IllegalArgument(format!(
@@ -77,10 +83,9 @@ where
         }
 
         if !role.fuzzy_matches_path(meta_path) {
-            return Err(Error::IllegalArgument(format!(
-                "Role {} does not match path {:?}",
-                role,
-                meta_path)))
+            return Err(Error::IllegalArgument(
+                format!("Role {} does not match path {:?}", role, meta_path),
+            ));
         }
 
         Ok(())
@@ -247,13 +252,23 @@ where
         Ok(D::from_reader(&*out)?)
     }
 
-    fn store_target<R>(&mut self, read: R, target_path: &TargetPath, target_description: &TargetDescription) -> Result<()>
+    fn store_target<R>(
+        &mut self,
+        read: R,
+        target_path: &TargetPath,
+        target_description: &TargetDescription,
+    ) -> Result<()>
     where
-        R: Read
+        R: Read,
     {
         let mut temp_file = NamedTempFile::new_in(self.local_path.join("temp"))?;
         let hash_data = crypto::hash_preference(target_description.hashes())?;
-        Self::safe_read(read, &mut temp_file, Some(target_description.length() as i64), Some(hash_data))?;
+        Self::safe_read(
+            read,
+            &mut temp_file,
+            Some(target_description.length() as i64),
+            Some(hash_data),
+        )?;
 
         let mut path = self.local_path.clone().join("targets");
         path.extend(target_path.components());
@@ -267,7 +282,7 @@ where
         path.extend(target_path.components());
 
         if !path.exists() {
-            return Err(Error::NotFound)
+            return Err(Error::NotFound);
         }
 
         Ok(File::open(&path)?)
@@ -313,7 +328,9 @@ where
 
         let mut url = self.url.clone();
         url.path_segments_mut()
-            .map_err(|_| Error::IllegalArgument(format!("URL was 'cannot-be-a-base': {:?}", self.url)))?
+            .map_err(|_| {
+                Error::IllegalArgument(format!("URL was 'cannot-be-a-base': {:?}", self.url))
+            })?
             .extend(components);
 
         let req = self.client.get(url.clone()).headers(headers);
@@ -323,7 +340,9 @@ where
             if resp.status == StatusCode::NotFound {
                 Err(Error::NotFound)
             } else {
-                Err(Error::Opaque(format!("Error getting {:?}: {:?}", url, resp)))
+                Err(Error::Opaque(
+                    format!("Error getting {:?}: {:?}", url, resp),
+                ))
             }
         } else {
             Ok(resp)
@@ -379,7 +398,7 @@ where
     /// This always returns `Err` as storing over HTTP is not yet supported.
     fn store_target<R>(&mut self, _: R, _: &TargetPath, _: &TargetDescription) -> Result<()>
     where
-        R: Read
+        R: Read,
     {
         Err(Error::Opaque(
             "Http repo store  not implemented".to_string(),
@@ -440,7 +459,10 @@ where
         Self::check::<M>(role, meta_path)?;
         let mut buf = Vec::new();
         D::to_writer(&mut buf, metadata)?;
-        let _ = self.metadata.insert((meta_path.clone(), version.clone()), buf);
+        let _ = self.metadata.insert(
+            (meta_path.clone(), version.clone()),
+            buf,
+        );
         Ok(())
     }
 
@@ -454,26 +476,41 @@ where
     ) -> Result<SignedMetadata<D, M, Unverified>>
     where
         M: Metadata,
-    { 
+    {
         Self::check::<M>(role, meta_path)?;
 
         match self.metadata.get(&(meta_path.clone(), version.clone())) {
             Some(bytes) => {
                 let mut buf = Vec::new();
-                Self::safe_read(bytes.as_slice(), &mut buf, max_size.map(|x| x as i64), hash_data)?;
+                Self::safe_read(
+                    bytes.as_slice(),
+                    &mut buf,
+                    max_size.map(|x| x as i64),
+                    hash_data,
+                )?;
                 D::from_reader(&*buf)
-            },
+            }
             None => Err(Error::NotFound),
         }
     }
 
-    fn store_target<R>(&mut self, read: R, target_path: &TargetPath, target_description: &TargetDescription) -> Result<()>
+    fn store_target<R>(
+        &mut self,
+        read: R,
+        target_path: &TargetPath,
+        target_description: &TargetDescription,
+    ) -> Result<()>
     where
-        R: Read
+        R: Read,
     {
         let mut buf = Vec::new();
         let hash_data = crypto::hash_preference(target_description.hashes())?;
-        Self::safe_read(read, &mut buf, Some(target_description.length() as i64), Some(hash_data))?;
+        Self::safe_read(
+            read,
+            &mut buf,
+            Some(target_description.length() as i64),
+            Some(hash_data),
+        )?;
         let _ = self.targets.insert(target_path.clone(), buf);
         Ok(())
     }
@@ -481,7 +518,7 @@ where
     fn fetch_target(&mut self, target_path: &TargetPath) -> Result<Self::TargetRead> {
         match self.targets.get(target_path) {
             Some(bytes) => Ok(Cursor::new(bytes.clone())),
-            None => Err(Error::NotFound)
+            None => Err(Error::NotFound),
         }
     }
 }
@@ -508,7 +545,10 @@ mod test {
         assert_eq!(buf.as_slice(), data);
 
         let bad_data: &[u8] = b"you're in a desert";
-        assert!(repo.store_target(bad_data, &path, &target_description).is_err());
+        assert!(
+            repo.store_target(bad_data, &path, &target_description)
+                .is_err()
+        );
 
         let mut read = repo.fetch_target(&path).unwrap();
         let mut buf = Vec::new();
@@ -519,7 +559,8 @@ mod test {
     #[test]
     fn file_system_repo_targets() {
         let temp_dir = TempDir::new("rust-tuf").unwrap();
-        let mut repo = FileSystemRepository::<JsonDataInterchange>::new(temp_dir.path().to_path_buf());
+        let mut repo =
+            FileSystemRepository::<JsonDataInterchange>::new(temp_dir.path().to_path_buf());
         repo.initialize().unwrap();
 
         let data: &[u8] = b"like tears in the rain";
@@ -534,7 +575,10 @@ mod test {
         assert_eq!(buf.as_slice(), data);
 
         let bad_data: &[u8] = b"you're in a desert";
-        assert!(repo.store_target(bad_data, &path, &target_description).is_err());
+        assert!(
+            repo.store_target(bad_data, &path, &target_description)
+                .is_err()
+        );
 
         let mut read = repo.fetch_target(&path).unwrap();
         let mut buf = Vec::new();
