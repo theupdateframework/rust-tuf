@@ -1,6 +1,7 @@
 //! Error types and converters.
 
 use data_encoding::DecodeError;
+use derp;
 use hyper;
 use json;
 use pem;
@@ -9,7 +10,6 @@ use std::path::Path;
 use tempfile;
 
 use metadata::Role;
-use rsa::der;
 
 /// Error type for all TUF related errors.
 #[derive(Debug, PartialEq, Eq)]
@@ -79,13 +79,13 @@ impl From<DecodeError> for Error {
 
 impl From<pem::Error> for Error {
     fn from(err: pem::Error) -> Error {
-        Error::Encoding(format!("{:?}", err))
+        Error::Encoding(format!("PEM: {:?}", err))
     }
 }
 
-impl From<der::Error> for Error {
-    fn from(_: der::Error) -> Error {
-        Error::Opaque("Error reading/writing DER".into())
+impl From<derp::Error> for Error {
+    fn from(err: derp::Error) -> Error {
+        Error::Encoding(format!("DER: {:?}", err))
     }
 }
 

@@ -1,6 +1,5 @@
 use chrono::DateTime;
 use chrono::offset::Utc;
-use data_encoding::HEXLOWER;
 use pem::{self, Pem};
 use std::collections::{HashMap, HashSet};
 
@@ -8,7 +7,6 @@ use Result;
 use crypto;
 use error::Error;
 use metadata;
-use rsa;
 
 #[derive(Serialize, Deserialize)]
 pub struct RootMetadata {
@@ -49,13 +47,12 @@ impl RootMetadata {
 
         let mut keys = Vec::new();
         for (key_id, value) in self.keys.drain() {
-            let calculated = crypto::calculate_key_id(value.value());
-            if key_id != calculated {
+            if &key_id != value.key_id() {
                 warn!(
                     "Received key with ID {:?} but calculated it's value as {:?}. \
                        Refusing to add it to the set of trusted keys.",
                     key_id,
-                    calculated
+                    value.key_id()
                 );
             } else {
                 debug!(
@@ -94,74 +91,6 @@ impl RootMetadata {
             timestamp,
         )
     }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct PublicKey {
-    #[serde(rename = "type")]
-    typ: crypto::KeyType,
-    value: PublicKeyValue,
-}
-
-impl PublicKey {
-    pub fn from(public_key: &crypto::PublicKey) -> Result<Self> {
-        let key_str = match public_key.format() {
-            &crypto::KeyFormat::HexLower => HEXLOWER.encode(&*public_key.value().value()),
-            &crypto::KeyFormat::Pkcs1 => {
-                pem::encode(&Pem {
-                    tag: "RSA PUBLIC KEY".to_string(),
-                    contents: public_key.value().value().to_vec(),
-                }).replace("\r", "")
-                    .trim()
-                    .into()
-            }
-            &crypto::KeyFormat::Spki => {
-                pem::encode(&Pem {
-                    tag: "PUBLIC KEY".to_string(),
-                    contents: rsa::write_spki(&public_key.value().value().to_vec())?,
-                }).replace("\r", "")
-                    .trim()
-                    .into()
-            }
-        };
-
-        Ok(PublicKey {
-            typ: public_key.typ().clone(),
-            value: PublicKeyValue { public: key_str },
-        })
-    }
-
-    pub fn try_into(self) -> Result<crypto::PublicKey> {
-        match self.typ {
-            crypto::KeyType::Ed25519 => {
-                let bytes = HEXLOWER.decode(self.value.public.as_bytes())?;
-                crypto::PublicKey::from_ed25519(crypto::PublicKeyValue::new(bytes))
-            }
-            crypto::KeyType::Rsa => {
-                let _pem = pem::parse(self.value.public.as_bytes())?;
-                match _pem.tag.as_str() {
-                    "RSA PUBLIC KEY" => {
-                        crypto::PublicKey::from_rsa(
-                            crypto::PublicKeyValue::new(_pem.contents),
-                            crypto::KeyFormat::Pkcs1,
-                        )
-                    }
-                    "PUBLIC KEY" => {
-                        crypto::PublicKey::from_rsa(
-                            crypto::PublicKeyValue::new(_pem.contents),
-                            crypto::KeyFormat::Spki,
-                        )
-                    }
-                    x => return Err(Error::Encoding(format!("PEM with bad tag: {}", x))),
-                }
-            }
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-struct PublicKeyValue {
-    public: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -296,5 +225,21 @@ impl TargetsMetadata {
         }
 
         metadata::TargetsMetadata::new(self.version, self.expires, self.targets)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PublicKey {
+    #[serde(rename = "type")]
+    typ: crypto::KeyType,
+    public_key: String,
+}
+
+impl PublicKey {
+    pub fn new(typ: crypto::KeyType, public_key: &Pem) -> Self {
+        PublicKey {
+            typ: typ,
+            public_key: pem::encode(public_key).trim().to_string(),
+        }
     }
 }

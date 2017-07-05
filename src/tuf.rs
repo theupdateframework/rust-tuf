@@ -39,8 +39,8 @@ impl<D: DataInterchange> Tuf<D> {
 
     /// Create a new `TUF` struct from a piece of metadata that is assumed to be trusted.
     ///
-    /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than the
-    /// related method `from_root_pinned`.
+    /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
+    /// the related method `from_root_pinned`.
     pub fn from_root<V>(signed_root: SignedMetadata<D, RootMetadata, V>) -> Result<Self>
     where
         V: VerificationStatus,

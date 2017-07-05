@@ -532,16 +532,19 @@ mod test {
     #[test]
     fn ephemeral_repo_targets() {
         let mut repo = EphemeralRepository::<JsonDataInterchange>::new();
-        repo.initialize().unwrap();
+        repo.initialize().expect("initialize repo");
 
         let data: &[u8] = b"like tears in the rain";
-        let target_description = TargetDescription::from_reader(data).unwrap();
-        let path = TargetPath::new("batty".into()).unwrap();
-        repo.store_target(data, &path, &target_description).unwrap();
+        let target_description =
+            TargetDescription::from_reader(data).expect("generate target description");
+        let path = TargetPath::new("batty".into()).expect("make target path");
+        repo.store_target(data, &path, &target_description).expect(
+            "store target",
+        );
 
-        let mut read = repo.fetch_target(&path).unwrap();
+        let mut read = repo.fetch_target(&path).expect("fetch target");
         let mut buf = Vec::new();
-        read.read_to_end(&mut buf).unwrap();
+        read.read_to_end(&mut buf).expect("read target");
         assert_eq!(buf.as_slice(), data);
 
         let bad_data: &[u8] = b"you're in a desert";
@@ -550,28 +553,31 @@ mod test {
                 .is_err()
         );
 
-        let mut read = repo.fetch_target(&path).unwrap();
+        let mut read = repo.fetch_target(&path).expect("fetch target");
         let mut buf = Vec::new();
-        read.read_to_end(&mut buf).unwrap();
+        read.read_to_end(&mut buf).expect("read target");
         assert_eq!(buf.as_slice(), data);
     }
 
     #[test]
     fn file_system_repo_targets() {
-        let temp_dir = TempDir::new("rust-tuf").unwrap();
+        let temp_dir = TempDir::new("rust-tuf").expect("make temp dir");
         let mut repo =
             FileSystemRepository::<JsonDataInterchange>::new(temp_dir.path().to_path_buf());
-        repo.initialize().unwrap();
+        repo.initialize().expect("initialize repo");
 
         let data: &[u8] = b"like tears in the rain";
-        let target_description = TargetDescription::from_reader(data).unwrap();
-        let path = TargetPath::new("batty".into()).unwrap();
-        repo.store_target(data, &path, &target_description).unwrap();
+        let target_description =
+            TargetDescription::from_reader(data).expect("generate target desert");
+        let path = TargetPath::new("batty".into()).expect("make target path");
+        repo.store_target(data, &path, &target_description).expect(
+            "store target",
+        );
         assert!(temp_dir.path().join("targets").join("batty").exists());
 
-        let mut read = repo.fetch_target(&path).unwrap();
+        let mut read = repo.fetch_target(&path).expect("fetch target");
         let mut buf = Vec::new();
-        read.read_to_end(&mut buf).unwrap();
+        read.read_to_end(&mut buf).expect("read target");
         assert_eq!(buf.as_slice(), data);
 
         let bad_data: &[u8] = b"you're in a desert";
@@ -580,9 +586,9 @@ mod test {
                 .is_err()
         );
 
-        let mut read = repo.fetch_target(&path).unwrap();
+        let mut read = repo.fetch_target(&path).expect("fetch target");
         let mut buf = Vec::new();
-        read.read_to_end(&mut buf).unwrap();
+        read.read_to_end(&mut buf).expect("read target");
         assert_eq!(buf.as_slice(), data);
     }
 }

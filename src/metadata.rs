@@ -11,7 +11,7 @@ use std::io::Read;
 use std::marker::PhantomData;
 
 use Result;
-use crypto::{KeyId, PublicKey, Signature, HashAlgorithm, HashValue};
+use crypto::{KeyId, PublicKey, Signature, HashAlgorithm, HashValue, SignatureScheme, PrivateKey};
 use error::Error;
 use interchange::DataInterchange;
 use shims;
@@ -247,6 +247,24 @@ where
     M: Metadata,
     V: VerificationStatus,
 {
+    /// Create a new `SignedMetadata`.
+    pub fn new(
+        metadata: &M,
+        private_key: &PrivateKey,
+        scheme: SignatureScheme,
+    ) -> Result<SignedMetadata<D, M, Unverified>> {
+        let raw = D::serialize(metadata)?;
+        let bytes = D::canonicalize(&raw)?;
+        let sig = private_key.sign(&bytes, scheme)?;
+        Ok(SignedMetadata {
+            signatures: vec![sig],
+            signed: raw,
+            _interchage: PhantomData,
+            _metadata: PhantomData,
+            _verification: PhantomData,
+        })
+    }
+
     /// An immutable reference to the signatures.
     pub fn signatures(&self) -> &[Signature] {
         &self.signatures
@@ -298,7 +316,7 @@ where
 
             match available_keys.get(sig.key_id()) {
                 Some(ref pub_key) => {
-                    match pub_key.verify(sig.scheme(), &canonical_bytes, sig.signature()) {
+                    match pub_key.verify(&canonical_bytes, &sig) {
                         Ok(()) => {
                             debug!("Good signature from key ID {:?}", pub_key.key_id());
                             signatures_needed -= 1;
@@ -586,7 +604,8 @@ impl MetadataPath {
     ///            ["foo".to_string(), "bar.json".to_string()]);
     /// assert_eq!(path.components::<JsonDataInterchange>(&MetadataVersion::Number(1)),
     ///            ["foo".to_string(), "1.bar.json".to_string()]);
-    /// assert_eq!(path.components::<JsonDataInterchange>(&MetadataVersion::Hash(HashValue::from_hex("abcd").unwrap())),
+    /// assert_eq!(path.components::<JsonDataInterchange>(
+    ///                 &MetadataVersion::Hash(HashValue::from_hex("abcd").unwrap())),
     ///            ["foo".to_string(), "abcd.bar.json".to_string()]);
     /// ```
     pub fn components<D>(&self, version: &MetadataVersion) -> Vec<String>
@@ -860,9 +879,12 @@ impl TargetDescription {
     /// let target_description = TargetDescription::from_reader(bytes).unwrap();
     ///
     /// // $ printf 'it was a pleasure to burn' | sha256sum
-    /// let sha256 = HashValue::from_hex("45df7395bceb7567de2fb8272048b4e57f98bf64c2a72e2aa9933537bd99590b").unwrap();
+    /// let sha256 = HashValue::from_hex("45df7395bceb7567de2fb8272048b4\
+    ///                             e57f98bf64c2a72e2aa9933537bd99590b").unwrap();
     /// // $ printf 'it was a pleasure to burn' | sha512sum
-    /// let sha512 = HashValue::from_hex("b6e231c0ac9b61dbc9a56b948fa76e6efa70864028cd607a84c248473aa7da339476d0d3060dfcd5bad5e0a054d7328ff064a1a09b9712d09fe4d9034c210981").unwrap();
+    /// let sha512 = HashValue::from_hex("b6e231c0ac9b61dbc9a56b948fa76e6efa70864028\
+    ///               cd607a84c248473aa7da339476d0d3060dfcd5bad5e0a054d7328ff064a1a0\
+    ///               9b9712d09fe4d9034c210981").unwrap();
     ///
     /// assert_eq!(target_description.length(), bytes.len() as u64);
     /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
@@ -986,94 +1008,5 @@ impl<'de> Deserialize<'de> for TargetsMetadata {
         intermediate.try_into().map_err(|e| {
             DeserializeError::custom(format!("{:?}", e))
         })
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use json;
-    use std::fs::File;
-    use std::io::Read;
-    use std::path::PathBuf;
-
-    use crypto::{KeyType, PublicKey, KeyFormat};
-
-    #[test]
-    fn parse_spki_json() {
-        let mut jsn = json!({"type": "rsa", "value": {}});
-
-        let mut file = File::open(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
-                .join("rsa")
-                .join("spki-1.pub"),
-        ).unwrap();
-        let mut buf = String::new();
-        file.read_to_string(&mut buf).unwrap();
-
-        let _ = jsn.as_object_mut()
-            .unwrap()
-            .get_mut("value")
-            .unwrap()
-            .as_object_mut()
-            .unwrap()
-            .insert("public".into(), json::Value::String(buf.trim().into()));
-
-        let key: PublicKey = json::from_value(jsn.clone()).unwrap();
-        assert_eq!(key.typ(), &KeyType::Rsa);
-        assert_eq!(key.format(), &KeyFormat::Spki);
-
-        let deserialized: json::Value = json::to_value(key).unwrap();
-        assert_eq!(deserialized, jsn);
-    }
-
-    #[test]
-    fn parse_pkcs1_json() {
-        let mut jsn = json!({"type": "rsa", "value": {}});
-
-        let mut file = File::open(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
-                .join("rsa")
-                .join("pkcs1-1.pub"),
-        ).unwrap();
-        let mut buf = String::new();
-        file.read_to_string(&mut buf).unwrap();
-
-        let _ = jsn.as_object_mut()
-            .unwrap()
-            .get_mut("value")
-            .unwrap()
-            .as_object_mut()
-            .unwrap()
-            .insert("public".into(), json::Value::String(buf.trim().into()));
-
-        let key: PublicKey = json::from_value(jsn.clone()).unwrap();
-        assert_eq!(key.typ(), &KeyType::Rsa);
-        assert_eq!(key.format(), &KeyFormat::Pkcs1);
-
-        let deserialized: json::Value = json::to_value(key).unwrap();
-        assert_eq!(deserialized, jsn);
-    }
-
-    #[test]
-    fn parse_hex_json() {
-        let mut jsn = json!({"type": "ed25519", "value": {}});
-        let buf = "cf07711807f5176a4814613f3f348091dfc2b91f36b46a6abf6385f4ad14435b".to_string();
-
-        let _ = jsn.as_object_mut()
-            .unwrap()
-            .get_mut("value")
-            .unwrap()
-            .as_object_mut()
-            .unwrap()
-            .insert("public".into(), json::Value::String(buf.clone()));
-
-        let key: PublicKey = json::from_value(jsn.clone()).unwrap();
-        assert_eq!(key.typ(), &KeyType::Ed25519);
-        assert_eq!(key.format(), &KeyFormat::HexLower);
-
-        let deserialized: json::Value = json::to_value(key).unwrap();
-        assert_eq!(deserialized, jsn);
     }
 }

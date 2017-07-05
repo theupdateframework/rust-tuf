@@ -65,6 +65,7 @@
 
 extern crate chrono;
 extern crate data_encoding;
+extern crate derp;
 extern crate env_logger;
 extern crate hyper;
 extern crate itoa;
@@ -75,10 +76,6 @@ extern crate ring;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-#[cfg(test)]
-#[macro_use]
-extern crate serde_json as json;
-#[cfg(not(test))]
 extern crate serde_json as json;
 #[cfg(test)]
 extern crate tempdir;
@@ -97,7 +94,6 @@ pub mod crypto;
 pub mod interchange;
 pub mod metadata;
 pub mod repository;
-mod rsa;
 mod shims;
 pub mod tuf;
 

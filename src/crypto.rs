@@ -1,6 +1,8 @@
 //! Cryptographic structures and functions.
 
 use data_encoding::HEXLOWER;
+use derp::{self, Der, Tag};
+use pem::{self, Pem};
 use ring;
 use ring::digest::{self, SHA256};
 use ring::rand::SystemRandom;
@@ -17,10 +19,15 @@ use untrusted::Input;
 
 use Result;
 use error::Error;
-use rsa;
 use shims;
 
-static HASH_ALG_PREFS: &'static [HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
+const HASH_ALG_PREFS: &'static [HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
+
+/// 1.2.840.113549.1.1.1 rsaEncryption(PKCS #1)
+const RSA_SPKI_OID: &'static [u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01];
+
+/// 1.3.101.112 curveEd25519(EdDSA 25519 signature algorithm)
+const ED25519_SPKI_OID: &'static [u8] = &[0x2b, 0x65, 0x70];
 
 /// Given a map of hash algorithms and their values, get the prefered algorithm and the hash
 /// calculated by it. Returns an `Err` if there is no match.
@@ -55,13 +62,37 @@ pub fn hash_preference<'a>(
 /// A `KeyId` is calculated as `sha256(public_key_bytes)`. The TUF spec says that it should be
 /// `sha256(cjson(encoded(public_key_bytes)))`, but this is meaningless once the spec moves away
 /// from using only JSON as the data interchange format.
-pub fn calculate_key_id(public_key: &PublicKeyValue) -> KeyId {
+fn calculate_key_id(public_key: &[u8]) -> KeyId {
     let mut context = digest::Context::new(&SHA256);
-    context.update(&public_key.0);
+    context.update(&public_key);
     KeyId(context.finish().as_ref().to_vec())
 }
 
 /// Wrapper type for public key's ID.
+///
+/// # Calculating
+/// In order to future proof the calculation of key IDs and preserver them across encoding types,
+/// a key's ID is calculated as the Sha-256 hash of the DER bytes of a key in Subject Public Key
+/// Info (SPKI) format.
+///
+/// ```bash
+/// SEQUENCE {
+///   SEQUENCE {
+///     OBJECT IDENTIFIER
+///     NULL
+///   }
+///   BIT STTRING
+/// }
+/// ```
+///
+/// Where `BIT STRING` encapsulates the actual public key. In the case of RSA this is:
+///
+/// ```bash
+/// SEQUENCE {
+///   INTEGER (n, modulus)
+///   INTEGER (e, exponent)
+/// }
+/// ```
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct KeyId(Vec<u8>);
 
@@ -102,7 +133,7 @@ impl<'de> Deserialize<'de> for KeyId {
 }
 
 /// Cryptographic signature schemes.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SignatureScheme {
     /// [Ed25519](https://ed25519.cr.yp.to/)
     Ed25519,
@@ -147,7 +178,9 @@ impl Serialize for SignatureScheme {
 impl<'de> Deserialize<'de> for SignatureScheme {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let string: String = Deserialize::deserialize(de)?;
-        Ok(string.parse().unwrap())
+        string.parse().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
     }
 }
 
@@ -202,6 +235,26 @@ pub enum KeyType {
     Rsa,
 }
 
+impl KeyType {
+    fn from_oid(oid: &[u8]) -> Result<Self> {
+        match oid {
+            x if x == RSA_SPKI_OID => Ok(KeyType::Rsa),
+            x if x == ED25519_SPKI_OID => Ok(KeyType::Ed25519),
+            x => Err(Error::Encoding(format!(
+                "Unknown OID:{}",
+                x.iter().map(|b| format!("{:x}", b)).collect::<String>()
+            ))),
+        }
+    }
+
+    fn as_oid(&self) -> &'static [u8] {
+        match self {
+            &KeyType::Rsa => RSA_SPKI_OID,
+            &KeyType::Ed25519 => ED25519_SPKI_OID,
+        }
+    }
+}
+
 impl FromStr for KeyType {
     type Err = Error;
 
@@ -235,7 +288,9 @@ impl Serialize for KeyType {
 impl<'de> Deserialize<'de> for KeyType {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let string: String = Deserialize::deserialize(de)?;
-        Ok(string.parse().unwrap())
+        string.parse().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
     }
 }
 
@@ -257,30 +312,120 @@ impl Debug for PrivateKeyType {
 /// A structure containing information about a public key.
 pub struct PrivateKey {
     private: PrivateKeyType,
+    public: PublicKey,
 }
 
 impl PrivateKey {
-    /// Create an Ed25519 private key from PKCS#8v2 DER bytes.
-    pub fn ed25519_from_pkcs8(der_key: &[u8]) -> Result<Self> {
+    /// Create a private key from PKCS#8v2 DER bytes.
+    ///
+    /// # Generating Keys
+    ///
+    /// ## Ed25519
+    ///
+    /// ```bash
+    /// $ touch ed25519-private-key.pk8
+    /// $ chmod 0600 ed25519-private-key.pk8
+    /// ```
+    ///
+    /// ```no_run
+    /// extern crate ring;
+    /// use ring::rand::SystemRandom;
+    /// use ring::signature::Ed25519KeyPair;
+    /// use std::fs::File;
+    /// use std::io::Write;
+    ///
+    /// fn main() {
+    ///     let mut file = File::open("ed25519-private-key.pk8").unwrap();
+    ///     let key = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
+    ///     file.write_all(&key).unwrap()
+    /// }
+    /// ```
+    ///
+    /// ## RSA
+    ///
+    /// ```bash
+    /// $ umask 077
+    /// $ openssl genpkey -algorithm RSA \
+    ///     -pkeyopt rsa_keygen_bits:4096 \
+    ///     -pkeyopt rsa_keygen_pubexp:65537 | \
+    ///     openssl pkcs8 -topk8 -nocrypt -outform der > rsa-4096-private-key.pk8
+    /// ```
+    pub fn from_pkcs8(der_key: &[u8]) -> Result<Self> {
+        match Self::ed25519_from_pkcs8(der_key) {
+            Ok(k) => Ok(k),
+            Err(e1) => {
+                match Self::rsa_from_pkcs8(der_key) {
+                    Ok(k) => Ok(k),
+                    Err(e2) => Err(Error::Opaque(format!(
+                        "Key was neither Ed25519 nor RSA: {:?} {:?}",
+                        e1,
+                        e2
+                    ))),
+                }
+            }
+        }
+    }
+
+    fn ed25519_from_pkcs8(der_key: &[u8]) -> Result<Self> {
         let key = Ed25519KeyPair::from_pkcs8(Input::from(der_key)).map_err(
             |_| {
                 Error::Encoding("Could not parse key as PKCS#8v2".into())
             },
         )?;
-        Ok(PrivateKey { private: PrivateKeyType::Ed25519(key) })
+
+        let public = PublicKey {
+            typ: KeyType::Ed25519,
+            key_id: calculate_key_id(&write_spki(key.public_key_bytes(), &KeyType::Ed25519)?),
+            value: PublicKeyValue(key.public_key_bytes().to_vec()),
+        };
+        let private = PrivateKeyType::Ed25519(key);
+
+        Ok(PrivateKey {
+            private: private,
+            public: public,
+        })
     }
 
-    /// Create an RSA private key from PKCS#8v2 DER bytes.
-    pub fn rsa_from_pkcs8(der_key: &[u8]) -> Result<Self> {
+    fn rsa_from_pkcs8(der_key: &[u8]) -> Result<Self> {
         let key = RSAKeyPair::from_pkcs8(Input::from(der_key)).map_err(|_| {
             Error::Encoding("Could not parse key as PKCS#8v2".into())
         })?;
-        Ok(PrivateKey { private: PrivateKeyType::Rsa(Arc::new(key)) })
+
+        if key.public_modulus_len() < 256 {
+            return Err(Error::IllegalArgument(format!(
+                "RSA public modulus must be 2048 or greater. Found {}",
+                key.public_modulus_len() * 8
+            )));
+        }
+
+        let pub_key = extract_rsa_pub_from_pkcs8(der_key)?;
+
+        let public = PublicKey {
+            typ: KeyType::Rsa,
+            key_id: calculate_key_id(&write_spki(&pub_key, &KeyType::Rsa)?),
+            value: PublicKeyValue(pub_key),
+        };
+        let private = PrivateKeyType::Rsa(Arc::new(key));
+
+        Ok(PrivateKey {
+            private: private,
+            public: public,
+        })
+    }
+
+    /// Return whether or not this key supports the given signature scheme.
+    pub fn supports(&self, scheme: &SignatureScheme) -> bool {
+        match (&self.private, scheme) {
+            (&PrivateKeyType::Rsa(_), &SignatureScheme::RsaSsaPssSha256) => true,
+            (&PrivateKeyType::Rsa(_), &SignatureScheme::RsaSsaPssSha512) => true,
+            (&PrivateKeyType::Ed25519(_), &SignatureScheme::Ed25519) => true,
+            _ => false,
+        }
     }
 
     /// Sign a message with the given scheme.
-    pub fn sign(&self, msg: &[u8], scheme: &SignatureScheme) -> Result<SignatureValue> {
-        match (&self.private, scheme) {
+    pub fn sign(&self, msg: &[u8], scheme: SignatureScheme) -> Result<Signature> {
+        let value = match (&self.private, &scheme) {
             (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha256) => {
                 let mut signing_state = RSASigningState::new(rsa.clone()).map_err(|_| {
                     Error::Opaque("Could not initialize RSA signing state.".into())
@@ -290,7 +435,7 @@ impl PrivateKey {
                 signing_state
                     .sign(&RSA_PSS_SHA256, &rng, msg, &mut buf)
                     .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
-                Ok(SignatureValue(buf))
+                SignatureValue(buf)
             }
             (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha512) => {
                 let mut signing_state = RSASigningState::new(rsa.clone()).map_err(|_| {
@@ -301,15 +446,28 @@ impl PrivateKey {
                 signing_state
                     .sign(&RSA_PSS_SHA512, &rng, msg, &mut buf)
                     .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
-                Ok(SignatureValue(buf))
+                SignatureValue(buf)
             }
             (&PrivateKeyType::Ed25519(ref ed), &SignatureScheme::Ed25519) => {
-                Ok(SignatureValue(ed.sign(msg).as_ref().into()))
+                SignatureValue(ed.sign(msg).as_ref().into())
             }
-            (k, s) => Err(Error::IllegalArgument(
-                format!("Key {:?} can't be used with scheme {:?}", k, s),
-            )),
-        }
+            (k, s) => {
+                return Err(Error::IllegalArgument(
+                    format!("Key {:?} can't be used with scheme {:?}", k, s),
+                ))
+            }
+        };
+
+        Ok(Signature {
+            key_id: self.key_id().clone(),
+            scheme: scheme,
+            value: value,
+        })
+    }
+
+    /// Return the key ID of the public key.
+    pub fn key_id(&self) -> &KeyId {
+        &self.public.key_id
     }
 }
 
@@ -318,62 +476,46 @@ impl PrivateKey {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PublicKey {
     typ: KeyType,
-    format: KeyFormat,
     key_id: KeyId,
     value: PublicKeyValue,
 }
 
 impl PublicKey {
-    /// Create a `PublicKey` from an Ed25519 `PublicKeyValue`.
-    pub fn from_ed25519(value: PublicKeyValue) -> Result<Self> {
-        if value.value().len() != 32 {
-            return Err(Error::Encoding(
-                "Ed25519 public key was not 32 bytes long".into(),
-            ));
-        }
-
+    /// Parse DER bytes as an SPKI key.
+    pub fn from_spki(der_bytes: &[u8]) -> Result<Self> {
+        let input = Input::from(der_bytes);
+        let (typ, value) = input.read_all(derp::Error::Read, |input| {
+            println!("A");
+            derp::nested(input, Tag::Sequence, |input| {
+                println!("b");
+                println!("c");
+                let typ = derp::nested(input, Tag::Sequence, |input| {
+                    println!("d");
+                    let typ = derp::expect_tag_and_get_value(input, Tag::Oid)?;
+                    let typ = KeyType::from_oid(typ.as_slice_less_safe()).map_err(|_| {
+                        derp::Error::WrongValue
+                    })?;
+                    println!("e");
+                    let _ = derp::read_null(input)?;
+                    Ok(typ)
+                })?;
+                println!("f");
+                let value = derp::bit_string_with_no_unused_bits(input)?;
+                println!("g");
+                Ok((typ, value.as_slice_less_safe().to_vec()))
+            })
+        })?;
+        let key_id = calculate_key_id(der_bytes);
         Ok(PublicKey {
-            typ: KeyType::Ed25519,
-            format: KeyFormat::HexLower,
-            key_id: calculate_key_id(&value),
-            value: value,
+            typ: typ,
+            key_id: key_id,
+            value: PublicKeyValue(value),
         })
     }
 
-    /// Create a `PublicKey` from an RSA `PublicKeyValue`, either SPKI or PKCS#1.
-    pub fn from_rsa(value: PublicKeyValue, format: KeyFormat) -> Result<Self> {
-        // TODO check n > 2048 bits (but this is ok because `ring` doesn't support less)
-
-        let key_id = calculate_key_id(&value);
-
-        let pkcs1_value = match format {
-            KeyFormat::Pkcs1 => {
-                let bytes = rsa::from_pkcs1(value.value()).ok_or_else(|| {
-                    Error::IllegalArgument(
-                        "Key claimed to be PKCS1 but could not be parsed.".into(),
-                    )
-                })?;
-                PublicKeyValue(bytes)
-            }
-            KeyFormat::Spki => {
-                let bytes = rsa::from_spki(value.value()).ok_or_else(|| {
-                    Error::IllegalArgument("Key claimed to be SPKI but could not be parsed.".into())
-                })?;
-                PublicKeyValue(bytes)
-            }
-            x => {
-                return Err(Error::IllegalArgument(
-                    format!("RSA keys in format {:?} not supported.", x),
-                ))
-            }
-        };
-
-        Ok(PublicKey {
-            typ: KeyType::Rsa,
-            format: format,
-            key_id: key_id,
-            value: pkcs1_value,
-        })
+    /// Write the public key as SPKI DER bytes.
+    pub fn as_spki(&self) -> Result<Vec<u8>> {
+        Ok(write_spki(&self.value.0, &self.typ)?)
     }
 
     /// An immutable reference to the key's type.
@@ -381,24 +523,14 @@ impl PublicKey {
         &self.typ
     }
 
-    /// An immutable reference to the key's format.
-    pub fn format(&self) -> &KeyFormat {
-        &self.format
-    }
-
     /// An immutable reference to the key's ID.
     pub fn key_id(&self) -> &KeyId {
         &self.key_id
     }
 
-    /// An immutable reference to the key's public value.
-    pub fn value(&self) -> &PublicKeyValue {
-        &self.value
-    }
-
-    /// Use this key and the given signature scheme to verify the message again a signature.
-    pub fn verify(&self, scheme: &SignatureScheme, msg: &[u8], sig: &SignatureValue) -> Result<()> {
-        let alg: &ring::signature::VerificationAlgorithm = match scheme {
+    /// Use this key the message with a signature.
+    pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<()> {
+        let alg: &ring::signature::VerificationAlgorithm = match sig.scheme() {
             &SignatureScheme::Ed25519 => &ED25519,
             &SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
             &SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
@@ -408,8 +540,8 @@ impl PublicKey {
             alg,
             Input::from(&self.value.0),
             Input::from(msg),
-            Input::from(&sig.0),
-        ).map_err(|_: ring::error::Unspecified| Error::BadSignature)
+            Input::from(&sig.value.0),
+        ).map_err(|_| Error::BadSignature)
     }
 }
 
@@ -418,54 +550,43 @@ impl Serialize for PublicKey {
     where
         S: Serializer,
     {
-        shims::PublicKey::from(self)
-            .map_err(|e| SerializeError::custom(format!("{:?}", e)))?
-            .serialize(ser)
+        let bytes = self.as_spki().map_err(|e| {
+            SerializeError::custom(format!("Couldn't write key as SPKI: {:?}", e))
+        })?;
+        let p = Pem {
+            tag: "PUBLIC KEY".into(),
+            contents: bytes,
+        };
+        shims::PublicKey::new(self.typ.clone(), &p).serialize(ser)
     }
 }
 
 impl<'de> Deserialize<'de> for PublicKey {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
-        let intermediate: shims::PublicKey = Deserialize::deserialize(de)?;
-        intermediate.try_into().map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
+        let pem_str: String = Deserialize::deserialize(de)?;
+        let bytes = match pem::parse(pem_str) {
+            Ok(pem) => pem.contents,
+            Err(_) => {
+                return Err(DeserializeError::custom(
+                    "Contents not PEM encoded.".to_string(),
+                ))
+            }
+        };
+        PublicKey::from_spki(&bytes).map_err(|e| {
+            DeserializeError::custom(format!("Couldn't parse key as SPKI: {:?}", e))
         })
     }
 }
 
-/// Wrapper type for a decoded public key.
 #[derive(Clone, Debug, PartialEq)]
-pub struct PublicKeyValue(Vec<u8>);
-
-impl PublicKeyValue {
-    /// Create a new `PublicKeyValue` from the given bytes.
-    pub fn new(bytes: Vec<u8>) -> Self {
-        PublicKeyValue(bytes)
-    }
-
-    /// An immutable reference to the public key's bytes.
-    pub fn value(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-/// Possible encoding/decoding formats for a public key.
-#[derive(Clone, Debug, PartialEq)]
-pub enum KeyFormat {
-    /// The key should be read/written as hex-lower bytes.
-    HexLower,
-    /// The key should be read/written as PKCS#1 PEM.
-    Pkcs1,
-    /// The key should be read/written as SPKI PEM.
-    Spki,
-}
+struct PublicKeyValue(Vec<u8>);
 
 /// A structure that contains a `Signature` and associated data for verifying it.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Signature {
     key_id: KeyId,
     scheme: SignatureScheme,
-    signature: SignatureValue,
+    value: SignatureValue,
 }
 
 impl Signature {
@@ -480,8 +601,8 @@ impl Signature {
     }
 
     /// An immutable reference to the `SignatureValue`.
-    pub fn signature(&self) -> &SignatureValue {
-        &self.signature
+    pub fn value(&self) -> &SignatureValue {
+        &self.value
     }
 }
 
@@ -534,37 +655,170 @@ impl Display for HashValue {
     }
 }
 
+
+
+fn from_pkcs1(input: &[u8]) -> Option<Vec<u8>> {
+    let _input = Input::from(&input);
+    _input
+        .read_all(derp::Error::Read, |i| {
+            derp::nested(i, Tag::Sequence, |i| {
+                let _ = derp::positive_integer(i)?;
+                let _ = derp::positive_integer(i)?;
+                // if the input was already pkcs1, just return it
+                Ok(input.to_vec())
+            })
+        })
+        .ok()
+}
+
+
+fn write_spki(public: &[u8], key_type: &KeyType) -> ::std::result::Result<Vec<u8>, derp::Error> {
+    let mut output = Vec::new();
+    {
+        let mut der = Der::new(&mut output);
+        der.write_sequence(|der| {
+            der.write_sequence(|der| {
+                der.write_element(Tag::Oid, key_type.as_oid())?;
+                der.write_null()
+            })?;
+            der.write_bit_string(0, |der| der.write_raw(public))
+        })?;
+    }
+
+    Ok(output)
+}
+
+fn extract_rsa_pub_from_pkcs8(der_key: &[u8]) -> ::std::result::Result<Vec<u8>, derp::Error> {
+    let input = Input::from(der_key);
+    input.read_all(derp::Error::Read, |input| {
+        derp::nested(input, Tag::Sequence, |input| {
+            if derp::small_nonnegative_integer(input)? != 0 {
+                return Err(derp::Error::WrongValue);
+            }
+
+            derp::nested(input, Tag::Sequence, |input| {
+                let actual_alg_id = derp::expect_tag_and_get_value(input, Tag::Oid)?;
+                if actual_alg_id.as_slice_less_safe() != RSA_SPKI_OID {
+                    return Err(derp::Error::WrongValue);
+                }
+                let _ = derp::expect_tag_and_get_value(input, Tag::Null)?;
+                Ok(())
+            })?;
+
+            derp::nested(input, Tag::OctetString, |input| {
+                derp::nested(input, Tag::Sequence, |input| {
+                    if derp::small_nonnegative_integer(input)? != 0 {
+                        return Err(derp::Error::WrongValue);
+                    }
+
+                    let n = derp::positive_integer(input)?;
+                    let e = derp::positive_integer(input)?;
+                    let _ = input.skip_to_end();
+                    write_pkcs1(n.as_slice_less_safe(), e.as_slice_less_safe())
+                })
+            })
+        })
+    })
+}
+
+fn write_pkcs1(n: &[u8], e: &[u8]) -> ::std::result::Result<Vec<u8>, derp::Error> {
+    let mut output = Vec::new();
+    {
+        let mut der = Der::new(&mut output);
+        der.write_sequence(|der| {
+            der.write_positive_integer(n)?;
+            der.write_positive_integer(e)
+        })?;
+    }
+
+    Ok(output)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
+    const RSA_2048_PK8: &'static [u8] = include_bytes!("../tests/rsa/rsa-2048.pk8.der");
+    const RSA_2048_SPKI: &'static [u8] = include_bytes!("../tests/rsa/rsa-2048.spki.der");
+    const RSA_2048_PKCS1: &'static [u8] = include_bytes!("../tests/rsa/rsa-2048.pkcs1.der");
+
+    const RSA_4096_PK8: &'static [u8] = include_bytes!("../tests/rsa/rsa-4096.pk8.der");
+    const RSA_4096_SPKI: &'static [u8] = include_bytes!("../tests/rsa/rsa-4096.spki.der");
+    const RSA_4096_PKCS1: &'static [u8] = include_bytes!("../tests/rsa/rsa-4096.pkcs1.der");
+
+    const ED25519_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
+
     #[test]
-    fn rsa_2048_ead_pkcs8_and_sign() {
-        let der = include_bytes!("../tests/rsa/rsa-2048-private-key.pk8");
-        let key = PrivateKey::rsa_from_pkcs8(der.as_ref()).unwrap();
+    fn parse_rsa_2048_spki() {
+        let key = PublicKey::from_spki(RSA_2048_SPKI).expect("parse spki");
+        assert_eq!(key.typ, KeyType::Rsa);
+    }
+
+    #[test]
+    fn parse_rsa_4096_spki() {
+        let key = PublicKey::from_spki(RSA_4096_SPKI).expect("parse spki");
+        assert_eq!(key.typ, KeyType::Rsa);
+    }
+
+    #[test]
+    fn rsa_2048_read_pkcs8_and_sign() {
+        let key = PrivateKey::from_pkcs8(RSA_2048_PK8).expect("parse pkcs8");
         let msg = b"test";
-        let _ = key.sign(msg, &SignatureScheme::RsaSsaPssSha256).unwrap();
-        let _ = key.sign(msg, &SignatureScheme::RsaSsaPssSha512).unwrap();
-        assert!(key.sign(msg, &SignatureScheme::Ed25519).is_err());
+
+        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha256).expect(
+            "sign msg",
+        );
+        key.public.verify(msg, &sig).expect("verify msg");
+
+        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha512).expect(
+            "sign msg",
+        );
+        key.public.verify(msg, &sig).expect("verify msg");
+
+        assert!(key.sign(msg, SignatureScheme::Ed25519).is_err());
     }
 
     #[test]
     fn rsa_4096_read_pkcs8_and_sign() {
-        let der = include_bytes!("../tests/rsa/rsa-4096-private-key.pk8");
-        let key = PrivateKey::rsa_from_pkcs8(der.as_ref()).unwrap();
+        let key = PrivateKey::from_pkcs8(RSA_4096_PK8).expect("parse pkcs8");
         let msg = b"test";
-        let _ = key.sign(msg, &SignatureScheme::RsaSsaPssSha256).unwrap();
-        let _ = key.sign(msg, &SignatureScheme::RsaSsaPssSha512).unwrap();
-        assert!(key.sign(msg, &SignatureScheme::Ed25519).is_err());
+
+        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha256).expect(
+            "sign msg",
+        );
+        key.public.verify(msg, &sig).expect("verify msg");
+
+        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha512).expect(
+            "sign msg",
+        );
+        key.public.verify(msg, &sig).expect("verify msg");
+
+        assert!(key.sign(msg, SignatureScheme::Ed25519).is_err());
+    }
+
+    #[test]
+    fn extract_pkcs1_from_rsa_2048_pkcs8() {
+        let res = extract_rsa_pub_from_pkcs8(RSA_2048_PK8).expect("parse pkcs8");
+        assert_eq!(res.as_slice(), RSA_2048_PKCS1);
+    }
+
+    #[test]
+    fn extract_pkcs1_from_rsa_4096_pkcs8() {
+        let res = extract_rsa_pub_from_pkcs8(RSA_4096_PK8).expect("parse pkcs8");
+        assert_eq!(res.as_slice(), RSA_4096_PKCS1);
     }
 
     #[test]
     fn ed25519_read_pkcs8_and_sign() {
-        let der = include_bytes!("../tests/ed25519/ed25519-1.pk8");
-        let key = PrivateKey::ed25519_from_pkcs8(der.as_ref()).unwrap();
+        let key = PrivateKey::from_pkcs8(ED25519_PK8).unwrap();
         let msg = b"test";
-        let _ = key.sign(msg, &SignatureScheme::Ed25519).unwrap();
-        assert!(key.sign(msg, &SignatureScheme::RsaSsaPssSha256).is_err());
-        assert!(key.sign(msg, &SignatureScheme::RsaSsaPssSha512).is_err());
+
+        let sig = key.sign(msg, SignatureScheme::Ed25519).unwrap();
+
+        let public = PublicKey::from_spki(&key.public.as_spki().unwrap()).unwrap();
+        public.verify(msg, &sig).unwrap();
+
+        assert!(key.sign(msg, SignatureScheme::RsaSsaPssSha256).is_err());
+        assert!(key.sign(msg, SignatureScheme::RsaSsaPssSha512).is_err());
     }
 }
