@@ -1,6 +1,6 @@
 //! Cryptographic structures and functions.
 
-use data_encoding::HEXLOWER;
+use data_encoding::BASE64;
 use derp::{self, Der, Tag};
 use pem::{self, Pem};
 use ring;
@@ -39,10 +39,10 @@ const ED25519_SPKI_OID: &'static [u8] = &[0x2b, 0x65, 0x70];
 /// let mut map = HashMap::new();
 /// assert!(hash_preference(&map).is_err());
 ///
-/// let _ = map.insert(HashAlgorithm::Sha512, HashValue::from_hex("abcd").unwrap());
+/// let _ = map.insert(HashAlgorithm::Sha512, HashValue::new(vec![0x00, 0x01]));
 /// assert_eq!(hash_preference(&map).unwrap().0, &HashAlgorithm::Sha512);
 ///
-/// let _ = map.insert(HashAlgorithm::Sha256, HashValue::from_hex("0123").unwrap());
+/// let _ = map.insert(HashAlgorithm::Sha256, HashValue::new(vec![0x02, 0x03]));
 /// assert_eq!(hash_preference(&map).unwrap().0, &HashAlgorithm::Sha512);
 /// ```
 pub fn hash_preference<'a>(
@@ -104,13 +104,13 @@ impl KeyId {
                 "Hex key ID must be 64 characters long".into(),
             ));
         }
-        Ok(KeyId(HEXLOWER.decode(string.as_bytes())?))
+        Ok(KeyId(BASE64.decode(string.as_bytes())?))
     }
 }
 
 impl Debug for KeyId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "KeyId {{ \"{}\" }}", HEXLOWER.encode(&self.0))
+        write!(f, "KeyId {{ \"{}\" }}", BASE64.encode(&self.0))
     }
 }
 
@@ -120,7 +120,7 @@ impl Serialize for KeyId {
         S: Serializer,
     {
         let mut s = ser.serialize_tuple_struct("KeyId", 1)?;
-        s.serialize_field(&HEXLOWER.encode(&self.0))?;
+        s.serialize_field(&BASE64.encode(&self.0))?;
         s.end()
     }
 }
@@ -196,13 +196,13 @@ impl SignatureValue {
 
     /// Create a new `SignatureValue` from the given hex-lower string.
     pub fn from_string(string: &str) -> Result<Self> {
-        Ok(SignatureValue(HEXLOWER.decode(string.as_bytes())?))
+        Ok(SignatureValue(BASE64.decode(string.as_bytes())?))
     }
 }
 
 impl Debug for SignatureValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "SignatureValue {{ \"{}\" }}", HEXLOWER.encode(&self.0))
+        write!(f, "SignatureValue {{ \"{}\" }}", BASE64.encode(&self.0))
     }
 }
 
@@ -212,7 +212,7 @@ impl Serialize for SignatureValue {
         S: Serializer,
     {
         let mut s = ser.serialize_tuple_struct("SignatureValue", 1)?;
-        s.serialize_field(&HEXLOWER.encode(&self.0))?;
+        s.serialize_field(&BASE64.encode(&self.0))?;
         s.end()
     }
 }
@@ -309,7 +309,7 @@ impl Debug for PrivateKeyType {
     }
 }
 
-/// A structure containing information about a public key.
+/// A structure containing information about a private key.
 pub struct PrivateKey {
     private: PrivateKeyType,
     public: PublicKey,
@@ -622,16 +622,6 @@ pub enum HashAlgorithm {
 pub struct HashValue(Vec<u8>);
 
 impl HashValue {
-    /// Parse a hex-lower string and return a `HashValue`.
-    ///
-    /// ```
-    /// use tuf::crypto::HashValue;
-    /// assert_eq!(HashValue::from_hex("abcd").unwrap().value(), &[0xab, 0xcd]);
-    /// ```
-    pub fn from_hex(s: &str) -> Result<Self> {
-        Ok(HashValue(HEXLOWER.decode(s.as_bytes())?))
-    }
-
     /// Create a new `HashValue` from the given digest bytes.
     pub fn new(bytes: Vec<u8>) -> Self {
         HashValue(bytes)
@@ -645,13 +635,13 @@ impl HashValue {
 
 impl Debug for HashValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "HashValue {{ \"{}\" }}", HEXLOWER.encode(&self.0))
+        write!(f, "HashValue {{ \"{}\" }}", BASE64.encode(&self.0))
     }
 }
 
 impl Display for HashValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", HEXLOWER.encode(&self.0))
+        write!(f, "{}", BASE64.encode(&self.0))
     }
 }
 

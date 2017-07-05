@@ -605,7 +605,7 @@ impl MetadataPath {
     /// assert_eq!(path.components::<JsonDataInterchange>(&MetadataVersion::Number(1)),
     ///            ["foo".to_string(), "1.bar.json".to_string()]);
     /// assert_eq!(path.components::<JsonDataInterchange>(
-    ///                 &MetadataVersion::Hash(HashValue::from_hex("abcd").unwrap())),
+    ///                 &MetadataVersion::Hash(HashValue::new(vec![0x69, 0xb7, 0x1d]))),
     ///            ["foo".to_string(), "abcd.bar.json".to_string()]);
     /// ```
     pub fn components<D>(&self, version: &MetadataVersion) -> Vec<String>
@@ -872,23 +872,29 @@ impl TargetDescription {
     /// Read the from the given reader and calculate the length and hash values.
     ///
     /// ```
+    /// extern crate data_encoding;
+    /// extern crate tuf;
+    /// use data_encoding::BASE64;
     /// use tuf::crypto::{HashAlgorithm,HashValue};
     /// use tuf::metadata::TargetDescription;
     ///
-    /// let bytes: &[u8] = b"it was a pleasure to burn";
-    /// let target_description = TargetDescription::from_reader(bytes).unwrap();
+    /// fn main() {
+    ///     let bytes: &[u8] = b"it was a pleasure to burn";
+    ///     let target_description = TargetDescription::from_reader(bytes).unwrap();
     ///
-    /// // $ printf 'it was a pleasure to burn' | sha256sum
-    /// let sha256 = HashValue::from_hex("45df7395bceb7567de2fb8272048b4\
-    ///                             e57f98bf64c2a72e2aa9933537bd99590b").unwrap();
-    /// // $ printf 'it was a pleasure to burn' | sha512sum
-    /// let sha512 = HashValue::from_hex("b6e231c0ac9b61dbc9a56b948fa76e6efa70864028\
-    ///               cd607a84c248473aa7da339476d0d3060dfcd5bad5e0a054d7328ff064a1a0\
-    ///               9b9712d09fe4d9034c210981").unwrap();
+    ///     // $ printf 'it was a pleasure to burn' | sha256sum
+    ///     let s = "Rd9zlbzrdWfeL7gnIEi05X+Yv2TCpy4qqZM1N72ZWQs=";
+    ///     let sha256 = HashValue::new(BASE64.decode(s.as_bytes()).unwrap());
     ///
-    /// assert_eq!(target_description.length(), bytes.len() as u64);
-    /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
-    /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
+    ///     // $ printf 'it was a pleasure to burn' | sha512sum
+    ///     let s ="tuIxwKybYdvJpWuUj6dubvpwhkAozWB6hMJIRzqn2jOUdtDTBg381brV4K\
+    ///         BU1zKP8GShoJuXEtCf5NkDTCEJgQ==";
+    ///     let sha512 = HashValue::new(BASE64.decode(s.as_bytes()).unwrap());
+    ///
+    ///     assert_eq!(target_description.length(), bytes.len() as u64);
+    ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
+    ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
+    /// }
     /// ```
     pub fn from_reader<R>(mut read: R) -> Result<Self>
     where
