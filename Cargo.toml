@@ -7,7 +7,7 @@ homepage = "https://github.com/heartsucker/rust-tuf"
 repository = "https://github.com/heartsucker/rust-tuf"
 documentation = "https://docs.rs/tuf"
 readme = "README.md"
-license = "MIT"
+license = "MIT/Apache-2.0"
 keywords = [ "security" ]
 categories = [ "cryptography" ]
 
