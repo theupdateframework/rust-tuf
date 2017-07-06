@@ -1,7 +1,6 @@
 //! Clients for high level interactions with TUF repositories.
 
 use Result;
-use crypto;
 use error::Error;
 use interchange::DataInterchange;
 use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath, TargetPath};
@@ -187,17 +186,16 @@ where
         }?
             .clone();
 
-        let hashes = match snapshot_description.hashes() {
-            Some(hashes) => Some(crypto::hash_preference(hashes)?),
-            None => None,
-        };
+        if snapshot_description.version() <= tuf.snapshot().map(|s| s.version()).unwrap_or(0) {
+            return Ok(false)
+        }
 
         let snap = repo.fetch_metadata(
             &Role::Snapshot,
             &MetadataPath::from_role(&Role::Snapshot),
             &MetadataVersion::None,
-            &snapshot_description.length(),
-            hashes,
+            &None,
+            None,
         )?;
         tuf.update_snapshot(snap)
     }
@@ -222,17 +220,16 @@ where
         }?
             .clone();
 
-        let hashes = match targets_description.hashes() {
-            Some(hashes) => Some(crypto::hash_preference(hashes)?),
-            None => None,
-        };
+        if targets_description.version() <= tuf.targets().map(|t| t.version()).unwrap_or(0) {
+            return Ok(false)
+        }
 
         let targets = repo.fetch_metadata(
             &Role::Targets,
             &MetadataPath::from_role(&Role::Targets),
             &MetadataVersion::None,
-            &targets_description.length(),
-            hashes,
+            &None,
+            None,
         )?;
         tuf.update_targets(targets)
     }

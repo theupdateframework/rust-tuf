@@ -713,18 +713,12 @@ impl<'de> Deserialize<'de> for TimestampMetadata {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MetadataDescription {
     version: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    length: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    hashes: Option<HashMap<HashAlgorithm, HashValue>>,
 }
 
 impl MetadataDescription {
     /// Create a new `MetadataDescription`.
     pub fn new(
         version: u32,
-        length: Option<usize>,
-        hashes: Option<HashMap<HashAlgorithm, HashValue>>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
@@ -735,24 +729,12 @@ impl MetadataDescription {
 
         Ok(MetadataDescription {
             version: version,
-            length: length,
-            hashes: hashes,
         })
     }
 
     /// The version of the described metadata.
     pub fn version(&self) -> u32 {
         self.version
-    }
-
-    /// The optional length of the described metadata.
-    pub fn length(&self) -> Option<usize> {
-        self.length
-    }
-
-    /// An immutable reference to the optional calculated hashes of the described metadata.
-    pub fn hashes(&self) -> Option<&HashMap<HashAlgorithm, HashValue>> {
-        self.hashes.as_ref()
     }
 }
 
@@ -1208,7 +1190,7 @@ mod test {
             1,
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
             hashmap!{
-                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1, None, None).unwrap(),
+                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1).unwrap(),
             },
         ).unwrap();
 
@@ -1235,7 +1217,7 @@ mod test {
             1,
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
             hashmap! {
-                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1, None, None).unwrap(),
+                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1).unwrap(),
             },
         ).unwrap();
 
@@ -1293,7 +1275,7 @@ mod test {
             1,
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
             hashmap! {
-                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1, None, None).unwrap(),
+                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1).unwrap(),
             },
         ).unwrap();
 
