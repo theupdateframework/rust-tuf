@@ -1,890 +1,1275 @@
-use chrono::{DateTime, UTC};
-use data_encoding::HEXLOWER;
-use json;
-use pem;
-use ring;
-use ring::digest::{digest, SHA256};
-use ring::signature::{ED25519, RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA512};
+//! Structures used to represent TUF metadata
+
+use chrono::DateTime;
+use chrono::offset::Utc;
+use ring::digest::{self, SHA256, SHA512};
 use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
-use std::collections::HashMap;
-use std::fmt::{self, Display, Formatter, Debug};
+use serde::ser::{Serialize, Serializer, Error as SerializeError};
+use std::collections::{HashMap, HashSet};
+use std::fmt::{self, Debug, Display};
+use std::io::Read;
 use std::marker::PhantomData;
-use std::str::FromStr;
-use untrusted::Input;
 
-use cjson::canonicalize;
+use Result;
+use crypto::{KeyId, PublicKey, Signature, HashAlgorithm, HashValue, SignatureScheme, PrivateKey};
 use error::Error;
-use rsa::convert_to_pkcs1;
+use interchange::DataInterchange;
+use shims;
 
-static HASH_PREFERENCES: &'static [HashType] = &[HashType::Sha512, HashType::Sha256];
+static PATH_ILLEGAL_COMPONENTS: &'static [&str] = &[
+    "", // empty
+    ".", // current dir
+    "..", // parent dir
+    // TODO ? "0", // may translate to nul in windows
+];
 
-#[derive(Eq, PartialEq, Deserialize, Debug, Clone)]
-pub enum Role {
-    Root,
-    Targets,
-    Timestamp,
-    Snapshot,
-    TargetsDelegation(String),
+static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &'static [&str] = &[
+    // DOS device files
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+    "KEYBD$",
+    "CLOCK$",
+    "SCREEN$",
+    "$IDLE$",
+    "CONFIG$",
+];
+
+static PATH_ILLEGAL_STRINGS: &'static [&str] = &[
+    "\\", // for windows compatibility
+    "<",
+    ">",
+    "\"",
+    "|",
+    "?",
+    "*",
+    // control characters, all illegal in FAT
+    "\u{000}",
+    "\u{001}",
+    "\u{002}",
+    "\u{003}",
+    "\u{004}",
+    "\u{005}",
+    "\u{006}",
+    "\u{007}",
+    "\u{008}",
+    "\u{009}",
+    "\u{00a}",
+    "\u{00b}",
+    "\u{00c}",
+    "\u{00d}",
+    "\u{00e}",
+    "\u{00f}",
+    "\u{010}",
+    "\u{011}",
+    "\u{012}",
+    "\u{013}",
+    "\u{014}",
+    "\u{015}",
+    "\u{016}",
+    "\u{017}",
+    "\u{018}",
+    "\u{019}",
+    "\u{01a}",
+    "\u{01b}",
+    "\u{01c}",
+    "\u{01d}",
+    "\u{01e}",
+    "\u{01f}",
+    "\u{07f}",
+];
+
+fn safe_path(path: &str) -> Result<()> {
+    if path.starts_with("/") {
+        return Err(Error::IllegalArgument("Cannot start with '/'".into()));
+    }
+
+    for bad_str in PATH_ILLEGAL_STRINGS {
+        if path.contains(bad_str) {
+            return Err(Error::IllegalArgument(
+                format!("Path cannot contain {:?}", bad_str),
+            ));
+        }
+    }
+
+    for component in path.split('/') {
+        for bad_str in PATH_ILLEGAL_COMPONENTS {
+            if component == *bad_str {
+                return Err(Error::IllegalArgument(
+                    format!("Path cannot have component {:?}", component),
+                ));
+            }
+        }
+
+        let component_lower = component.to_lowercase();
+        for bad_str in PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE {
+            if component_lower.as_str() == *bad_str {
+                return Err(Error::IllegalArgument(
+                    format!("Path cannot have component {:?}", component),
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
-impl FromStr for Role {
-    type Err = Error;
+/// The TUF role.
+#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Role {
+    /// The root role.
+    #[serde(rename = "root")]
+    Root,
+    /// The snapshot role.
+    #[serde(rename = "snapshot")]
+    Snapshot,
+    /// The targets role.
+    #[serde(rename = "targets")]
+    Targets,
+    /// The timestamp role.
+    #[serde(rename = "timestamp")]
+    Timestamp,
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Root" => Ok(Role::Root),
-            "Snapshot" => Ok(Role::Snapshot),
-            "Targets" => Ok(Role::Targets),
-            "Timestamp" => Ok(Role::Timestamp),
-            role => Err(Error::UnknownRole(String::from(role))),
+impl Role {
+    /// Check if this role could be associated with a given path.
+    ///
+    /// ```
+    /// use tuf::metadata::{MetadataPath, Role};
+    ///
+    /// assert!(Role::Root.fuzzy_matches_path(&MetadataPath::from_role(&Role::Root)));
+    /// assert!(Role::Snapshot.fuzzy_matches_path(&MetadataPath::from_role(&Role::Snapshot)));
+    /// assert!(Role::Targets.fuzzy_matches_path(&MetadataPath::from_role(&Role::Targets)));
+    /// assert!(Role::Timestamp.fuzzy_matches_path(&MetadataPath::from_role(&Role::Timestamp)));
+    ///
+    /// assert!(!Role::Root.fuzzy_matches_path(&MetadataPath::from_role(&Role::Snapshot)));
+    /// assert!(!Role::Root.fuzzy_matches_path(&MetadataPath::new("wat".into()).unwrap()));
+    /// ```
+    pub fn fuzzy_matches_path(&self, path: &MetadataPath) -> bool {
+        match self {
+            &Role::Root if &path.0 == "root" => true,
+            &Role::Snapshot if &path.0 == "snapshot" => true,
+            &Role::Timestamp if &path.0 == "timestamp" => true,
+            &Role::Targets if &path.0 == "targets" => true,
+            // TODO delegation support
+            _ => false,
         }
     }
 }
 
 impl Display for Role {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match *self {
-            Role::Root => write!(f, "{}", "root"),
-            Role::Targets => write!(f, "{}", "targets"),
-            Role::Snapshot => write!(f, "{}", "snapshot"),
-            Role::Timestamp => write!(f, "{}", "timestamp"),
-            Role::TargetsDelegation(ref s) => write!(f, "{}", s),
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Role::Root => write!(f, "root"),
+            &Role::Snapshot => write!(f, "snapshot"),
+            &Role::Targets => write!(f, "targets"),
+            &Role::Timestamp => write!(f, "timestamp"),
         }
     }
 }
 
-pub trait RoleType: Debug + Clone{
-    fn matches(role: &Role) -> bool;
+/// Enum used for addressing versioned TUF metadata.
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub enum MetadataVersion {
+    /// The metadata is unversioned.
+    None,
+    /// The metadata is addressed by a specific version number.
+    Number(u32),
+    /// The metadata is addressed by a hash prefix. Used with TUF's consistent snapshot feature.
+    Hash(HashValue),
 }
 
-#[derive(Debug, Clone)]
-pub struct Root {}
-impl RoleType for Root {
-    fn matches(role: &Role) -> bool {
-        match role {
-            &Role::Root => true,
-            _ => false,
+impl MetadataVersion {
+    /// Converts this struct into the string used for addressing metadata.
+    pub fn prefix(&self) -> String {
+        match self {
+            &MetadataVersion::None => String::new(),
+            &MetadataVersion::Number(ref x) => format!("{}.", x),
+            &MetadataVersion::Hash(ref v) => format!("{}.", v),
         }
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Targets {}
-impl RoleType for Targets {
-    fn matches(role: &Role) -> bool {
-        match role {
-            &Role::Targets => true,
-            _ => false,
-        }
+/// Top level trait used for role metadata.
+pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {
+    /// The role associated with the metadata.
+    fn role() -> Role;
+}
+
+/// A piece of raw metadata with attached signatures.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct SignedMetadata<D, M>
+where
+    D: DataInterchange,
+    M: Metadata,
+{
+    signatures: Vec<Signature>,
+    signed: D::RawData,
+    #[serde(skip_serializing, skip_deserializing)]
+    _interchage: PhantomData<D>,
+    #[serde(skip_serializing, skip_deserializing)]
+    _metadata: PhantomData<M>,
+}
+
+impl<D, M> SignedMetadata<D, M>
+where
+    D: DataInterchange,
+    M: Metadata,
+{
+    /// Create a new `SignedMetadata`.
+    pub fn new(
+        metadata: &M,
+        private_key: &PrivateKey,
+        scheme: SignatureScheme,
+    ) -> Result<SignedMetadata<D, M>> {
+        let raw = D::serialize(metadata)?;
+        let bytes = D::canonicalize(&raw)?;
+        let sig = private_key.sign(&bytes, scheme)?;
+        Ok(SignedMetadata {
+            signatures: vec![sig],
+            signed: raw,
+            _interchage: PhantomData,
+            _metadata: PhantomData,
+        })
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct Timestamp {}
-impl RoleType for Timestamp {
-    fn matches(role: &Role) -> bool {
-        match role {
-            &Role::Timestamp => true,
-            _ => false,
-        }
+    /// An immutable reference to the signatures.
+    pub fn signatures(&self) -> &[Signature] {
+        &self.signatures
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct Snapshot {}
-impl RoleType for Snapshot {
-    fn matches(role: &Role) -> bool {
-        match role {
-            &Role::Snapshot => true,
-            _ => false,
-        }
+    /// A mutable reference to the signatures.
+    pub fn signatures_mut(&mut self) -> &mut Vec<Signature> {
+        &mut self.signatures
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct SignedMetadata<R: RoleType + Clone> {
-    pub signatures: Vec<Signature>,
-    pub signed: json::Value,
-    _role: PhantomData<R>,
-}
+    /// An immutable reference to the raw data.
+    pub fn signed(&self) -> &D::RawData {
+        &self.signed
+    }
 
-impl<'de, R: RoleType> Deserialize<'de> for SignedMetadata<R> {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
-            match (object.remove("signatures"), object.remove("signed")) {
-                (Some(a @ json::Value::Array(_)), Some(v @ json::Value::Object(_))) => {
-                    Ok(SignedMetadata::<R> {
-                        signatures: json::from_value(a).map_err(|e| {
-                                DeserializeError::custom(format!("Bad signature data: {}", e))
-                            })?,
-                        signed: v.clone(),
-                        _role: PhantomData,
-                    })
+    /// Verify this metadata.
+    pub fn verify(
+        &self,
+        threshold: u32,
+        authorized_key_ids: &HashSet<KeyId>,
+        available_keys: &HashMap<KeyId, PublicKey>,
+    ) -> Result<()> {
+        if self.signatures.len() < 1 {
+            return Err(Error::VerificationFailure(
+                "The metadata was not signed with any authorized keys."
+                    .into(),
+            ));
+        }
+
+        if threshold < 1 {
+            return Err(Error::VerificationFailure(
+                "Threshold must be strictly greater than zero".into(),
+            ));
+        }
+
+        let canonical_bytes = D::canonicalize(&self.signed)?;
+
+        let mut signatures_needed = threshold;
+        for sig in self.signatures.iter() {
+            if !authorized_key_ids.contains(sig.key_id()) {
+                warn!(
+                    "Key ID {:?} is not authorized to sign root metadata.",
+                    sig.key_id()
+                );
+                continue;
+            }
+
+            match available_keys.get(sig.key_id()) {
+                Some(ref pub_key) => {
+                    match pub_key.verify(&canonical_bytes, &sig) {
+                        Ok(()) => {
+                            debug!("Good signature from key ID {:?}", pub_key.key_id());
+                            signatures_needed -= 1;
+                        }
+                        Err(e) => {
+                            warn!("Bad signature from key ID {:?}: {:?}", pub_key.key_id(), e);
+                        }
+                    }
                 }
-                _ => {
-                    Err(DeserializeError::custom("Metadata missing 'signed' or 'signatures' \
-                                                  section"))
+                None => {
+                    warn!(
+                        "Key ID {:?} was not found in the set of available keys.",
+                        sig.key_id()
+                    );
                 }
             }
+            if signatures_needed == 0 {
+                break;
+            }
+        }
+
+        if signatures_needed == 0 {
+            Ok(())
         } else {
-            Err(DeserializeError::custom("Metadata was not an object"))
+            Err(Error::VerificationFailure(format!(
+                "Signature threshold not met: {}/{}",
+                threshold - signatures_needed,
+                threshold
+            )))
         }
     }
 }
 
-pub trait Metadata<R: RoleType>: DeserializeOwned {
-    fn expires(&self) -> &DateTime<UTC>;
-}
-
-
+/// Metadata for the root role.
 #[derive(Debug, PartialEq)]
 pub struct RootMetadata {
+    version: u32,
+    expires: DateTime<Utc>,
     consistent_snapshot: bool,
-    expires: DateTime<UTC>,
-    pub version: i32,
-    pub keys: HashMap<KeyId, Key>,
-    pub root: RoleDefinition,
-    pub targets: RoleDefinition,
-    pub timestamp: RoleDefinition,
-    pub snapshot: RoleDefinition,
+    keys: HashMap<KeyId, PublicKey>,
+    root: RoleDefinition,
+    snapshot: RoleDefinition,
+    targets: RoleDefinition,
+    timestamp: RoleDefinition,
 }
 
-impl Metadata<Root> for RootMetadata {
-    fn expires(&self) -> &DateTime<UTC> {
+impl RootMetadata {
+    /// Create new `RootMetadata`.
+    pub fn new(
+        version: u32,
+        expires: DateTime<Utc>,
+        consistent_snapshot: bool,
+        mut keys: Vec<PublicKey>,
+        root: RoleDefinition,
+        snapshot: RoleDefinition,
+        targets: RoleDefinition,
+        timestamp: RoleDefinition,
+    ) -> Result<Self> {
+        if version < 1 {
+            return Err(Error::IllegalArgument(format!(
+                "Metadata version must be greater than zero. Found: {}",
+                version
+            )));
+        }
+
+        let keys = keys.drain(0..)
+            .map(|k| (k.key_id().clone(), k))
+            .collect::<HashMap<KeyId, PublicKey>>();
+
+        Ok(RootMetadata {
+            version: version,
+            expires: expires,
+            consistent_snapshot: consistent_snapshot,
+            keys: keys,
+            root: root,
+            snapshot: snapshot,
+            targets: targets,
+            timestamp: timestamp,
+        })
+    }
+
+    /// The version number.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// An immutable reference to the metadata's expiration `DateTime`.
+    pub fn expires(&self) -> &DateTime<Utc> {
         &self.expires
+    }
+
+    /// Whether or not this repository is currently implementing that TUF consistent snapshot
+    /// feature.
+    pub fn consistent_snapshot(&self) -> bool {
+        self.consistent_snapshot
+    }
+
+    /// An immutable reference to the map of trusted keys.
+    pub fn keys(&self) -> &HashMap<KeyId, PublicKey> {
+        &self.keys
+    }
+
+    /// An immutable reference to the root role's definition.
+    pub fn root(&self) -> &RoleDefinition {
+        &self.root
+    }
+
+    /// An immutable reference to the snapshot role's definition.
+    pub fn snapshot(&self) -> &RoleDefinition {
+        &self.snapshot
+    }
+
+    /// An immutable reference to the targets role's definition.
+    pub fn targets(&self) -> &RoleDefinition {
+        &self.targets
+    }
+
+    /// An immutable reference to the timestamp role's definition.
+    pub fn timestamp(&self) -> &RoleDefinition {
+        &self.timestamp
+    }
+}
+
+impl Metadata for RootMetadata {
+    fn role() -> Role {
+        Role::Root
+    }
+}
+
+impl Serialize for RootMetadata {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let m = shims::RootMetadata::from(self).map_err(|e| {
+            SerializeError::custom(format!("{:?}", e))
+        })?;
+        m.serialize(ser)
     }
 }
 
 impl<'de> Deserialize<'de> for RootMetadata {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
-            let typ = json::from_value::<Role>(object.remove("_type")
-                    .ok_or_else(|| DeserializeError::custom("Field '_type' missing"))?)
-                .map_err(|e| {
-                    DeserializeError::custom(format!("Field '_type' not a valid role: {}", e))
-                })?;
-
-            if typ != Role::Root {
-                return Err(DeserializeError::custom("Field '_type' was not 'Root'"));
-            }
-
-            let keys = json::from_value(object.remove("keys")
-                    .ok_or_else(|| DeserializeError::custom("Field 'keys' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'keys' not a valid key map: {}", e))
-                })?;
-
-            let expires = json::from_value(object.remove("expires")
-                    .ok_or_else(|| DeserializeError::custom("Field 'expires' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'expires' did not have a valid format: {}", e))
-                })?;
-
-            let version = json::from_value(object.remove("version")
-                    .ok_or_else(|| DeserializeError::custom("Field 'version' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'version' did not have a valid format: {}", e))
-                })?;
-
-            let consistent_snapshot = json::from_value(object.remove("consistent_snapshot")
-                    .ok_or_else(|| DeserializeError::custom("Field 'consistent_snapshot' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'consistent_snapshot' did not have a valid format: {}", e))
-                })?;
-
-            let mut roles = object.remove("roles")
-                .and_then(|v| match v {
-                    json::Value::Object(o) => Some(o),
-                    _ => None,
-                })
-                .ok_or_else(|| DeserializeError::custom("Field 'roles' missing"))?;
-
-            let root = json::from_value(roles.remove("root")
-                    .ok_or_else(|| DeserializeError::custom("Role 'root' missing"))?)
-                .map_err(|e| {
-                    DeserializeError::custom(format!("Root role definition error: {}", e))
-                })?;
-
-            let targets = json::from_value(roles.remove("targets")
-                    .ok_or_else(|| DeserializeError::custom("Role 'targets' missing"))?)
-                .map_err(|e| {
-                    DeserializeError::custom(format!("Targets role definition error: {}", e))
-                })?;
-
-            let timestamp = json::from_value(roles.remove("timestamp")
-                    .ok_or_else(|| DeserializeError::custom("Role 'timestamp' missing"))?)
-                .map_err(|e| {
-                    DeserializeError::custom(format!("Timetamp role definition error: {}", e))
-                })?;
-
-            let snapshot = json::from_value(roles.remove("snapshot")
-                    .ok_or_else(|| DeserializeError::custom("Role 'shapshot' missing"))?)
-                .map_err(|e| {
-                    DeserializeError::custom(format!("Snapshot role definition error: {}", e))
-                })?;
-
-            Ok(RootMetadata {
-                consistent_snapshot,
-                expires: expires,
-                version: version,
-                keys: keys,
-                root: root,
-                targets: targets,
-                timestamp: timestamp,
-                snapshot: snapshot,
-            })
-        } else {
-            Err(DeserializeError::custom("Role was not an object"))
-        }
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::RootMetadata = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+/// The definition of what allows a role to be trusted.
+#[derive(Clone, Debug, PartialEq)]
 pub struct RoleDefinition {
-    pub key_ids: Vec<KeyId>,
-    pub threshold: i32,
+    threshold: u32,
+    key_ids: HashSet<KeyId>,
+}
+
+impl RoleDefinition {
+    /// Create a new `RoleDefinition` with a given threshold and set of authorized `KeyID`s.
+    pub fn new(threshold: u32, key_ids: HashSet<KeyId>) -> Result<Self> {
+        if threshold < 1 {
+            return Err(Error::IllegalArgument(format!("Threshold: {}", threshold)));
+        }
+
+        if key_ids.is_empty() {
+            return Err(Error::IllegalArgument(
+                "Cannot define a role with no associated key IDs".into(),
+            ));
+        }
+
+        if (key_ids.len() as u64) < (threshold as u64) {
+            return Err(Error::IllegalArgument(format!(
+                "Cannot have a threshold greater than the number of associated key IDs. {} vs. {}",
+                threshold,
+                key_ids.len()
+            )));
+        }
+
+        Ok(RoleDefinition {
+            threshold: threshold,
+            key_ids: key_ids,
+        })
+    }
+
+    /// The threshold number of signatures required for the role to be trusted.
+    pub fn threshold(&self) -> u32 {
+        self.threshold
+    }
+
+    /// An immutable reference to the set of `KeyID`s that are authorized to sign the role.
+    pub fn key_ids(&self) -> &HashSet<KeyId> {
+        &self.key_ids
+    }
+}
+
+impl Serialize for RoleDefinition {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        shims::RoleDefinition::from(self)
+            .map_err(|e| SerializeError::custom(format!("{:?}", e)))?
+            .serialize(ser)
+    }
 }
 
 impl<'de> Deserialize<'de> for RoleDefinition {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
-            let key_ids = json::from_value(object.remove("keyids")
-                    .ok_or_else(|| DeserializeError::custom("Field 'keyids' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'keyids' not a valid array: {}", e))
-                })?;
-
-            let threshold = json::from_value(object.remove("threshold")
-                    .ok_or_else(|| DeserializeError::custom("Field 'threshold' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'threshold' not a an int: {}", e))
-                })?;
-
-            if threshold <= 0 {
-                return Err(DeserializeError::custom("'threshold' must be >= 1"));
-            }
-
-
-            Ok(RoleDefinition {
-                key_ids: key_ids,
-                threshold: threshold,
-            })
-        } else {
-            Err(DeserializeError::custom("Role definition was not an object"))
-        }
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::RoleDefinition = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct TargetsMetadata {
-    expires: DateTime<UTC>,
-    pub version: i32,
-    pub delegations: Option<Delegations>,
-    pub targets: HashMap<String, TargetInfo>,
-}
+/// Wrapper for a path to metadata
+#[derive(Debug, Clone, PartialEq, Hash, Eq, Serialize)]
+pub struct MetadataPath(String);
 
-impl Metadata<Targets> for TargetsMetadata {
-    fn expires(&self) -> &DateTime<UTC> {
-        &self.expires
+impl MetadataPath {
+    /// Create a new `MetadataPath` from a `String`.
+    ///
+    /// ```
+    /// use tuf::metadata::MetadataPath;
+    ///
+    /// assert!(MetadataPath::new("foo".into()).is_ok());
+    /// assert!(MetadataPath::new("/foo".into()).is_err());
+    /// assert!(MetadataPath::new("../foo".into()).is_err());
+    /// assert!(MetadataPath::new("foo/".into()).is_err());
+    /// assert!(MetadataPath::new("foo/..".into()).is_err());
+    /// assert!(MetadataPath::new("foo/../bar".into()).is_err());
+    /// assert!(MetadataPath::new("..foo".into()).is_ok());
+    /// assert!(MetadataPath::new("foo//bar".into()).is_err());
+    /// assert!(MetadataPath::new("foo/..bar".into()).is_ok());
+    /// assert!(MetadataPath::new("foo/bar..".into()).is_ok());
+    /// ```
+    pub fn new(path: String) -> Result<Self> {
+        safe_path(&path)?;
+        Ok(MetadataPath(path))
+    }
+
+    /// Create a metadata path from the given role.
+    /// ```
+    /// use tuf::metadata::{Role, MetadataPath};
+    ///
+    /// assert_eq!(MetadataPath::from_role(&Role::Root),
+    ///            MetadataPath::new("root".into()))
+    /// assert_eq!(MetadataPath::from_role(&Role::Snapshot),
+    ///            MetadataPath::new("snapshot".into()))
+    /// assert_eq!(MetadataPath::from_role(&Role::Targets),
+    ///            MetadataPath::new("targets".into()))
+    /// assert_eq!(MetadataPath::from_role(&Role::Timestamp),
+    ///            MetadataPath::new("timestamp".into()))
+    /// ```
+    pub fn from_role(role: &Role) -> Self {
+        Self::new(format!("{}", role)).unwrap()
+    }
+
+    /// Split `MetadataPath` into components that can be joined to create URL paths, Unix paths, or
+    /// Windows paths.
+    ///
+    /// ```
+    /// use tuf::crypto::HashValue;
+    /// use tuf::interchange::JsonDataInterchange;
+    /// use tuf::metadata::{MetadataPath, MetadataVersion};
+    ///
+    /// let path = MetadataPath::new("foo/bar".into()).unwrap();
+    /// assert_eq!(path.components::<JsonDataInterchange>(&MetadataVersion::None),
+    ///            ["foo".to_string(), "bar.json".to_string()]);
+    /// assert_eq!(path.components::<JsonDataInterchange>(&MetadataVersion::Number(1)),
+    ///            ["foo".to_string(), "1.bar.json".to_string()]);
+    /// assert_eq!(path.components::<JsonDataInterchange>(
+    ///                 &MetadataVersion::Hash(HashValue::new(vec![0x69, 0xb7, 0x1d]))),
+    ///            ["foo".to_string(), "abcd.bar.json".to_string()]);
+    /// ```
+    pub fn components<D>(&self, version: &MetadataVersion) -> Vec<String>
+    where
+        D: DataInterchange,
+    {
+        let mut buf: Vec<String> = self.0.split('/').map(|s| s.to_string()).collect();
+        let len = buf.len();
+        buf[len - 1] = format!("{}{}.{}", version.prefix(), buf[len - 1], D::extension());
+        buf
     }
 }
 
-impl<'de> Deserialize<'de> for TargetsMetadata {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
-            let delegations = match object.remove("delegations") {
-                // TODO this should accept null / empty object too
-                // currently the options are "not present at all" or "completely correct"
-                // and everything else errors out
-                Some(value) => {
-                    Some(json::from_value(value).map_err(|e| {
-                            DeserializeError::custom(format!("Bad delegations format: {}", e))
-                        })?)
-                }
-                None => None,
-            };
-
-            let expires = json::from_value(object.remove("expires")
-                    .ok_or_else(|| DeserializeError::custom("Field 'expires' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'expires did not have a valid format: {}", e))
-                })?;
-
-            let version = json::from_value(object.remove("version")
-                    .ok_or_else(|| DeserializeError::custom("Field 'version' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'version' did not have a valid format: {}", e))
-                })?;
-
-            match object.remove("targets") {
-                Some(t) => {
-                    let targets =
-                        json::from_value(t).map_err(|e| {
-                                DeserializeError::custom(format!("Bad targets format: {}", e))
-                            })?;
-
-                    Ok(TargetsMetadata {
-                        version: version,
-                        expires: expires,
-                        delegations: delegations,
-                        targets: targets,
-                    })
-                }
-                _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
-            }
-        } else {
-            Err(DeserializeError::custom("Role was not an object"))
-        }
+impl ToString for MetadataPath {
+    fn to_string(&self) -> String {
+        self.0.clone()
     }
 }
 
+impl<'de> Deserialize<'de> for MetadataPath {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let s: String = Deserialize::deserialize(de)?;
+        MetadataPath::new(s).map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+    }
+}
 
-#[derive(Debug)]
+/// Metadata for the timestamp role.
+#[derive(Debug, PartialEq)]
 pub struct TimestampMetadata {
-    expires: DateTime<UTC>,
-    pub version: i32,
-    pub meta: HashMap<String, MetadataMetadata>,
+    version: u32,
+    expires: DateTime<Utc>,
+    meta: HashMap<MetadataPath, MetadataDescription>,
 }
 
-impl Metadata<Timestamp> for TimestampMetadata {
-    fn expires(&self) -> &DateTime<UTC> {
+impl TimestampMetadata {
+    /// Create new `TimestampMetadata`.
+    pub fn new(
+        version: u32,
+        expires: DateTime<Utc>,
+        meta: HashMap<MetadataPath, MetadataDescription>,
+    ) -> Result<Self> {
+        if version < 1 {
+            return Err(Error::IllegalArgument(format!(
+                "Metadata version must be greater than zero. Found: {}",
+                version
+            )));
+        }
+
+        Ok(TimestampMetadata {
+            version: version,
+            expires: expires,
+            meta: meta,
+        })
+    }
+
+    /// The version number.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// An immutable reference to the metadata's expiration `DateTime`.
+    pub fn expires(&self) -> &DateTime<Utc> {
         &self.expires
+    }
+
+    /// An immutable reference to the metadata paths and descriptions.
+    pub fn meta(&self) -> &HashMap<MetadataPath, MetadataDescription> {
+        &self.meta
+    }
+}
+
+impl Metadata for TimestampMetadata {
+    fn role() -> Role {
+        Role::Timestamp
+    }
+}
+
+impl Serialize for TimestampMetadata {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        shims::TimestampMetadata::from(self)
+            .map_err(|e| SerializeError::custom(format!("{:?}", e)))?
+            .serialize(ser)
     }
 }
 
 impl<'de> Deserialize<'de> for TimestampMetadata {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
-
-            let expires = json::from_value(object.remove("expires")
-                    .ok_or_else(|| DeserializeError::custom("Field 'expires' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'expires' did not have a valid format: {}", e))
-                })?;
-
-            let version = json::from_value(object.remove("version")
-                    .ok_or_else(|| DeserializeError::custom("Field 'version' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'version' did not have a valid format: {}", e))
-                })?;
-
-            match object.remove("meta") {
-                Some(m) => {
-                    let meta = json::from_value(m).map_err(|e| {
-                            DeserializeError::custom(format!("Bad meta-meta format: {}", e))
-                        })?;
-
-                    Ok(TimestampMetadata {
-                        expires: expires,
-                        version: version,
-                        meta: meta,
-                    })
-                }
-                _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
-            }
-        } else {
-            Err(DeserializeError::custom("Role was not an object"))
-        }
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::TimestampMetadata = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
     }
 }
 
-
-#[derive(Debug)]
-pub struct SnapshotMetadata {
-    expires: DateTime<UTC>,
-    pub version: i32,
-    pub meta: HashMap<String, SnapshotMetadataMetadata>,
+/// Description of a piece of metadata, used in verification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MetadataDescription {
+    version: u32,
 }
 
-impl Metadata<Snapshot> for SnapshotMetadata {
-    fn expires(&self) -> &DateTime<UTC> {
+impl MetadataDescription {
+    /// Create a new `MetadataDescription`.
+    pub fn new(version: u32) -> Result<Self> {
+        if version < 1 {
+            return Err(Error::IllegalArgument(format!(
+                "Metadata version must be greater than zero. Found: {}",
+                version
+            )));
+        }
+
+        Ok(MetadataDescription { version: version })
+    }
+
+    /// The version of the described metadata.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+}
+
+/// Metadata for the snapshot role.
+#[derive(Debug, PartialEq)]
+pub struct SnapshotMetadata {
+    version: u32,
+    expires: DateTime<Utc>,
+    meta: HashMap<MetadataPath, MetadataDescription>,
+}
+
+impl SnapshotMetadata {
+    /// Create new `SnapshotMetadata`.
+    pub fn new(
+        version: u32,
+        expires: DateTime<Utc>,
+        meta: HashMap<MetadataPath, MetadataDescription>,
+    ) -> Result<Self> {
+        if version < 1 {
+            return Err(Error::IllegalArgument(format!(
+                "Metadata version must be greater than zero. Found: {}",
+                version
+            )));
+        }
+
+        Ok(SnapshotMetadata {
+            version: version,
+            expires: expires,
+            meta: meta,
+        })
+    }
+
+    /// The version number.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// An immutable reference to the metadata's expiration `DateTime`.
+    pub fn expires(&self) -> &DateTime<Utc> {
         &self.expires
+    }
+
+    /// An immutable reference to the metadata paths and descriptions.
+    pub fn meta(&self) -> &HashMap<MetadataPath, MetadataDescription> {
+        &self.meta
+    }
+}
+
+impl Metadata for SnapshotMetadata {
+    fn role() -> Role {
+        Role::Snapshot
+    }
+}
+
+impl Serialize for SnapshotMetadata {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        shims::SnapshotMetadata::from(self)
+            .map_err(|e| SerializeError::custom(format!("{:?}", e)))?
+            .serialize(ser)
     }
 }
 
 impl<'de> Deserialize<'de> for SnapshotMetadata {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
-            let expires = json::from_value(object.remove("expires")
-                    .ok_or_else(|| DeserializeError::custom("Field 'expires' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'expires' did not have a valid format: {}", e))
-                })?;
-
-            let version = json::from_value(object.remove("version")
-                    .ok_or_else(|| DeserializeError::custom("Field 'version' missing"))?).map_err(|e| {
-                    DeserializeError::custom(format!("Field 'version' did not have a valid format: {}", e))
-                })?;
-
-            match object.remove("meta") {
-                Some(m) => {
-                    let meta = json::from_value(m).map_err(|e| {
-                            DeserializeError::custom(format!("Bad meta-meta format: {}", e))
-                        })?;
-
-                    Ok(SnapshotMetadata {
-                        expires: expires,
-                        version: version,
-                        meta: meta,
-                    })
-                }
-                _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
-            }
-        } else {
-            Err(DeserializeError::custom("Role was not an object"))
-        }
-    }
-}
-
-/// A cryptographic signature.
-#[derive(Clone, PartialEq, Debug)]
-pub struct Signature {
-    pub key_id: KeyId,
-    pub method: SignatureScheme,
-    pub sig: SignatureValue,
-}
-
-impl<'de> Deserialize<'de> for Signature {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
-            match (object.remove("keyid"), object.remove("method"), object.remove("sig")) {
-                (Some(k), Some(m), Some(s)) => {
-                    let key_id =
-                        json::from_value(k).map_err(|e| {
-                                DeserializeError::custom(format!("Failed at keyid: {}", e))
-                            })?;
-                    let method =
-                        json::from_value(m).map_err(|e| {
-                                DeserializeError::custom(format!("Failed at method: {}", e))
-                            })?;
-                    let sig = json::from_value(s)
-                        .map_err(|e| DeserializeError::custom(format!("Failed at sig: {}", e)))?;
-
-                    Ok(Signature {
-                        key_id: key_id,
-                        method: method,
-                        sig: sig,
-                    })
-                }
-                _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
-            }
-        } else {
-            Err(DeserializeError::custom("Signature was not an object".to_string()))
-        }
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::SnapshotMetadata = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
     }
 }
 
 
-/// A public key
-#[derive(Clone, PartialEq, Debug, Deserialize)]
-pub struct Key {
-    /// The type of keys.
-    #[serde(rename = "keytype")]
-    pub typ: KeyType,
-    /// The key's value.
-    #[serde(rename = "keyval")]
-    pub value: KeyValue,
-}
+/// Wrapper for a path to a target.
+#[derive(Debug, Clone, PartialEq, Hash, Eq, Serialize)]
+pub struct TargetPath(String);
 
-impl Key {
-    /// Use the given key to verify a signature over a byte array.
-    pub fn verify(&self,
-                  scheme: &SignatureScheme,
-                  msg: &[u8],
-                  sig: &SignatureValue)
-                  -> Result<(), Error> {
-        if self.typ.supports(scheme) {
-            match self.typ {
-                KeyType::Unsupported(ref s) => Err(Error::UnsupportedKeyType(s.clone())),
-                _ => scheme.verify(&self.value, msg, sig),
-            }
-        } else {
-            Err(Error::Generic(format!("Signature scheme mismatch: Key {:?}, Scheme {:?}",
-                                       self,
-                                       scheme)))
-        }
+impl TargetPath {
+    /// Create a new `TargetPath` from a `String`.
+    ///
+    /// ```
+    /// use tuf::metadata::TargetPath;
+    ///
+    /// assert!(TargetPath::new("foo".into()).is_ok());
+    /// assert!(TargetPath::new("/foo".into()).is_err());
+    /// assert!(TargetPath::new("../foo".into()).is_err());
+    /// assert!(TargetPath::new("foo/".into()).is_err());
+    /// assert!(TargetPath::new("foo/..".into()).is_err());
+    /// assert!(TargetPath::new("foo/../bar".into()).is_err());
+    /// assert!(TargetPath::new("..foo".into()).is_ok());
+    /// assert!(TargetPath::new("foo//bar".into()).is_err());
+    /// assert!(TargetPath::new("foo/..bar".into()).is_ok());
+    /// assert!(TargetPath::new("foo/bar..".into()).is_ok());
+    /// ```
+    pub fn new(path: String) -> Result<Self> {
+        safe_path(&path)?;
+        Ok(TargetPath(path))
+    }
+
+    /// Split `TargetPath` into components that can be joined to create URL paths, Unix paths, or
+    /// Windows paths.
+    ///
+    /// ```
+    /// use tuf::metadata::TargetPath;
+    ///
+    /// let path = TargetPath::new("foo/bar".into()).unwrap();
+    /// assert_eq!(path.components(), ["foo".to_string(), "bar".to_string()]);
+    /// ```
+    pub fn components(&self) -> Vec<String> {
+        self.0.split('/').map(|s| s.to_string()).collect()
     }
 }
 
-/// Types of public keys.
-#[derive(Clone, PartialEq, Debug)]
-pub enum KeyType {
-    /// [Ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) signature scheme.
-    Ed25519,
-    /// [RSA](https://en.wikipedia.org/wiki/RSA_%28cryptosystem%29)
-    Rsa,
-    /// Internal representation of an unsupported key type.
-    Unsupported(String),
-}
-
-impl KeyType {
-    fn supports(&self, scheme: &SignatureScheme) -> bool {
-        match (self, scheme) {
-            (&KeyType::Ed25519, &SignatureScheme::Ed25519) => true,
-            (&KeyType::Rsa, &SignatureScheme::RsaSsaPssSha256) => true,
-            (&KeyType::Rsa, &SignatureScheme::RsaSsaPssSha512) => true,
-            _ => false,
-        }
+impl ToString for TargetPath {
+    fn to_string(&self) -> String {
+        self.0.clone()
     }
 }
 
-impl FromStr for KeyType {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "ed25519" => Ok(KeyType::Ed25519),
-            "rsa" => Ok(KeyType::Rsa),
-            typ => Ok(KeyType::Unsupported(typ.into())),
-        }
+impl<'de> Deserialize<'de> for TargetPath {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let s: String = Deserialize::deserialize(de)?;
+        TargetPath::new(s).map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
-impl<'de> Deserialize<'de> for KeyType {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        if let json::Value::String(ref s) = Deserialize::deserialize(de)? {
-            s.parse().map_err(|_| unreachable!())
-        } else {
-            Err(DeserializeError::custom("Key type was not a string"))
-        }
-    }
+/// Description of a target, used in verification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TargetDescription {
+    length: u64,
+    hashes: HashMap<HashAlgorithm, HashValue>,
 }
 
+impl TargetDescription {
+    /// Read the from the given reader and calculate the length and hash values.
+    ///
+    /// ```
+    /// extern crate data_encoding;
+    /// extern crate tuf;
+    /// use data_encoding::BASE64URL;
+    /// use tuf::crypto::{HashAlgorithm,HashValue};
+    /// use tuf::metadata::TargetDescription;
+    ///
+    /// fn main() {
+    ///     let bytes: &[u8] = b"it was a pleasure to burn";
+    ///     let target_description = TargetDescription::from_reader(bytes).unwrap();
+    ///
+    ///     // $ printf 'it was a pleasure to burn' | sha256sum
+    ///     let s = "Rd9zlbzrdWfeL7gnIEi05X-Yv2TCpy4qqZM1N72ZWQs=";
+    ///     let sha256 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
+    ///
+    ///     // $ printf 'it was a pleasure to burn' | sha512sum
+    ///     let s ="tuIxwKybYdvJpWuUj6dubvpwhkAozWB6hMJIRzqn2jOUdtDTBg381brV4K\
+    ///         BU1zKP8GShoJuXEtCf5NkDTCEJgQ==";
+    ///     let sha512 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
+    ///
+    ///     assert_eq!(target_description.length(), bytes.len() as u64);
+    ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
+    ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
+    /// }
+    /// ```
+    pub fn from_reader<R>(mut read: R) -> Result<Self>
+    where
+        R: Read,
+    {
+        let mut length = 0;
+        let mut sha256 = digest::Context::new(&SHA256);
+        let mut sha512 = digest::Context::new(&SHA512);
 
-/// The raw bytes of a public key.
-#[derive(Clone, PartialEq, Debug)]
-pub struct KeyValue {
-    /// The key's raw bytes.
-    pub value: Vec<u8>,
-    /// The key's original value, needed for ID calculation
-    pub original: String,
-    /// The key's type,
-    pub typ: KeyType,
-}
-
-impl KeyValue {
-    /// Calculates the `KeyId` of the public key.
-    pub fn key_id(&self) -> KeyId {
-        match self.typ {
-            KeyType::Unsupported(_) => KeyId(String::from("error")), // TODO this feels wrong, but we check this everywhere else
-            _ => {
-                let key_value = canonicalize(&json::Value::String(self.original.clone())).unwrap(); // TODO unwrap
-                KeyId(HEXLOWER.encode(digest(&SHA256, &key_value).as_ref()))
-            }
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for KeyValue {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        match Deserialize::deserialize(de)? {
-            json::Value::String(ref s) => {
-                // TODO this is pretty shaky
-                if s.starts_with("-----") {
-                    pem::parse(s)
-                        .map(|p| {
-                            KeyValue {
-                                value: p.contents,
-                                original: s.clone(),
-                                typ: KeyType::Rsa,
-                            }
-                        })
-                        .map_err(|e| {
-                            DeserializeError::custom(format!("Key was not PEM encoded: {}", e))
-                        })
-                } else {
-                    HEXLOWER.decode(s.as_ref())
-                        .map(|v| {
-                            KeyValue {
-                                value: v,
-                                original: s.clone(),
-                                typ: KeyType::Ed25519,
-                            }
-                        })
-                        .map_err(|e| {
-                            DeserializeError::custom(format!("Key value was not hex: {}", e))
-                        })
-                }
-            }
-            json::Value::Object(mut object) => {
-                json::from_value::<KeyValue>(object.remove("public")
-                        .ok_or_else(|| DeserializeError::custom("Field 'public' missing"))?)
-                    .map_err(|e| {
-                        DeserializeError::custom(format!("Field 'public' not encoded correctly: \
-                                                          {}",
-                                                         e))
-                    })
-            }
-            _ => Err(DeserializeError::custom("Key value was not a string or object")),
-        }
-    }
-}
-
-
-/// The hex encoded ID of a public key.
-#[derive(Clone, Hash, Eq, PartialEq, Debug)]
-pub struct KeyId(pub String);
-
-impl<'de> Deserialize<'de> for KeyId {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        match Deserialize::deserialize(de)? {
-            json::Value::String(s) => Ok(KeyId(s)),
-            _ => Err(DeserializeError::custom("Key ID was not a string")),
-        }
-    }
-}
-
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct SignatureValue(Vec<u8>);
-
-impl<'de> Deserialize<'de> for SignatureValue {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        match Deserialize::deserialize(de)? {
-            json::Value::String(ref s) => {
-                HEXLOWER.decode(s.as_ref())
-                    .map(SignatureValue)
-                    .map_err(|e| {
-                        DeserializeError::custom(format!("Signature value was not hex: {}", e))
-                    })
-            }
-            _ => Err(DeserializeError::custom("Signature value was not a string")),
-        }
-    }
-}
-
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum SignatureScheme {
-    Ed25519,
-    RsaSsaPssSha256,
-    RsaSsaPssSha512,
-    Unsupported(String),
-}
-
-impl SignatureScheme {
-    fn verify(&self, pub_key: &KeyValue, msg: &[u8], sig: &SignatureValue) -> Result<(), Error> {
-        let alg: &ring::signature::VerificationAlgorithm = match self {
-            &SignatureScheme::Ed25519 => &ED25519,
-            &SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
-            &SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
-            &SignatureScheme::Unsupported(ref s) => {
-                return Err(Error::UnsupportedSignatureScheme(s.clone()));
-            }
-        };
-
-        ring::signature::verify(alg, Input::from(&convert_to_pkcs1(&pub_key.value)),
-                                Input::from(msg), Input::from(&sig.0))
-            .map_err(|_| Error::VerificationFailure("Bad signature".into()))
-    }
-}
-
-impl FromStr for SignatureScheme {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "ed25519" => Ok(SignatureScheme::Ed25519),
-            "rsassa-pss-sha256" => Ok(SignatureScheme::RsaSsaPssSha256),
-            "rsassa-pss-sha512" => Ok(SignatureScheme::RsaSsaPssSha512),
-            typ => Ok(SignatureScheme::Unsupported(typ.into())),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for SignatureScheme {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        if let json::Value::String(ref s) = Deserialize::deserialize(de)? {
-            s.parse().map_err(|_| unreachable!())
-        } else {
-            Err(DeserializeError::custom("Key type was not a string"))
-        }
-    }
-}
-
-
-#[derive(Clone, PartialEq, Debug, Deserialize)]
-pub struct MetadataMetadata {
-    pub length: i64,
-    pub hashes: HashMap<HashType, HashValue>,
-    pub version: i32,
-}
-
-
-#[derive(Clone, PartialEq, Debug, Deserialize)]
-pub struct SnapshotMetadataMetadata {
-    pub length: Option<i64>,
-    pub hashes: Option<HashMap<HashType, HashValue>>,
-    pub version: i32,
-}
-
-
-#[derive(Clone, Hash, Eq, PartialEq, Debug)]
-pub enum HashType {
-    Sha256,
-    Sha512,
-    Unsupported(String),
-}
-
-impl HashType {
-    pub fn preferences() -> &'static [HashType] {
-        HASH_PREFERENCES
-    }
-}
-
-impl FromStr for HashType {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "sha256" => Ok(HashType::Sha256),
-            "sha512" => Ok(HashType::Sha512),
-            typ => Ok(HashType::Unsupported(typ.into())),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for HashType {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        if let json::Value::String(ref s) = Deserialize::deserialize(de)? {
-            s.parse().map_err(|_| unreachable!())
-        } else {
-            Err(DeserializeError::custom("Hash type was not a string"))
-        }
-    }
-}
-
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct HashValue(pub Vec<u8>);
-impl<'de> Deserialize<'de> for HashValue {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        match Deserialize::deserialize(de)? {
-            json::Value::String(ref s) => {
-                HEXLOWER.decode(s.as_ref())
-                    .map(HashValue)
-                    .map_err(|e| DeserializeError::custom(format!("Hash value was not hex: {}", e)))
-            }
-            _ => Err(DeserializeError::custom("Hash value was not a string")),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct TargetInfo {
-    pub length: i64,
-    pub hashes: HashMap<HashType, HashValue>,
-    pub custom: Option<HashMap<String, json::Value>>,
-}
-
-
-#[derive(Clone, PartialEq, Debug, Deserialize)]
-pub struct Delegations {
-    pub keys: HashMap<KeyId, Key>,
-    pub roles: Vec<DelegatedRole>,
-}
-
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct DelegatedRole {
-    pub name: String,
-    pub key_ids: Vec<KeyId>,
-    pub threshold: i32,
-    pub terminating: bool,
-    paths: TargetPaths,
-}
-
-impl DelegatedRole {
-    pub fn could_have_target(&self, target: &str) -> bool {
-        match self.paths {
-            TargetPaths::Patterns(ref patterns) => {
-                for path in patterns.iter() {
-                    let path_str = path.as_str();
-                    if path_str == target {
-                        return true
-                    } else if path_str.ends_with("/") && target.starts_with(path_str) {
-                         return true
+        let mut buf = vec![0; 1024];
+        loop {
+            match read.read(&mut buf) {
+                Ok(read_bytes) => {
+                    if read_bytes == 0 {
+                        break;
                     }
+
+                    length += read_bytes as u64;
+                    sha256.update(&buf[0..read_bytes]);
+                    sha512.update(&buf[0..read_bytes]);
                 }
-                return false
+                e @ Err(_) => e.map(|_| ())?,
             }
         }
+
+        let mut hashes = HashMap::new();
+        let _ = hashes.insert(
+            HashAlgorithm::Sha256,
+            HashValue::new(sha256.finish().as_ref().to_vec()),
+        );
+        let _ = hashes.insert(
+            HashAlgorithm::Sha512,
+            HashValue::new(sha512.finish().as_ref().to_vec()),
+        );
+        Ok(TargetDescription {
+            length: length,
+            hashes: hashes,
+        })
+    }
+
+    /// The maximum length of the target.
+    pub fn length(&self) -> u64 {
+        self.length
+    }
+
+    /// An immutable reference to the list of calculated hashes.
+    pub fn hashes(&self) -> &HashMap<HashAlgorithm, HashValue> {
+        &self.hashes
     }
 }
 
-impl<'de> Deserialize<'de> for DelegatedRole {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        if let json::Value::Object(mut object) = Deserialize::deserialize(de)? {
-            match (object.remove("name"), object.remove("keyids"),
-                   object.remove("threshold"), object.remove("terminating"),
-                   object.remove("paths"), object.remove("path_hash_prefixes")) {
-                (Some(n), Some(ks), Some(t), Some(term), Some(ps), None) => {
-                    let name =
-                        json::from_value(n).map_err(|e| {
-                                DeserializeError::custom(format!("Failed at name: {}", e))
-                            })?;
+/// Metadata for the targets role.
+#[derive(Debug, PartialEq)]
+pub struct TargetsMetadata {
+    version: u32,
+    expires: DateTime<Utc>,
+    targets: HashMap<TargetPath, TargetDescription>,
+}
 
-                    let key_ids =
-                        json::from_value(ks).map_err(|e| {
-                                DeserializeError::custom(format!("Failed at keyids: {}", e))
-                            })?;
-
-                    let threshold =
-                        json::from_value(t).map_err(|e| {
-                                DeserializeError::custom(format!("Failed at treshold: {}", e))
-                            })?;
-
-                    let terminating =
-                        json::from_value(term).map_err(|e| {
-                                DeserializeError::custom(format!("Failed at treshold: {}", e))
-                            })?;
-
-                    let paths: Vec<String> =
-                        json::from_value(ps).map_err(|e| {
-                                DeserializeError::custom(format!("Failed at treshold: {}", e))
-                            })?;
-
-                    Ok(DelegatedRole {
-                        name: name,
-                        key_ids: key_ids,
-                        threshold: threshold,
-                        terminating: terminating,
-                        paths: TargetPaths::Patterns(paths),
-                    })
-                }
-                (_, _, _, _, Some(_), Some(_)) =>
-                    Err(DeserializeError::custom("Fields 'paths' or 'pash_hash_prefixes' are mutually exclusive".to_string())),
-                (_, _, _, _, _, Some(_)) =>
-                    Err(DeserializeError::custom("'pash_hash_prefixes' is not yet supported".to_string())),
-                _ => Err(DeserializeError::custom("Signature missing fields".to_string())),
-            }
-        } else {
-            Err(DeserializeError::custom("Delegated role was not an object".to_string()))
+impl TargetsMetadata {
+    /// Create new `TargetsMetadata`.
+    pub fn new(
+        version: u32,
+        expires: DateTime<Utc>,
+        targets: HashMap<TargetPath, TargetDescription>,
+    ) -> Result<Self> {
+        if version < 1 {
+            return Err(Error::IllegalArgument(format!(
+                "Metadata version must be greater than zero. Found: {}",
+                version
+            )));
         }
+
+        Ok(TargetsMetadata {
+            version: version,
+            expires: expires,
+            targets: targets,
+        })
+    }
+
+    /// The version number.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// An immutable reference to the metadata's expiration `DateTime`.
+    pub fn expires(&self) -> &DateTime<Utc> {
+        &self.expires
+    }
+
+    /// An immutable reference descriptions of targets.
+    pub fn targets(&self) -> &HashMap<TargetPath, TargetDescription> {
+        &self.targets
     }
 }
 
+impl Metadata for TargetsMetadata {
+    fn role() -> Role {
+        Role::Targets
+    }
+}
 
-#[derive(Clone, PartialEq, Debug)]
-pub enum TargetPaths {
-    Patterns(Vec<String>),
-    // TODO HashPrefixes(Vec<String>),
+impl Serialize for TargetsMetadata {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        shims::TargetsMetadata::from(self)
+            .map_err(|e| SerializeError::custom(format!("{:?}", e)))?
+            .serialize(ser)
+    }
+}
+
+impl<'de> Deserialize<'de> for TargetsMetadata {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::TargetsMetadata = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use chrono::prelude::*;
+    use json;
+    use interchange::JsonDataInterchange;
+
+    const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
+    const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
+    const ED25519_3_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-3.pk8.der");
+    const ED25519_4_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-4.pk8.der");
 
     #[test]
-    fn delegated_role_could_have_target() {
-        let vectors = vec![
-            ("foo", "foo", true),
-            ("foo/", "foo/bar", true),
-            ("foo", "foo/bar", false),
-            ("foo/bar", "foo/baz", false),
-            ("foo/bar/", "foo/bar/baz", true),
+    fn serde_target_path() {
+        let s = "foo/bar";
+        let t = json::from_str::<TargetPath>(&format!("\"{}\"", s)).unwrap();
+        assert_eq!(t.to_string().as_str(), s);
+        assert_eq!(json::to_value(t).unwrap(), json!("foo/bar"));
+    }
+
+    #[test]
+    fn serde_metadata_path() {
+        let s = "foo/bar";
+        let m = json::from_str::<MetadataPath>(&format!("\"{}\"", s)).unwrap();
+        assert_eq!(m.to_string().as_str(), s);
+        assert_eq!(json::to_value(m).unwrap(), json!("foo/bar"));
+    }
+
+    #[test]
+    fn serde_target_description() {
+        let s: &[u8] = b"from water does all life begin";
+        let description = TargetDescription::from_reader(s).unwrap();
+        let jsn_str = json::to_string(&description).unwrap();
+        let jsn = json!({
+            "length": 30,
+            "hashes": {
+                "sha256": "_F10XHEryG6poxJk2sDJVu61OFf2d-7QWCm7cQE8rhg=",
+                "sha512": "593J2T34bimKdKT5MmaSZ0tXvmj13EVdpTGK5p2E2R3ife-xxZ8Ql\
+                    EHsezz8HeN1_Y0SJqvLfK2WKUZQc98R_A==",
+            },
+        });
+        let parsed_str: TargetDescription = json::from_str(&jsn_str).unwrap();
+        let parsed_jsn: TargetDescription = json::from_value(jsn).unwrap();
+        assert_eq!(parsed_str, parsed_jsn);
+    }
+
+    #[test]
+    fn serde_role_definition() {
+        let hashes = hashset!(
+            "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+            "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
+        ).iter()
+            .map(|k| KeyId::from_string(*k).unwrap())
+            .collect();
+        let role_def = RoleDefinition::new(2, hashes).unwrap();
+        let jsn = json!({
+            "threshold": 2,
+            "key_ids": [
+                // these need to be sorted for determinism
+                "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
+                "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+            ],
+        });
+        let encoded = json::to_value(&role_def).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: RoleDefinition = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, role_def);
+
+        let jsn = json!({
+            "threshold": 0,
+            "key_ids": [
+                "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+            ],
+        });
+        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+
+        let jsn = json!({
+            "threshold": -1,
+            "key_ids": [
+                "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+            ],
+        });
+        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+    }
+
+    #[test]
+    fn serde_root_metadata() {
+        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
+        let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap();
+        let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap();
+        let timestamp_key = PrivateKey::from_pkcs8(ED25519_4_PK8).unwrap();
+
+        let keys = vec![
+            root_key.public().clone(),
+            snapshot_key.public().clone(),
+            targets_key.public().clone(),
+            timestamp_key.public().clone(),
         ];
 
-        for &(prefix, target, success) in vectors.iter() {
-            let delegation = DelegatedRole {
-                name: "".to_string(),
-                key_ids: Vec::new(),
-                threshold: 1,
-                terminating: false,
-                paths: TargetPaths::Patterns(vec![prefix.to_string()]),
-            };
+        let root_def = RoleDefinition::new(1, hashset!(root_key.key_id().clone())).unwrap();
+        let snapshot_def = RoleDefinition::new(1, hashset!(snapshot_key.key_id().clone())).unwrap();
+        let targets_def = RoleDefinition::new(1, hashset!(targets_key.key_id().clone())).unwrap();
+        let timestamp_def = RoleDefinition::new(1, hashset!(timestamp_key.key_id().clone()))
+            .unwrap();
 
-            assert!(!success ^ delegation.could_have_target(target),
-                    format!("Prefix {} should have target {}: {}", prefix, target, success))
-        };
+        let root = RootMetadata::new(
+            1,
+            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+            false,
+            keys,
+            root_def,
+            snapshot_def,
+            targets_def,
+            timestamp_def,
+        ).unwrap();
+
+        let jsn = json!({
+            "type": "root",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "consistent_snapshot": false,
+            "keys": {
+                "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
+                    "type": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb-WO5CJQDTjK9GHGWjtg==",
+                },
+                "4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o=": {
+                    "type": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQvtGgZ_8giaAwL7q3PQ==",
+                },
+                "5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs=": {
+                    "type": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao_NhZ1_7zzCKL8rKzsg==",
+                },
+                "C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw=": {
+                    "type": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQAUEK4wU6pwu_qYQoqHnWTTACo1ePffquscsHZOhg9-Cw==",
+                },
+            },
+            "roles": {
+                "root": {
+                    "threshold": 1,
+                    "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
+                },
+                "snapshot": {
+                    "threshold": 1,
+                    "key_ids": ["5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs="],
+                },
+                "targets": {
+                    "threshold": 1,
+                    "key_ids": ["4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o="],
+                },
+                "timestamp": {
+                    "threshold": 1,
+                    "key_ids": ["C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw="],
+                },
+            },
+        });
+
+        let encoded = json::to_value(&root).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: RootMetadata = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, root);
+    }
+
+    #[test]
+    fn serde_timestamp_metadata() {
+        let timestamp = TimestampMetadata::new(
+            1,
+            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+            hashmap!{
+                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1).unwrap(),
+            },
+        ).unwrap();
+
+        let jsn = json!({
+            "type": "timestamp",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "foo": {
+                    "version": 1,
+                },
+            },
+        });
+
+        let encoded = json::to_value(&timestamp).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: TimestampMetadata = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, timestamp);
+    }
+
+    #[test]
+    fn serde_snapshot_metadata() {
+        let snapshot = SnapshotMetadata::new(
+            1,
+            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+            hashmap! {
+                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1).unwrap(),
+            },
+        ).unwrap();
+
+        let jsn = json!({
+            "type": "snapshot",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "foo": {
+                    "version": 1,
+                },
+            },
+        });
+
+        let encoded = json::to_value(&snapshot).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: SnapshotMetadata = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn serde_targets_metadata() {
+        let targets = TargetsMetadata::new(
+            1,
+            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+            hashmap! {
+                TargetPath::new("foo".into()).unwrap() => TargetDescription::from_reader(b"foo" as &[u8]).unwrap(),
+            }
+        ).unwrap();
+
+        let jsn = json!({
+            "type": "targets",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "targets": {
+                "foo": {
+                    "length": 3,
+                    "hashes": {
+                        "sha256": "LCa0a2j_xo_5m0U8HTBBNBNCLXBkg7-g-YpeiGJm564=",
+                        "sha512": "9_u6bgY2-JDlb7vzKD5STG-jIErimDgtYkdB0NxmODJuKCxBvl5CVNiCB3LFUYosWowMf37aGVlKfrU5RT4e1w==",
+                    },
+                },
+            },
+        });
+
+        let encoded = json::to_value(&targets).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: TargetsMetadata = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, targets);
+    }
+
+    #[test]
+    fn serde_signed_metadata() {
+        let snapshot = SnapshotMetadata::new(
+            1,
+            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+            hashmap! {
+                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1).unwrap(),
+            },
+        ).unwrap();
+
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
+
+        let signed = SignedMetadata::<JsonDataInterchange, SnapshotMetadata>::new(
+            &snapshot,
+            &key,
+            SignatureScheme::Ed25519,
+        ).unwrap();
+
+        let jsn = json!({
+            "signatures": [
+                {
+                    "key_id": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
+                    "scheme": "ed25519",
+                    "value": "T2cUdVcGn08q9Cl4sKXqQni4J63TxZ48wR3jt583QuWXJ2AmxRHwEnWIHtkCOmzohF4D0v9JspeH6samO-H6CA==",
+                }
+            ],
+            "signed": {
+                "type": "snapshot",
+                "version": 1,
+                "expires": "2017-01-01T00:00:00Z",
+                "meta": {
+                    "foo": {
+                        "version": 1,
+                    },
+                },
+            },
+        });
+
+        let encoded = json::to_value(&signed).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: SignedMetadata<JsonDataInterchange, SnapshotMetadata> =
+            json::from_value(encoded).unwrap();
+        assert_eq!(decoded, signed);
     }
 }

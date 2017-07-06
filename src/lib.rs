@@ -1,6 +1,5 @@
 //! This crate provides an API for talking to repositories that implement The Update Framework
-//! (TUF). Currently only downloading and verification of metadata is possible, not creating new
-//! metadata or storing targets.
+//! (TUF).
 //!
 //! If you are unfamiliar with TUF, you should read up on via the [official
 //! website](http://theupdateframework.github.io/). This crate aims to implement the entirety of
@@ -8,165 +7,103 @@
 //! branch](https://github.com/theupdateframework/tuf/blob/develop/docs/tuf-spec.txt) in the
 //! official TUF git repository.
 //!
-//! ## Examples
-//!
-//! ### A Standalone Example
+//! # Example
 //!
 //! ```no_run
+//! extern crate hyper;
 //! extern crate tuf;
 //! extern crate url;
-//! use tuf::{Tuf, Config, RemoteRepo};
+//!
+//! use hyper::client::Client as HttpClient;
 //! use std::path::PathBuf;
+//! use tuf::Tuf;
+//! use tuf::crypto::KeyId;
+//! use tuf::client::{Client, Config};
+//! use tuf::metadata::{RootMetadata, SignedMetadata, Role, MetadataPath,
+//!     MetadataVersion};
+//! use tuf::interchange::JsonDataInterchange;
+//! use tuf::repository::{Repository, FileSystemRepository, HttpRepository};
 //! use url::Url;
 //!
-//! fn main() {
-//!     let config = Config::build()
-//!         .remote(RemoteRepo::Http(Url::parse("http://localhost:8080/").unwrap()))
-//!         .local_path(PathBuf::from("/var/lib/tuf"))
-//!         .finish()
-//!         .unwrap();
-//!     let mut tuf = Tuf::new(config).unwrap();
-//!     let path_to_crate = tuf.fetch_target("targets/some_crate/0.1.0/pkg.crate").unwrap();
-//!     println!("Crate available at {}", path_to_crate.to_string_lossy());
-//! }
-//!
-//! ```
-//!
-//! The `Tuf` struct is the central piece to using this crate. It handles downloading and verifying
-//! of metadata as well as the storage of metadata and targets.
-//!
-//! ### An Integrated Example
-//!
-//! TUF is designed to be a drop in solution to verifying metadata and targets within an existing
-//! update library.
-//!
-//! Consider the following sample application that
-//!
-//! ```no_run
-//! extern crate url;
-//! use std::path::PathBuf;
-//! use url::Url;
-//!
-//! struct MyUpdater<'a> {
-//!     remote_url: Url,
-//!     local_cache: PathBuf,
-//!     package_list: Vec<&'a str>,
-//! }
-//!
-//! impl<'a> MyUpdater<'a> {
-//!     fn new(remote_url: Url, local_cache: PathBuf) -> Self {
-//!         MyUpdater {
-//!             remote_url: remote_url,
-//!             local_cache: local_cache,
-//!             package_list: Vec::new(),
-//!         }
-//!     }
-//!
-//!     fn update_lists(&mut self) -> Result<(), String> {
-//!         unimplemented!() // idk like some http + fs io probably
-//!     }
-//!
-//!     fn fetch_package(&self, package: &str) -> Result<PathBuf, String> {
-//!         if self.package_list.contains(&package) {
-//!             unimplemented!() // moar http + fs io
-//!         } else {
-//!             return Err("Unknown package".to_string())
-//!         }
-//!     }
-//! }
+//! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
+//!     "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+//!     "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
+//!     "T5vfRrM1iHpgzGwAHe7MbJH_7r4chkOAphV3OPCCv0I=",
+//! ];
 //!
 //! fn main() {
-//!     let url = Url::parse("http://crates.io/").unwrap();
-//!     let cache = PathBuf::from("/var/lib/my-updater/");
-//!     let mut updater = MyUpdater::new(url, cache);
-//!     updater.update_lists().unwrap();
-//!     let path_to_crate = updater.fetch_package("some_crate/0.1.0").unwrap();
-//!     println!("Crate available at {}", path_to_crate.to_string_lossy());
+//!     let key_ids: Vec<KeyId> = TRUSTED_ROOT_KEY_IDS.iter()
+//!         .map(|k| KeyId::from_string(k).unwrap())
+//!         .collect();
+//!
+//!     let mut local = FileSystemRepository::new(PathBuf::from("~/.rustup"));
+//!
+//!     let mut remote = HttpRepository::new(
+//!         Url::parse("https://static.rust-lang.org/").unwrap(),
+//!         HttpClient::new(),
+//!         Some("rustup/1.4.0".into()));
+//!
+//!     let config = Config::build().finish().unwrap();
+//!
+//!     // fetching this original root from the network is safe because
+//!     // we are using trusted, pinned keys to verify it
+//!     let root = remote.fetch_metadata(&Role::Root,
+//!                                      &MetadataPath::from_role(&Role::Root),
+//!                                      &MetadataVersion::None,
+//!                                      config.max_root_size(),
+//!                                      None).unwrap();
+//!
+//!     let tuf = Tuf::<JsonDataInterchange>::from_root_pinned(root, &key_ids).unwrap();
+//!
+//!     let mut client = Client::new(tuf, config, local, remote).unwrap();
+//!     let _ = client.update_local().unwrap();
+//!     let _ = client.update_remote().unwrap();
 //! }
-//!
-//! ```
-//!
-//! This simple updater (baring some migration shims), could be altered to use TUF as follows.
-//!
-//! ```no_run
-//! extern crate tuf;
-//! extern crate url;
-//! use std::path::PathBuf;
-//! use tuf::{Tuf, Config, RemoteRepo};
-//! use url::Url;
-//!
-//! struct MyUpdater {
-//!     tuf: Tuf,
-//! }
-//!
-//! impl MyUpdater {
-//!     fn new(remote_url: Url, local_cache: PathBuf) -> Result<Self, String> {
-//!         let config = Config::build()
-//!             .remote(RemoteRepo::Http(remote_url))
-//!             .local_path(local_cache)
-//!             .finish()
-//!             .map_err(|e| format!("{:?}", e))?;
-//!         let tuf = Tuf::new(config)
-//!             .map_err(|e| format!("{:?}", e))?;
-//!         Ok(MyUpdater {
-//!             tuf: tuf,
-//!         })
-//!     }
-//!
-//!     fn update_lists(&mut self) -> Result<(), String> {
-//!         self.tuf.update().map_err(|e| format!("{:?}", e))
-//!     }
-//!
-//!     fn fetch_package(&self, package: &str) -> Result<PathBuf, String> {
-//!         self.tuf.fetch_target(&format!("targets/{:?}/pkg.crate", package))
-//!             .map_err(|e| format!("{:?}", e))
-//!     }
-//! }
-//!
-//! fn main() {
-//!     let url = Url::parse("http://crates.io/").unwrap();
-//!     let cache = PathBuf::from("/var/lib/my-updater/");
-//!     let mut updater = MyUpdater::new(url, cache).unwrap();
-//!     updater.update_lists().unwrap();
-//!     let path_to_crate = updater.fetch_package("some_crate/0.1.0").unwrap();
-//!     println!("Crate available at {}", path_to_crate.to_string_lossy());
-//! }
-//!
 //! ```
 
 #![deny(missing_docs)]
 
 extern crate chrono;
 extern crate data_encoding;
+extern crate derp;
 extern crate env_logger;
 extern crate hyper;
 extern crate itoa;
 #[macro_use]
 extern crate log;
-extern crate pem;
+#[cfg(test)]
+#[macro_use]
+extern crate maplit;
 extern crate ring;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+
+#[cfg(not(test))]
 extern crate serde_json as json;
+#[cfg(test)]
+#[macro_use]
+extern crate serde_json as json;
+
+#[cfg(test)]
+extern crate tempdir;
+extern crate tempfile;
 extern crate url;
 extern crate untrusted;
 extern crate uuid;
 
-#[macro_use]
-mod util;
+pub mod error;
 
-mod cjson;
-mod error;
-mod http;
-mod metadata;
-mod rsa;
-mod tuf;
+/// Alias for `Result<T, Error>`.
+pub type Result<T> = ::std::result::Result<T, Error>;
+
+pub mod client;
+pub mod crypto;
+pub mod interchange;
+pub mod metadata;
+pub mod repository;
+mod shims;
+pub mod tuf;
 
 pub use tuf::*;
 pub use error::*;
-
-/// Module containing the various metadata components used by TUF.
-pub mod meta {
-    pub use metadata::{Key, KeyValue, KeyType};
-}

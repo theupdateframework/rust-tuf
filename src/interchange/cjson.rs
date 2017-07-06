@@ -15,7 +15,6 @@ enum Value {
     Bool(bool),
     Null,
     Number(Number),
-    // TODO this needs to be &[u8] and not String
     Object(BTreeMap<String, Value>),
     String(String),
 }
@@ -27,14 +26,14 @@ impl Value {
             &Value::Bool(true) => Ok(buf.extend(b"true")),
             &Value::Bool(false) => Ok(buf.extend(b"false")),
             &Value::Number(Number::I64(n)) => {
-                itoa::write(buf, n)
-                    .map(|_| ())
-                    .map_err(|err| format!("Write error: {}", err))
+                itoa::write(buf, n).map(|_| ()).map_err(|err| {
+                    format!("Write error: {}", err)
+                })
             }
             &Value::Number(Number::U64(n)) => {
-                itoa::write(buf, n)
-                    .map(|_| ())
-                    .map_err(|err| format!("Write error: {}", err))
+                itoa::write(buf, n).map(|_| ()).map_err(|err| {
+                    format!("Write error: {}", err)
+                })
             }
             &Value::String(ref s) => {
                 escape_str(&mut buf, &s).map_err(|err| format!("Write error: {}", err))
@@ -59,7 +58,9 @@ impl Value {
                         buf.push(b',');
                     }
                     first = false;
-                    escape_str(&mut buf, &k).map_err(|err| format!("Write error: {}", err))?;
+                    escape_str(&mut buf, &k).map_err(|err| {
+                        format!("Write error: {}", err)
+                    })?;
                     buf.push(b':');
                     v.write(&mut buf)?;
                 }
@@ -105,7 +106,8 @@ fn convert(jsn: &json::Value) -> Result<Value, String> {
 
 /// Serializes and escapes a `&str` into a JSON string.
 fn escape_str<W>(wr: &mut W, value: &str) -> Result<(), io::Error>
-    where W: io::Write
+where
+    W: io::Write,
 {
     let bytes = value.as_bytes();
 
@@ -179,9 +181,11 @@ mod test {
 
     #[test]
     fn write_arr() {
-        let jsn = Value::Array(vec![Value::String(String::from("wat")),
-                                    Value::String(String::from("lol")),
-                                    Value::String(String::from("no"))]);
+        let jsn = Value::Array(vec![
+            Value::String(String::from("wat")),
+            Value::String(String::from("lol")),
+            Value::String(String::from("no")),
+        ]);
         let mut out = Vec::new();
         jsn.write(&mut out).expect("write failed");
         assert_eq!(&out, b"[\"wat\",\"lol\",\"no\"]");
@@ -190,8 +194,10 @@ mod test {
     #[test]
     fn write_obj() {
         let mut map = BTreeMap::new();
-        let arr = Value::Array(vec![Value::String(String::from("haha")),
-                                    Value::String(String::from("omg so tired"))]);
+        let arr = Value::Array(vec![
+            Value::String(String::from("haha")),
+            Value::String(String::from("omg so tired")),
+        ]);
         let _ = map.insert(String::from("lol"), arr);
         let jsn = Value::Object(map);
         let mut out = Vec::new();
@@ -203,11 +209,15 @@ mod test {
     fn root_json() {
         let mut file = File::open("./tests/cjson/root.json").expect("couldn't open root.json");
         let mut buf = String::new();
-        file.read_to_string(&mut buf).expect("couldn't read root.json");
+        file.read_to_string(&mut buf).expect(
+            "couldn't read root.json",
+        );
 
         let mut file = File::open("./tests/cjson/root.cjson").expect("couldn't open root.cjson");
         let mut cjsn = String::new();
-        file.read_to_string(&mut cjsn).expect("couldn't read root.cjson");
+        file.read_to_string(&mut cjsn).expect(
+            "couldn't read root.cjson",
+        );
 
         let ref jsn = json::from_str(&buf).expect("not json");
         let out = canonicalize(jsn).expect("couldn't canonicalize");

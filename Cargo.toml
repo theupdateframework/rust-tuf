@@ -1,13 +1,13 @@
 [package]
 name = "tuf"
-version = "0.1.6"
+version = "0.2.0"
 authors = [ "heartsucker <heartsucker@autistici.org>" ]
 description = "Library for The Update Framework (TUF)"
 homepage = "https://github.com/heartsucker/rust-tuf"
 repository = "https://github.com/heartsucker/rust-tuf"
 documentation = "https://docs.rs/tuf"
 readme = "README.md"
-license = "MIT"
+license = "MIT/Apache-2.0"
 keywords = [ "security" ]
 categories = [ "cryptography" ]
 
@@ -20,31 +20,23 @@ codecov = { repository = "heartsucker/rust-tuf", branch = "master", service = "g
 name = "tuf"
 path = "./src/lib.rs"
 
-[[bin]]
-name = "tuf"
-path = "./src/main.rs"
-doc = false
-required-features = [ "cli" ]
-
-[features]
-cli = [ "clap" ]
-
 [dependencies]
-chrono = { version = "0.3.1", features = [ "serde" ] }
-clap = { version = "2.23", optional = true }
+chrono = { version = "0.4", features = [ "serde" ] }
 data-encoding = "2.0.0-rc.1"
+derp = "0.0.4"
 env_logger = "0.4.3"
 hyper = "0.10.10"
 itoa = "0.3"
 log = "0.3"
-pem = "0.4"
-ring = "0.9.4"
+ring = { version = "0.9.4", features = [ "rsa_signing" ] }
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
+tempfile = "2.1.5"
 url = "1.4"
 untrusted = "0.5"
 uuid = { version = "0.5", features = [ "v4" ] }
 
 [dev-dependencies]
+maplit = "0.1.4"
 tempdir = "0.3"

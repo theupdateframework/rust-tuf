@@ -49,10 +49,9 @@ test_script:
   - rustup.exe default %RUST_VERSION%
   - rustc -V
   - cargo -V
-  - git submodule update --init --recursive
-  - cargo build --verbose --features=cli --target %TARGET%
+  - cargo build --verbose --target %TARGET%
   - SET RUST_BACKTRACE=full
-  - cargo test --verbose --features=cli --target %TARGET%
+  - cargo test --verbose --target %TARGET%
 
 # TODO on failure cat Cargo.lock
 

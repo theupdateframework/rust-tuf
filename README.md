@@ -15,13 +15,6 @@ the API is unstable and you should be prepared to refactor on even patch release
 
 Please make all pull requests to the `develop` branch.
 
-### Testing
-
-`rust-tuf` uses [`tuf-test-vectors`](https://github.com/heartsucker/tuf-test-vectors)
-to generate integration tests. When adding a complicated feature it may be
-necessary for you to make a separate pull request to that repository to ensure
-the required behaviors are sufficiently tested.
-
 ### Bugs
 
 This project has a **full disclosure** policy on security related errors. Please
@@ -32,7 +25,8 @@ via other channels will be immediately made public.
 
 ### License
 
-This work is licensed under the MIT license. See [LICENSE](./LICENSE) for details.
+This work is dual licensed under the MIT and Apache-2.0 licenses.
+See [LICENSE-MIT](./LICENSE-MIT) and [LICENSE-APACHE](./LICENSE-APACHE) for details.
 
 ### Cryptography Notice
 
