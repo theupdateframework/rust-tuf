@@ -657,21 +657,6 @@ impl Display for HashValue {
     }
 }
 
-fn from_pkcs1(input: &[u8]) -> Option<Vec<u8>> {
-    let _input = Input::from(&input);
-    _input
-        .read_all(derp::Error::Read, |i| {
-            derp::nested(i, Tag::Sequence, |i| {
-                let _ = derp::positive_integer(i)?;
-                let _ = derp::positive_integer(i)?;
-                // if the input was already pkcs1, just return it
-                Ok(input.to_vec())
-            })
-        })
-        .ok()
-}
-
-
 fn write_spki(public: &[u8], key_type: &KeyType) -> ::std::result::Result<Vec<u8>, derp::Error> {
     let mut output = Vec::new();
     {
