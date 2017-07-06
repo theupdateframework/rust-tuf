@@ -1,8 +1,7 @@
 //! Cryptographic structures and functions.
 
-use data_encoding::BASE64;
+use data_encoding::BASE64URL;
 use derp::{self, Der, Tag};
-use pem::{self, Pem};
 use ring;
 use ring::digest::{self, SHA256};
 use ring::rand::SystemRandom;
@@ -10,7 +9,7 @@ use ring::signature::{RSAKeyPair, RSASigningState, Ed25519KeyPair, ED25519,
                       RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA512, RSA_PSS_SHA256,
                       RSA_PSS_SHA512};
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
-use serde::ser::{Serialize, Serializer, SerializeTupleStruct, Error as SerializeError};
+use serde::ser::{Serialize, Serializer, Error as SerializeError};
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Display};
 use std::str::FromStr;
@@ -97,20 +96,20 @@ fn calculate_key_id(public_key: &[u8]) -> KeyId {
 pub struct KeyId(Vec<u8>);
 
 impl KeyId {
-    /// Parse a key ID from a hex-lower string.
+    /// Parse a key ID from a base64url string.
     pub fn from_string(string: &str) -> Result<Self> {
-        if string.len() != 64 {
+        if string.len() != 44 {
             return Err(Error::IllegalArgument(
-                "Hex key ID must be 64 characters long".into(),
+                "Base64 key ID must be 44 characters long".into(),
             ));
         }
-        Ok(KeyId(BASE64.decode(string.as_bytes())?))
+        Ok(KeyId(BASE64URL.decode(string.as_bytes())?))
     }
 }
 
 impl Debug for KeyId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "KeyId {{ \"{}\" }}", BASE64.encode(&self.0))
+        write!(f, "KeyId {{ \"{}\" }}", BASE64URL.encode(&self.0))
     }
 }
 
@@ -119,9 +118,7 @@ impl Serialize for KeyId {
     where
         S: Serializer,
     {
-        let mut s = ser.serialize_tuple_struct("KeyId", 1)?;
-        s.serialize_field(&BASE64.encode(&self.0))?;
-        s.end()
+        BASE64URL.encode(&self.0).serialize(ser)
     }
 }
 
@@ -194,15 +191,15 @@ impl SignatureValue {
         SignatureValue(bytes)
     }
 
-    /// Create a new `SignatureValue` from the given hex-lower string.
+    /// Create a new `SignatureValue` from the given base64url string.
     pub fn from_string(string: &str) -> Result<Self> {
-        Ok(SignatureValue(BASE64.decode(string.as_bytes())?))
+        Ok(SignatureValue(BASE64URL.decode(string.as_bytes())?))
     }
 }
 
 impl Debug for SignatureValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "SignatureValue {{ \"{}\" }}", BASE64.encode(&self.0))
+        write!(f, "SignatureValue {{ \"{}\" }}", BASE64URL.encode(&self.0))
     }
 }
 
@@ -211,9 +208,7 @@ impl Serialize for SignatureValue {
     where
         S: Serializer,
     {
-        let mut s = ser.serialize_tuple_struct("SignatureValue", 1)?;
-        s.serialize_field(&BASE64.encode(&self.0))?;
-        s.end()
+        BASE64URL.encode(&self.0).serialize(ser)
     }
 }
 
@@ -221,7 +216,7 @@ impl<'de> Deserialize<'de> for SignatureValue {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let string: String = Deserialize::deserialize(de)?;
         SignatureValue::from_string(&string).map_err(|e| {
-            DeserializeError::custom(format!("Signature value was not valid hex lower: {:?}", e))
+            DeserializeError::custom(format!("Signature value was not valid base64url: {:?}", e))
         })
     }
 }
@@ -465,6 +460,11 @@ impl PrivateKey {
         })
     }
 
+    /// Return the public component of the key.
+    pub fn public(&self) -> &PublicKey {
+        &self.public
+    }
+
     /// Return the key ID of the public key.
     pub fn key_id(&self) -> &KeyId {
         &self.public.key_id
@@ -485,23 +485,16 @@ impl PublicKey {
     pub fn from_spki(der_bytes: &[u8]) -> Result<Self> {
         let input = Input::from(der_bytes);
         let (typ, value) = input.read_all(derp::Error::Read, |input| {
-            println!("A");
             derp::nested(input, Tag::Sequence, |input| {
-                println!("b");
-                println!("c");
                 let typ = derp::nested(input, Tag::Sequence, |input| {
-                    println!("d");
                     let typ = derp::expect_tag_and_get_value(input, Tag::Oid)?;
                     let typ = KeyType::from_oid(typ.as_slice_less_safe()).map_err(|_| {
                         derp::Error::WrongValue
                     })?;
-                    println!("e");
                     let _ = derp::read_null(input)?;
                     Ok(typ)
                 })?;
-                println!("f");
                 let value = derp::bit_string_with_no_unused_bits(input)?;
-                println!("g");
                 Ok((typ, value.as_slice_less_safe().to_vec()))
             })
         })?;
@@ -528,7 +521,7 @@ impl PublicKey {
         &self.key_id
     }
 
-    /// Use this key the message with a signature.
+    /// Use this key to verify a message with a signature.
     pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<()> {
         let alg: &ring::signature::VerificationAlgorithm = match sig.scheme() {
             &SignatureScheme::Ed25519 => &ED25519,
@@ -553,36 +546,36 @@ impl Serialize for PublicKey {
         let bytes = self.as_spki().map_err(|e| {
             SerializeError::custom(format!("Couldn't write key as SPKI: {:?}", e))
         })?;
-        let p = Pem {
-            tag: "PUBLIC KEY".into(),
-            contents: bytes,
-        };
-        shims::PublicKey::new(self.typ.clone(), &p).serialize(ser)
+        shims::PublicKey::new(self.typ.clone(), &bytes).serialize(ser)
     }
 }
 
 impl<'de> Deserialize<'de> for PublicKey {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
-        let pem_str: String = Deserialize::deserialize(de)?;
-        let bytes = match pem::parse(pem_str) {
-            Ok(pem) => pem.contents,
-            Err(_) => {
-                return Err(DeserializeError::custom(
-                    "Contents not PEM encoded.".to_string(),
-                ))
-            }
-        };
+        let intermediate: shims::PublicKey = Deserialize::deserialize(de)?;
+        let bytes = BASE64URL
+            .decode(intermediate.public_key().as_bytes())
+            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))?;
+
+        // TODO check typ == type in key
+
         PublicKey::from_spki(&bytes).map_err(|e| {
             DeserializeError::custom(format!("Couldn't parse key as SPKI: {:?}", e))
         })
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 struct PublicKeyValue(Vec<u8>);
 
+impl Debug for PublicKeyValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "PublicKeyValue {{ \"{}\" }}", BASE64URL.encode(&self.0))
+    }
+}
+
 /// A structure that contains a `Signature` and associated data for verifying it.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Signature {
     key_id: KeyId,
     scheme: SignatureScheme,
@@ -618,7 +611,7 @@ pub enum HashAlgorithm {
 }
 
 /// Wrapper for the value of a hash digest.
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct HashValue(Vec<u8>);
 
 impl HashValue {
@@ -633,19 +626,36 @@ impl HashValue {
     }
 }
 
+impl Serialize for HashValue {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        BASE64URL.encode(&self.0).serialize(ser)
+    }
+}
+
+impl<'de> Deserialize<'de> for HashValue {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let s: String = Deserialize::deserialize(de)?;
+        let bytes = BASE64URL.decode(s.as_bytes()).map_err(|e| {
+            DeserializeError::custom(format!("Base64: {:?}", e))
+        })?;
+        Ok(HashValue(bytes))
+    }
+}
+
 impl Debug for HashValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "HashValue {{ \"{}\" }}", BASE64.encode(&self.0))
+        write!(f, "HashValue {{ \"{}\" }}", BASE64URL.encode(&self.0))
     }
 }
 
 impl Display for HashValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", BASE64.encode(&self.0))
+        write!(f, "{}", BASE64URL.encode(&self.0))
     }
 }
-
-
 
 fn from_pkcs1(input: &[u8]) -> Option<Vec<u8>> {
     let _input = Input::from(&input);
@@ -727,6 +737,7 @@ fn write_pkcs1(n: &[u8], e: &[u8]) -> ::std::result::Result<Vec<u8>, derp::Error
 #[cfg(test)]
 mod test {
     use super::*;
+    use json;
 
     const RSA_2048_PK8: &'static [u8] = include_bytes!("../tests/rsa/rsa-2048.pk8.der");
     const RSA_2048_SPKI: &'static [u8] = include_bytes!("../tests/rsa/rsa-2048.spki.der");
@@ -810,5 +821,57 @@ mod test {
 
         assert!(key.sign(msg, SignatureScheme::RsaSsaPssSha256).is_err());
         assert!(key.sign(msg, SignatureScheme::RsaSsaPssSha512).is_err());
+    }
+
+    #[test]
+    fn serde_key_id() {
+        let s = "T5vfRrM1iHpgzGwAHe7MbJH_7r4chkOAphV3OPCCv0I=";
+        let jsn = json!(s);
+        let parsed: KeyId = json::from_str(&format!("\"{}\"", s)).unwrap();
+        assert_eq!(parsed, KeyId::from_string(s).unwrap());
+        let encoded = json::to_value(&parsed).unwrap();
+        assert_eq!(encoded, jsn);
+    }
+
+    #[test]
+    fn serde_signature_value() {
+        let s = "T5vfRrM1iHpgzGwAHe7MbJH_7r4chkOAphV3OPCCv0I=";
+        let jsn = json!(s);
+        let parsed: SignatureValue = json::from_str(&format!("\"{}\"", s)).unwrap();
+        assert_eq!(parsed, SignatureValue::from_string(s).unwrap());
+        let encoded = json::to_value(&parsed).unwrap();
+        assert_eq!(encoded, jsn);
+    }
+
+    #[test]
+    fn serde_rsa_public_key() {
+        let der = RSA_2048_SPKI;
+        let pub_key = PublicKey::from_spki(der).unwrap();
+        let encoded = json::to_value(&pub_key).unwrap();
+        let jsn = json!({
+            "type": "rsa",
+            "public_key": BASE64URL.encode(der),
+        });
+        assert_eq!(encoded, jsn);
+        let decoded: PublicKey = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, pub_key);
+    }
+
+    #[test]
+    fn serde_signature() {
+        let key = PrivateKey::from_pkcs8(ED25519_PK8).unwrap();
+        let msg = b"test";
+        let sig = key.sign(msg, SignatureScheme::Ed25519).unwrap();
+        let encoded = json::to_value(&sig).unwrap();
+        let jsn = json!({
+            "key_id": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
+            "scheme": "ed25519",
+            "value": "_k0Tsqc8Azod5_UQeyBfx7oOFWbLlbkjScrmqkU4lWATv-D3v5d8sHK7Z\
+                eh4K18zoFc_54gWKZoBfKW6VZ45DA==",
+        });
+        assert_eq!(encoded, jsn);
+
+        let decoded: Signature = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, sig);
     }
 }

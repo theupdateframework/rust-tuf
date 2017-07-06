@@ -28,7 +28,6 @@ env_logger = "0.4.3"
 hyper = "0.10.10"
 itoa = "0.3"
 log = "0.3"
-pem = "0.4"
 ring = { version = "0.9.4", features = [ "rsa_signing" ] }
 serde = "1"
 serde_derive = "1"
@@ -39,4 +38,5 @@ untrusted = "0.5"
 uuid = { version = "0.5", features = [ "v4" ] }
 
 [dev-dependencies]
+maplit = "0.1.4"
 tempdir = "0.3"

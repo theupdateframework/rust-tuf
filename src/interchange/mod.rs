@@ -12,7 +12,7 @@ use Result;
 use error::Error;
 
 /// The format used for data interchange, serialization, and deserialization.
-pub trait DataInterchange: Debug {
+pub trait DataInterchange: Debug + PartialEq {
     /// The type of data that is contained in the `signed` portion of metadata.
     type RawData: Serialize + DeserializeOwned;
 
@@ -46,7 +46,7 @@ pub trait DataInterchange: Debug {
 }
 
 /// JSON data interchange.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct JsonDataInterchange {}
 impl DataInterchange for JsonDataInterchange {
     type RawData = json::Value;

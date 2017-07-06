@@ -1,6 +1,6 @@
 use chrono::DateTime;
 use chrono::offset::Utc;
-use pem::{self, Pem};
+use data_encoding::BASE64URL;
 use std::collections::{HashMap, HashSet};
 
 use Result;
@@ -8,7 +8,7 @@ use crypto;
 use error::Error;
 use metadata;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RootMetadata {
     #[serde(rename = "type")]
     typ: metadata::Role,
@@ -20,19 +20,19 @@ pub struct RootMetadata {
 }
 
 impl RootMetadata {
-    pub fn from(metadata: &metadata::RootMetadata) -> Result<Self> {
+    pub fn from(meta: &metadata::RootMetadata) -> Result<Self> {
         let mut roles = HashMap::new();
-        let _ = roles.insert(metadata::Role::Root, metadata.root().clone());
-        let _ = roles.insert(metadata::Role::Snapshot, metadata.snapshot().clone());
-        let _ = roles.insert(metadata::Role::Targets, metadata.targets().clone());
-        let _ = roles.insert(metadata::Role::Timestamp, metadata.timestamp().clone());
+        let _ = roles.insert(metadata::Role::Root, meta.root().clone());
+        let _ = roles.insert(metadata::Role::Snapshot, meta.snapshot().clone());
+        let _ = roles.insert(metadata::Role::Targets, meta.targets().clone());
+        let _ = roles.insert(metadata::Role::Timestamp, meta.timestamp().clone());
 
         Ok(RootMetadata {
             typ: metadata::Role::Root,
-            version: metadata.version(),
-            expires: metadata.expires().clone(),
-            consistent_snapshot: metadata.consistent_snapshot(),
-            keys: metadata.keys().clone(),
+            version: meta.version(),
+            expires: meta.expires().clone(),
+            consistent_snapshot: meta.consistent_snapshot(),
+            keys: meta.keys().clone(),
             roles: roles,
         })
     }
@@ -236,10 +236,14 @@ pub struct PublicKey {
 }
 
 impl PublicKey {
-    pub fn new(typ: crypto::KeyType, public_key: &Pem) -> Self {
+    pub fn new(typ: crypto::KeyType, public_key_bytes: &[u8]) -> Self {
         PublicKey {
             typ: typ,
-            public_key: pem::encode(public_key).trim().to_string(),
+            public_key: BASE64URL.encode(public_key_bytes),
         }
+    }
+
+    pub fn public_key(&self) -> &String {
+        &self.public_key
     }
 }

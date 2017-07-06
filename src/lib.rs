@@ -26,9 +26,9 @@
 //! use url::Url;
 //!
 //! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
-//!     "13d1cfd0bdc95c0404738cd8601453df23dd2d34aebf2bcea43064400872d643",
-//!     "23cec6550d04ff73d0ccf60ad322e21011a2b4ad3e9170f3daa8437b63807c56",
-//!     "85f6c314f168a8c3d92a57f2d9bb6ab495a4ac921f02d2e32befc7bc812bd904",
+//!     "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+//!     "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
+//!     "T5vfRrM1iHpgzGwAHe7MbJH_7r4chkOAphV3OPCCv0I=",
 //! ];
 //!
 //! fn main() {
@@ -71,12 +71,20 @@ extern crate hyper;
 extern crate itoa;
 #[macro_use]
 extern crate log;
-extern crate pem;
+#[cfg(test)]
+#[macro_use]
+extern crate maplit;
 extern crate ring;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+
+#[cfg(not(test))]
 extern crate serde_json as json;
+#[cfg(test)]
+#[macro_use]
+extern crate serde_json as json;
+
 #[cfg(test)]
 extern crate tempdir;
 extern crate tempfile;

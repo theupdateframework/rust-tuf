@@ -4,7 +4,6 @@ use data_encoding::DecodeError;
 use derp;
 use hyper;
 use json;
-use pem;
 use std::io;
 use std::path::Path;
 use tempfile;
@@ -74,12 +73,6 @@ impl From<hyper::error::ParseError> for Error {
 impl From<DecodeError> for Error {
     fn from(err: DecodeError) -> Error {
         Error::Encoding(format!("{:?}", err))
-    }
-}
-
-impl From<pem::Error> for Error {
-    fn from(err: pem::Error) -> Error {
-        Error::Encoding(format!("PEM: {:?}", err))
     }
 }
 

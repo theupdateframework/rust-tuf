@@ -134,13 +134,15 @@ fn safe_path(path: &str) -> Result<()> {
 }
 
 /// Trait used to represent whether a piece of data is verified or not.
-pub trait VerificationStatus {}
+pub trait VerificationStatus: Debug + PartialEq {}
 
 /// Type used to represent verified data.
+#[derive(Debug, PartialEq)]
 pub struct Verified {}
 impl VerificationStatus for Verified {}
 
 /// Type used to represent unverified data.
+#[derive(Debug, PartialEq)]
 pub struct Unverified {}
 impl VerificationStatus for Unverified {}
 
@@ -227,7 +229,7 @@ pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {
 }
 
 /// A piece of raw metadata with attached signatures.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct SignedMetadata<D, M, V>
 where
     D: DataInterchange,
@@ -236,8 +238,11 @@ where
 {
     signatures: Vec<Signature>,
     signed: D::RawData,
+    #[serde(skip_serializing, skip_deserializing)]
     _interchage: PhantomData<D>,
+    #[serde(skip_serializing, skip_deserializing)]
     _metadata: PhantomData<M>,
+    #[serde(skip_serializing, skip_deserializing)]
     _verification: PhantomData<V>,
 }
 
@@ -468,9 +473,10 @@ impl Serialize for RootMetadata {
     where
         S: Serializer,
     {
-        shims::RootMetadata::from(self)
-            .map_err(|e| SerializeError::custom(format!("{:?}", e)))?
-            .serialize(ser)
+        let m = shims::RootMetadata::from(self).map_err(|e| {
+            SerializeError::custom(format!("{:?}", e))
+        })?;
+        m.serialize(ser)
     }
 }
 
@@ -619,6 +625,12 @@ impl MetadataPath {
     }
 }
 
+impl ToString for MetadataPath {
+    fn to_string(&self) -> String {
+        self.0.clone()
+    }
+}
+
 impl<'de> Deserialize<'de> for MetadataPath {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let s: String = Deserialize::deserialize(de)?;
@@ -701,7 +713,9 @@ impl<'de> Deserialize<'de> for TimestampMetadata {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MetadataDescription {
     version: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     length: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     hashes: Option<HashMap<HashAlgorithm, HashValue>>,
 }
 
@@ -854,6 +868,12 @@ impl TargetPath {
     }
 }
 
+impl ToString for TargetPath {
+    fn to_string(&self) -> String {
+        self.0.clone()
+    }
+}
+
 impl<'de> Deserialize<'de> for TargetPath {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let s: String = Deserialize::deserialize(de)?;
@@ -874,7 +894,7 @@ impl TargetDescription {
     /// ```
     /// extern crate data_encoding;
     /// extern crate tuf;
-    /// use data_encoding::BASE64;
+    /// use data_encoding::BASE64URL;
     /// use tuf::crypto::{HashAlgorithm,HashValue};
     /// use tuf::metadata::TargetDescription;
     ///
@@ -883,13 +903,13 @@ impl TargetDescription {
     ///     let target_description = TargetDescription::from_reader(bytes).unwrap();
     ///
     ///     // $ printf 'it was a pleasure to burn' | sha256sum
-    ///     let s = "Rd9zlbzrdWfeL7gnIEi05X+Yv2TCpy4qqZM1N72ZWQs=";
-    ///     let sha256 = HashValue::new(BASE64.decode(s.as_bytes()).unwrap());
+    ///     let s = "Rd9zlbzrdWfeL7gnIEi05X-Yv2TCpy4qqZM1N72ZWQs=";
+    ///     let sha256 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
     ///
     ///     // $ printf 'it was a pleasure to burn' | sha512sum
     ///     let s ="tuIxwKybYdvJpWuUj6dubvpwhkAozWB6hMJIRzqn2jOUdtDTBg381brV4K\
     ///         BU1zKP8GShoJuXEtCf5NkDTCEJgQ==";
-    ///     let sha512 = HashValue::new(BASE64.decode(s.as_bytes()).unwrap());
+    ///     let sha512 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
     ///
     ///     assert_eq!(target_description.length(), bytes.len() as u64);
     ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
@@ -1014,5 +1034,301 @@ impl<'de> Deserialize<'de> for TargetsMetadata {
         intermediate.try_into().map_err(|e| {
             DeserializeError::custom(format!("{:?}", e))
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use chrono::prelude::*;
+    use json;
+    use interchange::JsonDataInterchange;
+
+    const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
+    const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
+    const ED25519_3_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-3.pk8.der");
+    const ED25519_4_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-4.pk8.der");
+
+    #[test]
+    fn serde_target_path() {
+        let s = "foo/bar";
+        let t = json::from_str::<TargetPath>(&format!("\"{}\"", s)).unwrap();
+        assert_eq!(t.to_string().as_str(), s);
+        assert_eq!(json::to_value(t).unwrap(), json!("foo/bar"));
+    }
+
+    #[test]
+    fn serde_metadata_path() {
+        let s = "foo/bar";
+        let m = json::from_str::<MetadataPath>(&format!("\"{}\"", s)).unwrap();
+        assert_eq!(m.to_string().as_str(), s);
+        assert_eq!(json::to_value(m).unwrap(), json!("foo/bar"));
+    }
+
+    #[test]
+    fn serde_target_description() {
+        let s: &[u8] = b"from water does all life begin";
+        let description = TargetDescription::from_reader(s).unwrap();
+        let jsn_str = json::to_string(&description).unwrap();
+        let jsn = json!({
+            "length": 30,
+            "hashes": {
+                "sha256": "_F10XHEryG6poxJk2sDJVu61OFf2d-7QWCm7cQE8rhg=",
+                "sha512": "593J2T34bimKdKT5MmaSZ0tXvmj13EVdpTGK5p2E2R3ife-xxZ8Ql\
+                    EHsezz8HeN1_Y0SJqvLfK2WKUZQc98R_A==",
+            },
+        });
+        let parsed_str: TargetDescription = json::from_str(&jsn_str).unwrap();
+        let parsed_jsn: TargetDescription = json::from_value(jsn).unwrap();
+        assert_eq!(parsed_str, parsed_jsn);
+    }
+
+    #[test]
+    fn serde_role_definition() {
+        let hashes = hashset!(
+            "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+            "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
+        ).iter()
+            .map(|k| KeyId::from_string(*k).unwrap())
+            .collect();
+        let role_def = RoleDefinition::new(2, hashes).unwrap();
+        let jsn = json!({
+            "threshold": 2,
+            "key_ids": [
+                // these need to be sorted for determinism
+                "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
+                "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+            ],
+        });
+        let encoded = json::to_value(&role_def).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: RoleDefinition = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, role_def);
+
+        let jsn = json!({
+            "threshold": 0,
+            "key_ids": [
+                "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+            ],
+        });
+        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+
+        let jsn = json!({
+            "threshold": -1,
+            "key_ids": [
+                "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+            ],
+        });
+        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+    }
+
+    #[test]
+    fn serde_root_metadata() {
+        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
+        let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap();
+        let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap();
+        let timestamp_key = PrivateKey::from_pkcs8(ED25519_4_PK8).unwrap();
+
+        let keys = vec![
+            root_key.public().clone(),
+            snapshot_key.public().clone(),
+            targets_key.public().clone(),
+            timestamp_key.public().clone(),
+        ];
+
+        let root_def = RoleDefinition::new(1, hashset!(root_key.key_id().clone())).unwrap();
+        let snapshot_def = RoleDefinition::new(1, hashset!(snapshot_key.key_id().clone())).unwrap();
+        let targets_def = RoleDefinition::new(1, hashset!(targets_key.key_id().clone())).unwrap();
+        let timestamp_def = RoleDefinition::new(1, hashset!(timestamp_key.key_id().clone()))
+            .unwrap();
+
+        let root = RootMetadata::new(
+            1,
+            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+            false,
+            keys,
+            root_def,
+            snapshot_def,
+            targets_def,
+            timestamp_def,
+        ).unwrap();
+
+        let jsn = json!({
+            "type": "root",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "consistent_snapshot": false,
+            "keys": {
+                "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
+                    "type": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb-WO5CJQDTjK9GHGWjtg==",
+                },
+                "4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o=": {
+                    "type": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQvtGgZ_8giaAwL7q3PQ==",
+                },
+                "5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs=": {
+                    "type": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao_NhZ1_7zzCKL8rKzsg==",
+                },
+                "C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw=": {
+                    "type": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQAUEK4wU6pwu_qYQoqHnWTTACo1ePffquscsHZOhg9-Cw==",
+                },
+            },
+            "roles": {
+                "root": {
+                    "threshold": 1,
+                    "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
+                },
+                "snapshot": {
+                    "threshold": 1,
+                    "key_ids": ["5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs="],
+                },
+                "targets": {
+                    "threshold": 1,
+                    "key_ids": ["4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o="],
+                },
+                "timestamp": {
+                    "threshold": 1,
+                    "key_ids": ["C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw="],
+                },
+            },
+        });
+
+        let encoded = json::to_value(&root).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: RootMetadata = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, root);
+    }
+
+    #[test]
+    fn serde_timestamp_metadata() {
+        let timestamp = TimestampMetadata::new(
+            1,
+            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+            hashmap!{
+                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1, None, None).unwrap(),
+            },
+        ).unwrap();
+
+        let jsn = json!({
+            "type": "timestamp",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "foo": {
+                    "version": 1,
+                },
+            },
+        });
+
+        let encoded = json::to_value(&timestamp).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: TimestampMetadata = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, timestamp);
+    }
+
+    #[test]
+    fn serde_snapshot_metadata() {
+        let snapshot = SnapshotMetadata::new(
+            1,
+            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+            hashmap! {
+                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1, None, None).unwrap(),
+            },
+        ).unwrap();
+
+        let jsn = json!({
+            "type": "snapshot",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "foo": {
+                    "version": 1,
+                },
+            },
+        });
+
+        let encoded = json::to_value(&snapshot).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: SnapshotMetadata = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn serde_targets_metadata() {
+        let targets = TargetsMetadata::new(
+            1,
+            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+            hashmap! {
+                TargetPath::new("foo".into()).unwrap() => TargetDescription::from_reader(b"foo" as &[u8]).unwrap(),
+            }
+        ).unwrap();
+
+        let jsn = json!({
+            "type": "targets",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "targets": {
+                "foo": {
+                    "length": 3,
+                    "hashes": {
+                        "sha256": "LCa0a2j_xo_5m0U8HTBBNBNCLXBkg7-g-YpeiGJm564=",
+                        "sha512": "9_u6bgY2-JDlb7vzKD5STG-jIErimDgtYkdB0NxmODJuKCxBvl5CVNiCB3LFUYosWowMf37aGVlKfrU5RT4e1w==",
+                    },
+                },
+            },
+        });
+
+        let encoded = json::to_value(&targets).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: TargetsMetadata = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, targets);
+    }
+
+    #[test]
+    fn serde_signed_metadata() {
+        let snapshot = SnapshotMetadata::new(
+            1,
+            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+            hashmap! {
+                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1, None, None).unwrap(),
+            },
+        ).unwrap();
+
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
+
+        let signed = SignedMetadata::<JsonDataInterchange, SnapshotMetadata, Unverified>::new(
+            &snapshot,
+            &key,
+            SignatureScheme::Ed25519,
+        ).unwrap();
+
+        let jsn = json!({
+            "signatures": [
+                {
+                    "key_id": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
+                    "scheme": "ed25519",
+                    "value": "T2cUdVcGn08q9Cl4sKXqQni4J63TxZ48wR3jt583QuWXJ2AmxRHwEnWIHtkCOmzohF4D0v9JspeH6samO-H6CA==",
+                }
+            ],
+            "signed": {
+                "type": "snapshot",
+                "version": 1,
+                "expires": "2017-01-01T00:00:00Z",
+                "meta": {
+                    "foo": {
+                        "version": 1,
+                    },
+                },
+            },
+        });
+
+        let encoded = json::to_value(&signed).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: SignedMetadata<JsonDataInterchange, SnapshotMetadata, Unverified> =
+            json::from_value(encoded).unwrap();
+        assert_eq!(decoded, signed);
     }
 }
