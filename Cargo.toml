@@ -1,6 +1,6 @@
 [package]
 name = "tuf"
-version = "0.1.7"
+version = "0.1.6"
 authors = [ "heartsucker <heartsucker@autistici.org>" ]
 description = "Library for The Update Framework (TUF)"
 homepage = "https://github.com/heartsucker/rust-tuf"
@@ -30,7 +30,7 @@ required-features = [ "cli" ]
 cli = [ "clap" ]
 
 [dependencies]
-chrono = { version = "0.4", features = [ "serde" ] }
+chrono = { version = "0.3.1", features = [ "serde" ] }
 clap = { version = "2.23", optional = true }
 data-encoding = "2.0.0-rc.1"
 env_logger = "0.4.3"

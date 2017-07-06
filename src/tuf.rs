@@ -1,4 +1,4 @@
-use chrono::offset::Utc;
+use chrono::UTC;
 use json;
 use hyper::Url as HyperUrl;
 use hyper::client::Client;
@@ -217,7 +217,7 @@ impl Tuf {
 
         // handle the edge case where we never enter the update look
         // AND the first piece of metadata is expired
-        if temp_root.version == 1 && self.root.expires() <= &Utc::now() {
+        if temp_root.version == 1 && self.root.expires() <= &UTC::now() {
             return Err(Error::ExpiredMetadata(Role::Root));
         }
 
@@ -595,7 +595,7 @@ impl Tuf {
         Self::verify_meta::<R>(signed.clone(), role, threshold, trusted_ids, available_keys)?;
         let meta: M = json::from_value(signed.signed)?;
 
-        if !allow_expired && meta.expires() <= &Utc::now() {
+        if !allow_expired && meta.expires() <= &UTC::now() {
             return Err(Error::ExpiredMetadata(role.clone()));
         }
 

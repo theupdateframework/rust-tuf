@@ -1,5 +1,4 @@
-use chrono::DateTime;
-use chrono::offset::Utc;
+use chrono::{DateTime, UTC};
 use data_encoding::HEXLOWER;
 use json;
 use pem;
@@ -134,14 +133,14 @@ impl<'de, R: RoleType> Deserialize<'de> for SignedMetadata<R> {
 }
 
 pub trait Metadata<R: RoleType>: DeserializeOwned {
-    fn expires(&self) -> &DateTime<Utc>;
+    fn expires(&self) -> &DateTime<UTC>;
 }
 
 
 #[derive(Debug, PartialEq)]
 pub struct RootMetadata {
     consistent_snapshot: bool,
-    expires: DateTime<Utc>,
+    expires: DateTime<UTC>,
     pub version: i32,
     pub keys: HashMap<KeyId, Key>,
     pub root: RoleDefinition,
@@ -151,7 +150,7 @@ pub struct RootMetadata {
 }
 
 impl Metadata<Root> for RootMetadata {
-    fn expires(&self) -> &DateTime<Utc> {
+    fn expires(&self) -> &DateTime<UTC> {
         &self.expires
     }
 }
@@ -272,14 +271,14 @@ impl<'de> Deserialize<'de> for RoleDefinition {
 
 #[derive(Debug, Clone)]
 pub struct TargetsMetadata {
-    expires: DateTime<Utc>,
+    expires: DateTime<UTC>,
     pub version: i32,
     pub delegations: Option<Delegations>,
     pub targets: HashMap<String, TargetInfo>,
 }
 
 impl Metadata<Targets> for TargetsMetadata {
-    fn expires(&self) -> &DateTime<Utc> {
+    fn expires(&self) -> &DateTime<UTC> {
         &self.expires
     }
 }
@@ -334,13 +333,13 @@ impl<'de> Deserialize<'de> for TargetsMetadata {
 
 #[derive(Debug)]
 pub struct TimestampMetadata {
-    expires: DateTime<Utc>,
+    expires: DateTime<UTC>,
     pub version: i32,
     pub meta: HashMap<String, MetadataMetadata>,
 }
 
 impl Metadata<Timestamp> for TimestampMetadata {
-    fn expires(&self) -> &DateTime<Utc> {
+    fn expires(&self) -> &DateTime<UTC> {
         &self.expires
     }
 }
@@ -382,13 +381,13 @@ impl<'de> Deserialize<'de> for TimestampMetadata {
 
 #[derive(Debug)]
 pub struct SnapshotMetadata {
-    expires: DateTime<Utc>,
+    expires: DateTime<UTC>,
     pub version: i32,
     pub meta: HashMap<String, SnapshotMetadataMetadata>,
 }
 
 impl Metadata<Snapshot> for SnapshotMetadata {
-    fn expires(&self) -> &DateTime<Utc> {
+    fn expires(&self) -> &DateTime<UTC> {
         &self.expires
     }
 }
