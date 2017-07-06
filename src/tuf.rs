@@ -8,8 +8,8 @@ use Result;
 use crypto::KeyId;
 use error::Error;
 use interchange::DataInterchange;
-use metadata::{SignedMetadata, RootMetadata, VerificationStatus, TimestampMetadata, Role,
-               SnapshotMetadata, MetadataPath, TargetsMetadata, TargetPath, TargetDescription};
+use metadata::{SignedMetadata, RootMetadata, TimestampMetadata, Role, SnapshotMetadata,
+               MetadataPath, TargetsMetadata, TargetPath, TargetDescription};
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
@@ -24,13 +24,10 @@ pub struct Tuf<D: DataInterchange> {
 impl<D: DataInterchange> Tuf<D> {
     /// Create a new `TUF` struct from a known set of pinned root keys that are used to verify the
     /// signed metadata.
-    pub fn from_root_pinned<V>(
-        mut signed_root: SignedMetadata<D, RootMetadata, V>,
+    pub fn from_root_pinned(
+        mut signed_root: SignedMetadata<D, RootMetadata>,
         root_key_ids: &[KeyId],
-    ) -> Result<Self>
-    where
-        V: VerificationStatus,
-    {
+    ) -> Result<Self> {
         signed_root.signatures_mut().retain(|s| {
             root_key_ids.contains(s.key_id())
         });
@@ -41,11 +38,8 @@ impl<D: DataInterchange> Tuf<D> {
     ///
     /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
     /// the related method `from_root_pinned`.
-    pub fn from_root<V>(signed_root: SignedMetadata<D, RootMetadata, V>) -> Result<Self>
-    where
-        V: VerificationStatus,
-    {
-        let root = D::deserialize::<RootMetadata>(signed_root.unverified_signed())?;
+    pub fn from_root(signed_root: SignedMetadata<D, RootMetadata>) -> Result<Self> {
+        let root = D::deserialize::<RootMetadata>(signed_root.signed())?;
         let _ = signed_root.verify(
             root.root().threshold(),
             root.root().key_ids(),
@@ -93,20 +87,14 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// Verify and update the root metadata.
-    pub fn update_root<V>(
-        &mut self,
-        signed_root: SignedMetadata<D, RootMetadata, V>,
-    ) -> Result<bool>
-    where
-        V: VerificationStatus,
-    {
-        let signed_root = signed_root.verify(
+    pub fn update_root(&mut self, signed_root: SignedMetadata<D, RootMetadata>) -> Result<bool> {
+        signed_root.verify(
             self.root.root().threshold(),
             self.root.root().key_ids(),
             self.root.keys(),
         )?;
 
-        let root = D::deserialize::<RootMetadata>(signed_root.unverified_signed())?;
+        let root = D::deserialize::<RootMetadata>(signed_root.signed())?;
 
         match root.version() {
             x if x == self.root.version() => {
@@ -139,14 +127,11 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// Verify and update the timestamp metadata.
-    pub fn update_timestamp<V>(
+    pub fn update_timestamp(
         &mut self,
-        signed_timestamp: SignedMetadata<D, TimestampMetadata, V>,
-    ) -> Result<bool>
-    where
-        V: VerificationStatus,
-    {
-        let signed_timestamp = signed_timestamp.verify(
+        signed_timestamp: SignedMetadata<D, TimestampMetadata>,
+    ) -> Result<bool> {
+        signed_timestamp.verify(
             self.root.timestamp().threshold(),
             self.root.timestamp().key_ids(),
             self.root.keys(),
@@ -174,13 +159,10 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// Verify and update the snapshot metadata.
-    pub fn update_snapshot<V>(
+    pub fn update_snapshot(
         &mut self,
-        signed_snapshot: SignedMetadata<D, SnapshotMetadata, V>,
-    ) -> Result<bool>
-    where
-        V: VerificationStatus,
-    {
+        signed_snapshot: SignedMetadata<D, SnapshotMetadata>,
+    ) -> Result<bool> {
         let snapshot = {
             let root = self.safe_root_ref()?;
             let timestamp = self.safe_timestamp_ref()?;
@@ -205,7 +187,7 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
-            let signed_snapshot = signed_snapshot.verify(
+            signed_snapshot.verify(
                 root.snapshot().threshold(),
                 root.snapshot().key_ids(),
                 root.keys(),
@@ -234,13 +216,10 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// Verify and update the targets metadata.
-    pub fn update_targets<V>(
+    pub fn update_targets(
         &mut self,
-        signed_targets: SignedMetadata<D, TargetsMetadata, V>,
-    ) -> Result<bool>
-    where
-        V: VerificationStatus,
-    {
+        signed_targets: SignedMetadata<D, TargetsMetadata>,
+    ) -> Result<bool> {
         let targets = {
             let root = self.safe_root_ref()?;
             let snapshot = self.safe_snapshot_ref()?;
@@ -265,7 +244,7 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
-            let signed_targets = signed_targets.verify(
+            signed_targets.verify(
                 root.targets().threshold(),
                 root.targets().key_ids(),
                 root.keys(),

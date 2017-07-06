@@ -19,7 +19,7 @@
 //! use tuf::Tuf;
 //! use tuf::crypto::KeyId;
 //! use tuf::client::{Client, Config};
-//! use tuf::metadata::{RootMetadata, Unverified, SignedMetadata, Role, MetadataPath,
+//! use tuf::metadata::{RootMetadata, SignedMetadata, Role, MetadataPath,
 //!     MetadataVersion};
 //! use tuf::interchange::JsonDataInterchange;
 //! use tuf::repository::{Repository, FileSystemRepository, HttpRepository};

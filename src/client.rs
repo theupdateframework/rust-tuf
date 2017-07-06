@@ -87,15 +87,16 @@ where
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
     pub fn update_remote(&mut self) -> Result<bool> {
-        Ok(
-            Self::update_root(&mut self.tuf, &mut self.remote, &self.config.max_root_size)? ||
-                Self::update_timestamp(
-                    &mut self.tuf,
-                    &mut self.remote,
-                    &self.config.max_timestamp_size,
-                )? || Self::update_snapshot(&mut self.tuf, &mut self.remote)? ||
-                Self::update_targets(&mut self.tuf, &mut self.local)?,
-        )
+        let r = Self::update_root(&mut self.tuf, &mut self.remote, &self.config.max_root_size)?;
+        let ts = Self::update_timestamp(
+            &mut self.tuf,
+            &mut self.remote,
+            &self.config.max_timestamp_size,
+        )?;
+        let sn = Self::update_snapshot(&mut self.tuf, &mut self.remote)?;
+        let ta = Self::update_targets(&mut self.tuf, &mut self.remote)?;
+
+        Ok(r || ts || sn || ta)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -110,7 +111,7 @@ where
             max_root_size,
             None,
         )?;
-        let latest_version = D::deserialize::<RootMetadata>(latest_root.unverified_signed())?
+        let latest_version = D::deserialize::<RootMetadata>(latest_root.signed())?
             .version();
 
         if latest_version < tuf.root().version() {
@@ -173,7 +174,7 @@ where
     {
         let snapshot_description = match tuf.timestamp() {
             Some(ts) => {
-                match ts.meta().get(&MetadataPath::from_role(&Role::Timestamp)) {
+                match ts.meta().get(&MetadataPath::from_role(&Role::Snapshot)) {
                     Some(d) => Ok(d),
                     None => Err(Error::VerificationFailure(
                         "Timestamp metadata did not contain a description of the \
@@ -187,7 +188,7 @@ where
             .clone();
 
         if snapshot_description.version() <= tuf.snapshot().map(|s| s.version()).unwrap_or(0) {
-            return Ok(false)
+            return Ok(false);
         }
 
         let snap = repo.fetch_metadata(
@@ -221,7 +222,7 @@ where
             .clone();
 
         if targets_description.version() <= tuf.targets().map(|t| t.version()).unwrap_or(0) {
-            return Ok(false)
+            return Ok(false);
         }
 
         let targets = repo.fetch_metadata(

@@ -15,8 +15,8 @@ use tempfile::NamedTempFile;
 use Result;
 use crypto::{self, HashAlgorithm, HashValue};
 use error::Error;
-use metadata::{SignedMetadata, MetadataVersion, Unverified, Verified, Role, Metadata, TargetPath,
-               TargetDescription, MetadataPath};
+use metadata::{SignedMetadata, MetadataVersion, Role, Metadata, TargetPath, TargetDescription,
+               MetadataPath};
 use interchange::DataInterchange;
 
 /// Top-level trait that represents a TUF repository and contains all the ways it can be interacted
@@ -37,7 +37,7 @@ where
         role: &Role,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
-        metadata: &SignedMetadata<D, M, Verified>,
+        metadata: &SignedMetadata<D, M>,
     ) -> Result<()>
     where
         M: Metadata;
@@ -50,7 +50,7 @@ where
         version: &MetadataVersion,
         max_size: &Option<usize>,
         hash_data: Option<(&HashAlgorithm, &HashValue)>,
-    ) -> Result<SignedMetadata<D, M, Unverified>>
+    ) -> Result<SignedMetadata<D, M>>
     where
         M: Metadata;
 
@@ -207,7 +207,7 @@ where
         role: &Role,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
-        metadata: &SignedMetadata<D, M, Verified>,
+        metadata: &SignedMetadata<D, M>,
     ) -> Result<()>
     where
         M: Metadata,
@@ -236,7 +236,7 @@ where
         version: &MetadataVersion,
         max_size: &Option<usize>,
         hash_data: Option<(&HashAlgorithm, &HashValue)>,
-    ) -> Result<SignedMetadata<D, M, Unverified>>
+    ) -> Result<SignedMetadata<D, M>>
     where
         M: Metadata,
     {
@@ -366,7 +366,7 @@ where
         _: &Role,
         _: &MetadataPath,
         _: &MetadataVersion,
-        _: &SignedMetadata<D, M, Verified>,
+        _: &SignedMetadata<D, M>,
     ) -> Result<()>
     where
         M: Metadata,
@@ -383,7 +383,7 @@ where
         version: &MetadataVersion,
         max_size: &Option<usize>,
         hash_data: Option<(&HashAlgorithm, &HashValue)>,
-    ) -> Result<SignedMetadata<D, M, Unverified>>
+    ) -> Result<SignedMetadata<D, M>>
     where
         M: Metadata,
     {
@@ -451,7 +451,7 @@ where
         role: &Role,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
-        metadata: &SignedMetadata<D, M, Verified>,
+        metadata: &SignedMetadata<D, M>,
     ) -> Result<()>
     where
         M: Metadata,
@@ -473,7 +473,7 @@ where
         version: &MetadataVersion,
         max_size: &Option<usize>,
         hash_data: Option<(&HashAlgorithm, &HashValue)>,
-    ) -> Result<SignedMetadata<D, M, Unverified>>
+    ) -> Result<SignedMetadata<D, M>>
     where
         M: Metadata,
     {

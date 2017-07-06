@@ -133,19 +133,6 @@ fn safe_path(path: &str) -> Result<()> {
     Ok(())
 }
 
-/// Trait used to represent whether a piece of data is verified or not.
-pub trait VerificationStatus: Debug + PartialEq {}
-
-/// Type used to represent verified data.
-#[derive(Debug, PartialEq)]
-pub struct Verified {}
-impl VerificationStatus for Verified {}
-
-/// Type used to represent unverified data.
-#[derive(Debug, PartialEq)]
-pub struct Unverified {}
-impl VerificationStatus for Unverified {}
-
 /// The TUF role.
 #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Role {
@@ -230,11 +217,10 @@ pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {
 
 /// A piece of raw metadata with attached signatures.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct SignedMetadata<D, M, V>
+pub struct SignedMetadata<D, M>
 where
     D: DataInterchange,
     M: Metadata,
-    V: VerificationStatus,
 {
     signatures: Vec<Signature>,
     signed: D::RawData,
@@ -242,22 +228,19 @@ where
     _interchage: PhantomData<D>,
     #[serde(skip_serializing, skip_deserializing)]
     _metadata: PhantomData<M>,
-    #[serde(skip_serializing, skip_deserializing)]
-    _verification: PhantomData<V>,
 }
 
-impl<D, M, V> SignedMetadata<D, M, V>
+impl<D, M> SignedMetadata<D, M>
 where
     D: DataInterchange,
     M: Metadata,
-    V: VerificationStatus,
 {
     /// Create a new `SignedMetadata`.
     pub fn new(
         metadata: &M,
         private_key: &PrivateKey,
         scheme: SignatureScheme,
-    ) -> Result<SignedMetadata<D, M, Unverified>> {
+    ) -> Result<SignedMetadata<D, M>> {
         let raw = D::serialize(metadata)?;
         let bytes = D::canonicalize(&raw)?;
         let sig = private_key.sign(&bytes, scheme)?;
@@ -266,7 +249,6 @@ where
             signed: raw,
             _interchage: PhantomData,
             _metadata: PhantomData,
-            _verification: PhantomData,
         })
     }
 
@@ -280,20 +262,18 @@ where
         &mut self.signatures
     }
 
-    /// An immutable reference to the unverified raw data.
-    ///
-    /// **WARNING**: This data is untrusted.
-    pub fn unverified_signed(&self) -> &D::RawData {
+    /// An immutable reference to the raw data.
+    pub fn signed(&self) -> &D::RawData {
         &self.signed
     }
 
-    /// Verify this metadata and convert its type to `Verified`.
+    /// Verify this metadata.
     pub fn verify(
-        self,
+        &self,
         threshold: u32,
         authorized_key_ids: &HashSet<KeyId>,
         available_keys: &HashMap<KeyId, PublicKey>,
-    ) -> Result<SignedMetadata<D, M, Verified>> {
+    ) -> Result<()> {
         if self.signatures.len() < 1 {
             return Err(Error::VerificationFailure(
                 "The metadata was not signed with any authorized keys."
@@ -344,13 +324,7 @@ where
         }
 
         if signatures_needed == 0 {
-            Ok(SignedMetadata {
-                signatures: self.signatures,
-                signed: self.signed,
-                _interchage: PhantomData,
-                _metadata: PhantomData,
-                _verification: PhantomData,
-            })
+            Ok(())
         } else {
             Err(Error::VerificationFailure(format!(
                 "Signature threshold not met: {}/{}",
@@ -358,17 +332,6 @@ where
                 threshold
             )))
         }
-    }
-}
-
-impl<D, M> SignedMetadata<D, M, Verified>
-where
-    D: DataInterchange,
-    M: Metadata,
-{
-    /// An immutable reference to the verified raw data.
-    pub fn signed(&self) -> &D::RawData {
-        self.unverified_signed()
     }
 }
 
@@ -717,9 +680,7 @@ pub struct MetadataDescription {
 
 impl MetadataDescription {
     /// Create a new `MetadataDescription`.
-    pub fn new(
-        version: u32,
-    ) -> Result<Self> {
+    pub fn new(version: u32) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
                 "Metadata version must be greater than zero. Found: {}",
@@ -727,9 +688,7 @@ impl MetadataDescription {
             )));
         }
 
-        Ok(MetadataDescription {
-            version: version,
-        })
+        Ok(MetadataDescription { version: version })
     }
 
     /// The version of the described metadata.
@@ -1281,7 +1240,7 @@ mod test {
 
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
 
-        let signed = SignedMetadata::<JsonDataInterchange, SnapshotMetadata, Unverified>::new(
+        let signed = SignedMetadata::<JsonDataInterchange, SnapshotMetadata>::new(
             &snapshot,
             &key,
             SignatureScheme::Ed25519,
@@ -1309,7 +1268,7 @@ mod test {
 
         let encoded = json::to_value(&signed).unwrap();
         assert_eq!(encoded, jsn);
-        let decoded: SignedMetadata<JsonDataInterchange, SnapshotMetadata, Unverified> =
+        let decoded: SignedMetadata<JsonDataInterchange, SnapshotMetadata> =
             json::from_value(encoded).unwrap();
         assert_eq!(decoded, signed);
     }
