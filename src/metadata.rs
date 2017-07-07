@@ -252,6 +252,23 @@ where
         })
     }
 
+    /// Append a signature to this signed metadata. Will overwrite signature by keys with the same
+    /// ID.
+    pub fn add_signature(
+        &mut self,
+        private_key: &PrivateKey,
+        scheme: SignatureScheme,
+    ) -> Result<()> {
+        let raw = D::serialize(&self.signed)?;
+        let bytes = D::canonicalize(&raw)?;
+        let sig = private_key.sign(&bytes, scheme)?;
+        self.signatures.retain(
+            |s| s.key_id() != private_key.key_id(),
+        );
+        self.signatures.push(sig);
+        Ok(())
+    }
+
     /// An immutable reference to the signatures.
     pub fn signatures(&self) -> &[Signature] {
         &self.signatures
@@ -1102,19 +1119,23 @@ mod test {
             "keys": {
                 "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
                     "type": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb-WO5CJQDTjK9GHGWjtg==",
+                    "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb\
+                        -WO5CJQDTjK9GHGWjtg==",
                 },
                 "4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o=": {
                     "type": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQvtGgZ_8giaAwL7q3PQ==",
+                    "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQ\
+                        vtGgZ_8giaAwL7q3PQ==",
                 },
                 "5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs=": {
                     "type": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao_NhZ1_7zzCKL8rKzsg==",
+                    "public_key": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao_\
+                        NhZ1_7zzCKL8rKzsg==",
                 },
                 "C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw=": {
                     "type": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQAUEK4wU6pwu_qYQoqHnWTTACo1ePffquscsHZOhg9-Cw==",
+                    "public_key": "MCwwBwYDK2VwBQADIQAUEK4wU6pwu_qYQoqHnWTTACo1\
+                        ePffquscsHZOhg9-Cw==",
                 },
             },
             "roles": {
@@ -1203,8 +1224,9 @@ mod test {
             1,
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
             hashmap! {
-                TargetPath::new("foo".into()).unwrap() => TargetDescription::from_reader(b"foo" as &[u8]).unwrap(),
-            }
+                TargetPath::new("foo".into()).unwrap() =>
+                    TargetDescription::from_reader(b"foo" as &[u8]).unwrap(),
+            },
         ).unwrap();
 
         let jsn = json!({
@@ -1216,7 +1238,8 @@ mod test {
                     "length": 3,
                     "hashes": {
                         "sha256": "LCa0a2j_xo_5m0U8HTBBNBNCLXBkg7-g-YpeiGJm564=",
-                        "sha512": "9_u6bgY2-JDlb7vzKD5STG-jIErimDgtYkdB0NxmODJuKCxBvl5CVNiCB3LFUYosWowMf37aGVlKfrU5RT4e1w==",
+                        "sha512": "9_u6bgY2-JDlb7vzKD5STG-jIErimDgtYkdB0NxmODJuKCx\
+                            Bvl5CVNiCB3LFUYosWowMf37aGVlKfrU5RT4e1w==",
                     },
                 },
             },
@@ -1234,7 +1257,8 @@ mod test {
             1,
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
             hashmap! {
-                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1).unwrap(),
+                MetadataPath::new("foo".into()).unwrap() =>
+                    MetadataDescription::new(1).unwrap(),
             },
         ).unwrap();
 
@@ -1251,7 +1275,8 @@ mod test {
                 {
                     "key_id": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
                     "scheme": "ed25519",
-                    "value": "T2cUdVcGn08q9Cl4sKXqQni4J63TxZ48wR3jt583QuWXJ2AmxRHwEnWIHtkCOmzohF4D0v9JspeH6samO-H6CA==",
+                    "value": "T2cUdVcGn08q9Cl4sKXqQni4J63TxZ48wR3jt583QuWXJ2AmxRHwEnW\
+                        IHtkCOmzohF4D0v9JspeH6samO-H6CA==",
                 }
             ],
             "signed": {
