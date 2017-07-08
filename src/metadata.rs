@@ -8,6 +8,7 @@ use serde::ser::{Serialize, Serializer, Error as SerializeError};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display};
 use std::io::Read;
+use std::iter::FromIterator;
 use std::marker::PhantomData;
 
 use Result;
@@ -384,9 +385,7 @@ impl RootMetadata {
             )));
         }
 
-        let keys = keys.drain(0..)
-            .map(|k| (k.key_id().clone(), k))
-            .collect::<HashMap<KeyId, PublicKey>>();
+        let keys = HashMap::from_iter(keys.drain(..).map(|k| (k.key_id().clone(), k)));
 
         Ok(RootMetadata {
             version: version,
@@ -787,7 +786,7 @@ impl<'de> Deserialize<'de> for SnapshotMetadata {
 
 
 /// Wrapper for a path to a target.
-#[derive(Debug, Clone, PartialEq, Hash, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq, PartialOrd, Ord, Serialize)]
 pub struct TargetPath(String);
 
 impl TargetPath {
@@ -807,6 +806,7 @@ impl TargetPath {
     /// assert!(TargetPath::new("foo/..bar".into()).is_ok());
     /// assert!(TargetPath::new("foo/bar..".into()).is_ok());
     /// ```
+    // TODO this needs to allow trailing slashes for delegations
     pub fn new(path: String) -> Result<Self> {
         safe_path(&path)?;
         Ok(TargetPath(path))
@@ -930,6 +930,7 @@ pub struct TargetsMetadata {
     version: u32,
     expires: DateTime<Utc>,
     targets: HashMap<TargetPath, TargetDescription>,
+    delegations: Option<Delegations>,
 }
 
 impl TargetsMetadata {
@@ -938,6 +939,7 @@ impl TargetsMetadata {
         version: u32,
         expires: DateTime<Utc>,
         targets: HashMap<TargetPath, TargetDescription>,
+        delegations: Option<Delegations>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
@@ -950,6 +952,7 @@ impl TargetsMetadata {
             version: version,
             expires: expires,
             targets: targets,
+            delegations: delegations,
         })
     }
 
@@ -963,9 +966,14 @@ impl TargetsMetadata {
         &self.expires
     }
 
-    /// An immutable reference descriptions of targets.
+    /// An immutable reference to the descriptions of targets.
     pub fn targets(&self) -> &HashMap<TargetPath, TargetDescription> {
         &self.targets
+    }
+
+    /// An immutable reference to the optional delegations.
+    pub fn delegations(&self) -> Option<&Delegations> {
+        self.delegations.as_ref()
     }
 }
 
@@ -989,6 +997,142 @@ impl Serialize for TargetsMetadata {
 impl<'de> Deserialize<'de> for TargetsMetadata {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::TargetsMetadata = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
+    }
+}
+
+/// Wrapper to described a collections of delegations.
+// TODO custom deserialize to ensure no duplicates
+#[derive(Debug, PartialEq, Clone, Serialize)]
+pub struct Delegations {
+    keys: HashMap<KeyId, PublicKey>,
+    roles: Vec<Delegation>,
+}
+
+impl Delegations {
+    // TODO check all keys are used
+    // TODO check all roles have their ID in the set of keys
+    /// Create a new `Delegations` wrapper from the given set of trusted keys and roles.
+    pub fn new(mut keys: Vec<PublicKey>, roles: Vec<Delegation>) -> Result<Self> {
+        if keys.is_empty() {
+            return Err(Error::IllegalArgument("Keys cannot be empty.".into()));
+        }
+
+        if roles.is_empty() {
+            return Err(Error::IllegalArgument("Roles cannot be empty.".into()));
+        }
+
+        if roles.len() !=
+            roles
+                .iter()
+                .map(|r| &r.role)
+                .collect::<HashSet<&MetadataPath>>()
+                .len()
+        {
+            return Err(Error::IllegalArgument(
+                "Cannot have duplicated roles in delegations.".into(),
+            ));
+        }
+
+        Ok(Delegations {
+            keys: HashMap::from_iter(keys.drain(..).map(|k| (k.key_id().clone(), k))),
+            roles: roles,
+        })
+    }
+
+    /// An immutable reference to the keys used for this set of delegations.
+    pub fn keys(&self) -> &HashMap<KeyId, PublicKey> {
+        &self.keys
+    }
+
+    /// An immutable reference to the delegated roles.
+    pub fn roles(&self) -> &Vec<Delegation> {
+        &self.roles
+    }
+}
+
+impl<'de> Deserialize<'de> for Delegations {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::Delegations = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
+    }
+}
+
+/// A delegated targets role.
+// TODO custom deserialize to ensure good ordering
+#[derive(Debug, PartialEq, Clone)]
+pub struct Delegation {
+    role: MetadataPath,
+    key_ids: HashSet<KeyId>,
+    threshold: u32,
+    paths: HashSet<TargetPath>,
+}
+
+impl Delegation {
+    /// Create a new delegation.
+    pub fn new(
+        role: MetadataPath,
+        key_ids: HashSet<KeyId>,
+        threshold: u32,
+        paths: HashSet<TargetPath>,
+    ) -> Result<Self> {
+        if key_ids.is_empty() {
+            return Err(Error::IllegalArgument("Cannot have empty key IDs".into()));
+        }
+
+        if paths.is_empty() {
+            return Err(Error::IllegalArgument("Cannot have empty paths".into()));
+        }
+
+        if threshold < 1 {
+            return Err(Error::IllegalArgument("Cannot have threshold < 1".into()));
+        }
+
+        Ok(Delegation {
+            role: role,
+            key_ids: key_ids,
+            threshold: threshold,
+            paths: paths,
+        })
+    }
+
+    /// An immutable reference to the delegations's metadata path (role).
+    pub fn role(&self) -> &MetadataPath {
+        &self.role
+    }
+
+    /// An immutable reference to the delegations's trusted key IDs.
+    pub fn key_ids(&self) -> &HashSet<KeyId> {
+        &self.key_ids
+    }
+
+    /// The delegation's threshold.
+    pub fn threshold(&self) -> u32 {
+        self.threshold
+    }
+
+    /// An immutable reference to the delegation's authorized paths.
+    pub fn paths(&self) -> &HashSet<TargetPath> {
+        &self.paths
+    }
+}
+
+impl Serialize for Delegation {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        shims::Delegation::from(self).serialize(ser)
+    }
+}
+
+impl<'de> Deserialize<'de> for Delegation {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::Delegation = Deserialize::deserialize(de)?;
         intermediate.try_into().map_err(|e| {
             DeserializeError::custom(format!("{:?}", e))
         })
@@ -1227,6 +1371,7 @@ mod test {
                 TargetPath::new("foo".into()).unwrap() =>
                     TargetDescription::from_reader(b"foo" as &[u8]).unwrap(),
             },
+            None,
         ).unwrap();
 
         let jsn = json!({
@@ -1243,6 +1388,56 @@ mod test {
                     },
                 },
             },
+        });
+
+        let encoded = json::to_value(&targets).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: TargetsMetadata = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, targets);
+    }
+
+    #[test]
+    fn serde_targets_with_delegations_metadata() {
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
+        let delegations = Delegations::new(
+            vec![key.public().clone()],
+            vec![Delegation::new(
+                MetadataPath::new("foo/bar".into()).unwrap(),
+                hashset!(key.key_id().clone()),
+                1,
+                hashset!(TargetPath::new("baz/quux".into()).unwrap()),
+            ).unwrap()],
+        ).unwrap();
+
+        let targets = TargetsMetadata::new(
+            1,
+            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+            HashMap::new(),
+            Some(delegations),
+        ).unwrap();
+
+        let jsn = json!({
+            "type": "targets",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "targets": {},
+            "delegations": {
+                "keys": {
+                    "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
+                        "type": "ed25519",
+                        "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb\
+                            -WO5CJQDTjK9GHGWjtg==",
+                    },
+                },
+                "roles": [
+                    {
+                        "role": "foo/bar",
+                        "threshold": 1,
+                        "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
+                        "paths": ["baz/quux"],
+                    },
+                ],
+            }
         });
 
         let encoded = json::to_value(&targets).unwrap();
