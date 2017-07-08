@@ -1067,8 +1067,9 @@ impl<'de> Deserialize<'de> for Delegations {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Delegation {
     role: MetadataPath,
-    key_ids: HashSet<KeyId>,
+    terminating: bool,
     threshold: u32,
+    key_ids: HashSet<KeyId>,
     paths: HashSet<TargetPath>,
 }
 
@@ -1076,8 +1077,9 @@ impl Delegation {
     /// Create a new delegation.
     pub fn new(
         role: MetadataPath,
-        key_ids: HashSet<KeyId>,
+        terminating: bool,
         threshold: u32,
+        key_ids: HashSet<KeyId>,
         paths: HashSet<TargetPath>,
     ) -> Result<Self> {
         if key_ids.is_empty() {
@@ -1094,8 +1096,9 @@ impl Delegation {
 
         Ok(Delegation {
             role: role,
-            key_ids: key_ids,
+            terminating: terminating,
             threshold: threshold,
+            key_ids: key_ids,
             paths: paths,
         })
     }
@@ -1103,6 +1106,11 @@ impl Delegation {
     /// An immutable reference to the delegations's metadata path (role).
     pub fn role(&self) -> &MetadataPath {
         &self.role
+    }
+
+    /// Whether or not this delegation is terminating.
+    pub fn terminating(&self) -> bool {
+        self.terminating
     }
 
     /// An immutable reference to the delegations's trusted key IDs.
@@ -1403,8 +1411,9 @@ mod test {
             vec![key.public().clone()],
             vec![Delegation::new(
                 MetadataPath::new("foo/bar".into()).unwrap(),
-                hashset!(key.key_id().clone()),
+                false,
                 1,
+                hashset!(key.key_id().clone()),
                 hashset!(TargetPath::new("baz/quux".into()).unwrap()),
             ).unwrap()],
         ).unwrap();
@@ -1432,6 +1441,7 @@ mod test {
                 "roles": [
                     {
                         "role": "foo/bar",
+                        "terminating": false,
                         "threshold": 1,
                         "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
                         "paths": ["baz/quux"],

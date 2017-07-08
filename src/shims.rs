@@ -258,8 +258,9 @@ impl PublicKey {
 #[derive(Serialize, Deserialize)]
 pub struct Delegation {
     role: metadata::MetadataPath,
-    key_ids: Vec<crypto::KeyId>,
+    terminating: bool,
     threshold: u32,
+    key_ids: Vec<crypto::KeyId>,
     paths: Vec<metadata::TargetPath>,
 }
 
@@ -278,8 +279,9 @@ impl Delegation {
 
         Delegation {
             role: meta.role().clone(),
-            key_ids: key_ids,
+            terminating: meta.terminating(),
             threshold: meta.threshold(),
+            key_ids: key_ids,
             paths: paths,
         }
     }
@@ -301,7 +303,7 @@ impl Delegation {
             return Err(Error::Encoding("Non-unique delegation key IDs.".into()));
         }
 
-        metadata::Delegation::new(self.role, key_ids, self.threshold, paths)
+        metadata::Delegation::new(self.role, self.terminating, self.threshold, key_ids, paths)
     }
 }
 
