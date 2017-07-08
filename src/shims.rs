@@ -249,6 +249,10 @@ impl PublicKey {
     pub fn public_key(&self) -> &String {
         &self.public_key
     }
+
+    pub fn typ(&self) -> &crypto::KeyType {
+        &self.typ
+    }
 }
 
 #[derive(Serialize, Deserialize)]
