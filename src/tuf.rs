@@ -401,6 +401,11 @@ impl<D: DataInterchange> Tuf<D> {
                     )));
             }
 
+            if delegation.expires() <= &Utc::now() {
+                // TODO this needs to be chagned to accept a MetadataPath and not Role
+                return Err(Error::ExpiredMetadata(Role::Targets));
+            }
+
             delegation
         };
 
