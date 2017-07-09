@@ -18,7 +18,6 @@ use interchange::DataInterchange;
 use shims;
 
 static PATH_ILLEGAL_COMPONENTS: &'static [&str] = &[
-    "", // empty
     ".", // current dir
     "..", // parent dir
     // TODO ? "0", // may translate to nul in windows
@@ -100,6 +99,10 @@ static PATH_ILLEGAL_STRINGS: &'static [&str] = &[
 ];
 
 fn safe_path(path: &str) -> Result<()> {
+    if path.is_empty() {
+        return Err(Error::IllegalArgument("Path cannot be empty".into()));
+    }
+
     if path.starts_with("/") {
         return Err(Error::IllegalArgument("Cannot start with '/'".into()));
     }
@@ -546,11 +549,9 @@ impl MetadataPath {
     /// assert!(MetadataPath::new("foo".into()).is_ok());
     /// assert!(MetadataPath::new("/foo".into()).is_err());
     /// assert!(MetadataPath::new("../foo".into()).is_err());
-    /// assert!(MetadataPath::new("foo/".into()).is_err());
     /// assert!(MetadataPath::new("foo/..".into()).is_err());
     /// assert!(MetadataPath::new("foo/../bar".into()).is_err());
     /// assert!(MetadataPath::new("..foo".into()).is_ok());
-    /// assert!(MetadataPath::new("foo//bar".into()).is_err());
     /// assert!(MetadataPath::new("foo/..bar".into()).is_ok());
     /// assert!(MetadataPath::new("foo/bar..".into()).is_ok());
     /// ```
@@ -798,11 +799,9 @@ impl TargetPath {
     /// assert!(TargetPath::new("foo".into()).is_ok());
     /// assert!(TargetPath::new("/foo".into()).is_err());
     /// assert!(TargetPath::new("../foo".into()).is_err());
-    /// assert!(TargetPath::new("foo/".into()).is_err());
     /// assert!(TargetPath::new("foo/..".into()).is_err());
     /// assert!(TargetPath::new("foo/../bar".into()).is_err());
     /// assert!(TargetPath::new("..foo".into()).is_ok());
-    /// assert!(TargetPath::new("foo//bar".into()).is_err());
     /// assert!(TargetPath::new("foo/..bar".into()).is_ok());
     /// assert!(TargetPath::new("foo/bar..".into()).is_ok());
     /// ```
@@ -823,6 +822,33 @@ impl TargetPath {
     /// ```
     pub fn components(&self) -> Vec<String> {
         self.0.split('/').map(|s| s.to_string()).collect()
+    }
+
+    /// Return whether this path is the child of another path.
+    ///
+    /// ```
+    /// use tuf::metadata::TargetPath;
+    ///
+    /// let path1 = TargetPath::new("foo".into()).unwrap();
+    /// let path2 = TargetPath::new("foo/bar".into()).unwrap();
+    /// assert!(!path2.is_child(&path1));
+    ///
+    /// let path1 = TargetPath::new("foo/".into()).unwrap();
+    /// let path2 = TargetPath::new("foo/bar".into()).unwrap();
+    /// assert!(path2.is_child(&path1));
+    ///
+    /// let path2 = TargetPath::new("foo/bar/baz".into()).unwrap();
+    /// assert!(path2.is_child(&path1));
+    ///
+    /// let path2 = TargetPath::new("wat".into()).unwrap();
+    /// assert!(!path2.is_child(&path1))
+    /// ```
+    pub fn is_child(&self, parent: &Self) -> bool {
+        if !parent.0.ends_with('/') {
+            return false;
+        }
+
+        self.0.starts_with(&parent.0)
     }
 }
 

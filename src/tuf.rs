@@ -77,17 +77,72 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// Return the list of all available targets.
-    pub fn available_targets(&self) -> Result<HashSet<&TargetPath>> {
+    pub fn available_targets<'a>(&'a self) -> Result<HashSet<&'a TargetPath>> {
         let _ = self.safe_root_ref()?; // ensure root still valid
         let _ = self.safe_snapshot_ref()?;
-        let targets = self.safe_targets_ref()?
-            .targets()
-            .keys()
-            .collect::<HashSet<&TargetPath>>();
+        let targets = self.safe_targets_ref()?;
+        let out = targets.targets().keys().collect::<HashSet<&TargetPath>>();
 
-        // TODO delegations
+        fn lookup<'a, D: DataInterchange>(
+            tuf: &'a Tuf<D>,
+            role: &MetadataPath,
+            parents: &[HashSet<&TargetPath>],
+            visited: &mut HashSet<&MetadataPath>,
+        ) -> HashSet<&'a TargetPath> {
+            if visited.contains(role) {
+                return HashSet::new();
+            }
 
-        Ok(targets)
+            let targets = match tuf.delegations.get(role) {
+                Some(t) => t,
+                None => return HashSet::new(),
+            };
+
+            let mut result = HashSet::new();
+            for target in targets.targets().keys() {
+                if parents.iter().all(|group| {
+                    group.iter().any(|parent| target.is_child(parent))
+                })
+                {
+                    let _ = result.insert(target);
+                }
+            }
+
+            match targets.delegations() {
+                Some(d) => {
+                    for delegation in d.roles() {
+                        let mut new_parents = parents.to_vec();
+                        new_parents.push(delegation.paths().iter().collect());
+                        let res = lookup(tuf, delegation.role(), &new_parents, visited);
+
+                        for p in res.iter() {
+                            let _ = result.insert(p);
+                        }
+                    }
+                }
+                None => (),
+            }
+
+            result
+        }
+
+        let delegated_targets = match targets.delegations() {
+            Some(delegations) => {
+                let mut result = HashSet::new();
+                let mut visited = HashSet::new();
+                for delegation in delegations.roles() {
+                    let res = lookup(self, delegation.role(), &[], &mut visited);
+
+                    for p in res.iter() {
+                        let _ = result.insert(*p);
+                    }
+                }
+                result
+            }
+            None => HashSet::new(),
+        };
+
+        Ok(out.union(&delegated_targets).map(|t| *t).collect())
     }
 
     /// Verify and update the root metadata.
