@@ -563,14 +563,14 @@ impl<'de> Deserialize<'de> for PublicKey {
 
         if intermediate.typ() != &key.typ {
             return Err(DeserializeError::custom(
-                    format!("Key type listed in the metadata did not match the type extrated \
+                format!("Key type listed in the metadata did not match the type extrated \
                             from the key. {:?} vs. {:?}",
                             intermediate.typ(),
                             key.typ,
-                            ))
-                )
+                            ),
+            ));
         }
-        
+
         Ok(key)
     }
 }

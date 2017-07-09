@@ -1,7 +1,7 @@
 //! Components needed to verify TUF metadata and targets.
 
 use chrono::offset::Utc;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::marker::PhantomData;
 
 use Result;
@@ -18,6 +18,7 @@ pub struct Tuf<D: DataInterchange> {
     snapshot: Option<SnapshotMetadata>,
     targets: Option<TargetsMetadata>,
     timestamp: Option<TimestampMetadata>,
+    delegations: HashMap<MetadataPath, TargetsMetadata>,
     _interchange: PhantomData<D>,
 }
 
@@ -50,6 +51,7 @@ impl<D: DataInterchange> Tuf<D> {
             snapshot: None,
             targets: None,
             timestamp: None,
+            delegations: HashMap::new(),
             _interchange: PhantomData,
         })
     }
@@ -77,13 +79,15 @@ impl<D: DataInterchange> Tuf<D> {
     /// Return the list of all available targets.
     pub fn available_targets(&self) -> Result<HashSet<&TargetPath>> {
         let _ = self.safe_root_ref()?; // ensure root still valid
-        // TODO add delegations
-        Ok(
-            self.safe_targets_ref()?
-                .targets()
-                .keys()
-                .collect::<HashSet<&TargetPath>>(),
-        )
+        let _ = self.safe_snapshot_ref()?;
+        let targets = self.safe_targets_ref()?
+            .targets()
+            .keys()
+            .collect::<HashSet<&TargetPath>>();
+
+        // TODO delegations
+
+        Ok(targets)
     }
 
     /// Verify and update the root metadata.
@@ -271,6 +275,84 @@ impl<D: DataInterchange> Tuf<D> {
         Ok(true)
     }
 
+    /// Verify and update a delegation metadata.
+    pub fn update_delegation(
+        &mut self,
+        role: &MetadataPath,
+        signed: SignedMetadata<D, TargetsMetadata>,
+    ) -> Result<bool> {
+        let delegation = {
+            let _ = self.safe_root_ref()?;
+            let snapshot = self.safe_snapshot_ref()?;
+            let targets = self.safe_targets_ref()?;
+            let targets_delegations = match targets.delegations() {
+                Some(d) => d,
+                None => {
+                    return Err(Error::VerificationFailure(
+                        "Delegations not authorized".into(),
+                    ))
+                }
+            };
+
+            let delegation_description = match snapshot.meta().get(role) {
+                Some(d) => d,
+                None => {
+                    return Err(Error::VerificationFailure(format!(
+                        "The degated role {:?} was not present in the snapshot metadata.",
+                        role
+                    )))
+                }
+            };
+
+            let current_version = self.delegations.get(role).map(|t| t.version()).unwrap_or(0);
+            if delegation_description.version() < current_version {
+                return Err(Error::VerificationFailure(format!(
+                    "Snapshot metadata did listed delegation {:?} version as {} but current\
+                    version is {}",
+                    role,
+                    delegation_description.version(),
+                    current_version
+                )));
+            } else if current_version == delegation_description.version() {
+                return Ok(false);
+            }
+
+            for (_, delegated_targets) in self.delegations.iter() {
+                let parent = match delegated_targets.delegations() {
+                    Some(d) => d,
+                    None => &targets_delegations,
+                };
+
+                let delegation = match parent.roles().iter().filter(|r| r.role() == role).next() {
+                    Some(d) => d,
+                    None => continue,
+                };
+
+                signed.verify(
+                    delegation.threshold(),
+                    delegation.key_ids(),
+                    parent.keys(),
+                )?;
+            }
+
+            let delegation: TargetsMetadata = D::deserialize(signed.signed())?;
+            if delegation.version() != delegation_description.version() {
+                return Err(Error::VerificationFailure(format!(
+                    "The snapshot metadata reported that the delegation {:?} should be at \
+                    version {} but version {} was found instead.",
+                    role,
+                    delegation_description.version(),
+                    delegation.version(),
+                    )));
+            }
+
+            delegation
+        };
+
+        let _ = self.delegations.insert(role.clone(), delegation);
+        Ok(true)
+    }
+
     /// Get a reference to the description needed to verify the target defined by the given
     /// `TargetPath`. Returns an `Error` if the target is not defined in the trusted metadata. This
     /// may mean the target exists somewhere in the metadata, but the chain of trust to that target
@@ -291,7 +373,7 @@ impl<D: DataInterchange> Tuf<D> {
         self.snapshot = None;
         self.targets = None;
         self.timestamp = None;
-        // TODO include delegations
+        self.delegations.clear();
     }
 
     fn safe_root_ref(&self) -> Result<&RootMetadata> {
