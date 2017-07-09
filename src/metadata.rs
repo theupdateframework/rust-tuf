@@ -174,7 +174,7 @@ impl Role {
             &Role::Snapshot if &path.0 == "snapshot" => true,
             &Role::Timestamp if &path.0 == "timestamp" => true,
             &Role::Targets if &path.0 == "targets" => true,
-            // TODO delegation support
+            &Role::Targets if !&["root", "snapshot", "targets"].contains(&path.0.as_str()) => true,
             _ => false,
         }
     }
@@ -805,7 +805,6 @@ impl TargetPath {
     /// assert!(TargetPath::new("foo/..bar".into()).is_ok());
     /// assert!(TargetPath::new("foo/bar..".into()).is_ok());
     /// ```
-    // TODO this needs to allow trailing slashes for delegations
     pub fn new(path: String) -> Result<Self> {
         safe_path(&path)?;
         Ok(TargetPath(path))
@@ -1030,7 +1029,6 @@ impl<'de> Deserialize<'de> for TargetsMetadata {
 }
 
 /// Wrapper to described a collections of delegations.
-// TODO custom deserialize to ensure no duplicates
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct Delegations {
     keys: HashMap<KeyId, PublicKey>,
@@ -1089,7 +1087,6 @@ impl<'de> Deserialize<'de> for Delegations {
 }
 
 /// A delegated targets role.
-// TODO custom deserialize to ensure good ordering
 #[derive(Debug, PartialEq, Clone)]
 pub struct Delegation {
     role: MetadataPath,

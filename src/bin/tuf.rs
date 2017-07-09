@@ -34,15 +34,21 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
         .version(env!("CARGO_PKG_VERSION"))
         .about("CLI tool for managing TUF repositories")
         .settings(&[AppSettings::SubcommandRequiredElseHelp])
-        .subcommand(SubCommand::with_name("keygen")
-            .about("Generate private keys and print them as PKCS#8v2 DER to STDOUT")
-            .arg(Arg::with_name("type")
-                .takes_value(true)
-                .default_value("ed25519")
-                .possible_values(&["ed25519", "rsa-2048", "rsa-4096"])
-                .help("The type of key to generate. \
-                      Note: rsa-XXX requires `openssl` to be on the PATH.")
-            )
+        .subcommand(
+            SubCommand::with_name("keygen")
+                .about(
+                    "Generate private keys and print them as PKCS#8v2 DER to STDOUT",
+                )
+                .arg(
+                    Arg::with_name("type")
+                        .takes_value(true)
+                        .default_value("ed25519")
+                        .possible_values(&["ed25519", "rsa-2048", "rsa-4096"])
+                        .help(
+                            "The type of key to generate. \
+                      Note: rsa-XXX requires `openssl` to be on the PATH.",
+                        ),
+                ),
         )
 }
 
