@@ -1,6 +1,7 @@
 //! Interfaces for interacting with different types of TUF repositories.
 
 use hyper::{Url, Client};
+use hyper::client::RequestBuilder;
 use hyper::client::response::Response;
 use hyper::header::{Headers, UserAgent};
 use hyper::status::StatusCode;
@@ -289,6 +290,8 @@ where
     }
 }
 
+/// A custom hook to be invoked before sending HTTP requests.
+pub type HttpHook = Box<for<'a> Fn(RequestBuilder<'a>) -> Result<RequestBuilder<'a>>>;
 
 /// A repository accessible over HTTP.
 pub struct HttpRepository<D>
@@ -297,6 +300,7 @@ where
 {
     url: Url,
     client: Client,
+    http_hook: Option<HttpHook>,
     user_agent: String,
     _interchange: PhantomData<D>,
 }
@@ -317,9 +321,40 @@ where
         HttpRepository {
             url: url,
             client: client,
+            http_hook: None,
             user_agent: user_agent,
             _interchange: PhantomData,
         }
+    }
+
+    /// Set an hook function to be invoked before sending an HTTP request.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # extern crate hyper;
+    /// # extern crate tuf;
+    /// # fn main() {
+    /// use hyper::header::{Authorization, Bearer};
+    /// use tuf::repository::{HttpHook, HttpRepository};
+    /// use tuf::interchange::JsonDataInterchange;
+    ///
+    /// let cl = hyper::Client::new();
+    /// let token = "<opaque blob>".to_string();
+    /// let url = "https://example.com".parse().unwrap();
+    ///
+    ///
+    /// let mut repo = HttpRepository::<JsonDataInterchange>::new(url, cl, None);
+    /// let hook: HttpHook = Box::new(move |r| {
+    ///     let auth = Authorization(Bearer { token: token.clone() });
+    ///     Ok(r.header(auth))
+    /// });
+    /// repo.http_hook(Some(hook));
+    /// # }
+    /// ```
+    pub fn http_hook(&mut self, hook: Option<HttpHook>) -> &Self {
+        self.http_hook = hook;
+        self
     }
 
     fn get(&self, components: &[String]) -> Result<Response> {
@@ -333,7 +368,10 @@ where
             })?
             .extend(components);
 
-        let req = self.client.get(url.clone()).headers(headers);
+        let mut req = self.client.get(url.clone()).headers(headers);
+        if let Some(ref hook) = self.http_hook {
+            req = hook(req)?;
+        }
         let resp = req.send()?;
 
         if !resp.status.is_success() {
@@ -525,9 +563,11 @@ where
 
 #[cfg(test)]
 mod test {
+    use std::panic;
     use super::*;
     use tempdir::TempDir;
     use interchange::JsonDataInterchange;
+    use hyper::header::Authorization;
 
     #[test]
     fn ephemeral_repo_targets() {
@@ -590,5 +630,26 @@ mod test {
         let mut buf = Vec::new();
         read.read_to_end(&mut buf).expect("read target");
         assert_eq!(buf.as_slice(), data);
+    }
+
+    #[test]
+    // Check that a custom hook can be set and is then triggered. This uses a
+    // panicking closure to check invocation without mocking an HTTP repository.
+    fn http_repo_client_hook() {
+        let url = "http://127.0.0.1".parse().unwrap();
+        let auth = Authorization("fake_auth".to_owned());
+        let tp = TargetPath::new("fake_target".into()).unwrap();
+
+        let res = panic::catch_unwind(|| {
+            let cl = Client::new();
+            let mut repo = HttpRepository::<JsonDataInterchange>::new(url, cl, None);
+            let panic_hook: HttpHook = Box::new(move |r| {
+                r.header(auth.clone());
+                panic!("panic_hook");
+            });
+            repo.http_hook(Some(panic_hook));
+            let _ = repo.fetch_target(&tp);
+        });
+        assert!(res.is_err());
     }
 }
