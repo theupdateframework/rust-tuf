@@ -15,9 +15,8 @@ env:
     - RUSTFLAGS="-C link-dead-code"
 
 script:
-  - RUST_BACKTRACE=full cargo build --verbose
-  - ./tests/tuf-test-vectors/server.py --path tuf &>/dev/null &
-  - RUST_BACKTRACE=full cargo test --verbose
+  - RUST_BACKTRACE=full cargo build --features=cli --verbose
+  - RUST_BACKTRACE=full cargo test --features=cli --verbose
 
 after_failure:
   - cat Cargo.lock

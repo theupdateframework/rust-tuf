@@ -66,7 +66,6 @@
 extern crate chrono;
 extern crate data_encoding;
 extern crate derp;
-extern crate env_logger;
 extern crate hyper;
 extern crate itoa;
 #[macro_use]
