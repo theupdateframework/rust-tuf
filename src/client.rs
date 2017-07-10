@@ -239,7 +239,7 @@ where
     pub fn fetch_target(&mut self, target: &TargetPath) -> Result<()> {
         let target_description = self.tuf.target_description(target)?;
         let read = self.remote.fetch_target(target)?;
-        self.local.store_target(read, target, target_description)
+        self.local.store_target(read, target, &target_description)
     }
 }
 

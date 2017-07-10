@@ -9,7 +9,7 @@ use crypto::KeyId;
 use error::Error;
 use interchange::DataInterchange;
 use metadata::{SignedMetadata, RootMetadata, TimestampMetadata, Role, SnapshotMetadata,
-               MetadataPath, TargetsMetadata, TargetPath, TargetDescription};
+               MetadataPath, TargetsMetadata, TargetPath, TargetDescription, Delegations};
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
@@ -77,21 +77,22 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// Return the list of all available targets.
-    pub fn available_targets<'a>(&'a self) -> Result<HashSet<&'a TargetPath>> {
+    pub fn available_targets(&self) -> Result<HashSet<TargetPath>> {
         let _ = self.safe_root_ref()?; // ensure root still valid
         let _ = self.safe_snapshot_ref()?;
         let targets = self.safe_targets_ref()?;
-        let out = targets.targets().keys().collect::<HashSet<&TargetPath>>();
+        let out = targets.targets().keys().cloned().collect::<HashSet<TargetPath>>();
 
-        fn lookup<'a, D: DataInterchange>(
-            tuf: &'a Tuf<D>,
+        fn lookup<D: DataInterchange>(
+            tuf: &Tuf<D>,
             role: &MetadataPath,
-            parents: &[HashSet<&TargetPath>],
-            visited: &mut HashSet<&MetadataPath>,
-        ) -> HashSet<&'a TargetPath> {
+            parents: &[&HashSet<TargetPath>],
+            visited: &mut HashSet<MetadataPath>,
+        ) -> HashSet<TargetPath> {
             if visited.contains(role) {
                 return HashSet::new();
             }
+            let _ = visited.insert(role.clone());
 
             let targets = match tuf.delegations.get(role) {
                 Some(t) => t,
@@ -101,10 +102,10 @@ impl<D: DataInterchange> Tuf<D> {
             let mut result = HashSet::new();
             for target in targets.targets().keys() {
                 if parents.iter().all(|group| {
-                    group.iter().any(|parent| target.is_child(parent))
+                    group.iter().any(|parent| target == parent || target.is_child(parent))
                 })
                 {
-                    let _ = result.insert(target);
+                    let _ = result.insert(target.clone());
                 }
             }
 
@@ -112,11 +113,11 @@ impl<D: DataInterchange> Tuf<D> {
                 Some(d) => {
                     for delegation in d.roles() {
                         let mut new_parents = parents.to_vec();
-                        new_parents.push(delegation.paths().iter().collect());
+                        new_parents.push(delegation.paths());
                         let res = lookup(tuf, delegation.role(), &new_parents, visited);
 
                         for p in res.iter() {
-                            let _ = result.insert(p);
+                            let _ = result.insert(p.clone());
                         }
                     }
                 }
@@ -131,10 +132,10 @@ impl<D: DataInterchange> Tuf<D> {
                 let mut result = HashSet::new();
                 let mut visited = HashSet::new();
                 for delegation in delegations.roles() {
-                    let res = lookup(self, delegation.role(), &[], &mut visited);
+                    let res = lookup(self, delegation.role(), &[delegation.paths()], &mut visited);
 
                     for p in res.iter() {
-                        let _ = result.insert(*p);
+                        let _ = result.insert(p.clone());
                     }
                 }
                 result
@@ -142,7 +143,7 @@ impl<D: DataInterchange> Tuf<D> {
             None => HashSet::new(),
         };
 
-        Ok(out.union(&delegated_targets).map(|t| *t).collect())
+        Ok(out.union(&delegated_targets).map(|t| t.clone()).collect())
     }
 
     /// Verify and update the root metadata.
@@ -417,16 +418,68 @@ impl<D: DataInterchange> Tuf<D> {
     /// `TargetPath`. Returns an `Error` if the target is not defined in the trusted metadata. This
     /// may mean the target exists somewhere in the metadata, but the chain of trust to that target
     /// may be invalid or incomplete.
-    pub fn target_description(&self, target_path: &TargetPath) -> Result<&TargetDescription> {
+    pub fn target_description(&self, target_path: &TargetPath) -> Result<TargetDescription> {
         let _ = self.safe_root_ref()?;
         let _ = self.safe_snapshot_ref()?;
         let targets = self.safe_targets_ref()?;
 
-        targets.targets().get(target_path).ok_or(
-            Error::TargetUnavailable,
-        )
+        match targets.targets().get(target_path) {
+            Some(d) => return Ok(d.clone()),
+            None => (),
+        } 
 
-        // TODO include searching delegations
+        fn lookup<D: DataInterchange>(
+            tuf: &Tuf<D>,
+            default_terminate: bool,
+            target_path: &TargetPath,
+            delegations: &Delegations,
+            parents: &[&HashSet<TargetPath>],
+            visited: &mut HashSet<MetadataPath>,
+        ) -> (bool, Option<TargetDescription>) {
+            for delegation in delegations.roles() {
+                if visited.contains(delegation.role()) {
+                    return (delegation.terminating(), None)
+                }
+                let _ = visited.insert(delegation.role().clone());
+
+                let mut new_parents = parents.to_vec();
+                new_parents.push(delegation.paths());
+
+                if !new_parents.iter().all(|group| {
+                    group.iter().any(|parent| target_path == parent || target_path.is_child(parent))
+                }){
+                    return (delegation.terminating(), None)
+                }
+
+                let targets = match tuf.delegations.get(delegation.role()) {
+                    Some(t) => t,
+                    None => return (delegation.terminating(), None),
+                };
+
+                if let Some(d) = targets.targets().get(target_path) {
+                    return (delegation.terminating(), Some(d.clone()));
+                } 
+
+                if let Some(d) = targets.delegations() {
+                    let mut new_parents = parents.to_vec();
+                    new_parents.push(delegation.paths());
+                    let (term, res) = lookup(tuf, delegation.terminating(), target_path, d, &new_parents, visited);
+                    if term {
+                        return (true, res)
+                    }
+                }
+            }
+            (default_terminate, None)
+        } 
+
+        match targets.delegations() {
+            Some(d) => {
+                let mut visited = HashSet::new();
+                lookup(self, false, target_path, d, &[], &mut visited).1
+                    .ok_or_else(|| Error::TargetUnavailable)
+            },
+            None => Err(Error::TargetUnavailable),
+        }
     }
 
     fn purge_metadata(&mut self) {
