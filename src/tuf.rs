@@ -76,6 +76,11 @@ impl<D: DataInterchange> Tuf<D> {
         self.timestamp.as_ref()
     }
 
+    /// An immutable reference to the delegated metadata.
+    pub fn delegations(&self) -> &HashMap<MetadataPath, TargetsMetadata> {
+        &self.delegations
+    }
+
     /// Return the list of all available targets.
     pub fn available_targets(&self) -> Result<HashSet<TargetPath>> {
         let _ = self.safe_root_ref()?; // ensure root still valid
@@ -83,6 +88,8 @@ impl<D: DataInterchange> Tuf<D> {
         let targets = self.safe_targets_ref()?;
         let out = targets.targets().keys().cloned().collect::<HashSet<TargetPath>>();
 
+        // TODO have this return an option instead
+        // TODO ensure meta not expired
         fn lookup<D: DataInterchange>(
             tuf: &Tuf<D>,
             role: &MetadataPath,
@@ -272,7 +279,36 @@ impl<D: DataInterchange> Tuf<D> {
         };
 
         self.snapshot = Some(snapshot);
+        self.purge_delegations();
         Ok(true)
+
+    }
+
+    fn purge_delegations(&mut self) {
+        let purge = {
+            let snapshot = match self.snapshot() {
+                Some(s) => s,
+                None => return,
+            };
+            let mut purge = HashSet::new();
+            for (role, definition) in snapshot.meta().iter() {
+                let delegation = match self.delegations.get(role) {
+                    Some(d) => d,
+                    None => continue,
+                };
+
+                if delegation.version() > definition.version() {
+                    let _ = purge.insert(role.clone());
+                    continue
+                }
+            }
+
+            purge
+        };
+
+        for role in purge.iter() {
+            let _ = self.delegations.remove(role);
+        }
     }
 
     /// Verify and update the targets metadata.
@@ -428,6 +464,7 @@ impl<D: DataInterchange> Tuf<D> {
             None => (),
         } 
 
+        // TODO ensure meta not expired
         fn lookup<D: DataInterchange>(
             tuf: &Tuf<D>,
             default_terminate: bool,

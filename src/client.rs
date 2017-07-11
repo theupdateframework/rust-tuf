@@ -1,5 +1,7 @@
 //! Clients for high level interactions with TUF repositories.
 
+use std::collections::{HashSet, VecDeque};
+
 use Result;
 use error::Error;
 use interchange::DataInterchange;
@@ -80,7 +82,19 @@ where
             }
         };
 
-        Ok(r || ts || sn || ta)
+        let de = match Self::update_delegations(&mut self.tuf, &mut self.local) {
+            Ok(b) => b,
+            Err(e) => {
+                warn!(
+                    "Error updating delegation metadata from local sources: {:?}",
+                    e
+                );
+                // TODO this might be untrue because of a partial update
+                false
+            }
+        };
+
+        Ok(r || ts || sn || ta || de)
     }
 
     /// Update TUF metadata from the remote repository.
@@ -95,8 +109,9 @@ where
         )?;
         let sn = Self::update_snapshot(&mut self.tuf, &mut self.remote)?;
         let ta = Self::update_targets(&mut self.tuf, &mut self.remote)?;
+        let de = Self::update_delegations(&mut self.tuf, &mut self.remote)?;
 
-        Ok(r || ts || sn || ta)
+        Ok(r || ts || sn || ta || de)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -233,6 +248,70 @@ where
             None,
         )?;
         tuf.update_targets(targets)
+    }
+
+    /// Returns `true` if an update occurred and `false` otherwise.
+    fn update_delegations<T>(tuf: &mut Tuf<D>, repo: &mut T) -> Result<bool>
+    where
+        T: Repository<D>
+    {
+        let _  = match tuf.snapshot() {
+            Some(s) => s,
+            None => return Err(Error::MissingMetadata(Role::Snapshot)),
+        }.clone();
+        let targets = match tuf.targets() {
+            Some(t) => t,
+            None => return Err(Error::MissingMetadata(Role::Targets)),
+        }.clone();
+        let delegations = match targets.delegations() {
+            Some(d) => d,
+            None => return Ok(false),
+        }.clone();
+
+        let mut visited = HashSet::new();
+        let mut to_visit = VecDeque::new();
+        
+        for role in delegations.roles().iter().map(|r| r.role()) {
+            let _ = to_visit.push_back(role.clone());
+        }
+
+        let mut updated = false;
+        while let Some(role) = to_visit.pop_front() {
+            if visited.contains(&role) {
+                continue
+            }
+            let _ = visited.insert(role.clone());
+
+            let delegation = match repo.fetch_metadata(
+                &Role::Targets,
+                &role,
+                &MetadataVersion::None,
+                &None,
+                None,
+            ) {
+                Ok(d) => d,
+                Err(e) => {
+                    warn!("Failed to fetuch delegation {:?}: {:?}", role, e);
+                    continue
+                },
+            };
+
+            match tuf.update_delegation(&role, delegation) {
+                Ok(u) => updated |= u,
+                Err(e) => {
+                    warn!("Failed to update delegation {:?}: {:?}", role, e);
+                    continue
+                }
+            };
+    
+            if let Some(ds) = tuf.delegations().get(&role).and_then(|t| t.delegations()) {
+                for d in ds.roles() {
+                    let _ = to_visit.push_back(d.role().clone());
+                }
+            }
+        }
+
+        Ok(updated)
     }
 
     /// Fetch a target from the remote repo and write it to the local repo.

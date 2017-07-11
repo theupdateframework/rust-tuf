@@ -715,7 +715,7 @@ impl MetadataDescription {
 }
 
 /// Metadata for the snapshot role.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SnapshotMetadata {
     version: u32,
     expires: DateTime<Utc>,
@@ -950,7 +950,7 @@ impl TargetDescription {
 }
 
 /// Metadata for the targets role.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TargetsMetadata {
     version: u32,
     expires: DateTime<Utc>,
