@@ -37,7 +37,7 @@ derp = "0.0.4"
 hyper = "0.10.10"
 itoa = "0.3"
 log = "0.3"
-ring = { version = "0.9.4", features = [ "rsa_signing" ] }
+ring = { version = "0.11", features = [ "rsa_signing" ] }
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
