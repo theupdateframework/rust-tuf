@@ -849,6 +849,25 @@ impl TargetPath {
 
         self.0.starts_with(&parent.0)
     }
+
+    // TODO this is hideous and uses way too much clone/heap but I think recursively,
+    // so here we are
+    fn matches_chain(&self, parents: &[&[TargetPath]]) -> bool {
+        if parents.is_empty() {
+            return false
+        }
+        if parents.len() == 1 {
+            return parents[0].iter().any(|p| p == self || self.is_child(p))
+        }
+        
+        let new = parents[1..].iter().map(|group| {
+            group.iter().filter(|parent| {
+                parent == &self || parents[0].iter().any(|p| parent.is_child(p))
+            }).cloned().collect::<Vec<_>>()
+        }).collect::<Vec<_>>();
+        let new = new.iter().map(|g| &**g).collect::<Vec<_>>();
+        self.matches_chain(&*new)
+    }
 }
 
 impl ToString for TargetPath {
@@ -1181,6 +1200,35 @@ mod test {
     const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
     const ED25519_3_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-3.pk8.der");
     const ED25519_4_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-4.pk8.der");
+
+    #[test]
+    fn path_matches_chain() {
+        let path = TargetPath("foo".into());
+        assert!(!path.matches_chain(&[]));
+
+        let path = TargetPath("foo/".into());
+        let path_2 = TargetPath("foo/bar".into());
+        assert!(path_2.matches_chain(&[&[path]]));
+
+        let path = TargetPath("foo/".into());
+        let path_2 = TargetPath("bar/baz".into());
+        assert!(!path_2.matches_chain(&[&[path]]));
+
+        let path = TargetPath("foo/".into());
+        let path_2 = TargetPath("foo/bar".into());
+        let path_3 = TargetPath("bar/baz".into());
+        assert!(!path_3.matches_chain(&[&[path], &[path_2]]));
+
+        let path = TargetPath("foo/".into());
+        let path_2 = TargetPath("foo/bar/".into());
+        let path_3 = TargetPath("foo/bar/baz".into());
+        assert!(path_3.matches_chain(&[&[path], &[path_2]]));
+
+        let path = TargetPath("foo/".into());
+        let path_2 = TargetPath("foo/baz/".into());
+        let path_3 = TargetPath("foo/bar/quux".into());
+        assert!(!path_3.matches_chain(&[&[path], &[path_2]]));
+    }
 
     #[test]
     fn serde_target_path() {
