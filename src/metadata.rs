@@ -852,21 +852,103 @@ impl TargetPath {
 
     // TODO this is hideous and uses way too much clone/heap but I think recursively,
     // so here we are
+    // AJM: I /THINK/ that a match is defined as EITHER:
+    //   - One of the parent chains contains self
+    //   - All of the parent chains agree on something that is a parent of self or == self
     fn matches_chain(&self, parents: &[&[TargetPath]]) -> bool {
+        // Refuse an empty set of parents
         if parents.is_empty() {
             return false
         }
+
+        // If only one set of parents, match if:
+        //   - parent is same path as self
+        //   - self is child of parent
         if parents.len() == 1 {
             return parents[0].iter().any(|p| p == self || self.is_child(p))
         }
-        
+
+        // If multiple groups of parents, for each group after the first
+        //   1. collect each parent in the group that is either:
+        //      a. equal to self
+        //      b. a child of any parent in the first group
         let new = parents[1..].iter().map(|group| {
             group.iter().filter(|parent| {
                 parent == &self || parents[0].iter().any(|p| parent.is_child(p))
             }).cloned().collect::<Vec<_>>()
         }).collect::<Vec<_>>();
         let new = new.iter().map(|g| &**g).collect::<Vec<_>>();
+
+        // Then, match on the filtered subset of groups 1..N which contain
+        //   parents that are either == or are children of parents from group 0
         self.matches_chain(&*new)
+    }
+
+    fn matches_chain_new(&self, parents: &[&[TargetPath]]) -> bool {
+        // Refuse an empty set of parents
+        if parents.is_empty() {
+            return false
+        }
+
+        // If only one set of parents, match if:
+        //   - parent is same path as self
+        //   - self is child of parent
+        if parents.len() == 1 {
+            return parents[0].iter().any(|p| p == self || self.is_child(p))
+        }
+
+        parents.iter().any(|group| {
+            group.iter().any(|parent| {
+                println!(">> {:?} {:?}", parent, self);
+                parent == self
+            })
+        }) ||
+        parents[0].iter().any(|p_top| {
+            if self.is_child(p_top) {
+                parents[1..].iter().all(|group| {
+                    group.iter().any(|p_other| {
+                        if p_other == self {
+                            return true;
+                        }
+                        p_top == p_other
+                    })
+                })
+            } else {
+                false
+            }
+        })
+
+        // let mut fail_flag = false;
+        // for p_top in parents[0] {
+        //     let mut first_pass_flag = true;
+        //     for group in parents[1..] {
+        //         let mut any_in_group = false;
+        //         for p_other in group {
+        //             if first_pass_flag && (p_other == self) {
+        //                 // Automatic win!
+        //                 return true;
+        //             }
+
+        //             if fail_flag {
+        //                 continue;
+        //             }
+
+        //             any_in_group |= (p_top == p_other);
+        //             if any_in_group && !first_pass_flag {
+        //                 continue;
+        //             }
+        //         }
+        //         if !any_in_group {
+        //             fail_flag = true;
+        //             if !first_pass_flag {
+        //                 return false;
+        //             }
+        //         }
+
+        //     }
+        //     first_pass_flag = false;
+        // }
+        // false
     }
 }
 
@@ -1203,31 +1285,95 @@ mod test {
 
     #[test]
     fn path_matches_chain() {
-        let path = TargetPath("foo".into());
-        assert!(!path.matches_chain(&[]));
+        // (Should pass, test path, N groups of M parent paths)
+        let cases: &[(bool, &str, &[&[&str]])] = &[
+            // Matching cases
+            (true, "foo/bar", &[
+                &["foo/"],
+            ]),
+            (true, "foo/bar/baz", &[
+                &["foo/bar/"],
+                &["foo/bar/baz"],
+            ]),
 
-        let path = TargetPath("foo/".into());
-        let path_2 = TargetPath("foo/bar".into());
-        assert!(path_2.matches_chain(&[&[path]]));
+            // Non-Matching cases
+            (false, "foo", &[]),
+            (false, "bar/baz", &[
+                &["foo/"],
+            ]),
+            (false, "bar/baz", &[
+                &["foo/"],
+                &["foo/bar"],
+            ]),
+            (false, "foo/bar/quux", &[
+                &["foo/baz/"],
+                &["foo/"]
+            ]),
 
-        let path = TargetPath("foo/".into());
-        let path_2 = TargetPath("bar/baz".into());
-        assert!(!path_2.matches_chain(&[&[path]]));
+            // AJM: These are new.
+            (false, "foo", &[&[]]),
 
-        let path = TargetPath("foo/".into());
-        let path_2 = TargetPath("foo/bar".into());
-        let path_3 = TargetPath("bar/baz".into());
-        assert!(!path_3.matches_chain(&[&[path], &[path_2]]));
+            // AJM: Somethings fucky here, should order
+            //   matter?
+            (true, "foo/bar/quux", &[
+                &["foo/baz"],
+                &["foo/bar/", "foo/bar/quux"],
+            ]),
+            (false, "foo/bar/quux", &[
+                &["foo/bar/", "foo/bar/quux"],
+                &["foo/baz"],
+            ]),
 
-        let path = TargetPath("foo/".into());
-        let path_2 = TargetPath("foo/bar/".into());
-        let path_3 = TargetPath("foo/bar/baz".into());
-        assert!(path_3.matches_chain(&[&[path], &[path_2]]));
+            // AJM: Parents don't match eachother,
+            //   but one parent chain contains self
+            (true, "foo/bar/baz", &[
+                &["foo/baz/"],
+                &["foo/bar/baz", "bib/bim/bap"],
+            ]),
 
-        let path = TargetPath("foo/".into());
-        let path_2 = TargetPath("foo/baz/".into());
-        let path_3 = TargetPath("foo/bar/quux".into());
-        assert!(!path_3.matches_chain(&[&[path], &[path_2]]));
+            // AJM: Parents have at least one match in common,
+            //   but test is not a child, no self
+            (false, "foo/bar/baz", &[
+                &["foo/baz/", "qux/tuf/bap"],
+                &["foo/baz/", "bib/bim/bap"],
+            ]),
+
+            // AJM: Parents have at least one match in common,
+            //   test is only a child of one, no self
+            (false, "foo/bar/baz", &[
+                &["foo/bar/", "qux/tuf/bap"],
+                &["foo/baz/", "bib/bim/bap"],
+            ]),
+
+            // AJM: Parents have no match in common,
+            //   one parent has a duplicate,
+            //   but test is only a child of single chain dupe,
+            //   no self match
+            (false, "foo/bar/baz", &[
+                &["foo/bar/", "foo/bar/"],
+                &["foo/baz/", "bib/bim/bap"],
+            ]),
+        ];
+
+        for case in cases.iter() {
+            // Create TargetPaths from &str structures
+            let test = TargetPath(case.1.into());
+            let parents = case.2.iter()
+                .map(|group| group.iter().map(|g_p| TargetPath(g_p.to_string())).collect::<Vec<TargetPath>>())
+                .collect::<Vec<Vec<TargetPath>>>();
+
+            // oh god what is this, vec<vec<TargetPath>> -> &[&[TargetPath]]
+            let r_parents = parents
+                .iter()
+                .map(|group| group.as_slice())
+                .collect::<Vec<_>>();
+
+            println!("TEST {}: {:?} => {:?}", case.0, test, r_parents);
+            assert!(case.0 == test.matches_chain(r_parents.as_slice()));
+
+            // AJM - uncomment me to test the new implementation
+            // assert!(case.0 == test.matches_chain_new(r_parents.as_slice()));
+        }
     }
 
     #[test]
