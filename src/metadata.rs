@@ -534,7 +534,20 @@ impl<'de> Deserialize<'de> for RoleDefinition {
     }
 }
 
-/// Wrapper for a path to metadata
+/// Wrapper for a path to metadata.
+///
+/// Note: This should **not** contain the file extension. This is automatically added by the
+/// library depending on what type of data interchange format is being used.
+///
+/// ```
+/// use tuf::metadata::MetadataPath;
+///
+/// // right
+/// let _ = MetadataPath::new("root".into());
+///
+/// // wrong
+/// let _ = MetadataPath::new("root.json".into());
+/// ```
 #[derive(Debug, Clone, PartialEq, Hash, Eq, Serialize)]
 pub struct MetadataPath(String);
 
