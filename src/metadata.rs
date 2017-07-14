@@ -8,6 +8,7 @@ use serde::ser::{Serialize, Serializer, Error as SerializeError};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display};
 use std::io::Read;
+use std::iter::FromIterator;
 use std::marker::PhantomData;
 
 use Result;
@@ -17,7 +18,6 @@ use interchange::DataInterchange;
 use shims;
 
 static PATH_ILLEGAL_COMPONENTS: &'static [&str] = &[
-    "", // empty
     ".", // current dir
     "..", // parent dir
     // TODO ? "0", // may translate to nul in windows
@@ -99,6 +99,10 @@ static PATH_ILLEGAL_STRINGS: &'static [&str] = &[
 ];
 
 fn safe_path(path: &str) -> Result<()> {
+    if path.is_empty() {
+        return Err(Error::IllegalArgument("Path cannot be empty".into()));
+    }
+
     if path.starts_with("/") {
         return Err(Error::IllegalArgument("Cannot start with '/'".into()));
     }
@@ -170,7 +174,7 @@ impl Role {
             &Role::Snapshot if &path.0 == "snapshot" => true,
             &Role::Timestamp if &path.0 == "timestamp" => true,
             &Role::Targets if &path.0 == "targets" => true,
-            // TODO delegation support
+            &Role::Targets if !&["root", "snapshot", "targets"].contains(&path.0.as_str()) => true,
             _ => false,
         }
     }
@@ -384,9 +388,7 @@ impl RootMetadata {
             )));
         }
 
-        let keys = keys.drain(0..)
-            .map(|k| (k.key_id().clone(), k))
-            .collect::<HashMap<KeyId, PublicKey>>();
+        let keys = HashMap::from_iter(keys.drain(..).map(|k| (k.key_id().clone(), k)));
 
         Ok(RootMetadata {
             version: version,
@@ -560,11 +562,9 @@ impl MetadataPath {
     /// assert!(MetadataPath::new("foo".into()).is_ok());
     /// assert!(MetadataPath::new("/foo".into()).is_err());
     /// assert!(MetadataPath::new("../foo".into()).is_err());
-    /// assert!(MetadataPath::new("foo/".into()).is_err());
     /// assert!(MetadataPath::new("foo/..".into()).is_err());
     /// assert!(MetadataPath::new("foo/../bar".into()).is_err());
     /// assert!(MetadataPath::new("..foo".into()).is_ok());
-    /// assert!(MetadataPath::new("foo//bar".into()).is_err());
     /// assert!(MetadataPath::new("foo/..bar".into()).is_ok());
     /// assert!(MetadataPath::new("foo/bar..".into()).is_ok());
     /// ```
@@ -729,7 +729,7 @@ impl MetadataDescription {
 }
 
 /// Metadata for the snapshot role.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SnapshotMetadata {
     version: u32,
     expires: DateTime<Utc>,
@@ -801,7 +801,7 @@ impl<'de> Deserialize<'de> for SnapshotMetadata {
 
 
 /// Wrapper for a path to a target.
-#[derive(Debug, Clone, PartialEq, Hash, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq, PartialOrd, Ord, Serialize)]
 pub struct TargetPath(String);
 
 impl TargetPath {
@@ -813,11 +813,9 @@ impl TargetPath {
     /// assert!(TargetPath::new("foo".into()).is_ok());
     /// assert!(TargetPath::new("/foo".into()).is_err());
     /// assert!(TargetPath::new("../foo".into()).is_err());
-    /// assert!(TargetPath::new("foo/".into()).is_err());
     /// assert!(TargetPath::new("foo/..".into()).is_err());
     /// assert!(TargetPath::new("foo/../bar".into()).is_err());
     /// assert!(TargetPath::new("..foo".into()).is_ok());
-    /// assert!(TargetPath::new("foo//bar".into()).is_err());
     /// assert!(TargetPath::new("foo/..bar".into()).is_ok());
     /// assert!(TargetPath::new("foo/bar..".into()).is_ok());
     /// ```
@@ -837,6 +835,63 @@ impl TargetPath {
     /// ```
     pub fn components(&self) -> Vec<String> {
         self.0.split('/').map(|s| s.to_string()).collect()
+    }
+
+    /// Return whether this path is the child of another path.
+    ///
+    /// ```
+    /// use tuf::metadata::TargetPath;
+    ///
+    /// let path1 = TargetPath::new("foo".into()).unwrap();
+    /// let path2 = TargetPath::new("foo/bar".into()).unwrap();
+    /// assert!(!path2.is_child(&path1));
+    ///
+    /// let path1 = TargetPath::new("foo/".into()).unwrap();
+    /// let path2 = TargetPath::new("foo/bar".into()).unwrap();
+    /// assert!(path2.is_child(&path1));
+    ///
+    /// let path2 = TargetPath::new("foo/bar/baz".into()).unwrap();
+    /// assert!(path2.is_child(&path1));
+    ///
+    /// let path2 = TargetPath::new("wat".into()).unwrap();
+    /// assert!(!path2.is_child(&path1))
+    /// ```
+    pub fn is_child(&self, parent: &Self) -> bool {
+        if !parent.0.ends_with('/') {
+            return false;
+        }
+
+        self.0.starts_with(&parent.0)
+    }
+
+    /// Whether or not the current target is available at the end of the given chain of target
+    /// paths. For the chain to be valid, each target path in a group must be a child of of all
+    /// previous groups.
+    // TODO this is hideous and uses way too much clone/heap but I think recursively,
+    // so here we are
+    pub fn matches_chain(&self, parents: &[HashSet<TargetPath>]) -> bool {
+        if parents.is_empty() {
+            return false;
+        }
+        if parents.len() == 1 {
+            return parents[0].iter().any(|p| p == self || self.is_child(p));
+        }
+
+        let new = parents[1..]
+            .iter()
+            .map(|group| {
+                group
+                    .iter()
+                    .filter(|parent| {
+                        parents[0].iter().any(
+                            |p| parent.is_child(p) || parent == &p,
+                        )
+                    })
+                    .cloned()
+                    .collect::<HashSet<_>>()
+            })
+            .collect::<Vec<_>>();
+        self.matches_chain(&*new)
     }
 }
 
@@ -939,11 +994,12 @@ impl TargetDescription {
 }
 
 /// Metadata for the targets role.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TargetsMetadata {
     version: u32,
     expires: DateTime<Utc>,
     targets: HashMap<TargetPath, TargetDescription>,
+    delegations: Option<Delegations>,
 }
 
 impl TargetsMetadata {
@@ -952,6 +1008,7 @@ impl TargetsMetadata {
         version: u32,
         expires: DateTime<Utc>,
         targets: HashMap<TargetPath, TargetDescription>,
+        delegations: Option<Delegations>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
@@ -964,6 +1021,7 @@ impl TargetsMetadata {
             version: version,
             expires: expires,
             targets: targets,
+            delegations: delegations,
         })
     }
 
@@ -977,9 +1035,14 @@ impl TargetsMetadata {
         &self.expires
     }
 
-    /// An immutable reference descriptions of targets.
+    /// An immutable reference to the descriptions of targets.
     pub fn targets(&self) -> &HashMap<TargetPath, TargetDescription> {
         &self.targets
+    }
+
+    /// An immutable reference to the optional delegations.
+    pub fn delegations(&self) -> Option<&Delegations> {
+        self.delegations.as_ref()
     }
 }
 
@@ -1009,6 +1072,148 @@ impl<'de> Deserialize<'de> for TargetsMetadata {
     }
 }
 
+/// Wrapper to described a collections of delegations.
+#[derive(Debug, PartialEq, Clone, Serialize)]
+pub struct Delegations {
+    keys: HashMap<KeyId, PublicKey>,
+    roles: Vec<Delegation>,
+}
+
+impl Delegations {
+    // TODO check all keys are used
+    // TODO check all roles have their ID in the set of keys
+    /// Create a new `Delegations` wrapper from the given set of trusted keys and roles.
+    pub fn new(mut keys: Vec<PublicKey>, roles: Vec<Delegation>) -> Result<Self> {
+        if keys.is_empty() {
+            return Err(Error::IllegalArgument("Keys cannot be empty.".into()));
+        }
+
+        if roles.is_empty() {
+            return Err(Error::IllegalArgument("Roles cannot be empty.".into()));
+        }
+
+        if roles.len() !=
+            roles
+                .iter()
+                .map(|r| &r.role)
+                .collect::<HashSet<&MetadataPath>>()
+                .len()
+        {
+            return Err(Error::IllegalArgument(
+                "Cannot have duplicated roles in delegations.".into(),
+            ));
+        }
+
+        Ok(Delegations {
+            keys: HashMap::from_iter(keys.drain(..).map(|k| (k.key_id().clone(), k))),
+            roles: roles,
+        })
+    }
+
+    /// An immutable reference to the keys used for this set of delegations.
+    pub fn keys(&self) -> &HashMap<KeyId, PublicKey> {
+        &self.keys
+    }
+
+    /// An immutable reference to the delegated roles.
+    pub fn roles(&self) -> &Vec<Delegation> {
+        &self.roles
+    }
+}
+
+impl<'de> Deserialize<'de> for Delegations {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::Delegations = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
+    }
+}
+
+/// A delegated targets role.
+#[derive(Debug, PartialEq, Clone)]
+pub struct Delegation {
+    role: MetadataPath,
+    terminating: bool,
+    threshold: u32,
+    key_ids: HashSet<KeyId>,
+    paths: HashSet<TargetPath>,
+}
+
+impl Delegation {
+    /// Create a new delegation.
+    pub fn new(
+        role: MetadataPath,
+        terminating: bool,
+        threshold: u32,
+        key_ids: HashSet<KeyId>,
+        paths: HashSet<TargetPath>,
+    ) -> Result<Self> {
+        if key_ids.is_empty() {
+            return Err(Error::IllegalArgument("Cannot have empty key IDs".into()));
+        }
+
+        if paths.is_empty() {
+            return Err(Error::IllegalArgument("Cannot have empty paths".into()));
+        }
+
+        if threshold < 1 {
+            return Err(Error::IllegalArgument("Cannot have threshold < 1".into()));
+        }
+
+        Ok(Delegation {
+            role: role,
+            terminating: terminating,
+            threshold: threshold,
+            key_ids: key_ids,
+            paths: paths,
+        })
+    }
+
+    /// An immutable reference to the delegations's metadata path (role).
+    pub fn role(&self) -> &MetadataPath {
+        &self.role
+    }
+
+    /// Whether or not this delegation is terminating.
+    pub fn terminating(&self) -> bool {
+        self.terminating
+    }
+
+    /// An immutable reference to the delegations's trusted key IDs.
+    pub fn key_ids(&self) -> &HashSet<KeyId> {
+        &self.key_ids
+    }
+
+    /// The delegation's threshold.
+    pub fn threshold(&self) -> u32 {
+        self.threshold
+    }
+
+    /// An immutable reference to the delegation's authorized paths.
+    pub fn paths(&self) -> &HashSet<TargetPath> {
+        &self.paths
+    }
+}
+
+impl Serialize for Delegation {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        shims::Delegation::from(self).serialize(ser)
+    }
+}
+
+impl<'de> Deserialize<'de> for Delegation {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::Delegation = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1020,6 +1225,58 @@ mod test {
     const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
     const ED25519_3_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-3.pk8.der");
     const ED25519_4_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-4.pk8.der");
+
+    #[test]
+    fn path_matches_chain() {
+        let test_cases: &[(bool, &str, &[&[&str]])] =
+            &[
+                // simplest case
+                (true, "foo", &[&["foo"]]),
+                // direct delegation case
+                (true, "foo", &[&["foo"], &["foo"]]),
+                // is a dir
+                (false, "foo", &[&["foo/"]]),
+                // target not in last position
+                (false, "foo", &[&["foo"], &["bar"]]),
+                // target nested
+                (true, "foo/bar", &[&["foo/"], &["foo/bar"]]),
+                // target illegally nested
+                (false, "foo/bar", &[&["baz/"], &["foo/bar"]]),
+                // target illegally deeply nested
+                (
+                    false,
+                    "foo/bar/baz",
+                    &[&["foo/"], &["foo/quux/"], &["foo/bar/baz"]],
+                ),
+                // empty
+                (false, "foo", &[&[]]),
+                // empty 2
+                (false, "foo", &[&[], &["foo"]]),
+                // empty 3
+                (false, "foo", &[&["foo"], &[]]),
+            ];
+
+        for case in test_cases {
+            let expected = case.0;
+            let target = TargetPath::new(case.1.into()).unwrap();
+            let parents = case.2
+                .iter()
+                .map(|group| {
+                    group
+                        .iter()
+                        .map(|p| TargetPath::new(p.to_string()).unwrap())
+                        .collect::<HashSet<_>>()
+                })
+                .collect::<Vec<_>>();
+            println!(
+                "CASE: expect: {} path: {:?} parents: {:?}",
+                expected,
+                target,
+                parents
+            );
+            assert_eq!(target.matches_chain(&parents), expected);
+        }
+    }
 
     #[test]
     fn serde_target_path() {
@@ -1241,6 +1498,7 @@ mod test {
                 TargetPath::new("foo".into()).unwrap() =>
                     TargetDescription::from_reader(b"foo" as &[u8]).unwrap(),
             },
+            None,
         ).unwrap();
 
         let jsn = json!({
@@ -1257,6 +1515,58 @@ mod test {
                     },
                 },
             },
+        });
+
+        let encoded = json::to_value(&targets).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: TargetsMetadata = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, targets);
+    }
+
+    #[test]
+    fn serde_targets_with_delegations_metadata() {
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
+        let delegations = Delegations::new(
+            vec![key.public().clone()],
+            vec![Delegation::new(
+                MetadataPath::new("foo/bar".into()).unwrap(),
+                false,
+                1,
+                hashset!(key.key_id().clone()),
+                hashset!(TargetPath::new("baz/quux".into()).unwrap()),
+            ).unwrap()],
+        ).unwrap();
+
+        let targets = TargetsMetadata::new(
+            1,
+            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+            HashMap::new(),
+            Some(delegations),
+        ).unwrap();
+
+        let jsn = json!({
+            "type": "targets",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "targets": {},
+            "delegations": {
+                "keys": {
+                    "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
+                        "type": "ed25519",
+                        "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb\
+                            -WO5CJQDTjK9GHGWjtg==",
+                    },
+                },
+                "roles": [
+                    {
+                        "role": "foo/bar",
+                        "terminating": false,
+                        "threshold": 1,
+                        "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
+                        "paths": ["baz/quux"],
+                    },
+                ],
+            }
         });
 
         let encoded = json::to_value(&targets).unwrap();

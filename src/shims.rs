@@ -204,6 +204,8 @@ pub struct TargetsMetadata {
     version: u32,
     expires: DateTime<Utc>,
     targets: HashMap<metadata::TargetPath, metadata::TargetDescription>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delegations: Option<metadata::Delegations>,
 }
 
 impl TargetsMetadata {
@@ -213,6 +215,7 @@ impl TargetsMetadata {
             version: metadata.version(),
             expires: metadata.expires().clone(),
             targets: metadata.targets().clone(),
+            delegations: metadata.delegations().cloned(),
         })
     }
 
@@ -224,7 +227,7 @@ impl TargetsMetadata {
             )));
         }
 
-        metadata::TargetsMetadata::new(self.version, self.expires, self.targets)
+        metadata::TargetsMetadata::new(self.version, self.expires, self.targets, self.delegations)
     }
 }
 
@@ -245,5 +248,92 @@ impl PublicKey {
 
     pub fn public_key(&self) -> &String {
         &self.public_key
+    }
+
+    pub fn typ(&self) -> &crypto::KeyType {
+        &self.typ
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Delegation {
+    role: metadata::MetadataPath,
+    terminating: bool,
+    threshold: u32,
+    key_ids: Vec<crypto::KeyId>,
+    paths: Vec<metadata::TargetPath>,
+}
+
+impl Delegation {
+    pub fn from(meta: &metadata::Delegation) -> Self {
+        let mut paths = meta.paths()
+            .iter()
+            .cloned()
+            .collect::<Vec<metadata::TargetPath>>();
+        paths.sort();
+        let mut key_ids = meta.key_ids()
+            .iter()
+            .cloned()
+            .collect::<Vec<crypto::KeyId>>();
+        key_ids.sort();
+
+        Delegation {
+            role: meta.role().clone(),
+            terminating: meta.terminating(),
+            threshold: meta.threshold(),
+            key_ids: key_ids,
+            paths: paths,
+        }
+    }
+
+    pub fn try_into(self) -> Result<metadata::Delegation> {
+        let paths = self.paths
+            .iter()
+            .cloned()
+            .collect::<HashSet<metadata::TargetPath>>();
+        if paths.len() != self.paths.len() {
+            return Err(Error::Encoding("Non-unique delegation paths.".into()));
+        }
+
+        let key_ids = self.key_ids
+            .iter()
+            .cloned()
+            .collect::<HashSet<crypto::KeyId>>();
+        if key_ids.len() != self.key_ids.len() {
+            return Err(Error::Encoding("Non-unique delegation key IDs.".into()));
+        }
+
+        metadata::Delegation::new(self.role, self.terminating, self.threshold, key_ids, paths)
+    }
+}
+
+#[derive(Deserialize)]
+pub struct Delegations {
+    keys: HashMap<crypto::KeyId, crypto::PublicKey>,
+    roles: Vec<metadata::Delegation>,
+}
+
+
+impl Delegations {
+    pub fn try_into(mut self) -> Result<metadata::Delegations> {
+        let mut keys = Vec::new();
+        for (key_id, value) in self.keys.drain() {
+            if &key_id != value.key_id() {
+                warn!(
+                    "Received key with ID {:?} but calculated it's value as {:?}. \
+                       Refusing to add it to the set of trusted keys.",
+                    key_id,
+                    value.key_id()
+                );
+            } else {
+                debug!(
+                    "Found key with good ID {:?}. Adding it to the set of trusted keys.",
+                    key_id
+                );
+                keys.push(value);
+            }
+        }
+
+        metadata::Delegations::new(keys, self.roles)
     }
 }

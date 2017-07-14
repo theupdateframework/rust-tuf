@@ -122,7 +122,7 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
 
     let mut target_map = HashMap::new();
     let _ = target_map.insert(target_path, target_description);
-    let targets = TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map)?;
+    let targets = TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None)?;
 
     let signed = SignedMetadata::<JsonDataInterchange, TargetsMetadata>::new(
         &targets,

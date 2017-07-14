@@ -1,7 +1,7 @@
 //! Components needed to verify TUF metadata and targets.
 
 use chrono::offset::Utc;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::marker::PhantomData;
 
 use Result;
@@ -9,7 +9,7 @@ use crypto::KeyId;
 use error::Error;
 use interchange::DataInterchange;
 use metadata::{SignedMetadata, RootMetadata, TimestampMetadata, Role, SnapshotMetadata,
-               MetadataPath, TargetsMetadata, TargetPath, TargetDescription};
+               MetadataPath, TargetsMetadata, TargetPath, TargetDescription, Delegations};
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
@@ -18,6 +18,7 @@ pub struct Tuf<D: DataInterchange> {
     snapshot: Option<SnapshotMetadata>,
     targets: Option<TargetsMetadata>,
     timestamp: Option<TimestampMetadata>,
+    delegations: HashMap<MetadataPath, TargetsMetadata>,
     _interchange: PhantomData<D>,
 }
 
@@ -50,6 +51,7 @@ impl<D: DataInterchange> Tuf<D> {
             snapshot: None,
             targets: None,
             timestamp: None,
+            delegations: HashMap::new(),
             _interchange: PhantomData,
         })
     }
@@ -74,16 +76,92 @@ impl<D: DataInterchange> Tuf<D> {
         self.timestamp.as_ref()
     }
 
+    /// An immutable reference to the delegated metadata.
+    pub fn delegations(&self) -> &HashMap<MetadataPath, TargetsMetadata> {
+        &self.delegations
+    }
+
     /// Return the list of all available targets.
-    pub fn available_targets(&self) -> Result<HashSet<&TargetPath>> {
+    pub fn available_targets(&self) -> Result<HashSet<TargetPath>> {
         let _ = self.safe_root_ref()?; // ensure root still valid
-        // TODO add delegations
-        Ok(
-            self.safe_targets_ref()?
-                .targets()
-                .keys()
-                .collect::<HashSet<&TargetPath>>(),
-        )
+        let _ = self.safe_snapshot_ref()?;
+        let targets = self.safe_targets_ref()?;
+        let out = targets
+            .targets()
+            .keys()
+            .cloned()
+            .collect::<HashSet<TargetPath>>();
+
+        // TODO ensure meta not expired
+        fn lookup<D: DataInterchange>(
+            tuf: &Tuf<D>,
+            role: &MetadataPath,
+            parents: Vec<HashSet<TargetPath>>,
+            visited: &mut HashSet<MetadataPath>,
+        ) -> Option<HashSet<TargetPath>> {
+            if visited.contains(role) {
+                return None;
+            }
+            let _ = visited.insert(role.clone());
+
+            let targets = match tuf.delegations.get(role) {
+                Some(t) => t,
+                None => return None,
+            };
+
+            if targets.expires() <= &Utc::now() {
+                return None;
+            }
+
+            let mut result = HashSet::new();
+            for target in targets.targets().keys() {
+                if target.matches_chain(&parents) {
+                    let _ = result.insert(target.clone());
+                }
+            }
+
+            match targets.delegations() {
+                Some(d) => {
+                    for delegation in d.roles() {
+                        let mut new_parents = parents.clone();
+                        new_parents.push(delegation.paths().clone());
+                        if let Some(res) = lookup(tuf, delegation.role(), new_parents, visited) {
+
+                            for p in res.iter() {
+                                let _ = result.insert(p.clone());
+                            }
+                        }
+                    }
+                }
+                None => (),
+            }
+
+            Some(result)
+        }
+
+        let delegated_targets = match targets.delegations() {
+            Some(delegations) => {
+                let mut result = HashSet::new();
+                let mut visited = HashSet::new();
+                for delegation in delegations.roles() {
+                    if let Some(res) = lookup(
+                        self,
+                        delegation.role(),
+                        vec![delegation.paths().clone()],
+                        &mut visited,
+                    )
+                    {
+                        for p in res.iter() {
+                            let _ = result.insert(p.clone());
+                        }
+                    }
+                }
+                result
+            }
+            None => HashSet::new(),
+        };
+
+        Ok(out.union(&delegated_targets).map(|t| t.clone()).collect())
     }
 
     /// Verify and update the root metadata.
@@ -212,7 +290,36 @@ impl<D: DataInterchange> Tuf<D> {
         };
 
         self.snapshot = Some(snapshot);
+        self.purge_delegations();
         Ok(true)
+
+    }
+
+    fn purge_delegations(&mut self) {
+        let purge = {
+            let snapshot = match self.snapshot() {
+                Some(s) => s,
+                None => return,
+            };
+            let mut purge = HashSet::new();
+            for (role, definition) in snapshot.meta().iter() {
+                let delegation = match self.delegations.get(role) {
+                    Some(d) => d,
+                    None => continue,
+                };
+
+                if delegation.version() > definition.version() {
+                    let _ = purge.insert(role.clone());
+                    continue;
+                }
+            }
+
+            purge
+        };
+
+        for role in purge.iter() {
+            let _ = self.delegations.remove(role);
+        }
     }
 
     /// Verify and update the targets metadata.
@@ -271,27 +378,176 @@ impl<D: DataInterchange> Tuf<D> {
         Ok(true)
     }
 
+    /// Verify and update a delegation metadata.
+    pub fn update_delegation(
+        &mut self,
+        role: &MetadataPath,
+        signed: SignedMetadata<D, TargetsMetadata>,
+    ) -> Result<bool> {
+        let delegation = {
+            let _ = self.safe_root_ref()?;
+            let snapshot = self.safe_snapshot_ref()?;
+            let targets = self.safe_targets_ref()?;
+            let targets_delegations = match targets.delegations() {
+                Some(d) => d,
+                None => {
+                    return Err(Error::VerificationFailure(
+                        "Delegations not authorized".into(),
+                    ))
+                }
+            };
+
+            let delegation_description = match snapshot.meta().get(role) {
+                Some(d) => d,
+                None => {
+                    return Err(Error::VerificationFailure(format!(
+                        "The degated role {:?} was not present in the snapshot metadata.",
+                        role
+                    )))
+                }
+            };
+
+            let current_version = self.delegations.get(role).map(|t| t.version()).unwrap_or(0);
+            if delegation_description.version() < current_version {
+                return Err(Error::VerificationFailure(format!(
+                    "Snapshot metadata did listed delegation {:?} version as {} but current\
+                    version is {}",
+                    role,
+                    delegation_description.version(),
+                    current_version
+                )));
+            } else if current_version == delegation_description.version() {
+                return Ok(false);
+            }
+
+            for (_, delegated_targets) in self.delegations.iter() {
+                let parent = match delegated_targets.delegations() {
+                    Some(d) => d,
+                    None => &targets_delegations,
+                };
+
+                let delegation = match parent.roles().iter().filter(|r| r.role() == role).next() {
+                    Some(d) => d,
+                    None => continue,
+                };
+
+                signed.verify(
+                    delegation.threshold(),
+                    delegation.key_ids(),
+                    parent.keys(),
+                )?;
+            }
+
+            let delegation: TargetsMetadata = D::deserialize(signed.signed())?;
+            if delegation.version() != delegation_description.version() {
+                return Err(Error::VerificationFailure(format!(
+                    "The snapshot metadata reported that the delegation {:?} should be at \
+                    version {} but version {} was found instead.",
+                    role,
+                    delegation_description.version(),
+                    delegation.version(),
+                    )));
+            }
+
+            if delegation.expires() <= &Utc::now() {
+                // TODO this needs to be chagned to accept a MetadataPath and not Role
+                return Err(Error::ExpiredMetadata(Role::Targets));
+            }
+
+            delegation
+        };
+
+        let _ = self.delegations.insert(role.clone(), delegation);
+        Ok(true)
+    }
+
     /// Get a reference to the description needed to verify the target defined by the given
     /// `TargetPath`. Returns an `Error` if the target is not defined in the trusted metadata. This
     /// may mean the target exists somewhere in the metadata, but the chain of trust to that target
     /// may be invalid or incomplete.
-    pub fn target_description(&self, target_path: &TargetPath) -> Result<&TargetDescription> {
+    pub fn target_description(&self, target_path: &TargetPath) -> Result<TargetDescription> {
         let _ = self.safe_root_ref()?;
         let _ = self.safe_snapshot_ref()?;
         let targets = self.safe_targets_ref()?;
 
-        targets.targets().get(target_path).ok_or(
-            Error::TargetUnavailable,
-        )
+        match targets.targets().get(target_path) {
+            Some(d) => return Ok(d.clone()),
+            None => (),
+        }
 
-        // TODO include searching delegations
+        fn lookup<D: DataInterchange>(
+            tuf: &Tuf<D>,
+            default_terminate: bool,
+            current_depth: i32,
+            target_path: &TargetPath,
+            delegations: &Delegations,
+            parents: Vec<HashSet<TargetPath>>,
+            visited: &mut HashSet<MetadataPath>,
+        ) -> (bool, Option<TargetDescription>) {
+            for delegation in delegations.roles() {
+                if visited.contains(delegation.role()) {
+                    return (delegation.terminating(), None);
+                }
+                let _ = visited.insert(delegation.role().clone());
+
+                let mut new_parents = parents.clone();
+                new_parents.push(delegation.paths().clone());
+
+                if current_depth > 0 && !target_path.matches_chain(&parents) {
+                    return (delegation.terminating(), None);
+                }
+
+                let targets = match tuf.delegations.get(delegation.role()) {
+                    Some(t) => t,
+                    None => return (delegation.terminating(), None),
+                };
+
+                if targets.expires() <= &Utc::now() {
+                    return (delegation.terminating(), None);
+                }
+
+                if let Some(d) = targets.targets().get(target_path) {
+                    return (delegation.terminating(), Some(d.clone()));
+                }
+
+                if let Some(d) = targets.delegations() {
+                    let mut new_parents = parents.to_vec();
+                    new_parents.push(delegation.paths().clone());
+                    let (term, res) = lookup(
+                        tuf,
+                        delegation.terminating(),
+                        current_depth + 1,
+                        target_path,
+                        d,
+                        new_parents,
+                        visited,
+                    );
+                    if term {
+                        return (true, res);
+                    } else if res.is_some() {
+                        return (term, res);
+                    }
+                }
+            }
+            (default_terminate, None)
+        }
+
+        match targets.delegations() {
+            Some(d) => {
+                let mut visited = HashSet::new();
+                lookup(self, false, 0, target_path, d, vec![], &mut visited)
+                    .1
+                    .ok_or_else(|| Error::TargetUnavailable)
+            }
+            None => Err(Error::TargetUnavailable),
+        }
     }
 
     fn purge_metadata(&mut self) {
         self.snapshot = None;
         self.targets = None;
         self.timestamp = None;
-        // TODO include delegations
+        self.delegations.clear();
     }
 
     fn safe_root_ref(&self) -> Result<&RootMetadata> {
