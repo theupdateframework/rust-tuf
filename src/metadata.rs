@@ -574,17 +574,18 @@ impl MetadataPath {
     }
 
     /// Create a metadata path from the given role.
+    ///
     /// ```
     /// use tuf::metadata::{Role, MetadataPath};
     ///
     /// assert_eq!(MetadataPath::from_role(&Role::Root),
-    ///            MetadataPath::new("root".into()))
+    ///            MetadataPath::new("root".into()).unwrap());
     /// assert_eq!(MetadataPath::from_role(&Role::Snapshot),
-    ///            MetadataPath::new("snapshot".into()))
+    ///            MetadataPath::new("snapshot".into()).unwrap());
     /// assert_eq!(MetadataPath::from_role(&Role::Targets),
-    ///            MetadataPath::new("targets".into()))
+    ///            MetadataPath::new("targets".into()).unwrap());
     /// assert_eq!(MetadataPath::from_role(&Role::Timestamp),
-    ///            MetadataPath::new("timestamp".into()))
+    ///            MetadataPath::new("timestamp".into()).unwrap());
     /// ```
     pub fn from_role(role: &Role) -> Self {
         Self::new(format!("{}", role)).unwrap()
