@@ -1,7 +1,6 @@
 use itoa;
 use json;
 use std::collections::BTreeMap;
-use std::io;
 
 pub fn canonicalize(jsn: &json::Value) -> Result<Vec<u8>, String> {
     let converted = convert(jsn)?;
@@ -36,7 +35,11 @@ impl Value {
                 })
             }
             &Value::String(ref s) => {
-                escape_str(&mut buf, &s).map_err(|err| format!("Write error: {}", err))
+                // this mess is abusing serde_json to get json escaping
+                let s = json::Value::String(s.clone());
+                let s = json::to_string(&s)
+                    .map_err(|e| format!("{:?}", e))?;
+                Ok(buf.extend(s.as_bytes()))
             }
             &Value::Array(ref arr) => {
                 buf.push(b'[');
@@ -58,9 +61,13 @@ impl Value {
                         buf.push(b',');
                     }
                     first = false;
-                    escape_str(&mut buf, &k).map_err(|err| {
-                        format!("Write error: {}", err)
-                    })?;
+                    
+                    // this mess is abusing serde_json to get json escaping
+                    let k = json::Value::String(k.clone());
+                    let k = json::to_string(&k)
+                        .map_err(|e| format!("{:?}", e))?;
+                    buf.extend(k.as_bytes());
+
                     buf.push(b':');
                     v.write(&mut buf)?;
                 }
@@ -104,72 +111,9 @@ fn convert(jsn: &json::Value) -> Result<Value, String> {
     }
 }
 
-/// Serializes and escapes a `&str` into a JSON string.
-fn escape_str<W>(wr: &mut W, value: &str) -> Result<(), io::Error>
-where
-    W: io::Write,
-{
-    let bytes = value.as_bytes();
-
-    wr.write_all(b"\"")?;
-
-    let mut start = 0;
-
-    for (i, &byte) in bytes.iter().enumerate() {
-        let escape = ESCAPE[byte as usize];
-        if escape == 0 {
-            continue;
-        }
-
-        if start < i {
-            wr.write_all(&bytes[start..i])?;
-        }
-
-        wr.write_all(&[b'\\', escape])?;
-
-        start = i + 1;
-    }
-
-    if start != bytes.len() {
-        wr.write_all(&bytes[start..])?;
-    }
-
-    wr.write_all(b"\"")?;
-    Ok(())
-}
-
-const QU: u8 = b'"'; // \x22
-const BS: u8 = b'\\'; // \x5C
-
-// Lookup table of escape sequences. A value of b'x' at index i means that byte
-// i is escaped as "\x" in JSON. A value of 0 means that byte i is not escaped.
-#[cfg_attr(rustfmt, rustfmt_skip)]
-static ESCAPE: [u8; 256] = [
-    //  1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 1
-    0,  0, QU,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 2
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 3
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 4
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, BS,  0,  0,  0, // 5
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 6
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 7
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 8
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 9
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // A
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // B
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // C
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // D
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // E
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // F
-];
-
 #[cfg(test)]
 mod test {
     use super::*;
-
-    use std::fs::File;
-    use std::io::Read;
 
     #[test]
     fn write_str() {
@@ -203,26 +147,5 @@ mod test {
         let mut out = Vec::new();
         jsn.write(&mut out).expect("write failed");
         assert_eq!(&out, b"{\"lol\":[\"haha\",\"omg so tired\"]}");
-    }
-
-    #[test]
-    fn root_json() {
-        let mut file = File::open("./tests/cjson/root.json").expect("couldn't open root.json");
-        let mut buf = String::new();
-        file.read_to_string(&mut buf).expect(
-            "couldn't read root.json",
-        );
-
-        let mut file = File::open("./tests/cjson/root.cjson").expect("couldn't open root.cjson");
-        let mut cjsn = String::new();
-        file.read_to_string(&mut cjsn).expect(
-            "couldn't read root.cjson",
-        );
-
-        let ref jsn = json::from_str(&buf).expect("not json");
-        let out = canonicalize(jsn).expect("couldn't canonicalize");
-        let out = ::std::str::from_utf8(&out).expect("not utf-8");
-
-        assert_eq!(out, cjsn);
     }
 }
