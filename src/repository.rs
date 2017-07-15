@@ -171,6 +171,8 @@ where
     D: DataInterchange,
 {
     local_path: PathBuf,
+    target_map: HashMap<PathBuf, TargetPath>,
+    meta_map: HashMap<PathBuf, MetadataPath>,
     _interchange: PhantomData<D>,
 }
 
@@ -182,6 +184,8 @@ where
     pub fn new(local_path: PathBuf) -> Self {
         FileSystemRepository {
             local_path: local_path,
+            target_map: HashMap::new(),
+            meta_map: HashMap::new(),
             _interchange: PhantomData,
         }
     }
@@ -317,7 +321,12 @@ where
     /// at `https://tuf.example.comi/`, but all metadata is stored at `/meta/`, then passing the
     /// arg `Some("meta".into())` would cause `root.json` to be fetched from
     /// `https://tuf.example.com/meta/root.json`.
-    pub fn new(url: Url, client: Client, user_agent_prefix: Option<String>, metadata_prefix: Option<Vec<String>>) -> Self {
+    pub fn new(
+        url: Url,
+        client: Client,
+        user_agent_prefix: Option<String>,
+        metadata_prefix: Option<Vec<String>>,
+    ) -> Self {
         let user_agent = match user_agent_prefix {
             Some(ua) => format!("{} (rust-tuf/{})", ua, env!("CARGO_PKG_VERSION")),
             None => format!("rust-tuf/{}", env!("CARGO_PKG_VERSION")),
@@ -338,10 +347,9 @@ where
 
         let mut url = self.url.clone();
         {
-            let mut segments = url.path_segments_mut()
-                .map_err(|_| {
-                    Error::IllegalArgument(format!("URL was 'cannot-be-a-base': {:?}", self.url))
-                })?;
+            let mut segments = url.path_segments_mut().map_err(|_| {
+                Error::IllegalArgument(format!("URL was 'cannot-be-a-base': {:?}", self.url))
+            })?;
             if let &Some(ref prefix) = prefix {
                 segments.extend(prefix);
             }
@@ -404,7 +412,10 @@ where
     {
         Self::check::<M>(role, meta_path)?;
 
-        let mut resp = self.get(&self.metadata_prefix, &meta_path.components::<D>(&version))?;
+        let mut resp = self.get(
+            &self.metadata_prefix,
+            &meta_path.components::<D>(&version),
+        )?;
         let mut out = Vec::new();
         Self::safe_read(&mut resp, &mut out, max_size.map(|x| x as u64), hash_data)?;
         Ok(D::from_reader(&*out)?)
