@@ -140,12 +140,12 @@ mod test {
         let mut map = BTreeMap::new();
         let arr = Value::Array(vec![
             Value::String(String::from("haha")),
-            Value::String(String::from("omg so tired")),
+            Value::String(String::from("new\nline")),
         ]);
         let _ = map.insert(String::from("lol"), arr);
         let jsn = Value::Object(map);
         let mut out = Vec::new();
         jsn.write(&mut out).expect("write failed");
-        assert_eq!(&out, b"{\"lol\":[\"haha\",\"omg so tired\"]}");
+        assert_eq!(&out, &b"{\"lol\":[\"haha\",\"new\\nline\"]}");
     }
 }
