@@ -299,6 +299,7 @@ where
     url: Url,
     client: Client,
     user_agent: String,
+    metadata_prefix: Option<Vec<String>>,
     _interchange: PhantomData<D>,
 }
 
@@ -306,10 +307,17 @@ impl<D> HttpRepository<D>
 where
     D: DataInterchange,
 {
-    /// Create a new repository with the given `Url` and `Client`. Callers *should* include a
-    /// custom User-Agent prefix to help maintainers of TUF repositories keep track of which client
-    /// versions exist in the field.
-    pub fn new(url: Url, client: Client, user_agent_prefix: Option<String>) -> Self {
+    /// Create a new repository with the given `Url` and `Client`.
+    ///
+    /// Callers *should* include a custom User-Agent prefix to help maintainers of TUF repositories
+    /// keep track of which client versions exist in the field.
+    ///
+    /// The argument `metadata_prefix` is used provide an alternate path where metadata is stored on
+    /// the repository. If `None`, this defaults to `/`. For example, if there is a TUF repository
+    /// at `https://tuf.example.comi/`, but all metadata is stored at `/meta/`, then passing the
+    /// arg `Some("meta".into())` would cause `root.json` to be fetched from
+    /// `https://tuf.example.com/meta/root.json`.
+    pub fn new(url: Url, client: Client, user_agent_prefix: Option<String>, metadata_prefix: Option<Vec<String>>) -> Self {
         let user_agent = match user_agent_prefix {
             Some(ua) => format!("{} (rust-tuf/{})", ua, env!("CARGO_PKG_VERSION")),
             None => format!("rust-tuf/{}", env!("CARGO_PKG_VERSION")),
@@ -319,20 +327,26 @@ where
             url: url,
             client: client,
             user_agent: user_agent,
+            metadata_prefix: metadata_prefix,
             _interchange: PhantomData,
         }
     }
 
-    fn get(&self, components: &[String]) -> Result<Response> {
+    fn get(&self, prefix: &Option<Vec<String>>, components: &[String]) -> Result<Response> {
         let mut headers = Headers::new();
         headers.set(UserAgent(self.user_agent.clone()));
 
         let mut url = self.url.clone();
-        url.path_segments_mut()
-            .map_err(|_| {
-                Error::IllegalArgument(format!("URL was 'cannot-be-a-base': {:?}", self.url))
-            })?
-            .extend(components);
+        {
+            let mut segments = url.path_segments_mut()
+                .map_err(|_| {
+                    Error::IllegalArgument(format!("URL was 'cannot-be-a-base': {:?}", self.url))
+                })?;
+            if let &Some(ref prefix) = prefix {
+                segments.extend(prefix);
+            }
+            segments.extend(components);
+        }
 
         let req = self.client.get(url.clone()).headers(headers);
         let resp = req.send()?;
@@ -390,7 +404,7 @@ where
     {
         Self::check::<M>(role, meta_path)?;
 
-        let mut resp = self.get(&meta_path.components::<D>(&version))?;
+        let mut resp = self.get(&self.metadata_prefix, &meta_path.components::<D>(&version))?;
         let mut out = Vec::new();
         Self::safe_read(&mut resp, &mut out, max_size.map(|x| x as u64), hash_data)?;
         Ok(D::from_reader(&*out)?)
@@ -407,7 +421,7 @@ where
     }
 
     fn fetch_target(&mut self, target_path: &TargetPath) -> Result<Self::TargetRead> {
-        let resp = self.get(&target_path.components())?;
+        let resp = self.get(&None, &target_path.components())?;
         Ok(resp)
     }
 }

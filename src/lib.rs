@@ -41,7 +41,8 @@
 //!     let mut remote = HttpRepository::new(
 //!         Url::parse("https://static.rust-lang.org/").unwrap(),
 //!         HttpClient::new(),
-//!         Some("rustup/1.4.0".into()));
+//!         Some("rustup/1.4.0".into()),
+//!         None);
 //!
 //!     let config = Config::build().finish().unwrap();
 //!
