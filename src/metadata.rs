@@ -927,29 +927,41 @@ impl TargetDescription {
     ///
     /// fn main() {
     ///     let bytes: &[u8] = b"it was a pleasure to burn";
-    ///     let target_description = TargetDescription::from_reader(bytes).unwrap();
     ///
     ///     // $ printf 'it was a pleasure to burn' | sha256sum
     ///     let s = "Rd9zlbzrdWfeL7gnIEi05X-Yv2TCpy4qqZM1N72ZWQs=";
     ///     let sha256 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
+    ///
+    ///     let target_description =
+    ///         TargetDescription::from_reader(bytes, &[HashAlgorithm::Sha256]).unwrap();
+    ///     assert_eq!(target_description.length(), bytes.len() as u64);
+    ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
     ///
     ///     // $ printf 'it was a pleasure to burn' | sha512sum
     ///     let s ="tuIxwKybYdvJpWuUj6dubvpwhkAozWB6hMJIRzqn2jOUdtDTBg381brV4K\
     ///         BU1zKP8GShoJuXEtCf5NkDTCEJgQ==";
     ///     let sha512 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
     ///
+    ///     let target_description =
+    ///         TargetDescription::from_reader(bytes, &[HashAlgorithm::Sha512]).unwrap();
     ///     assert_eq!(target_description.length(), bytes.len() as u64);
-    ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
     ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
     /// }
     /// ```
-    pub fn from_reader<R>(mut read: R) -> Result<Self>
+    pub fn from_reader<R>(mut read: R, hash_algs: &[HashAlgorithm]) -> Result<Self>
     where
         R: Read,
     {
         let mut length = 0;
-        let mut sha256 = digest::Context::new(&SHA256);
-        let mut sha512 = digest::Context::new(&SHA512);
+        let mut hashes = HashMap::new();
+        for alg in hash_algs {
+            let context = match alg {
+                &HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
+                &HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
+            };
+
+            let _ = hashes.insert(alg, context);
+        }
 
         let mut buf = vec![0; 1024];
         loop {
@@ -960,22 +972,22 @@ impl TargetDescription {
                     }
 
                     length += read_bytes as u64;
-                    sha256.update(&buf[0..read_bytes]);
-                    sha512.update(&buf[0..read_bytes]);
+
+                    for (_, mut context) in hashes.iter_mut() {
+                        context.update(&buf[0..read_bytes]);
+                    }
                 }
                 e @ Err(_) => e.map(|_| ())?,
             }
         }
 
-        let mut hashes = HashMap::new();
-        let _ = hashes.insert(
-            HashAlgorithm::Sha256,
-            HashValue::new(sha256.finish().as_ref().to_vec()),
-        );
-        let _ = hashes.insert(
-            HashAlgorithm::Sha512,
-            HashValue::new(sha512.finish().as_ref().to_vec()),
-        );
+        let hashes = hashes
+            .drain()
+            .map(|(k, v)| {
+                (k.clone(), HashValue::new(v.finish().as_ref().to_vec()))
+            })
+            .collect();
+
         Ok(TargetDescription {
             length: length,
             hashes: hashes,
@@ -1297,14 +1309,12 @@ mod test {
     #[test]
     fn serde_target_description() {
         let s: &[u8] = b"from water does all life begin";
-        let description = TargetDescription::from_reader(s).unwrap();
+        let description = TargetDescription::from_reader(s, &[HashAlgorithm::Sha256]).unwrap();
         let jsn_str = json::to_string(&description).unwrap();
         let jsn = json!({
             "length": 30,
             "hashes": {
                 "sha256": "_F10XHEryG6poxJk2sDJVu61OFf2d-7QWCm7cQE8rhg=",
-                "sha512": "593J2T34bimKdKT5MmaSZ0tXvmj13EVdpTGK5p2E2R3ife-xxZ8Ql\
-                    EHsezz8HeN1_Y0SJqvLfK2WKUZQc98R_A==",
             },
         });
         let parsed_str: TargetDescription = json::from_str(&jsn_str).unwrap();
@@ -1496,7 +1506,7 @@ mod test {
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
             hashmap! {
                 TargetPath::new("foo".into()).unwrap() =>
-                    TargetDescription::from_reader(b"foo" as &[u8]).unwrap(),
+                    TargetDescription::from_reader(b"foo" as &[u8], &[HashAlgorithm::Sha256]).unwrap(),
             },
             None,
         ).unwrap();
@@ -1510,8 +1520,6 @@ mod test {
                     "length": 3,
                     "hashes": {
                         "sha256": "LCa0a2j_xo_5m0U8HTBBNBNCLXBkg7-g-YpeiGJm564=",
-                        "sha512": "9_u6bgY2-JDlb7vzKD5STG-jIErimDgtYkdB0NxmODJuKCx\
-                            Bvl5CVNiCB3LFUYosWowMf37aGVlKfrU5RT4e1w==",
                     },
                 },
             },

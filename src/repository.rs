@@ -307,7 +307,7 @@ where
     D: DataInterchange,
 {
     /// Create a new repository with the given `Url` and `Client`. Callers *should* include a
-    /// custom User-Agent prefix to maintainers of TUF repositories keep track of which client
+    /// custom User-Agent prefix to help maintainers of TUF repositories keep track of which client
     /// versions exist in the field.
     pub fn new(url: Url, client: Client, user_agent_prefix: Option<String>) -> Self {
         let user_agent = match user_agent_prefix {
@@ -536,8 +536,8 @@ mod test {
         repo.initialize().expect("initialize repo");
 
         let data: &[u8] = b"like tears in the rain";
-        let target_description =
-            TargetDescription::from_reader(data).expect("generate target description");
+        let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256])
+            .expect("generate target description");
         let path = TargetPath::new("batty".into()).expect("make target path");
         repo.store_target(data, &path, &target_description).expect(
             "store target",
@@ -568,8 +568,8 @@ mod test {
         repo.initialize().expect("initialize repo");
 
         let data: &[u8] = b"like tears in the rain";
-        let target_description =
-            TargetDescription::from_reader(data).expect("generate target desert");
+        let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256])
+            .expect("generate target desert");
         let path = TargetPath::new("batty".into()).expect("make target path");
         repo.store_target(data, &path, &target_description).expect(
             "store target",

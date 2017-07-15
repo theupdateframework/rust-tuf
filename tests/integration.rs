@@ -5,7 +5,7 @@ use chrono::prelude::*;
 use chrono::offset::Utc;
 use std::collections::{HashSet, HashMap};
 use tuf::Tuf;
-use tuf::crypto::{PrivateKey, SignatureScheme};
+use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
 use tuf::interchange::JsonDataInterchange;
 use tuf::metadata::{RoleDefinition, RootMetadata, MetadataPath, SignedMetadata, TargetDescription,
                     TargetPath, TargetsMetadata, MetadataDescription, SnapshotMetadata,
@@ -142,7 +142,8 @@ fn simple_delegation() {
     //// build the delegation ////
     let target_file: &[u8] = b"bar";
     let target_path = TargetPath::new("foo".into()).unwrap();
-    let target_description = TargetDescription::from_reader(target_file).unwrap();
+    let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])
+        .unwrap();
 
     let mut target_map = HashMap::new();
     let _ = target_map.insert(target_path, target_description);
@@ -332,7 +333,8 @@ fn nested_delegation() {
     //// build delegation B ////
     let target_file: &[u8] = b"bar";
     let target_path = TargetPath::new("foo".into()).unwrap();
-    let target_description = TargetDescription::from_reader(target_file).unwrap();
+    let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])
+        .unwrap();
 
     let mut target_map = HashMap::new();
     let _ = target_map.insert(target_path, target_description);

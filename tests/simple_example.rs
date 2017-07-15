@@ -6,7 +6,7 @@ use chrono::offset::Utc;
 use std::collections::{HashSet, HashMap};
 use tuf::{Tuf, Error};
 use tuf::client::{Client, Config};
-use tuf::crypto::{PrivateKey, SignatureScheme, KeyId};
+use tuf::crypto::{PrivateKey, SignatureScheme, KeyId, HashAlgorithm};
 use tuf::interchange::JsonDataInterchange;
 use tuf::metadata::{RoleDefinition, RootMetadata, Role, MetadataVersion, MetadataPath,
                     SignedMetadata, TargetDescription, TargetPath, TargetsMetadata,
@@ -117,7 +117,7 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
 
     let target_file: &[u8] = b"things fade, alternatives exclude";
     let target_path = TargetPath::new("grendel".into())?;
-    let target_description = TargetDescription::from_reader(target_file)?;
+    let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])?;
     let _ = remote.store_target(target_file, &target_path, &target_description);
 
     let mut target_map = HashMap::new();

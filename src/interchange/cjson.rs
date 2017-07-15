@@ -37,8 +37,7 @@ impl Value {
             &Value::String(ref s) => {
                 // this mess is abusing serde_json to get json escaping
                 let s = json::Value::String(s.clone());
-                let s = json::to_string(&s)
-                    .map_err(|e| format!("{:?}", e))?;
+                let s = json::to_string(&s).map_err(|e| format!("{:?}", e))?;
                 Ok(buf.extend(s.as_bytes()))
             }
             &Value::Array(ref arr) => {
@@ -61,11 +60,10 @@ impl Value {
                         buf.push(b',');
                     }
                     first = false;
-                    
+
                     // this mess is abusing serde_json to get json escaping
                     let k = json::Value::String(k.clone());
-                    let k = json::to_string(&k)
-                        .map_err(|e| format!("{:?}", e))?;
+                    let k = json::to_string(&k).map_err(|e| format!("{:?}", e))?;
                     buf.extend(k.as_bytes());
 
                     buf.push(b':');
