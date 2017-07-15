@@ -96,7 +96,7 @@ where
     fn safe_read<R, W>(
         mut read: R,
         mut write: W,
-        max_size: Option<i64>,
+        max_size: Option<u64>,
         hash_data: Option<(&HashAlgorithm, &HashValue)>,
     ) -> Result<()>
     where
@@ -110,7 +110,7 @@ where
         };
 
         let mut buf = [0; 1024];
-        let mut bytes_left = max_size.unwrap_or(::std::i64::MAX);
+        let mut bytes_left = max_size.unwrap_or(::std::u64::MAX);
 
         loop {
             match read.read(&mut buf) {
@@ -119,13 +119,14 @@ where
                         break;
                     }
 
-                    bytes_left -= read_bytes as i64;
-                    if bytes_left < 0 {
-                        return Err(Error::VerificationFailure(
-                            "Read exceeded the maximum allowed bytes.".into(),
-                        ));
+                    match bytes_left.checked_sub(read_bytes as u64) {
+                        Some(diff) => bytes_left = diff,
+                        None => {
+                            return Err(Error::VerificationFailure(
+                                "Read exceeded the maximum allowed bytes.".into(),
+                            ));
+                        }
                     }
-
                     write.write_all(&buf[0..read_bytes])?;
 
                     match context {
@@ -247,7 +248,7 @@ where
 
         let mut file = File::open(&path)?;
         let mut out = Vec::new();
-        Self::safe_read(&mut file, &mut out, max_size.map(|x| x as i64), hash_data)?;
+        Self::safe_read(&mut file, &mut out, max_size.map(|x| x as u64), hash_data)?;
 
         Ok(D::from_reader(&*out)?)
     }
@@ -266,7 +267,7 @@ where
         Self::safe_read(
             read,
             &mut temp_file,
-            Some(target_description.length() as i64),
+            Some(target_description.length() as u64),
             Some(hash_data),
         )?;
 
@@ -391,7 +392,7 @@ where
 
         let mut resp = self.get(&meta_path.components::<D>(&version))?;
         let mut out = Vec::new();
-        Self::safe_read(&mut resp, &mut out, max_size.map(|x| x as i64), hash_data)?;
+        Self::safe_read(&mut resp, &mut out, max_size.map(|x| x as u64), hash_data)?;
         Ok(D::from_reader(&*out)?)
     }
 
@@ -485,7 +486,7 @@ where
                 Self::safe_read(
                     bytes.as_slice(),
                     &mut buf,
-                    max_size.map(|x| x as i64),
+                    max_size.map(|x| x as u64),
                     hash_data,
                 )?;
                 D::from_reader(&*buf)
@@ -508,7 +509,7 @@ where
         Self::safe_read(
             read,
             &mut buf,
-            Some(target_description.length() as i64),
+            Some(target_description.length() as u64),
             Some(hash_data),
         )?;
         let _ = self.targets.insert(target_path.clone(), buf);

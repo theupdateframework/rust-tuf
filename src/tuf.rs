@@ -478,7 +478,7 @@ impl<D: DataInterchange> Tuf<D> {
         fn lookup<D: DataInterchange>(
             tuf: &Tuf<D>,
             default_terminate: bool,
-            current_depth: i32,
+            current_depth: u32,
             target_path: &TargetPath,
             delegations: &Delegations,
             parents: Vec<HashSet<TargetPath>>,
