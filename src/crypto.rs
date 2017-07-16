@@ -746,61 +746,53 @@ mod test {
 
     #[test]
     fn parse_rsa_2048_spki() {
-        let key = PublicKey::from_spki(RSA_2048_SPKI).expect("parse spki");
+        let key = PublicKey::from_spki(RSA_2048_SPKI).unwrap();
         assert_eq!(key.typ, KeyType::Rsa);
     }
 
     #[test]
     fn parse_rsa_4096_spki() {
-        let key = PublicKey::from_spki(RSA_4096_SPKI).expect("parse spki");
+        let key = PublicKey::from_spki(RSA_4096_SPKI).unwrap();
         assert_eq!(key.typ, KeyType::Rsa);
     }
 
     #[test]
     fn rsa_2048_read_pkcs8_and_sign() {
-        let key = PrivateKey::from_pkcs8(RSA_2048_PK8).expect("parse pkcs8");
+        let key = PrivateKey::from_pkcs8(RSA_2048_PK8).unwrap();
         let msg = b"test";
 
-        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha256).expect(
-            "sign msg",
-        );
-        key.public.verify(msg, &sig).expect("verify msg");
+        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha256).unwrap();
+        key.public.verify(msg, &sig).unwrap();
 
-        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha512).expect(
-            "sign msg",
-        );
-        key.public.verify(msg, &sig).expect("verify msg");
+        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha512).unwrap();
+        key.public.verify(msg, &sig).unwrap();
 
         assert!(key.sign(msg, SignatureScheme::Ed25519).is_err());
     }
 
     #[test]
     fn rsa_4096_read_pkcs8_and_sign() {
-        let key = PrivateKey::from_pkcs8(RSA_4096_PK8).expect("parse pkcs8");
+        let key = PrivateKey::from_pkcs8(RSA_4096_PK8).unwrap();
         let msg = b"test";
 
-        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha256).expect(
-            "sign msg",
-        );
-        key.public.verify(msg, &sig).expect("verify msg");
+        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha256).unwrap();
+        key.public.verify(msg, &sig).unwrap();
 
-        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha512).expect(
-            "sign msg",
-        );
-        key.public.verify(msg, &sig).expect("verify msg");
+        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha512).unwrap();
+        key.public.verify(msg, &sig).unwrap();
 
         assert!(key.sign(msg, SignatureScheme::Ed25519).is_err());
     }
 
     #[test]
     fn extract_pkcs1_from_rsa_2048_pkcs8() {
-        let res = extract_rsa_pub_from_pkcs8(RSA_2048_PK8).expect("parse pkcs8");
+        let res = extract_rsa_pub_from_pkcs8(RSA_2048_PK8).unwrap();
         assert_eq!(res.as_slice(), RSA_2048_PKCS1);
     }
 
     #[test]
     fn extract_pkcs1_from_rsa_4096_pkcs8() {
-        let res = extract_rsa_pub_from_pkcs8(RSA_4096_PK8).expect("parse pkcs8");
+        let res = extract_rsa_pub_from_pkcs8(RSA_4096_PK8).unwrap();
         assert_eq!(res.as_slice(), RSA_4096_PKCS1);
     }
 

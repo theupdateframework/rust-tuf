@@ -46,11 +46,17 @@ where
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
     pub fn update_local(&mut self) -> Result<bool> {
-        let r = Self::update_root(&mut self.tuf, &mut self.local, &self.config.max_root_size)?;
+        let r = Self::update_root(
+            &mut self.tuf,
+            &mut self.local,
+            &self.config.max_root_size,
+            self.config.min_bytes_per_second,
+        )?;
         let ts = match Self::update_timestamp(
             &mut self.tuf,
             &mut self.local,
             &self.config.max_timestamp_size,
+            self.config.min_bytes_per_second,
         ) {
             Ok(b) => b,
             Err(e) => {
@@ -61,7 +67,11 @@ where
                 false
             }
         };
-        let sn = match Self::update_snapshot(&mut self.tuf, &mut self.local) {
+        let sn = match Self::update_snapshot(
+            &mut self.tuf,
+            &mut self.local,
+            self.config.min_bytes_per_second,
+        ) {
             Ok(b) => b,
             Err(e) => {
                 warn!(
@@ -71,7 +81,11 @@ where
                 false
             }
         };
-        let ta = match Self::update_targets(&mut self.tuf, &mut self.local) {
+        let ta = match Self::update_targets(
+            &mut self.tuf,
+            &mut self.local,
+            self.config.min_bytes_per_second,
+        ) {
             Ok(b) => b,
             Err(e) => {
                 warn!(
@@ -82,7 +96,11 @@ where
             }
         };
 
-        let de = match Self::update_delegations(&mut self.tuf, &mut self.local) {
+        let de = match Self::update_delegations(
+            &mut self.tuf,
+            &mut self.local,
+            self.config.min_bytes_per_second,
+        ) {
             Ok(b) => b,
             Err(e) => {
                 warn!(
@@ -101,21 +119,44 @@ where
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
     pub fn update_remote(&mut self) -> Result<bool> {
-        let r = Self::update_root(&mut self.tuf, &mut self.remote, &self.config.max_root_size)?;
+        let r = Self::update_root(
+            &mut self.tuf,
+            &mut self.remote,
+            &self.config.max_root_size,
+            self.config.min_bytes_per_second,
+        )?;
         let ts = Self::update_timestamp(
             &mut self.tuf,
             &mut self.remote,
             &self.config.max_timestamp_size,
+            self.config.min_bytes_per_second,
         )?;
-        let sn = Self::update_snapshot(&mut self.tuf, &mut self.remote)?;
-        let ta = Self::update_targets(&mut self.tuf, &mut self.remote)?;
-        let de = Self::update_delegations(&mut self.tuf, &mut self.remote)?;
+        let sn = Self::update_snapshot(
+            &mut self.tuf,
+            &mut self.remote,
+            self.config.min_bytes_per_second,
+        )?;
+        let ta = Self::update_targets(
+            &mut self.tuf,
+            &mut self.remote,
+            self.config.min_bytes_per_second,
+        )?;
+        let de = Self::update_delegations(
+            &mut self.tuf,
+            &mut self.remote,
+            self.config.min_bytes_per_second,
+        )?;
 
         Ok(r || ts || sn || ta || de)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_root<T>(tuf: &mut Tuf<D>, repo: &mut T, max_root_size: &Option<usize>) -> Result<bool>
+    fn update_root<T>(
+        tuf: &mut Tuf<D>,
+        repo: &mut T,
+        max_root_size: &Option<usize>,
+        min_bytes_per_second: u32,
+    ) -> Result<bool>
     where
         T: Repository<D>,
     {
@@ -124,6 +165,7 @@ where
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::None,
             max_root_size,
+            min_bytes_per_second,
             None,
         )?;
         let latest_version = D::deserialize::<RootMetadata>(latest_root.signed())?
@@ -148,6 +190,7 @@ where
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(i),
                 max_root_size,
+                min_bytes_per_second,
                 None,
             )?;
             if !tuf.update_root(signed)? {
@@ -168,6 +211,7 @@ where
         tuf: &mut Tuf<D>,
         repo: &mut T,
         max_timestamp_size: &Option<usize>,
+        min_bytes_per_second: u32,
     ) -> Result<bool>
     where
         T: Repository<D>,
@@ -177,13 +221,14 @@ where
             &MetadataPath::from_role(&Role::Timestamp),
             &MetadataVersion::None,
             max_timestamp_size,
+            min_bytes_per_second,
             None,
         )?;
         tuf.update_timestamp(ts)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_snapshot<T>(tuf: &mut Tuf<D>, repo: &mut T) -> Result<bool>
+    fn update_snapshot<T>(tuf: &mut Tuf<D>, repo: &mut T, min_bytes_per_second: u32) -> Result<bool>
     where
         T: Repository<D>,
     {
@@ -211,13 +256,14 @@ where
             &MetadataPath::from_role(&Role::Snapshot),
             &MetadataVersion::None,
             &None,
+            min_bytes_per_second,
             None,
         )?;
         tuf.update_snapshot(snap)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_targets<T>(tuf: &mut Tuf<D>, repo: &mut T) -> Result<bool>
+    fn update_targets<T>(tuf: &mut Tuf<D>, repo: &mut T, min_bytes_per_second: u32) -> Result<bool>
     where
         T: Repository<D>,
     {
@@ -245,13 +291,18 @@ where
             &MetadataPath::from_role(&Role::Targets),
             &MetadataVersion::None,
             &None,
+            min_bytes_per_second,
             None,
         )?;
         tuf.update_targets(targets)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_delegations<T>(tuf: &mut Tuf<D>, repo: &mut T) -> Result<bool>
+    fn update_delegations<T>(
+        tuf: &mut Tuf<D>,
+        repo: &mut T,
+        min_bytes_per_second: u32,
+    ) -> Result<bool>
     where
         T: Repository<D>,
     {
@@ -287,6 +338,7 @@ where
                 &role,
                 &MetadataVersion::None,
                 &None,
+                min_bytes_per_second,
                 None,
             ) {
                 Ok(d) => d,
@@ -317,8 +369,12 @@ where
     /// Fetch a target from the remote repo and write it to the local repo.
     pub fn fetch_target(&mut self, target: &TargetPath) -> Result<()> {
         let target_description = self.tuf.target_description(target)?;
-        let read = self.remote.fetch_target(target)?;
-        self.local.store_target(read, target, &target_description)
+        let read = self.remote.fetch_target(
+            target,
+            &target_description,
+            self.config.min_bytes_per_second,
+        )?;
+        self.local.store_target(read, target)
     }
 }
 
@@ -327,6 +383,7 @@ where
 pub struct Config {
     max_root_size: Option<usize>,
     max_timestamp_size: Option<usize>,
+    min_bytes_per_second: u32,
 }
 
 impl Config {
@@ -344,6 +401,11 @@ impl Config {
     pub fn max_timestamp_size(&self) -> &Option<usize> {
         &self.max_timestamp_size
     }
+
+    /// The minimum bytes per second for a read to be considered good.
+    pub fn min_bytes_per_second(&self) -> u32 {
+        self.min_bytes_per_second
+    }
 }
 
 /// Helper for building and validating a TUF `Config`.
@@ -351,6 +413,7 @@ impl Config {
 pub struct ConfigBuilder {
     max_root_size: Option<usize>,
     max_timestamp_size: Option<usize>,
+    min_bytes_per_second: u32,
 }
 
 impl ConfigBuilder {
@@ -359,6 +422,7 @@ impl ConfigBuilder {
         Ok(Config {
             max_root_size: self.max_root_size,
             max_timestamp_size: self.max_timestamp_size,
+            min_bytes_per_second: self.min_bytes_per_second,
         })
     }
 
@@ -373,6 +437,12 @@ impl ConfigBuilder {
         self.max_timestamp_size = max;
         self
     }
+
+    /// Set the minimum bytes per second for a read to be considered good.
+    pub fn min_bytes_per_second(mut self, min: u32) -> Self {
+        self.min_bytes_per_second = min;
+        self
+    }
 }
 
 impl Default for ConfigBuilder {
@@ -382,7 +452,8 @@ impl Default for ConfigBuilder {
     /// let default = ConfigBuilder::default();
     /// let config = ConfigBuilder::default()
     ///     .max_root_size(Some(1024 * 1024))
-    ///     .max_timestamp_size(Some(32 * 1024));
+    ///     .max_timestamp_size(Some(32 * 1024))
+    ///     .min_bytes_per_second(4096);
     /// assert_eq!(config, default);
     /// assert!(default.finish().is_ok())
     /// ```
@@ -390,6 +461,7 @@ impl Default for ConfigBuilder {
         ConfigBuilder {
             max_root_size: Some(1024 * 1024),
             max_timestamp_size: Some(32 * 1024),
+            min_bytes_per_second: 4096,
         }
     }
 }

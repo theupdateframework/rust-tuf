@@ -1506,7 +1506,10 @@ mod test {
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
             hashmap! {
                 TargetPath::new("foo".into()).unwrap() =>
-                    TargetDescription::from_reader(b"foo" as &[u8], &[HashAlgorithm::Sha256]).unwrap(),
+                    TargetDescription::from_reader(
+                        b"foo" as &[u8],
+                        &[HashAlgorithm::Sha256],
+                    ).unwrap(),
             },
             None,
         ).unwrap();

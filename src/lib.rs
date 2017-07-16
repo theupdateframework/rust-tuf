@@ -52,6 +52,7 @@
 //!                                      &MetadataPath::from_role(&Role::Root),
 //!                                      &MetadataVersion::None,
 //!                                      config.max_root_size(),
+//!                                      config.min_bytes_per_second(),
 //!                                      None).unwrap();
 //!
 //!     let tuf = Tuf::<JsonDataInterchange>::from_root_pinned(root, &key_ids).unwrap();

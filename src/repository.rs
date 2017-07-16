@@ -1,5 +1,7 @@
 //! Interfaces for interacting with different types of TUF repositories.
 
+use chrono::offset::Utc;
+use chrono::DateTime;
 use hyper::{Url, Client};
 use hyper::client::response::Response;
 use hyper::header::{Headers, UserAgent};
@@ -7,7 +9,7 @@ use hyper::status::StatusCode;
 use ring::digest::{self, SHA256, SHA512};
 use std::collections::HashMap;
 use std::fs::{self, File, DirBuilder};
-use std::io::{Read, Write, Cursor};
+use std::io::{self, Read, Write, Cursor, ErrorKind};
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
@@ -18,6 +20,101 @@ use error::Error;
 use metadata::{SignedMetadata, MetadataVersion, Role, Metadata, TargetPath, TargetDescription,
                MetadataPath};
 use interchange::DataInterchange;
+
+// TODO move this somewhere else
+/// Wraps a `Read` to ensure that the consumer can't read more than a capped maximum number of
+/// bytes. Also, this ensures that a minimum bitrate and returns an `Err` if it is not. Finally,
+/// when the underlying `Read` is fully consumed, the hash of the data is optional calculated. If
+/// the calculated hash does not match the given hash, it will return an `Err`. Consumers of a
+/// `SafeReader` should purge and untrust all read bytes if this ever returns an `Err`.
+pub struct SafeReader<R: Read> {
+    inner: R,
+    max_size: u64,
+    min_bytes_per_second: u32,
+    hasher: Option<(digest::Context, HashValue)>,
+    start_time: Option<DateTime<Utc>>,
+    bytes_read: u64,
+}
+
+impl<R: Read> SafeReader<R> {
+    /// Create a new `SafeReader`.
+    pub fn new(
+        read: R,
+        max_size: u64,
+        min_bytes_per_second: u32,
+        hash_data: Option<(&HashAlgorithm, HashValue)>,
+    ) -> Self {
+        let hasher = hash_data.map(|(alg, value)| {
+            let ctx = match alg {
+                &HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
+                &HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
+            };
+
+            (ctx, value)
+        });
+
+        SafeReader {
+            inner: read,
+            max_size: max_size,
+            min_bytes_per_second: min_bytes_per_second,
+            hasher: hasher,
+            start_time: None,
+            bytes_read: 0,
+        }
+    }
+}
+
+impl<R: Read> Read for SafeReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.inner.read(buf) {
+            Ok(read_bytes) => {
+                if self.start_time.is_none() {
+                    self.start_time = Some(Utc::now())
+                }
+
+                if read_bytes == 0 {
+                    if let Some((context, expected_hash)) = self.hasher.take() {
+                        let generated_hash = context.finish();
+                        if generated_hash.as_ref() != expected_hash.value() {
+                            return Err(io::Error::new(ErrorKind::InvalidData,
+                                "Calculated hash did not match the required hash."))
+                        }
+                    }
+
+                    return Ok(0)
+                }
+
+                match self.bytes_read.checked_add(read_bytes as u64) {
+                    Some(sum) if sum <= self.max_size => self.bytes_read = sum,
+                    _ => {
+                        return Err(io::Error::new(ErrorKind::InvalidData, 
+                            "Read exceeded the maximum allowed bytes."),
+                        );
+                    }
+                }
+
+                let duration = Utc::now().signed_duration_since(self.start_time.unwrap());
+                // 30 second grace period before we start checking the bitrate
+                if duration.num_seconds() >= 30 {
+                    if self.bytes_read as f32 / (duration.num_seconds() as f32) <
+                        self.min_bytes_per_second as f32
+                    {
+                        return Err(io::Error::new(ErrorKind::TimedOut,
+                                                  "Read aborted. Bitrate too low."));
+                    }
+                }
+
+                match self.hasher {
+                    Some((ref mut context, _)) => context.update(&buf[..(read_bytes)]),
+                    None => (),
+                }
+
+                Ok(read_bytes)
+            }
+            e @ Err(_) => e,
+        }
+    }
+}
 
 /// Top-level trait that represents a TUF repository and contains all the ways it can be interacted
 /// with.
@@ -49,25 +146,24 @@ where
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         max_size: &Option<usize>,
-        hash_data: Option<(&HashAlgorithm, &HashValue)>,
+        min_bytes_per_second: u32,
+        hash_data: Option<(&HashAlgorithm, HashValue)>,
     ) -> Result<SignedMetadata<D, M>>
     where
         M: Metadata;
 
     /// Store the given target.
-    fn store_target<R>(
-        &mut self,
-        read: R,
-        target_path: &TargetPath,
-        target_description: &TargetDescription,
-    ) -> Result<()>
+    fn store_target<R>(&mut self, read: R, target_path: &TargetPath) -> Result<()>
     where
         R: Read;
 
     /// Fetch the given target.
-    ///
-    /// **WARNING**: The target will **NOT** yet be verified.
-    fn fetch_target(&mut self, target_path: &TargetPath) -> Result<Self::TargetRead>;
+    fn fetch_target(
+        &mut self,
+        target_path: &TargetPath,
+        target_description: &TargetDescription,
+        min_bytes_per_second: u32,
+    ) -> Result<SafeReader<Self::TargetRead>>;
 
     /// Perform a sanity check that `M`, `Role`, and `MetadataPath` all desrcribe the same entity.
     fn check<M>(role: &Role, meta_path: &MetadataPath) -> Result<()>
@@ -90,79 +186,6 @@ where
 
         Ok(())
     }
-
-    /// Read the from given reader, optionally capped at `max_size` bytes, optionally requiring
-    /// hashes to match.
-    fn safe_read<R, W>(
-        mut read: R,
-        mut write: W,
-        max_size: Option<u64>,
-        hash_data: Option<(&HashAlgorithm, &HashValue)>,
-    ) -> Result<()>
-    where
-        R: Read,
-        W: Write,
-    {
-        let mut context = match hash_data {
-            Some((&HashAlgorithm::Sha256, _)) => Some(digest::Context::new(&SHA256)),
-            Some((&HashAlgorithm::Sha512, _)) => Some(digest::Context::new(&SHA512)),
-            None => None,
-        };
-
-        let mut buf = [0; 1024];
-        let mut bytes_left = max_size.unwrap_or(::std::u64::MAX);
-
-        loop {
-            match read.read(&mut buf) {
-                Ok(read_bytes) => {
-                    if read_bytes == 0 {
-                        break;
-                    }
-
-                    match bytes_left.checked_sub(read_bytes as u64) {
-                        Some(diff) => bytes_left = diff,
-                        None => {
-                            return Err(Error::VerificationFailure(
-                                "Read exceeded the maximum allowed bytes.".into(),
-                            ));
-                        }
-                    }
-                    write.write_all(&buf[0..read_bytes])?;
-
-                    match context {
-                        Some(ref mut c) => c.update(&buf[0..read_bytes]),
-                        None => (),
-                    };
-                }
-                e @ Err(_) => e.map(|_| ())?,
-            }
-        }
-
-        let generated_hash = context.map(|c| c.finish());
-
-        match (generated_hash, hash_data) {
-            (Some(generated_hash), Some((_, expected_hash)))
-                if generated_hash.as_ref() != expected_hash.value() => {
-                Err(Error::VerificationFailure(
-                    "Generated hash did not match expected hash.".into(),
-                ))
-            }
-            (Some(_), None) => {
-                let msg = "Hash calculated when no expected hash supplied. \
-                           This is a programming error. Please report this as a bug.";
-                error!("{}", msg);
-                Err(Error::Programming(msg.into()))
-            }
-            (None, Some(_)) => {
-                let msg = "No hash calculated when expected hash supplied. \
-                           This is a programming error. Please report this as a bug.";
-                error!("{}", msg);
-                Err(Error::Programming(msg.into()))
-            }
-            (Some(_), Some(_)) |
-            (None, None) => Ok(()),
-        }
-    }
 }
 
 /// A repository contained on the local file system.
@@ -171,8 +194,6 @@ where
     D: DataInterchange,
 {
     local_path: PathBuf,
-    target_map: HashMap<PathBuf, TargetPath>,
-    meta_map: HashMap<PathBuf, MetadataPath>,
     _interchange: PhantomData<D>,
 }
 
@@ -184,8 +205,6 @@ where
     pub fn new(local_path: PathBuf) -> Self {
         FileSystemRepository {
             local_path: local_path,
-            target_map: HashMap::new(),
-            meta_map: HashMap::new(),
             _interchange: PhantomData,
         }
     }
@@ -240,7 +259,8 @@ where
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         max_size: &Option<usize>,
-        hash_data: Option<(&HashAlgorithm, &HashValue)>,
+        min_bytes_per_second: u32,
+        hash_data: Option<(&HashAlgorithm, HashValue)>,
     ) -> Result<SignedMetadata<D, M>>
     where
         M: Metadata,
@@ -250,30 +270,29 @@ where
         let mut path = self.local_path.join("metadata");
         path.extend(meta_path.components::<D>(&version));
 
-        let mut file = File::open(&path)?;
-        let mut out = Vec::new();
-        Self::safe_read(&mut file, &mut out, max_size.map(|x| x as u64), hash_data)?;
+        let read = SafeReader::new(
+            File::open(&path)?,
+            max_size.unwrap_or(::std::usize::MAX) as u64,
+            min_bytes_per_second,
+            hash_data,
+        );
 
-        Ok(D::from_reader(&*out)?)
+        Ok(D::from_reader(read)?)
     }
 
-    fn store_target<R>(
-        &mut self,
-        read: R,
-        target_path: &TargetPath,
-        target_description: &TargetDescription,
-    ) -> Result<()>
+    fn store_target<R>(&mut self, mut read: R, target_path: &TargetPath) -> Result<()>
     where
         R: Read,
     {
         let mut temp_file = NamedTempFile::new_in(self.local_path.join("temp"))?;
-        let hash_data = crypto::hash_preference(target_description.hashes())?;
-        Self::safe_read(
-            read,
-            &mut temp_file,
-            Some(target_description.length() as u64),
-            Some(hash_data),
-        )?;
+        let mut buf = [0; 1024];
+        loop {
+            let bytes_read = read.read(&mut buf)?;
+            if bytes_read == 0 {
+                break;
+            }
+            temp_file.write_all(&buf[..bytes_read])?
+        }
 
         let mut path = self.local_path.clone().join("targets");
         path.extend(target_path.components());
@@ -282,7 +301,12 @@ where
         Ok(())
     }
 
-    fn fetch_target(&mut self, target_path: &TargetPath) -> Result<File> {
+    fn fetch_target(
+        &mut self,
+        target_path: &TargetPath,
+        target_description: &TargetDescription,
+        min_bytes_per_second: u32,
+    ) -> Result<SafeReader<Self::TargetRead>> {
         let mut path = self.local_path.join("targets");
         path.extend(target_path.components());
 
@@ -290,7 +314,14 @@ where
             return Err(Error::NotFound);
         }
 
-        Ok(File::open(&path)?)
+        let (alg, value) = crypto::hash_preference(target_description.hashes())?;
+
+        Ok(SafeReader::new(
+            File::open(&path)?,
+            target_description.length(),
+            min_bytes_per_second,
+            Some((alg, value.clone())),
+        ))
     }
 }
 
@@ -405,24 +436,30 @@ where
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         max_size: &Option<usize>,
-        hash_data: Option<(&HashAlgorithm, &HashValue)>,
+        min_bytes_per_second: u32,
+        hash_data: Option<(&HashAlgorithm, HashValue)>,
     ) -> Result<SignedMetadata<D, M>>
     where
         M: Metadata,
     {
         Self::check::<M>(role, meta_path)?;
 
-        let mut resp = self.get(
+        let resp = self.get(
             &self.metadata_prefix,
             &meta_path.components::<D>(&version),
         )?;
-        let mut out = Vec::new();
-        Self::safe_read(&mut resp, &mut out, max_size.map(|x| x as u64), hash_data)?;
-        Ok(D::from_reader(&*out)?)
+
+        let read = SafeReader::new(
+            resp,
+            max_size.unwrap_or(::std::usize::MAX) as u64,
+            min_bytes_per_second,
+            hash_data,
+        );
+        Ok(D::from_reader(read)?)
     }
 
     /// This always returns `Err` as storing over HTTP is not yet supported.
-    fn store_target<R>(&mut self, _: R, _: &TargetPath, _: &TargetDescription) -> Result<()>
+    fn store_target<R>(&mut self, _: R, _: &TargetPath) -> Result<()>
     where
         R: Read,
     {
@@ -431,9 +468,20 @@ where
         ))
     }
 
-    fn fetch_target(&mut self, target_path: &TargetPath) -> Result<Self::TargetRead> {
+    fn fetch_target(
+        &mut self,
+        target_path: &TargetPath,
+        target_description: &TargetDescription,
+        min_bytes_per_second: u32,
+    ) -> Result<SafeReader<Self::TargetRead>> {
         let resp = self.get(&None, &target_path.components())?;
-        Ok(resp)
+        let (alg, value) = crypto::hash_preference(target_description.hashes())?; 
+        Ok(SafeReader::new(
+            resp,
+            target_description.length(),
+            min_bytes_per_second,
+            Some((alg, value.clone())),
+        ))
     }
 }
 
@@ -498,7 +546,8 @@ where
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         max_size: &Option<usize>,
-        hash_data: Option<(&HashAlgorithm, &HashValue)>,
+        min_bytes_per_second: u32,
+        hash_data: Option<(&HashAlgorithm, HashValue)>,
     ) -> Result<SignedMetadata<D, M>>
     where
         M: Metadata,
@@ -507,43 +556,41 @@ where
 
         match self.metadata.get(&(meta_path.clone(), version.clone())) {
             Some(bytes) => {
-                let mut buf = Vec::new();
-                Self::safe_read(
-                    bytes.as_slice(),
-                    &mut buf,
-                    max_size.map(|x| x as u64),
+                let reader = SafeReader::new(
+                    &**bytes,
+                    max_size.unwrap_or(::std::usize::MAX) as u64,
+                    min_bytes_per_second,
                     hash_data,
-                )?;
-                D::from_reader(&*buf)
+                );
+                D::from_reader(reader)
             }
             None => Err(Error::NotFound),
         }
     }
 
-    fn store_target<R>(
-        &mut self,
-        read: R,
-        target_path: &TargetPath,
-        target_description: &TargetDescription,
-    ) -> Result<()>
+    fn store_target<R>(&mut self, mut read: R, target_path: &TargetPath) -> Result<()>
     where
         R: Read,
     {
         let mut buf = Vec::new();
-        let hash_data = crypto::hash_preference(target_description.hashes())?;
-        Self::safe_read(
-            read,
-            &mut buf,
-            Some(target_description.length() as u64),
-            Some(hash_data),
-        )?;
+        read.read_to_end(&mut buf)?;
         let _ = self.targets.insert(target_path.clone(), buf);
         Ok(())
     }
 
-    fn fetch_target(&mut self, target_path: &TargetPath) -> Result<Self::TargetRead> {
+    fn fetch_target(
+        &mut self,
+        target_path: &TargetPath,
+        target_description: &TargetDescription,
+        min_bytes_per_second: u32,
+    ) -> Result<SafeReader<Self::TargetRead>> {
         match self.targets.get(target_path) {
-            Some(bytes) => Ok(Cursor::new(bytes.clone())),
+            Some(bytes) => {
+                let cur = Cursor::new(bytes.clone());
+                let (alg, value) = crypto::hash_preference(target_description.hashes())?;
+                let read = SafeReader::new(cur, target_description.length(), min_bytes_per_second, Some((alg, value.clone())));
+                Ok(read)
+            },
             None => Err(Error::NotFound),
         }
     }
@@ -558,63 +605,45 @@ mod test {
     #[test]
     fn ephemeral_repo_targets() {
         let mut repo = EphemeralRepository::<JsonDataInterchange>::new();
-        repo.initialize().expect("initialize repo");
+        repo.initialize().unwrap();
 
         let data: &[u8] = b"like tears in the rain";
-        let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256])
-            .expect("generate target description");
-        let path = TargetPath::new("batty".into()).expect("make target path");
-        repo.store_target(data, &path, &target_description).expect(
-            "store target",
-        );
+        let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
+        let path = TargetPath::new("batty".into()).unwrap();
+        repo.store_target(data, &path).unwrap();
 
-        let mut read = repo.fetch_target(&path).expect("fetch target");
+        let mut read = repo.fetch_target(&path, &target_description, 0).unwrap();
         let mut buf = Vec::new();
-        read.read_to_end(&mut buf).expect("read target");
+        read.read_to_end(&mut buf).unwrap();
         assert_eq!(buf.as_slice(), data);
 
         let bad_data: &[u8] = b"you're in a desert";
-        assert!(
-            repo.store_target(bad_data, &path, &target_description)
-                .is_err()
-        );
-
-        let mut read = repo.fetch_target(&path).expect("fetch target");
-        let mut buf = Vec::new();
-        read.read_to_end(&mut buf).expect("read target");
-        assert_eq!(buf.as_slice(), data);
+        repo.store_target(bad_data, &path).unwrap();
+        let mut read = repo.fetch_target(&path, &target_description, 0).unwrap();
+        assert!(read.read_to_end(&mut buf).is_err());
     }
 
     #[test]
     fn file_system_repo_targets() {
-        let temp_dir = TempDir::new("rust-tuf").expect("make temp dir");
+        let temp_dir = TempDir::new("rust-tuf").unwrap();
         let mut repo =
             FileSystemRepository::<JsonDataInterchange>::new(temp_dir.path().to_path_buf());
-        repo.initialize().expect("initialize repo");
+        repo.initialize().unwrap();
 
         let data: &[u8] = b"like tears in the rain";
-        let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256])
-            .expect("generate target desert");
-        let path = TargetPath::new("batty".into()).expect("make target path");
-        repo.store_target(data, &path, &target_description).expect(
-            "store target",
-        );
+        let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
+        let path = TargetPath::new("batty".into()).unwrap();
+        repo.store_target(data, &path).unwrap();
         assert!(temp_dir.path().join("targets").join("batty").exists());
 
-        let mut read = repo.fetch_target(&path).expect("fetch target");
+        let mut read = repo.fetch_target(&path, &target_description, 0).unwrap();
         let mut buf = Vec::new();
-        read.read_to_end(&mut buf).expect("read target");
+        read.read_to_end(&mut buf).unwrap();
         assert_eq!(buf.as_slice(), data);
 
         let bad_data: &[u8] = b"you're in a desert";
-        assert!(
-            repo.store_target(bad_data, &path, &target_description)
-                .is_err()
-        );
-
-        let mut read = repo.fetch_target(&path).expect("fetch target");
-        let mut buf = Vec::new();
-        read.read_to_end(&mut buf).expect("read target");
-        assert_eq!(buf.as_slice(), data);
+        repo.store_target(bad_data, &path).unwrap();
+        let mut read = repo.fetch_target(&path, &target_description, 0).unwrap();
+        assert!(read.read_to_end(&mut buf).is_err());
     }
 }

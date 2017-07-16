@@ -117,7 +117,7 @@ mod test {
     fn write_str() {
         let jsn = Value::String(String::from("wat"));
         let mut out = Vec::new();
-        jsn.write(&mut out).expect("write failed");
+        jsn.write(&mut out).unwrap();
         assert_eq!(&out, b"\"wat\"");
     }
 
@@ -129,7 +129,7 @@ mod test {
             Value::String(String::from("no")),
         ]);
         let mut out = Vec::new();
-        jsn.write(&mut out).expect("write failed");
+        jsn.write(&mut out).unwrap();
         assert_eq!(&out, b"[\"wat\",\"lol\",\"no\"]");
     }
 
@@ -143,7 +143,7 @@ mod test {
         let _ = map.insert(String::from("lol"), arr);
         let jsn = Value::Object(map);
         let mut out = Vec::new();
-        jsn.write(&mut out).expect("write failed");
+        jsn.write(&mut out).unwrap();
         assert_eq!(&out, &b"{\"lol\":[\"haha\",\"new\\nline\"]}");
     }
 }

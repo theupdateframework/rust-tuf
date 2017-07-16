@@ -38,6 +38,7 @@ fn init_client(
         &MetadataPath::from_role(&Role::Root),
         &MetadataVersion::None,
         config.max_root_size(),
+        config.min_bytes_per_second(),
         None,
     )?;
 
@@ -118,7 +119,7 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
     let target_file: &[u8] = b"things fade, alternatives exclude";
     let target_path = TargetPath::new("grendel".into())?;
     let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])?;
-    let _ = remote.store_target(target_file, &target_path, &target_description);
+    let _ = remote.store_target(target_file, &target_path);
 
     let mut target_map = HashMap::new();
     let _ = target_map.insert(target_path, target_description);
