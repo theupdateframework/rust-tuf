@@ -911,12 +911,12 @@ impl<'de> Deserialize<'de> for TargetPath {
 /// Description of a target, used in verification.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TargetDescription {
-    length: u64,
+    size: u64,
     hashes: HashMap<HashAlgorithm, HashValue>,
 }
 
 impl TargetDescription {
-    /// Read the from the given reader and calculate the length and hash values.
+    /// Read the from the given reader and calculate the size and hash values.
     ///
     /// ```
     /// extern crate data_encoding;
@@ -934,7 +934,7 @@ impl TargetDescription {
     ///
     ///     let target_description =
     ///         TargetDescription::from_reader(bytes, &[HashAlgorithm::Sha256]).unwrap();
-    ///     assert_eq!(target_description.length(), bytes.len() as u64);
+    ///     assert_eq!(target_description.size(), bytes.len() as u64);
     ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
     ///
     ///     // $ printf 'it was a pleasure to burn' | sha512sum
@@ -944,7 +944,7 @@ impl TargetDescription {
     ///
     ///     let target_description =
     ///         TargetDescription::from_reader(bytes, &[HashAlgorithm::Sha512]).unwrap();
-    ///     assert_eq!(target_description.length(), bytes.len() as u64);
+    ///     assert_eq!(target_description.size(), bytes.len() as u64);
     ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
     /// }
     /// ```
@@ -952,7 +952,7 @@ impl TargetDescription {
     where
         R: Read,
     {
-        let mut length = 0;
+        let mut size = 0;
         let mut hashes = HashMap::new();
         for alg in hash_algs {
             let context = match alg {
@@ -971,7 +971,7 @@ impl TargetDescription {
                         break;
                     }
 
-                    length += read_bytes as u64;
+                    size += read_bytes as u64;
 
                     for (_, mut context) in hashes.iter_mut() {
                         context.update(&buf[0..read_bytes]);
@@ -989,14 +989,14 @@ impl TargetDescription {
             .collect();
 
         Ok(TargetDescription {
-            length: length,
+            size: size,
             hashes: hashes,
         })
     }
 
-    /// The maximum length of the target.
-    pub fn length(&self) -> u64 {
-        self.length
+    /// The maximum size of the target.
+    pub fn size(&self) -> u64 {
+        self.size
     }
 
     /// An immutable reference to the list of calculated hashes.
@@ -1312,7 +1312,7 @@ mod test {
         let description = TargetDescription::from_reader(s, &[HashAlgorithm::Sha256]).unwrap();
         let jsn_str = json::to_string(&description).unwrap();
         let jsn = json!({
-            "length": 30,
+            "size": 30,
             "hashes": {
                 "sha256": "_F10XHEryG6poxJk2sDJVu61OFf2d-7QWCm7cQE8rhg=",
             },
@@ -1520,7 +1520,7 @@ mod test {
             "expires": "2017-01-01T00:00:00Z",
             "targets": {
                 "foo": {
-                    "length": 3,
+                    "size": 3,
                     "hashes": {
                         "sha256": "LCa0a2j_xo_5m0U8HTBBNBNCLXBkg7-g-YpeiGJm564=",
                     },

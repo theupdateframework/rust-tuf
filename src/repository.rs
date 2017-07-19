@@ -318,7 +318,7 @@ where
 
         Ok(SafeReader::new(
             File::open(&path)?,
-            target_description.length(),
+            target_description.size(),
             min_bytes_per_second,
             Some((alg, value.clone())),
         ))
@@ -478,7 +478,7 @@ where
         let (alg, value) = crypto::hash_preference(target_description.hashes())?; 
         Ok(SafeReader::new(
             resp,
-            target_description.length(),
+            target_description.size(),
             min_bytes_per_second,
             Some((alg, value.clone())),
         ))
@@ -588,7 +588,7 @@ where
             Some(bytes) => {
                 let cur = Cursor::new(bytes.clone());
                 let (alg, value) = crypto::hash_preference(target_description.hashes())?;
-                let read = SafeReader::new(cur, target_description.length(), min_bytes_per_second, Some((alg, value.clone())));
+                let read = SafeReader::new(cur, target_description.size(), min_bytes_per_second, Some((alg, value.clone())));
                 Ok(read)
             },
             None => Err(Error::NotFound),
