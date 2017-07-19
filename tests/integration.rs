@@ -159,11 +159,6 @@ fn simple_delegation() {
     tuf.update_delegation(&MetadataPath::new("delegation".into()).unwrap(), signed)
         .unwrap();
 
-    assert_eq!(
-        tuf.available_targets().unwrap().iter().next(),
-        Some(&TargetPath::new("foo".into()).unwrap())
-    );
-
     assert!(
         tuf.target_description(&TargetPath::new("foo".into()).unwrap())
             .is_ok()
@@ -350,11 +345,6 @@ fn nested_delegation() {
 
     tuf.update_delegation(&MetadataPath::new("delegation-b".into()).unwrap(), signed)
         .unwrap();
-
-    assert_eq!(
-        tuf.available_targets().unwrap().iter().next(),
-        Some(&TargetPath::new("foo".into()).unwrap())
-    );
 
     assert!(
         tuf.target_description(&TargetPath::new("foo".into()).unwrap())
