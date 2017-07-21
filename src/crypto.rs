@@ -3,7 +3,7 @@
 use data_encoding::BASE64URL;
 use derp::{self, Der, Tag};
 use ring;
-use ring::digest::{self, SHA256};
+use ring::digest::{self, SHA256, SHA512};
 use ring::rand::SystemRandom;
 use ring::signature::{RSAKeyPair, RSASigningState, Ed25519KeyPair, ED25519,
                       RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA512, RSA_PSS_SHA256,
@@ -12,6 +12,7 @@ use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use serde::ser::{Serialize, Serializer, Error as SerializeError};
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Display};
+use std::io::Read;
 use std::str::FromStr;
 use std::sync::Arc;
 use untrusted::Input;
@@ -54,6 +55,55 @@ pub fn hash_preference<'a>(
         }
     }
     Err(Error::NoSupportedHashAlgorithm)
+}
+
+/// Calculate the size and hash digest from a given `Read`.
+pub fn calculate_hashes<R: Read>(
+    mut read: R,
+    hash_algs: &[HashAlgorithm],
+) -> Result<(u64, HashMap<HashAlgorithm, HashValue>)> {
+    if hash_algs.len() == 0 {
+        return Err(Error::IllegalArgument(
+            "Cannot provide empty set of hash algorithms".into(),
+        ));
+    }
+
+    let mut size = 0;
+    let mut hashes = HashMap::new();
+    for alg in hash_algs {
+        let context = match alg {
+            &HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
+            &HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
+        };
+
+        let _ = hashes.insert(alg, context);
+    }
+
+    let mut buf = vec![0; 1024];
+    loop {
+        match read.read(&mut buf) {
+            Ok(read_bytes) => {
+                if read_bytes == 0 {
+                    break;
+                }
+
+                size += read_bytes as u64;
+
+                for (_, mut context) in hashes.iter_mut() {
+                    context.update(&buf[0..read_bytes]);
+                }
+            }
+            e @ Err(_) => e.map(|_| ())?,
+        }
+    }
+
+    let hashes = hashes
+        .drain()
+        .map(|(k, v)| {
+            (k.clone(), HashValue::new(v.finish().as_ref().to_vec()))
+        })
+        .collect();
+    Ok((size, hashes))
 }
 
 /// Calculate the given key's ID.

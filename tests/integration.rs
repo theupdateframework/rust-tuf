@@ -73,7 +73,7 @@ fn simple_delegation() {
     //// build the timestamp ////
     let mut meta_map = HashMap::new();
     let path = MetadataPath::new("snapshot".into()).unwrap();
-    let desc = MetadataDescription::new(1).unwrap();
+    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
     let _ = meta_map.insert(path, desc);
     let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
         .unwrap();
@@ -89,10 +89,10 @@ fn simple_delegation() {
     //// build the snapshot ////
     let mut meta_map = HashMap::new();
     let path = MetadataPath::new("targets".into()).unwrap();
-    let desc = MetadataDescription::new(1).unwrap();
+    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
     let _ = meta_map.insert(path, desc);
     let path = MetadataPath::new("delegation".into()).unwrap();
-    let desc = MetadataDescription::new(1).unwrap();
+    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
     let _ = meta_map.insert(path, desc);
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
         .unwrap();
@@ -221,7 +221,7 @@ fn nested_delegation() {
     //// build the timestamp ////
     let mut meta_map = HashMap::new();
     let path = MetadataPath::new("snapshot".into()).unwrap();
-    let desc = MetadataDescription::new(1).unwrap();
+    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
     let _ = meta_map.insert(path, desc);
     let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
         .unwrap();
@@ -237,13 +237,13 @@ fn nested_delegation() {
     //// build the snapshot ////
     let mut meta_map = HashMap::new();
     let path = MetadataPath::new("targets".into()).unwrap();
-    let desc = MetadataDescription::new(1).unwrap();
+    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
     let _ = meta_map.insert(path, desc);
     let path = MetadataPath::new("delegation-a".into()).unwrap();
-    let desc = MetadataDescription::new(1).unwrap();
+    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
     let _ = meta_map.insert(path, desc);
     let path = MetadataPath::new("delegation-b".into()).unwrap();
-    let desc = MetadataDescription::new(1).unwrap();
+    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
     let _ = meta_map.insert(path, desc);
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
         .unwrap();
