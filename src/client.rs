@@ -3,7 +3,8 @@
 use Result;
 use error::Error;
 use interchange::DataInterchange;
-use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath, TargetPath};
+use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath, TargetPath, TargetDescription,
+               TargetsMetadata, SnapshotMetadata};
 use repository::Repository;
 use tuf::Tuf;
 
@@ -276,7 +277,117 @@ where
 
     /// Fetch a target from the remote repo and write it to the local repo.
     pub fn fetch_target(&mut self, target: &TargetPath) -> Result<()> {
-        let target_description = self.tuf.target_description(target)?;
+        fn lookup<_D, _L, _R>(
+            tuf: &mut Tuf<_D>,
+            config: &Config,
+            default_terminate: bool,
+            target: &TargetPath,
+            snapshot: &SnapshotMetadata,
+            targets: Option<&TargetsMetadata>,
+            local: &mut _L,
+            remote: &mut _R,
+        ) -> (bool, Result<TargetDescription>)
+        where
+            _D: DataInterchange,
+            _L: Repository<_D>,
+            _R: Repository<_D>,
+        {
+            // these clones are dumb, but we need immutable values and not references for update
+            // tuf in the loop below
+            let targets = match targets {
+                Some(t) => t.clone(),
+                None => match tuf.targets() {
+                    Some(t) => t.clone(),
+                    None => return (default_terminate, Err(Error::MissingMetadata(Role::Targets))),
+                }
+            };
+                
+            match targets.targets().get(target) {
+                Some(t) => return (default_terminate, Ok(t.clone())),
+                None => (),
+            }
+
+            let delegations = match targets.delegations() {
+                Some(d) => d,
+                None => return (default_terminate, Err(Error::NotFound)),
+            };
+
+            for delegation in delegations.roles().iter() {
+                if !delegation.paths().iter().any(|p| target.is_child(p)) {
+                    if delegation.terminating() {
+                        return (true, Err(Error::NotFound))
+                    } else {
+                        continue
+                    }
+                }
+
+                let role_meta = match snapshot.meta().get(delegation.role()) {
+                    Some(m) => m,
+                    None if !delegation.terminating() => continue,
+                    None => return (true, Err(Error::NotFound)),
+                };
+
+                let meta = match local.fetch_metadata::<TargetsMetadata>(
+                    &Role::Targets,
+                    delegation.role(),
+                    &MetadataVersion::None,
+                    &None, // TODO max size
+                    config.min_bytes_per_second(),
+                    None, // TODO hashes
+                ).or_else(|_| 
+                    remote.fetch_metadata::<TargetsMetadata>(
+                    &Role::Targets,
+                    delegation.role(),
+                    &MetadataVersion::None,
+                    &None, // TODO max size
+                    config.min_bytes_per_second(),
+                    None, // TODO hashes
+                    )
+                ) {
+                    Ok(m) => m,
+                    Err(ref e) if !delegation.terminating() => {
+                        warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
+                        continue
+                    },
+                    Err(e) => {
+                        warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
+                        return (true, Err(e))
+                    }
+                };
+
+                match tuf.update_delegation(delegation.role(), meta) {
+                    Ok(_) => {
+                        let meta = tuf.delegations().get(delegation.role()).unwrap().clone();
+                        let (term, res) = lookup(tuf, config, delegation.terminating(), target, snapshot, Some(&meta), local, remote);
+                        
+                        if term && res.is_err() {
+                            return (true, res)
+                        }
+
+                        // TODO end recursion early
+                    }
+                    Err(_) if !delegation.terminating() => continue,
+                    Err(e) => return (true, Err(e)),
+
+                };
+            }
+
+            (default_terminate, Err(Error::NotFound))
+        }
+
+        let snapshot = self.tuf.snapshot().ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?.clone();
+        let (_, target_description) = lookup(
+            &mut self.tuf,
+            &self.config,
+            false,
+            target,
+            &snapshot,
+            None,
+            &mut self.local,
+            &mut self.remote,
+        );
+        let target_description = target_description?;
+
         let read = self.remote.fetch_target(
             target,
             &target_description,
