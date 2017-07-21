@@ -33,7 +33,10 @@ pub trait DataInterchange: Debug + PartialEq {
         T: Serialize;
 
     /// Write a struct to a stream.
-    fn to_writer<W, T: ?Sized>(writer: W, value: &T) -> Result<()>
+    ///
+    /// Note: This *MUST* writer the bytes canonically for hashes to line up correctly in other
+    /// areas of the library.
+    fn to_writer<W, T: Sized>(writer: W, value: &T) -> Result<()>
     where
         W: Write,
         T: Serialize;
@@ -141,12 +144,14 @@ impl DataInterchange for JsonDataInterchange {
     /// JsonDataInterchange::to_writer(&mut buf, &arr).unwrap();
     /// assert!(&buf == b"[1, 2, 3]" || &buf == b"[1,2,3]");
     /// ```
-    fn to_writer<W, T: ?Sized>(writer: W, value: &T) -> Result<()>
+    fn to_writer<W, T: Sized>(mut writer: W, value: &T) -> Result<()>
     where
         W: Write,
         T: Serialize,
     {
-        Ok(json::to_writer(writer, value)?)
+        let bytes = Self::canonicalize(&Self::serialize(value)?)?;
+        writer.write_all(&bytes)?;
+        Ok(())
     }
 
     /// ```

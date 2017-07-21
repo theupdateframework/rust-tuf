@@ -2,7 +2,6 @@
 
 use chrono::DateTime;
 use chrono::offset::Utc;
-use ring::digest::{self, SHA256, SHA512};
 use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
 use serde::ser::{Serialize, Serializer, Error as SerializeError};
 use std::collections::{HashMap, HashSet};
@@ -12,7 +11,8 @@ use std::iter::FromIterator;
 use std::marker::PhantomData;
 
 use Result;
-use crypto::{KeyId, PublicKey, Signature, HashAlgorithm, HashValue, SignatureScheme, PrivateKey};
+use crypto::{self, KeyId, PublicKey, Signature, HashAlgorithm, HashValue, SignatureScheme,
+             PrivateKey};
 use error::Error;
 use interchange::DataInterchange;
 use shims;
@@ -704,14 +704,47 @@ impl<'de> Deserialize<'de> for TimestampMetadata {
 }
 
 /// Description of a piece of metadata, used in verification.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MetadataDescription {
     version: u32,
+    size: usize,
+    hashes: HashMap<HashAlgorithm, HashValue>,
 }
 
 impl MetadataDescription {
+    /// Create a `MetadataDescription` from a given reader. Size and hashes will be calculated.
+    pub fn from_reader<R: Read>(
+        read: R,
+        version: u32,
+        hash_algs: &[HashAlgorithm],
+    ) -> Result<Self> {
+        if version < 1 {
+            return Err(Error::IllegalArgument(
+                "Version must be greater than zero".into(),
+            ));
+        }
+
+        let (size, hashes) = crypto::calculate_hashes(read, hash_algs)?;
+
+        if size > ::std::usize::MAX as u64 {
+            return Err(Error::IllegalArgument(
+                "Calculated size exceeded usize".into(),
+            ));
+        }
+
+        Ok(MetadataDescription {
+            version: version,
+            size: size as usize,
+            hashes: hashes,
+        })
+    }
+
     /// Create a new `MetadataDescription`.
-    pub fn new(version: u32) -> Result<Self> {
+    pub fn new(
+        version: u32,
+        size: usize,
+        hashes: HashMap<HashAlgorithm, HashValue>,
+    ) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
                 "Metadata version must be greater than zero. Found: {}",
@@ -719,12 +752,41 @@ impl MetadataDescription {
             )));
         }
 
-        Ok(MetadataDescription { version: version })
+        if hashes.is_empty() {
+            return Err(Error::IllegalArgument(
+                "Cannot have empty set of hashes".into(),
+            ));
+        }
+
+        Ok(MetadataDescription {
+            version: version,
+            size: size,
+            hashes: hashes,
+        })
     }
 
     /// The version of the described metadata.
     pub fn version(&self) -> u32 {
         self.version
+    }
+
+    /// The size of the described metadata.
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    /// An immutable reference to the hashes of the described metadata.
+    pub fn hashes(&self) -> &HashMap<HashAlgorithm, HashValue> {
+        &self.hashes
+    }
+}
+
+impl<'de> Deserialize<'de> for MetadataDescription {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::MetadataDescription = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
     }
 }
 
@@ -909,13 +971,30 @@ impl<'de> Deserialize<'de> for TargetPath {
 }
 
 /// Description of a target, used in verification.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TargetDescription {
     size: u64,
     hashes: HashMap<HashAlgorithm, HashValue>,
 }
 
 impl TargetDescription {
+    /// Create a new `TargetDescription`.
+    ///
+    /// Note: Creating this manually could lead to errors, and the `from_reader` method is
+    /// preferred.
+    pub fn new(size: u64, hashes: HashMap<HashAlgorithm, HashValue>) -> Result<Self> {
+        if hashes.is_empty() {
+            return Err(Error::IllegalArgument(
+                "Cannot have empty set of hashes".into(),
+            ));
+        }
+
+        Ok(TargetDescription {
+            size: size,
+            hashes: hashes,
+        })
+    }
+
     /// Read the from the given reader and calculate the size and hash values.
     ///
     /// ```
@@ -928,7 +1007,6 @@ impl TargetDescription {
     /// fn main() {
     ///     let bytes: &[u8] = b"it was a pleasure to burn";
     ///
-    ///     // $ printf 'it was a pleasure to burn' | sha256sum
     ///     let s = "Rd9zlbzrdWfeL7gnIEi05X-Yv2TCpy4qqZM1N72ZWQs=";
     ///     let sha256 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
     ///
@@ -937,7 +1015,6 @@ impl TargetDescription {
     ///     assert_eq!(target_description.size(), bytes.len() as u64);
     ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
     ///
-    ///     // $ printf 'it was a pleasure to burn' | sha512sum
     ///     let s ="tuIxwKybYdvJpWuUj6dubvpwhkAozWB6hMJIRzqn2jOUdtDTBg381brV4K\
     ///         BU1zKP8GShoJuXEtCf5NkDTCEJgQ==";
     ///     let sha512 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
@@ -948,46 +1025,11 @@ impl TargetDescription {
     ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
     /// }
     /// ```
-    pub fn from_reader<R>(mut read: R, hash_algs: &[HashAlgorithm]) -> Result<Self>
+    pub fn from_reader<R>(read: R, hash_algs: &[HashAlgorithm]) -> Result<Self>
     where
         R: Read,
     {
-        let mut size = 0;
-        let mut hashes = HashMap::new();
-        for alg in hash_algs {
-            let context = match alg {
-                &HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
-                &HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
-            };
-
-            let _ = hashes.insert(alg, context);
-        }
-
-        let mut buf = vec![0; 1024];
-        loop {
-            match read.read(&mut buf) {
-                Ok(read_bytes) => {
-                    if read_bytes == 0 {
-                        break;
-                    }
-
-                    size += read_bytes as u64;
-
-                    for (_, mut context) in hashes.iter_mut() {
-                        context.update(&buf[0..read_bytes]);
-                    }
-                }
-                e @ Err(_) => e.map(|_| ())?,
-            }
-        }
-
-        let hashes = hashes
-            .drain()
-            .map(|(k, v)| {
-                (k.clone(), HashValue::new(v.finish().as_ref().to_vec()))
-            })
-            .collect();
-
+        let (size, hashes) = crypto::calculate_hashes(read, hash_algs)?;
         Ok(TargetDescription {
             size: size,
             hashes: hashes,
@@ -1002,6 +1044,15 @@ impl TargetDescription {
     /// An immutable reference to the list of calculated hashes.
     pub fn hashes(&self) -> &HashMap<HashAlgorithm, HashValue> {
         &self.hashes
+    }
+}
+
+impl<'de> Deserialize<'de> for TargetDescription {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let intermediate: shims::TargetDescription = Deserialize::deserialize(de)?;
+        intermediate.try_into().map_err(|e| {
+            DeserializeError::custom(format!("{:?}", e))
+        })
     }
 }
 
@@ -1451,7 +1502,12 @@ mod test {
             1,
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
             hashmap!{
-                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1).unwrap(),
+                MetadataPath::new("foo".into()).unwrap() =>
+                    MetadataDescription::new(
+                        1,
+                        100,
+                        hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) }
+                    ).unwrap(),
             },
         ).unwrap();
 
@@ -1462,6 +1518,10 @@ mod test {
             "meta": {
                 "foo": {
                     "version": 1,
+                    "size": 100,
+                    "hashes": {
+                        "sha256": "",
+                    },
                 },
             },
         });
@@ -1478,7 +1538,12 @@ mod test {
             1,
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
             hashmap! {
-                MetadataPath::new("foo".into()).unwrap() => MetadataDescription::new(1).unwrap(),
+                MetadataPath::new("foo".into()).unwrap() =>
+                    MetadataDescription::new(
+                        1,
+                        100,
+                        hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
+                    ).unwrap(),
             },
         ).unwrap();
 
@@ -1489,6 +1554,10 @@ mod test {
             "meta": {
                 "foo": {
                     "version": 1,
+                    "size": 100,
+                    "hashes": {
+                        "sha256": "",
+                    },
                 },
             },
         });
@@ -1593,7 +1662,11 @@ mod test {
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
             hashmap! {
                 MetadataPath::new("foo".into()).unwrap() =>
-                    MetadataDescription::new(1).unwrap(),
+                    MetadataDescription::new(
+                        1,
+                        100,
+                        hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
+                    ).unwrap(),
             },
         ).unwrap();
 
@@ -1610,8 +1683,8 @@ mod test {
                 {
                     "key_id": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
                     "scheme": "ed25519",
-                    "value": "T2cUdVcGn08q9Cl4sKXqQni4J63TxZ48wR3jt583QuWXJ2AmxRHwEnW\
-                        IHtkCOmzohF4D0v9JspeH6samO-H6CA==",
+                    "value": "9QXO-Av15zaWEsheO9JbWdo8iAF9vEbUKVePJpGRX5s6b1G8eqH4kvAE2jZV349JvZ\
+                        -2yPGLE20V_7JwhMLYCQ==",
                 }
             ],
             "signed": {
@@ -1621,6 +1694,10 @@ mod test {
                 "meta": {
                     "foo": {
                         "version": 1,
+                        "size": 100,
+                        "hashes": {
+                            "sha256": "",
+                        },
                     },
                 },
             },

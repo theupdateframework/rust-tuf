@@ -7,7 +7,7 @@ use std::collections::{HashSet, HashMap};
 use tuf::{Tuf, Error};
 use tuf::client::{Client, Config};
 use tuf::crypto::{PrivateKey, SignatureScheme, KeyId, HashAlgorithm};
-use tuf::interchange::JsonDataInterchange;
+use tuf::interchange::{DataInterchange, JsonDataInterchange};
 use tuf::metadata::{RoleDefinition, RootMetadata, Role, MetadataVersion, MetadataPath,
                     SignedMetadata, TargetDescription, TargetPath, TargetsMetadata,
                     MetadataDescription, SnapshotMetadata, TimestampMetadata};
@@ -144,10 +144,13 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
         &signed,
     )?;
 
+    let targets_bytes =
+        JsonDataInterchange::canonicalize(&JsonDataInterchange::serialize(&signed)?)?;
+
     //// build the snapshot ////
     let mut meta_map = HashMap::new();
     let path = MetadataPath::new("targets".into())?;
-    let desc = MetadataDescription::new(1)?;
+    let desc = MetadataDescription::from_reader(&*targets_bytes, 1, &[HashAlgorithm::Sha256])?;
     let _ = meta_map.insert(path, desc);
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)?;
 
@@ -170,10 +173,13 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
         &signed,
     )?;
 
+    let snapshot_bytes =
+        JsonDataInterchange::canonicalize(&JsonDataInterchange::serialize(&signed)?)?;
+
     //// build the timestamp ////
     let mut meta_map = HashMap::new();
     let path = MetadataPath::new("snapshot".into())?;
-    let desc = MetadataDescription::new(1)?;
+    let desc = MetadataDescription::from_reader(&*snapshot_bytes, 1, &[HashAlgorithm::Sha256])?;
     let _ = meta_map.insert(path, desc);
     let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)?;
 

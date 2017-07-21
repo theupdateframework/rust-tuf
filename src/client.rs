@@ -1,11 +1,11 @@
 //! Clients for high level interactions with TUF repositories.
 
-use std::collections::{HashSet, VecDeque};
-
 use Result;
+use crypto;
 use error::Error;
 use interchange::DataInterchange;
-use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath, TargetPath};
+use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath, TargetPath, TargetDescription,
+               TargetsMetadata, SnapshotMetadata};
 use repository::Repository;
 use tuf::Tuf;
 
@@ -96,23 +96,7 @@ where
             }
         };
 
-        let de = match Self::update_delegations(
-            &mut self.tuf,
-            &mut self.local,
-            self.config.min_bytes_per_second,
-        ) {
-            Ok(b) => b,
-            Err(e) => {
-                warn!(
-                    "Error updating delegation metadata from local sources: {:?}",
-                    e
-                );
-                // TODO this might be untrue because of a partial update
-                false
-            }
-        };
-
-        Ok(r || ts || sn || ta || de)
+        Ok(r || ts || sn || ta)
     }
 
     /// Update TUF metadata from the remote repository.
@@ -141,13 +125,8 @@ where
             &mut self.remote,
             self.config.min_bytes_per_second,
         )?;
-        let de = Self::update_delegations(
-            &mut self.tuf,
-            &mut self.remote,
-            self.config.min_bytes_per_second,
-        )?;
 
-        Ok(r || ts || sn || ta || de)
+        Ok(r || ts || sn || ta)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -251,13 +230,15 @@ where
             return Ok(false);
         }
 
+        let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
+
         let snap = repo.fetch_metadata(
             &Role::Snapshot,
             &MetadataPath::from_role(&Role::Snapshot),
             &MetadataVersion::None,
-            &None,
+            &Some(snapshot_description.size()),
             min_bytes_per_second,
-            None,
+            Some((alg, value.clone())),
         )?;
         tuf.update_snapshot(snap)
     }
@@ -286,89 +267,153 @@ where
             return Ok(false);
         }
 
+        let (alg, value) = crypto::hash_preference(targets_description.hashes())?;
+
         let targets = repo.fetch_metadata(
             &Role::Targets,
             &MetadataPath::from_role(&Role::Targets),
             &MetadataVersion::None,
-            &None,
+            &Some(targets_description.size()),
             min_bytes_per_second,
-            None,
+            Some((alg, value.clone())),
         )?;
         tuf.update_targets(targets)
     }
 
-    /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_delegations<T>(
-        tuf: &mut Tuf<D>,
-        repo: &mut T,
-        min_bytes_per_second: u32,
-    ) -> Result<bool>
-    where
-        T: Repository<D>,
-    {
-        let _ = match tuf.snapshot() {
-            Some(s) => s,
-            None => return Err(Error::MissingMetadata(Role::Snapshot)),
-        }.clone();
-        let targets = match tuf.targets() {
-            Some(t) => t,
-            None => return Err(Error::MissingMetadata(Role::Targets)),
-        }.clone();
-        let delegations = match targets.delegations() {
-            Some(d) => d,
-            None => return Ok(false),
-        }.clone();
-
-        let mut visited = HashSet::new();
-        let mut to_visit = VecDeque::new();
-
-        for role in delegations.roles().iter().map(|r| r.role()) {
-            let _ = to_visit.push_back(role.clone());
-        }
-
-        let mut updated = false;
-        while let Some(role) = to_visit.pop_front() {
-            if visited.contains(&role) {
-                continue;
-            }
-            let _ = visited.insert(role.clone());
-
-            let delegation = match repo.fetch_metadata(
-                &Role::Targets,
-                &role,
-                &MetadataVersion::None,
-                &None,
-                min_bytes_per_second,
-                None,
-            ) {
-                Ok(d) => d,
-                Err(e) => {
-                    warn!("Failed to fetuch delegation {:?}: {:?}", role, e);
-                    continue;
-                }
-            };
-
-            match tuf.update_delegation(&role, delegation) {
-                Ok(u) => updated |= u,
-                Err(e) => {
-                    warn!("Failed to update delegation {:?}: {:?}", role, e);
-                    continue;
-                }
-            };
-
-            if let Some(ds) = tuf.delegations().get(&role).and_then(|t| t.delegations()) {
-                for d in ds.roles() {
-                    let _ = to_visit.push_back(d.role().clone());
-                }
-            }
-        }
-
-        Ok(updated)
-    }
-
     /// Fetch a target from the remote repo and write it to the local repo.
     pub fn fetch_target(&mut self, target: &TargetPath) -> Result<()> {
-        let target_description = self.tuf.target_description(target)?;
+        fn lookup<_D, _L, _R>(
+            tuf: &mut Tuf<_D>,
+            config: &Config,
+            default_terminate: bool,
+            target: &TargetPath,
+            snapshot: &SnapshotMetadata,
+            targets: Option<&TargetsMetadata>,
+            local: &mut _L,
+            remote: &mut _R,
+        ) -> (bool, Result<TargetDescription>)
+        where
+            _D: DataInterchange,
+            _L: Repository<_D>,
+            _R: Repository<_D>,
+        {
+            // these clones are dumb, but we need immutable values and not references for update
+            // tuf in the loop below
+            let targets = match targets {
+                Some(t) => t.clone(),
+                None => {
+                    match tuf.targets() {
+                        Some(t) => t.clone(),
+                        None => {
+                            return (
+                                default_terminate,
+                                Err(Error::MissingMetadata(Role::Targets)),
+                            )
+                        }
+                    }
+                }
+            };
+
+            match targets.targets().get(target) {
+                Some(t) => return (default_terminate, Ok(t.clone())),
+                None => (),
+            }
+
+            let delegations = match targets.delegations() {
+                Some(d) => d,
+                None => return (default_terminate, Err(Error::NotFound)),
+            };
+
+            for delegation in delegations.roles().iter() {
+                if !delegation.paths().iter().any(|p| target.is_child(p)) {
+                    if delegation.terminating() {
+                        return (true, Err(Error::NotFound));
+                    } else {
+                        continue;
+                    }
+                }
+
+                let role_meta = match snapshot.meta().get(delegation.role()) {
+                    Some(m) => m,
+                    None if !delegation.terminating() => continue,
+                    None => return (true, Err(Error::NotFound)),
+                };
+
+                let meta = match local
+                    .fetch_metadata::<TargetsMetadata>(
+                        &Role::Targets,
+                        delegation.role(),
+                        &MetadataVersion::None,
+                        &None, // TODO max size
+                        config.min_bytes_per_second(),
+                        None, // TODO hashes
+                    )
+                    .or_else(|_| {
+                        remote.fetch_metadata::<TargetsMetadata>(
+                            &Role::Targets,
+                            delegation.role(),
+                            &MetadataVersion::None,
+                            &None, // TODO max size
+                            config.min_bytes_per_second(),
+                            None, // TODO hashes
+                        )
+                    }) {
+                    Ok(m) => m,
+                    Err(ref e) if !delegation.terminating() => {
+                        warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
+                        continue;
+                    }
+                    Err(e) => {
+                        warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
+                        return (true, Err(e));
+                    }
+                };
+
+                match tuf.update_delegation(delegation.role(), meta) {
+                    Ok(_) => {
+                        let meta = tuf.delegations().get(delegation.role()).unwrap().clone();
+                        let (term, res) = lookup(
+                            tuf,
+                            config,
+                            delegation.terminating(),
+                            target,
+                            snapshot,
+                            Some(&meta),
+                            local,
+                            remote,
+                        );
+
+                        if term && res.is_err() {
+                            return (true, res);
+                        }
+
+                        // TODO end recursion early
+                    }
+                    Err(_) if !delegation.terminating() => continue,
+                    Err(e) => return (true, Err(e)),
+
+                };
+            }
+
+            (default_terminate, Err(Error::NotFound))
+        }
+
+        let snapshot = self.tuf
+            .snapshot()
+            .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
+            .clone();
+        let (_, target_description) = lookup(
+            &mut self.tuf,
+            &self.config,
+            false,
+            target,
+            &snapshot,
+            None,
+            &mut self.local,
+            &mut self.remote,
+        );
+        let target_description = target_description?;
+
         let read = self.remote.fetch_target(
             target,
             &target_description,

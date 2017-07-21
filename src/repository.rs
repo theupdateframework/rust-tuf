@@ -76,20 +76,23 @@ impl<R: Read> Read for SafeReader<R> {
                     if let Some((context, expected_hash)) = self.hasher.take() {
                         let generated_hash = context.finish();
                         if generated_hash.as_ref() != expected_hash.value() {
-                            return Err(io::Error::new(ErrorKind::InvalidData,
-                                "Calculated hash did not match the required hash."))
+                            return Err(io::Error::new(
+                                ErrorKind::InvalidData,
+                                "Calculated hash did not match the required hash.",
+                            ));
                         }
                     }
 
-                    return Ok(0)
+                    return Ok(0);
                 }
 
                 match self.bytes_read.checked_add(read_bytes as u64) {
                     Some(sum) if sum <= self.max_size => self.bytes_read = sum,
                     _ => {
-                        return Err(io::Error::new(ErrorKind::InvalidData, 
-                            "Read exceeded the maximum allowed bytes."),
-                        );
+                        return Err(io::Error::new(
+                            ErrorKind::InvalidData,
+                            "Read exceeded the maximum allowed bytes.",
+                        ));
                     }
                 }
 
@@ -99,8 +102,10 @@ impl<R: Read> Read for SafeReader<R> {
                     if self.bytes_read as f32 / (duration.num_seconds() as f32) <
                         self.min_bytes_per_second as f32
                     {
-                        return Err(io::Error::new(ErrorKind::TimedOut,
-                                                  "Read aborted. Bitrate too low."));
+                        return Err(io::Error::new(
+                            ErrorKind::TimedOut,
+                            "Read aborted. Bitrate too low.",
+                        ));
                     }
                 }
 
@@ -129,6 +134,9 @@ where
     fn initialize(&mut self) -> Result<()>;
 
     /// Store signed metadata.
+    ///
+    /// Note: This *MUST* canonicalize the bytes before storing them as a read will expect the
+    /// hashes of the metadata to match.
     fn store_metadata<M>(
         &mut self,
         role: &Role,
@@ -475,7 +483,7 @@ where
         min_bytes_per_second: u32,
     ) -> Result<SafeReader<Self::TargetRead>> {
         let resp = self.get(&None, &target_path.components())?;
-        let (alg, value) = crypto::hash_preference(target_description.hashes())?; 
+        let (alg, value) = crypto::hash_preference(target_description.hashes())?;
         Ok(SafeReader::new(
             resp,
             target_description.size(),
@@ -588,9 +596,14 @@ where
             Some(bytes) => {
                 let cur = Cursor::new(bytes.clone());
                 let (alg, value) = crypto::hash_preference(target_description.hashes())?;
-                let read = SafeReader::new(cur, target_description.size(), min_bytes_per_second, Some((alg, value.clone())));
+                let read = SafeReader::new(
+                    cur,
+                    target_description.size(),
+                    min_bytes_per_second,
+                    Some((alg, value.clone())),
+                );
                 Ok(read)
-            },
+            }
             None => Err(Error::NotFound),
         }
     }
@@ -608,7 +621,8 @@ mod test {
         repo.initialize().unwrap();
 
         let data: &[u8] = b"like tears in the rain";
-        let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
+        let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256])
+            .unwrap();
         let path = TargetPath::new("batty".into()).unwrap();
         repo.store_target(data, &path).unwrap();
 
@@ -631,7 +645,8 @@ mod test {
         repo.initialize().unwrap();
 
         let data: &[u8] = b"like tears in the rain";
-        let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
+        let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256])
+            .unwrap();
         let path = TargetPath::new("batty".into()).unwrap();
         repo.store_target(data, &path).unwrap();
         assert!(temp_dir.path().join("targets").join("batty").exists());
