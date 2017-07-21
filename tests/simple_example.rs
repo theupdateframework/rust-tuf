@@ -1,9 +1,10 @@
 extern crate chrono;
+#[macro_use]
+extern crate maplit;
 extern crate tuf;
 
 use chrono::prelude::*;
 use chrono::offset::Utc;
-use std::collections::{HashSet, HashMap};
 use tuf::{Tuf, Error};
 use tuf::client::{Client, Config};
 use tuf::crypto::{PrivateKey, SignatureScheme, KeyId, HashAlgorithm};
@@ -68,21 +69,10 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
         timestamp_key.public().clone(),
     ];
 
-    let mut key_ids = HashSet::new();
-    key_ids.insert(root_key.key_id().clone());
-    let root_def = RoleDefinition::new(1, key_ids)?;
-
-    let mut key_ids = HashSet::new();
-    key_ids.insert(snapshot_key.key_id().clone());
-    let snapshot_def = RoleDefinition::new(1, key_ids)?;
-
-    let mut key_ids = HashSet::new();
-    key_ids.insert(targets_key.key_id().clone());
-    let targets_def = RoleDefinition::new(1, key_ids)?;
-
-    let mut key_ids = HashSet::new();
-    key_ids.insert(timestamp_key.key_id().clone());
-    let timestamp_def = RoleDefinition::new(1, key_ids)?;
+    let root_def = RoleDefinition::new(1, hashset!(root_key.key_id().clone()))?;
+    let snapshot_def = RoleDefinition::new(1, hashset!(snapshot_key.key_id().clone()))?;
+    let targets_def = RoleDefinition::new(1, hashset!(targets_key.key_id().clone()))?;
+    let timestamp_def = RoleDefinition::new(1, hashset!(timestamp_key.key_id().clone()))?;
 
     let root = RootMetadata::new(
         1,
@@ -121,8 +111,7 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
     let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])?;
     let _ = remote.store_target(target_file, &target_path);
 
-    let mut target_map = HashMap::new();
-    let _ = target_map.insert(target_path, target_description);
+    let target_map = hashmap!(target_path => target_description);
     let targets = TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None)?;
 
     let signed = SignedMetadata::<JsonDataInterchange, TargetsMetadata>::new(
@@ -148,10 +137,10 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
         JsonDataInterchange::canonicalize(&JsonDataInterchange::serialize(&signed)?)?;
 
     //// build the snapshot ////
-    let mut meta_map = HashMap::new();
-    let path = MetadataPath::new("targets".into())?;
-    let desc = MetadataDescription::from_reader(&*targets_bytes, 1, &[HashAlgorithm::Sha256])?;
-    let _ = meta_map.insert(path, desc);
+    let meta_map = hashmap! {
+        MetadataPath::new("targets".into())? =>
+            MetadataDescription::from_reader(&*targets_bytes, 1, &[HashAlgorithm::Sha256])?,
+    };
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)?;
 
     let signed = SignedMetadata::<JsonDataInterchange, SnapshotMetadata>::new(
@@ -177,10 +166,10 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
         JsonDataInterchange::canonicalize(&JsonDataInterchange::serialize(&signed)?)?;
 
     //// build the timestamp ////
-    let mut meta_map = HashMap::new();
-    let path = MetadataPath::new("snapshot".into())?;
-    let desc = MetadataDescription::from_reader(&*snapshot_bytes, 1, &[HashAlgorithm::Sha256])?;
-    let _ = meta_map.insert(path, desc);
+    let meta_map = hashmap! {
+        MetadataPath::new("snapshot".into())? =>
+            MetadataDescription::from_reader(&*snapshot_bytes, 1, &[HashAlgorithm::Sha256])?,
+    };
     let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)?;
 
     let signed = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
