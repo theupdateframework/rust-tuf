@@ -1,6 +1,6 @@
 //! Clients for high level interactions with TUF repositories.
 
-use std::io::{Read,Write};
+use std::io::{Read, Write};
 
 use Result;
 use crypto;
@@ -290,7 +290,11 @@ where
     }
 
     /// Fetch a target from the remote repo and write it to the provided writer.
-    pub fn fetch_target_to_writer<W: Write>(&mut self, target: &TargetPath, mut write: W) -> Result<()> {
+    pub fn fetch_target_to_writer<W: Write>(
+        &mut self,
+        target: &TargetPath,
+        mut write: W,
+    ) -> Result<()> {
         let mut read = self._fetch_target(target)?;
         let mut buf = [0; 1024];
         loop {
@@ -322,10 +326,13 @@ where
             _R: Repository<_D>,
         {
             if current_depth > config.max_delegation_depth {
-                warn!("Walking the delegation graph would have exceeded the configured max depth: {}",
-                      config.max_delegation_depth);
-                return (default_terminate, Err(Error::NotFound))
+                warn!(
+                    "Walking the delegation graph would have exceeded the configured max depth: {}",
+                    config.max_delegation_depth
+                );
+                return (default_terminate, Err(Error::NotFound));
             }
+
             // these clones are dumb, but we need immutable values and not references for update
             // tuf in the loop below
             let targets = match targets {
@@ -370,7 +377,7 @@ where
 
                 let (alg, value) = match crypto::hash_preference(role_meta.hashes()) {
                     Ok(h) => h,
-                    Err(e) => return (delegation.terminating(), Err(e))
+                    Err(e) => return (delegation.terminating(), Err(e)),
                 };
 
                 let meta = match local
@@ -510,7 +517,7 @@ impl ConfigBuilder {
             max_root_size: self.max_root_size,
             max_timestamp_size: self.max_timestamp_size,
             min_bytes_per_second: self.min_bytes_per_second,
-            max_delegation_depth: self.max_delegation_depth
+            max_delegation_depth: self.max_delegation_depth,
         })
     }
 

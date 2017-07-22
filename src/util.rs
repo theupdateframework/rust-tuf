@@ -103,4 +103,3 @@ impl<R: Read> Read for SafeReader<R> {
         }
     }
 }
-

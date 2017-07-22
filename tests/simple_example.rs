@@ -137,7 +137,8 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
         JsonDataInterchange::canonicalize(&JsonDataInterchange::serialize(&signed)?)?;
 
     //// build the snapshot ////
-    let meta_map = hashmap! {
+    let meta_map =
+        hashmap! {
         MetadataPath::new("targets".into())? =>
             MetadataDescription::from_reader(&*targets_bytes, 1, &[HashAlgorithm::Sha256])?,
     };
@@ -166,7 +167,8 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
         JsonDataInterchange::canonicalize(&JsonDataInterchange::serialize(&signed)?)?;
 
     //// build the timestamp ////
-    let meta_map = hashmap! {
+    let meta_map =
+        hashmap! {
         MetadataPath::new("snapshot".into())? =>
             MetadataDescription::from_reader(&*snapshot_bytes, 1, &[HashAlgorithm::Sha256])?,
     };
