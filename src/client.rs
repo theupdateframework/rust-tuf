@@ -1,5 +1,7 @@
 //! Clients for high level interactions with TUF repositories.
 
+use std::io::{Read,Write};
+
 use Result;
 use crypto;
 use error::Error;
@@ -8,6 +10,7 @@ use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath, TargetPath, Ta
                TargetsMetadata, SnapshotMetadata};
 use repository::Repository;
 use tuf::Tuf;
+use util::SafeReader;
 
 /// A client that interacts with TUF repositories.
 pub struct Client<D, L, R>
@@ -282,6 +285,26 @@ where
 
     /// Fetch a target from the remote repo and write it to the local repo.
     pub fn fetch_target(&mut self, target: &TargetPath) -> Result<()> {
+        let read = self._fetch_target(target)?;
+        self.local.store_target(read, target)
+    }
+
+    /// Fetch a target from the remote repo and write it to the provided writer.
+    pub fn fetch_target_to_writer<W: Write>(&mut self, target: &TargetPath, mut write: W) -> Result<()> {
+        let mut read = self._fetch_target(target)?;
+        let mut buf = [0; 1024];
+        loop {
+            let bytes_read = read.read(&mut buf)?;
+            if bytes_read == 0 {
+                break;
+            }
+            write.write_all(&buf[..bytes_read])?
+        }
+        Ok(())
+    }
+
+    // TODO this should check the local repo first
+    fn _fetch_target(&mut self, target: &TargetPath) -> Result<SafeReader<R::TargetRead>> {
         fn lookup<_D, _L, _R>(
             tuf: &mut Tuf<_D>,
             config: &Config,
@@ -339,23 +362,28 @@ where
                     None => return (true, Err(Error::NotFound)),
                 };
 
+                let (alg, value) = match crypto::hash_preference(role_meta.hashes()) {
+                    Ok(h) => h,
+                    Err(e) => return (delegation.terminating(), Err(e))
+                };
+
                 let meta = match local
                     .fetch_metadata::<TargetsMetadata>(
                         &Role::Targets,
                         delegation.role(),
                         &MetadataVersion::None,
-                        &None, // TODO max size
+                        &Some(role_meta.size()),
                         config.min_bytes_per_second(),
-                        None, // TODO hashes
+                        Some((alg, value.clone())),
                     )
                     .or_else(|_| {
                         remote.fetch_metadata::<TargetsMetadata>(
                             &Role::Targets,
                             delegation.role(),
                             &MetadataVersion::None,
-                            &None, // TODO max size
+                            &Some(role_meta.size()),
                             config.min_bytes_per_second(),
-                            None, // TODO hashes
+                            Some((alg, value.clone())),
                         )
                     }) {
                     Ok(m) => m,
@@ -414,12 +442,11 @@ where
         );
         let target_description = target_description?;
 
-        let read = self.remote.fetch_target(
+        self.remote.fetch_target(
             target,
             &target_description,
             self.config.min_bytes_per_second,
-        )?;
-        self.local.store_target(read, target)
+        )
     }
 }
 

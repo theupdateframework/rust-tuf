@@ -105,6 +105,8 @@ pub mod metadata;
 pub mod repository;
 mod shims;
 pub mod tuf;
+mod util;
 
-pub use tuf::*;
 pub use error::*;
+pub use tuf::*;
+pub use util::*;
