@@ -309,6 +309,7 @@ where
             tuf: &mut Tuf<_D>,
             config: &Config,
             default_terminate: bool,
+            current_depth: u32,
             target: &TargetPath,
             snapshot: &SnapshotMetadata,
             targets: Option<&TargetsMetadata>,
@@ -320,6 +321,11 @@ where
             _L: Repository<_D>,
             _R: Repository<_D>,
         {
+            if current_depth > config.max_delegation_depth {
+                warn!("Walking the delegation graph would have exceeded the configured max depth: {}",
+                      config.max_delegation_depth);
+                return (default_terminate, Err(Error::NotFound))
+            }
             // these clones are dumb, but we need immutable values and not references for update
             // tuf in the loop below
             let targets = match targets {
@@ -404,6 +410,7 @@ where
                             tuf,
                             config,
                             delegation.terminating(),
+                            current_depth + 1,
                             target,
                             snapshot,
                             Some(&meta),
@@ -434,6 +441,7 @@ where
             &mut self.tuf,
             &self.config,
             false,
+            0,
             target,
             &snapshot,
             None,
@@ -456,6 +464,7 @@ pub struct Config {
     max_root_size: Option<usize>,
     max_timestamp_size: Option<usize>,
     min_bytes_per_second: u32,
+    max_delegation_depth: u32,
 }
 
 impl Config {
@@ -478,6 +487,11 @@ impl Config {
     pub fn min_bytes_per_second(&self) -> u32 {
         self.min_bytes_per_second
     }
+
+    /// The maximum number of steps used when walking the delegation graph.
+    pub fn max_delegation_depth(&self) -> u32 {
+        self.max_delegation_depth
+    }
 }
 
 /// Helper for building and validating a TUF `Config`.
@@ -486,6 +500,7 @@ pub struct ConfigBuilder {
     max_root_size: Option<usize>,
     max_timestamp_size: Option<usize>,
     min_bytes_per_second: u32,
+    max_delegation_depth: u32,
 }
 
 impl ConfigBuilder {
@@ -495,6 +510,7 @@ impl ConfigBuilder {
             max_root_size: self.max_root_size,
             max_timestamp_size: self.max_timestamp_size,
             min_bytes_per_second: self.min_bytes_per_second,
+            max_delegation_depth: self.max_delegation_depth
         })
     }
 
@@ -515,6 +531,12 @@ impl ConfigBuilder {
         self.min_bytes_per_second = min;
         self
     }
+
+    /// Set the maximum number of steps used when walking the delegation graph.
+    pub fn max_delegation_depth(mut self, max: u32) -> Self {
+        self.max_delegation_depth = max;
+        self
+    }
 }
 
 impl Default for ConfigBuilder {
@@ -525,7 +547,8 @@ impl Default for ConfigBuilder {
     /// let config = ConfigBuilder::default()
     ///     .max_root_size(Some(1024 * 1024))
     ///     .max_timestamp_size(Some(32 * 1024))
-    ///     .min_bytes_per_second(4096);
+    ///     .min_bytes_per_second(4096)
+    ///     .max_delegation_depth(10);
     /// assert_eq!(config, default);
     /// assert!(default.finish().is_ok())
     /// ```
@@ -534,6 +557,7 @@ impl Default for ConfigBuilder {
             max_root_size: Some(1024 * 1024),
             max_timestamp_size: Some(32 * 1024),
             min_bytes_per_second: 4096,
+            max_delegation_depth: 10,
         }
     }
 }
