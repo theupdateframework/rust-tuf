@@ -220,7 +220,7 @@ pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {
 }
 
 /// A piece of raw metadata with attached signatures.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SignedMetadata<D, M>
 where
     D: DataInterchange,

@@ -232,7 +232,7 @@ impl<'de> Deserialize<'de> for SignatureScheme {
 }
 
 /// Wrapper type for the value of a cryptographic signature.
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct SignatureValue(Vec<u8>);
 
 impl SignatureValue {
@@ -635,7 +635,7 @@ impl Debug for PublicKeyValue {
 }
 
 /// A structure that contains a `Signature` and associated data for verifying it.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Signature {
     key_id: KeyId,
     scheme: SignatureScheme,

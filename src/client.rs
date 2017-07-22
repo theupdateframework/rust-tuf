@@ -52,14 +52,12 @@ where
         let r = Self::update_root(
             &mut self.tuf,
             &mut self.local,
-            &self.config.max_root_size,
-            self.config.min_bytes_per_second,
+            &self.config,
         )?;
         let ts = match Self::update_timestamp(
             &mut self.tuf,
             &mut self.local,
-            &self.config.max_timestamp_size,
-            self.config.min_bytes_per_second,
+            &self.config,
         ) {
             Ok(b) => b,
             Err(e) => {
@@ -73,7 +71,7 @@ where
         let sn = match Self::update_snapshot(
             &mut self.tuf,
             &mut self.local,
-            self.config.min_bytes_per_second,
+            &self.config,
         ) {
             Ok(b) => b,
             Err(e) => {
@@ -87,7 +85,7 @@ where
         let ta = match Self::update_targets(
             &mut self.tuf,
             &mut self.local,
-            self.config.min_bytes_per_second,
+            &self.config,
         ) {
             Ok(b) => b,
             Err(e) => {
@@ -109,24 +107,22 @@ where
         let r = Self::update_root(
             &mut self.tuf,
             &mut self.remote,
-            &self.config.max_root_size,
-            self.config.min_bytes_per_second,
+            &self.config,
         )?;
         let ts = Self::update_timestamp(
             &mut self.tuf,
             &mut self.remote,
-            &self.config.max_timestamp_size,
-            self.config.min_bytes_per_second,
+            &self.config,
         )?;
         let sn = Self::update_snapshot(
             &mut self.tuf,
             &mut self.remote,
-            self.config.min_bytes_per_second,
+            &self.config,
         )?;
         let ta = Self::update_targets(
             &mut self.tuf,
             &mut self.remote,
-            self.config.min_bytes_per_second,
+            &self.config,
         )?;
 
         Ok(r || ts || sn || ta)
@@ -136,8 +132,7 @@ where
     fn update_root<T>(
         tuf: &mut Tuf<D>,
         repo: &mut T,
-        max_root_size: &Option<usize>,
-        min_bytes_per_second: u32,
+        config: &Config,
     ) -> Result<bool>
     where
         T: Repository<D>,
@@ -146,8 +141,8 @@ where
             &Role::Root,
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::None,
-            max_root_size,
-            min_bytes_per_second,
+            &config.max_root_size,
+            config.min_bytes_per_second,
             None,
         )?;
         let latest_version = D::deserialize::<RootMetadata>(latest_root.signed())?
@@ -171,8 +166,8 @@ where
                 &Role::Root,
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(i),
-                max_root_size,
-                min_bytes_per_second,
+                &config.max_root_size,
+                config.min_bytes_per_second,
                 None,
             )?;
             if !tuf.update_root(signed)? {
@@ -192,8 +187,7 @@ where
     fn update_timestamp<T>(
         tuf: &mut Tuf<D>,
         repo: &mut T,
-        max_timestamp_size: &Option<usize>,
-        min_bytes_per_second: u32,
+        config: &Config,
     ) -> Result<bool>
     where
         T: Repository<D>,
@@ -202,15 +196,15 @@ where
             &Role::Timestamp,
             &MetadataPath::from_role(&Role::Timestamp),
             &MetadataVersion::None,
-            max_timestamp_size,
-            min_bytes_per_second,
+            &config.max_timestamp_size,
+            config.min_bytes_per_second,
             None,
         )?;
         tuf.update_timestamp(ts)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_snapshot<T>(tuf: &mut Tuf<D>, repo: &mut T, min_bytes_per_second: u32) -> Result<bool>
+    fn update_snapshot<T>(tuf: &mut Tuf<D>, repo: &mut T, config: &Config) -> Result<bool>
     where
         T: Repository<D>,
     {
@@ -234,20 +228,26 @@ where
         }
 
         let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
+        
+        let version = if tuf.root().consistent_snapshot() {
+            MetadataVersion::Hash(value.clone())
+        } else {
+            MetadataVersion::None
+        };
 
         let snap = repo.fetch_metadata(
             &Role::Snapshot,
             &MetadataPath::from_role(&Role::Snapshot),
-            &MetadataVersion::None,
+            &version,
             &Some(snapshot_description.size()),
-            min_bytes_per_second,
+            config.min_bytes_per_second,
             Some((alg, value.clone())),
         )?;
         tuf.update_snapshot(snap)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_targets<T>(tuf: &mut Tuf<D>, repo: &mut T, min_bytes_per_second: u32) -> Result<bool>
+    fn update_targets<T>(tuf: &mut Tuf<D>, repo: &mut T, config: &Config) -> Result<bool>
     where
         T: Repository<D>,
     {
@@ -272,12 +272,18 @@ where
 
         let (alg, value) = crypto::hash_preference(targets_description.hashes())?;
 
+        let version = if tuf.root().consistent_snapshot() {
+            MetadataVersion::Hash(value.clone())
+        } else {
+            MetadataVersion::None
+        };
+
         let targets = repo.fetch_metadata(
             &Role::Targets,
             &MetadataPath::from_role(&Role::Targets),
-            &MetadataVersion::None,
+            &version,
             &Some(targets_description.size()),
-            min_bytes_per_second,
+            config.min_bytes_per_second,
             Some((alg, value.clone())),
         )?;
         tuf.update_targets(targets)
@@ -380,7 +386,13 @@ where
                     Err(e) => return (delegation.terminating(), Err(e)),
                 };
 
-                let meta = match local
+                let version = if tuf.root().consistent_snapshot() {
+                    MetadataVersion::Hash(value.clone())
+                } else {
+                    MetadataVersion::None
+                };
+
+                let signed_meta = match local
                     .fetch_metadata::<TargetsMetadata>(
                         &Role::Targets,
                         delegation.role(),
@@ -393,7 +405,7 @@ where
                         remote.fetch_metadata::<TargetsMetadata>(
                             &Role::Targets,
                             delegation.role(),
-                            &MetadataVersion::None,
+                            &version,
                             &Some(role_meta.size()),
                             config.min_bytes_per_second(),
                             Some((alg, value.clone())),
@@ -410,8 +422,18 @@ where
                     }
                 };
 
-                match tuf.update_delegation(delegation.role(), meta) {
+                match tuf.update_delegation(delegation.role(), signed_meta.clone()) {
                     Ok(_) => {
+                        match local.store_metadata(
+                            &Role::Targets,
+                            delegation.role(),
+                            &MetadataVersion::None,
+                            &signed_meta,
+                        ) {
+                            Ok(_) => (),
+                            Err(e) => warn!("Error storing metadata {:?} locally: {:?}", delegation.role(), e),
+                        }
+
                         let meta = tuf.delegations().get(delegation.role()).unwrap().clone();
                         let (term, res) = lookup(
                             tuf,
