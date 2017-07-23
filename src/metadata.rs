@@ -1281,6 +1281,7 @@ impl<'de> Deserialize<'de> for Delegation {
 mod test {
     use super::*;
     use chrono::prelude::*;
+    use data_encoding::BASE64URL;
     use json;
     use interchange::JsonDataInterchange;
 
@@ -1708,5 +1709,180 @@ mod test {
         let decoded: SignedMetadata<JsonDataInterchange, SnapshotMetadata> =
             json::from_value(encoded).unwrap();
         assert_eq!(decoded, signed);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    //
+    // Here there be test cases about what metadata is allowed to be parsed wherein we do all sorts
+    // of naughty things and make sure the parsers puke appropriately.
+    //                                   ______________
+    //                             ,===:'.,            `-._
+    //                                  `:.`---.__         `-._
+    //                                    `:.     `--.         `.
+    //                                      \.        `.         `.
+    //                              (,,(,    \.         `.   ____,-`.,
+    //                           (,'     `/   \.   ,--.___`.'
+    //                       ,  ,'  ,--.  `,   \.;'         `
+    //                        `{o, {    \  :    \;
+    //                          |,,'    /  /    //
+    //                          j;;    /  ,' ,-//.    ,---.      ,
+    //                          \;'   /  ,' /  _  \  /  _  \   ,'/
+    //                                \   `'  / \  `'  / \  `.' /
+    //                                 `.___,'   `.__,'   `.__,'
+    //
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    fn make_root() -> json::Value {
+        let root_def = RoleDefinition::new(
+            1,
+            hashset!(PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().key_id().clone()),
+        ).unwrap();
+
+        let snapshot_def = RoleDefinition::new(
+            1,
+            hashset!(PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap().key_id().clone()),
+        ).unwrap();
+
+        let targets_def = RoleDefinition::new(
+            1,
+            hashset!(PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap().key_id().clone()),
+        ).unwrap();
+
+        let timestamp_def = RoleDefinition::new(
+            1,
+            hashset!(PrivateKey::from_pkcs8(ED25519_4_PK8).unwrap().key_id().clone()),
+        ).unwrap();
+
+        let root = RootMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            vec!(
+                PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().public().clone(),
+                PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap().public().clone(),
+                PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap().public().clone(),
+                PrivateKey::from_pkcs8(ED25519_4_PK8).unwrap().public().clone(),
+            ),
+            root_def,
+            snapshot_def,
+            targets_def,
+            timestamp_def,
+        ).unwrap();
+
+        json::to_value(&root).unwrap()
+    }
+
+    fn set_version(value: &mut json::Value, version: i64) {
+        match value.as_object_mut() {
+            Some(obj) => {
+                let _ = obj.insert("version".into(), json!(version));
+            }
+            None => panic!(),
+        }
+    }
+
+    // Refuse to deserialize root metadata if the version is not > 0
+    #[test]
+    fn deserialize_json_root_illegal_version() {
+        let mut root_json = make_root();
+        set_version(&mut root_json, 0);
+        assert!(json::from_value::<RootMetadata>(root_json.clone()).is_err());
+
+        let mut root_json = make_root();
+        set_version(&mut root_json, -1);
+        assert!(json::from_value::<RootMetadata>(root_json).is_err());
+    }
+
+    // Refuse to deserialize root metadata if any of the defined keys don't match their key ID
+    #[test]
+    fn deserialize_json_root_bad_key_ids() {
+        let mut root_json = make_root();
+        match root_json.as_object_mut() {
+            Some(obj) => {
+                match obj.get_mut("keys").unwrap().as_object_mut() {
+                    Some(keys) => {
+                        let key_id = keys.keys().next().unwrap().clone();
+                        let key = keys.get(&key_id).unwrap().clone();
+                        let mut bytes = BASE64URL.decode(key_id.as_bytes()).unwrap();
+                        bytes[0] ^= 0x01;
+                        let key_id = BASE64URL.encode(&bytes);
+                        let _ = keys.insert(key_id, key);
+                    }
+                    None => panic!(),
+                }
+            }
+            None => panic!(),
+        }
+
+        assert!(json::from_value::<RootMetadata>(root_json).is_err());
+    }
+
+    // Refuse to deserialize role definitions with illegal thresholds
+    #[test]
+    fn deserialize_json_role_definition_illegal_threshold() {
+        let role_def = RoleDefinition::new(
+            1,
+            hashset!(PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().key_id().clone()),
+        ).unwrap();
+
+        fn set_threshold(value: &mut json::Value, threshold: i32) {
+            match value.as_object_mut() {
+                Some(obj) => {
+                    let _ = obj.insert("threshold".into(), json!(threshold));
+                }
+                None => panic!(),
+            }
+        }
+
+        let mut jsn = json::to_value(&role_def).unwrap();
+        set_threshold(&mut jsn, 0);
+        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+
+        let mut jsn = json::to_value(&role_def).unwrap();
+        set_threshold(&mut jsn, -1);
+        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+
+        let role_def = RoleDefinition::new(
+            2,
+            hashset!(
+                PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().key_id().clone(),
+                PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap().key_id().clone(),
+            ),
+        ).unwrap();
+
+        let mut jsn = json::to_value(&role_def).unwrap();
+        set_threshold(&mut jsn, 3);
+        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+    }
+
+    // Refuse to deserialilze root metadata with wrong type field
+    #[test]
+    fn deserialize_json_root_bad_type() {
+        let mut root = make_root();
+        let _ = root.as_object_mut().unwrap().insert("type".into(), json!("snapshot"));
+        assert!(json::from_value::<RootMetadata>(root).is_err());
+    }
+
+    // Refuse to deserialize role definitions with duplicated key ids
+    #[test]
+    fn deserialize_json_role_definition_duplicate_key_ids() {
+        let key_id = PrivateKey::from_pkcs8(ED25519_1_PK8)
+            .unwrap()
+            .key_id()
+            .clone();
+        let role_def = RoleDefinition::new(1, hashset!(key_id.clone())).unwrap();
+        let mut jsn = json::to_value(&role_def).unwrap();
+
+        match jsn.as_object_mut() {
+            Some(obj) => {
+                match obj.get_mut("key_ids").unwrap().as_array_mut() {
+                    Some(arr) => arr.push(json!(key_id)),
+                    None => panic!(),
+                }
+            }
+            None => panic!(),
+        }
+
+        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
     }
 }

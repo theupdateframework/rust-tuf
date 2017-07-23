@@ -48,12 +48,12 @@ impl RootMetadata {
         let mut keys = Vec::new();
         for (key_id, value) in self.keys.drain() {
             if &key_id != value.key_id() {
-                warn!(
+                return Err(Error::Encoding(format!(
                     "Received key with ID {:?} but calculated it's value as {:?}. \
                        Refusing to add it to the set of trusted keys.",
                     key_id,
                     value.key_id()
-                );
+                )));
             } else {
                 debug!(
                     "Found key with good ID {:?}. Adding it to the set of trusted keys.",

@@ -49,16 +49,8 @@ where
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
     pub fn update_local(&mut self) -> Result<bool> {
-        let r = Self::update_root(
-            &mut self.tuf,
-            &mut self.local,
-            &self.config,
-        )?;
-        let ts = match Self::update_timestamp(
-            &mut self.tuf,
-            &mut self.local,
-            &self.config,
-        ) {
+        let r = Self::update_root(&mut self.tuf, &mut self.local, &self.config)?;
+        let ts = match Self::update_timestamp(&mut self.tuf, &mut self.local, &self.config) {
             Ok(b) => b,
             Err(e) => {
                 warn!(
@@ -68,11 +60,7 @@ where
                 false
             }
         };
-        let sn = match Self::update_snapshot(
-            &mut self.tuf,
-            &mut self.local,
-            &self.config,
-        ) {
+        let sn = match Self::update_snapshot(&mut self.tuf, &mut self.local, &self.config) {
             Ok(b) => b,
             Err(e) => {
                 warn!(
@@ -82,11 +70,7 @@ where
                 false
             }
         };
-        let ta = match Self::update_targets(
-            &mut self.tuf,
-            &mut self.local,
-            &self.config,
-        ) {
+        let ta = match Self::update_targets(&mut self.tuf, &mut self.local, &self.config) {
             Ok(b) => b,
             Err(e) => {
                 warn!(
@@ -104,36 +88,16 @@ where
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
     pub fn update_remote(&mut self) -> Result<bool> {
-        let r = Self::update_root(
-            &mut self.tuf,
-            &mut self.remote,
-            &self.config,
-        )?;
-        let ts = Self::update_timestamp(
-            &mut self.tuf,
-            &mut self.remote,
-            &self.config,
-        )?;
-        let sn = Self::update_snapshot(
-            &mut self.tuf,
-            &mut self.remote,
-            &self.config,
-        )?;
-        let ta = Self::update_targets(
-            &mut self.tuf,
-            &mut self.remote,
-            &self.config,
-        )?;
+        let r = Self::update_root(&mut self.tuf, &mut self.remote, &self.config)?;
+        let ts = Self::update_timestamp(&mut self.tuf, &mut self.remote, &self.config)?;
+        let sn = Self::update_snapshot(&mut self.tuf, &mut self.remote, &self.config)?;
+        let ta = Self::update_targets(&mut self.tuf, &mut self.remote, &self.config)?;
 
         Ok(r || ts || sn || ta)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_root<T>(
-        tuf: &mut Tuf<D>,
-        repo: &mut T,
-        config: &Config,
-    ) -> Result<bool>
+    fn update_root<T>(tuf: &mut Tuf<D>, repo: &mut T, config: &Config) -> Result<bool>
     where
         T: Repository<D>,
     {
@@ -184,11 +148,7 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_timestamp<T>(
-        tuf: &mut Tuf<D>,
-        repo: &mut T,
-        config: &Config,
-    ) -> Result<bool>
+    fn update_timestamp<T>(tuf: &mut Tuf<D>, repo: &mut T, config: &Config) -> Result<bool>
     where
         T: Repository<D>,
     {
@@ -228,7 +188,7 @@ where
         }
 
         let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
-        
+
         let version = if tuf.root().consistent_snapshot() {
             MetadataVersion::Hash(value.clone())
         } else {
@@ -431,7 +391,13 @@ where
                             &signed_meta,
                         ) {
                             Ok(_) => (),
-                            Err(e) => warn!("Error storing metadata {:?} locally: {:?}", delegation.role(), e),
+                            Err(e) => {
+                                warn!(
+                                    "Error storing metadata {:?} locally: {:?}",
+                                    delegation.role(),
+                                    e
+                                )
+                            }
                         }
 
                         let meta = tuf.delegations().get(delegation.role()).unwrap().clone();
