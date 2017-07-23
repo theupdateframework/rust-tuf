@@ -7,61 +7,14 @@
 //! branch](https://github.com/theupdateframework/tuf/blob/develop/docs/tuf-spec.txt) in the
 //! official TUF git repository.
 //!
-//! # Example
+//! It should be noted that historically the TUF spec defined exactly one metadata format and one
+//! way of organizing metadata within a repository. Thus, all TUF implementation could perfectly
+//! interoperate. The TUF spec has moved to describing *how a framework should behave* leaving many
+//! of the detais up to the implementor. Therefore, there are **zero** guarantees that this library
+//! will work with any other TUF implemenation. Should you want to access a TUF repository that
+//! uses `rust-tuf` as its backend from another language, ASN.1 modules and metadata schemas are
+//! provided that will allow you to interoperate with this library.
 //!
-//! ```no_run
-//! extern crate hyper;
-//! extern crate tuf;
-//! extern crate url;
-//!
-//! use hyper::client::Client as HttpClient;
-//! use std::path::PathBuf;
-//! use tuf::Tuf;
-//! use tuf::crypto::KeyId;
-//! use tuf::client::{Client, Config};
-//! use tuf::metadata::{RootMetadata, SignedMetadata, Role, MetadataPath,
-//!     MetadataVersion};
-//! use tuf::interchange::JsonDataInterchange;
-//! use tuf::repository::{Repository, FileSystemRepository, HttpRepository};
-//! use url::Url;
-//!
-//! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
-//!     "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
-//!     "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
-//!     "T5vfRrM1iHpgzGwAHe7MbJH_7r4chkOAphV3OPCCv0I=",
-//! ];
-//!
-//! fn main() {
-//!     let key_ids: Vec<KeyId> = TRUSTED_ROOT_KEY_IDS.iter()
-//!         .map(|k| KeyId::from_string(k).unwrap())
-//!         .collect();
-//!
-//!     let mut local = FileSystemRepository::new(PathBuf::from("~/.rustup"));
-//!
-//!     let mut remote = HttpRepository::new(
-//!         Url::parse("https://static.rust-lang.org/").unwrap(),
-//!         HttpClient::new(),
-//!         Some("rustup/1.4.0".into()),
-//!         None);
-//!
-//!     let config = Config::build().finish().unwrap();
-//!
-//!     // fetching this original root from the network is safe because
-//!     // we are using trusted, pinned keys to verify it
-//!     let root = remote.fetch_metadata(&Role::Root,
-//!                                      &MetadataPath::from_role(&Role::Root),
-//!                                      &MetadataVersion::None,
-//!                                      config.max_root_size(),
-//!                                      config.min_bytes_per_second(),
-//!                                      None).unwrap();
-//!
-//!     let tuf = Tuf::<JsonDataInterchange>::from_root_pinned(root, &key_ids).unwrap();
-//!
-//!     let mut client = Client::new(tuf, config, local, remote).unwrap();
-//!     let _ = client.update_local().unwrap();
-//!     let _ = client.update_remote().unwrap();
-//! }
-//! ```
 
 #![deny(missing_docs)]
 

@@ -1,4 +1,4 @@
-//! Structures used to represent TUF metadata
+//! TUF metadata
 
 use chrono::DateTime;
 use chrono::offset::Utc;
@@ -194,7 +194,7 @@ impl Display for Role {
 /// Enum used for addressing versioned TUF metadata.
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum MetadataVersion {
-    /// The metadata is unversioned.
+    /// The metadata is unversioned. This is the latest version of the metadata.
     None,
     /// The metadata is addressed by a specific version number.
     Number(u32),
@@ -239,7 +239,33 @@ where
     D: DataInterchange,
     M: Metadata,
 {
-    /// Create a new `SignedMetadata`.
+    /// Create a new `SignedMetadata`. The supplied private key is used to sign the canonicalized
+    /// bytes of the provided metadata with the provided scheme.
+    ///
+    /// ```
+    /// extern crate chrono;
+    /// extern crate tuf;
+    ///
+    /// use chrono::prelude::*;
+    /// use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+    /// use tuf::interchange::JsonDataInterchange;
+    /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    ///
+    /// fn main() {
+    ///     let key: &[u8] = include_bytes!("./tests/ed25519/ed25519-1.pk8.der");
+    ///     let key = PrivateKey::from_pkcs8(&key).unwrap();
+    ///
+    ///     let timestamp = TimestampMetadata::new(
+    ///         1,
+    ///         Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+    ///         MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
+    ///             &[HashAlgorithm::Sha256]).unwrap()
+    ///     ).unwrap();
+    ///
+    ///     SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
+    ///         &timestamp, &key, SignatureScheme::Ed25519).unwrap();
+    /// }
+    /// ```
     pub fn new(
         metadata: &M,
         private_key: &PrivateKey,
@@ -263,6 +289,41 @@ where
     /// you're using this to append several signatures are once, you are doing something wrong. The
     /// preferred method is to generate your copy of the metadata locally and use `merge_signatures`
     /// to perform the "append" operations.
+    ///
+    /// ```
+    /// extern crate chrono;
+    /// extern crate tuf;
+    ///
+    /// use chrono::prelude::*;
+    /// use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+    /// use tuf::interchange::JsonDataInterchange;
+    /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    ///
+    /// fn main() {
+    ///     let key_1: &[u8] = include_bytes!("./tests/ed25519/ed25519-1.pk8.der");
+    ///     let key_1 = PrivateKey::from_pkcs8(&key_1).unwrap();
+    ///     
+    ///     // Note: This is for demonstration purposes only.
+    ///     // You should never have multiple private keys on the same device.
+    ///     let key_2: &[u8] = include_bytes!("./tests/ed25519/ed25519-2.pk8.der");
+    ///     let key_2 = PrivateKey::from_pkcs8(&key_2).unwrap();
+    ///
+    ///     let timestamp = TimestampMetadata::new(
+    ///         1,
+    ///         Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+    ///         MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
+    ///             &[HashAlgorithm::Sha256]).unwrap()
+    ///     ).unwrap();
+    ///     let mut timestamp = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
+    ///         &timestamp, &key_1, SignatureScheme::Ed25519).unwrap();
+    ///
+    ///     timestamp.add_signature(&key_2, SignatureScheme::Ed25519).unwrap();
+    ///     assert_eq!(timestamp.signatures().len(), 2);
+    ///
+    ///     timestamp.add_signature(&key_2, SignatureScheme::Ed25519).unwrap();
+    ///     assert_eq!(timestamp.signatures().len(), 2);
+    /// }
+    /// ```
     pub fn add_signature(
         &mut self,
         private_key: &PrivateKey,
@@ -271,9 +332,7 @@ where
         let raw = D::serialize(&self.signed)?;
         let bytes = D::canonicalize(&raw)?;
         let sig = private_key.sign(&bytes, scheme)?;
-        self.signatures.retain(
-            |s| s.key_id() != private_key.key_id(),
-        );
+        self.signatures.retain(|s| s.key_id() != private_key.key_id());
         self.signatures.push(sig);
         Ok(())
     }
@@ -320,6 +379,61 @@ where
     }
 
     /// Verify this metadata.
+    ///
+    /// ```
+    /// extern crate chrono;
+    /// #[macro_use]
+    /// extern crate maplit;
+    /// extern crate tuf;
+    ///
+    /// use chrono::prelude::*;
+    /// use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+    /// use tuf::interchange::JsonDataInterchange;
+    /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    ///
+    /// fn main() {
+    ///     let key_1: &[u8] = include_bytes!("./tests/ed25519/ed25519-1.pk8.der");
+    ///     let key_1 = PrivateKey::from_pkcs8(&key_1).unwrap();
+    ///
+    ///     let key_2: &[u8] = include_bytes!("./tests/ed25519/ed25519-2.pk8.der");
+    ///     let key_2 = PrivateKey::from_pkcs8(&key_2).unwrap();
+    ///
+    ///     let timestamp = TimestampMetadata::new(
+    ///         1,
+    ///         Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+    ///         MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
+    ///             &[HashAlgorithm::Sha256]).unwrap()
+    ///     ).unwrap();
+    ///     let timestamp = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
+    ///         &timestamp, &key_1, SignatureScheme::Ed25519).unwrap();
+    ///
+    ///     assert!(timestamp.verify(
+    ///         1,
+    ///         &hashset!(key_1.key_id().clone()),
+    ///         &hashmap!(key_1.key_id().clone() => key_1.public().clone()),
+    ///     ).is_ok());
+    ///
+    ///     // fail with increased threshold
+    ///     assert!(timestamp.verify(
+    ///         2,
+    ///         &hashset!(key_1.key_id().clone()),
+    ///         &hashmap!(key_1.key_id().clone() => key_1.public().clone()),
+    ///     ).is_err());
+    ///
+    ///     // fail when the keys aren't authorized
+    ///     assert!(timestamp.verify(
+    ///         1,
+    ///         &hashset!(key_2.key_id().clone()),
+    ///         &hashmap!(key_1.key_id().clone() => key_1.public().clone()),
+    ///     ).is_err());
+    ///
+    ///     // fail when the keys don't exist
+    ///     assert!(timestamp.verify(
+    ///         1,
+    ///         &hashset!(key_1.key_id().clone()),
+    ///         &hashmap!(key_2.key_id().clone() => key_2.public().clone()),
+    ///     ).is_err());
+    /// }
     pub fn verify(
         &self,
         threshold: u32,

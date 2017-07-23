@@ -7,7 +7,7 @@ use crypto::{HashAlgorithm, HashValue};
 
 /// Wraps a `Read` to ensure that the consumer can't read more than a capped maximum number of
 /// bytes. Also, this ensures that a minimum bitrate and returns an `Err` if it is not. Finally,
-/// when the underlying `Read` is fully consumed, the hash of the data is optional calculated. If
+/// when the underlying `Read` is fully consumed, the hash of the data is optionally calculated. If
 /// the calculated hash does not match the given hash, it will return an `Err`. Consumers of a
 /// `SafeReader` should purge and untrust all read bytes if this ever returns an `Err`.
 pub struct SafeReader<R: Read> {

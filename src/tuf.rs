@@ -852,7 +852,8 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let meta_map = hashmap!(
+        let meta_map =
+            hashmap!(
             MetadataPath::from_role(&Role::Targets) =>
                 MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
         );
@@ -863,12 +864,9 @@ mod test {
 
         tuf.update_snapshot(snapshot).unwrap();
 
-        let targets = TargetsMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            hashmap!(),
-            None,
-        ).unwrap();
+        let targets =
+            TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
+                .unwrap();
         let targets: SignedMetadata<JsonDataInterchange, TargetsMetadata> =
             SignedMetadata::new(&targets, &KEYS[2], SignatureScheme::Ed25519).unwrap();
 
@@ -911,7 +909,8 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let meta_map = hashmap!(
+        let meta_map =
+            hashmap!(
             MetadataPath::from_role(&Role::Targets) =>
                 MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
         );
@@ -922,12 +921,9 @@ mod test {
 
         tuf.update_snapshot(snapshot).unwrap();
 
-        let targets = TargetsMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            hashmap!(),
-            None,
-        ).unwrap();
+        let targets =
+            TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
+                .unwrap();
         let targets: SignedMetadata<JsonDataInterchange, TargetsMetadata> =
             SignedMetadata::new(&targets, &KEYS[3], SignatureScheme::Ed25519).unwrap();
 
@@ -967,7 +963,8 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let meta_map = hashmap!(
+        let meta_map =
+            hashmap!(
             MetadataPath::from_role(&Role::Targets) =>
                 MetadataDescription::from_reader(&*vec![], 2, &[HashAlgorithm::Sha256]).unwrap(),
         );
@@ -978,12 +975,9 @@ mod test {
 
         tuf.update_snapshot(snapshot).unwrap();
 
-        let targets = TargetsMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            hashmap!(),
-            None,
-        ).unwrap();
+        let targets =
+            TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
+                .unwrap();
         let targets: SignedMetadata<JsonDataInterchange, TargetsMetadata> =
             SignedMetadata::new(&targets, &KEYS[2], SignatureScheme::Ed25519).unwrap();
 
