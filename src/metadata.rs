@@ -1772,6 +1772,16 @@ mod test {
         json::to_value(&root).unwrap()
     }
 
+    fn make_snapshot() -> json::Value {
+        let snapshot = SnapshotMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            hashmap!(),
+        ).unwrap();
+
+        json::to_value(&snapshot).unwrap()
+    }
+
     fn set_version(value: &mut json::Value, version: i64) {
         match value.as_object_mut() {
             Some(obj) => {
@@ -1884,5 +1894,25 @@ mod test {
         }
 
         assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+    }
+
+    // Refuse to deserialize snapshot metadata with illegal versions
+    #[test]
+    fn deserialize_json_snapshot_illegal_version() {
+        let mut snapshot = make_snapshot();
+        set_version(&mut snapshot, 0);
+        assert!(json::from_value::<SnapshotMetadata>(snapshot).is_err());
+
+        let mut snapshot = make_snapshot();
+        set_version(&mut snapshot, -1);
+        assert!(json::from_value::<SnapshotMetadata>(snapshot).is_err());
+    }
+
+    // Refuse to deserialilze snapshot metadata with wrong type field
+    #[test]
+    fn deserialize_json_snapshot_bad_type() {
+        let mut snapshot = make_snapshot();
+        let _ = snapshot.as_object_mut().unwrap().insert("type".into(), json!("root"));
+        assert!(json::from_value::<SnapshotMetadata>(snapshot).is_err());
     }
 }
