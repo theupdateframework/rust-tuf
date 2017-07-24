@@ -1777,6 +1777,16 @@ mod test {
         json::to_value(&snapshot).unwrap()
     }
 
+    fn make_timestamp() -> json::Value {
+        let timestamp = TimestampMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
+        ).unwrap();
+
+        json::to_value(&timestamp).unwrap()
+    }
+
     fn set_version(value: &mut json::Value, version: i64) {
         match value.as_object_mut() {
             Some(obj) => {
@@ -1909,5 +1919,25 @@ mod test {
         let mut snapshot = make_snapshot();
         let _ = snapshot.as_object_mut().unwrap().insert("type".into(), json!("root"));
         assert!(json::from_value::<SnapshotMetadata>(snapshot).is_err());
+    }
+
+    // Refuse to deserialize timestamp metadata with illegal versions
+    #[test]
+    fn deserialize_json_timestamp_illegal_version() {
+        let mut timestamp = make_timestamp();
+        set_version(&mut timestamp, 0);
+        assert!(json::from_value::<TimestampMetadata>(timestamp).is_err());
+
+        let mut timestamp = make_timestamp();
+        set_version(&mut timestamp, -1);
+        assert!(json::from_value::<TimestampMetadata>(timestamp).is_err());
+    }
+
+    // Refuse to deserialilze timestamp metadata with wrong type field
+    #[test]
+    fn deserialize_json_timestamp_bad_type() {
+        let mut timestamp = make_timestamp();
+        let _ = timestamp.as_object_mut().unwrap().insert("type".into(), json!("root"));
+        assert!(json::from_value::<TimestampMetadata>(timestamp).is_err());
     }
 }
