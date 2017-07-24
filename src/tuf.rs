@@ -161,24 +161,15 @@ impl<D: DataInterchange> Tuf<D> {
         let snapshot = {
             let root = self.safe_root_ref()?;
             let timestamp = self.safe_timestamp_ref()?;
-            let snapshot_description = timestamp
-                .meta()
-                .get(&MetadataPath::from_role(&Role::Snapshot))
-                .ok_or_else(|| {
-                    Error::VerificationFailure(
-                        "Timestamp metadata had no description of the snapshot metadata".into(),
-                    )
-                })?;
-
             let current_version = self.snapshot.as_ref().map(|t| t.version()).unwrap_or(0);
 
-            if snapshot_description.version() < current_version {
+            if timestamp.snapshot().version() < current_version {
                 return Err(Error::VerificationFailure(format!(
                     "Attempted to roll back snapshot metadata at version {} to {}.",
                     current_version,
-                    snapshot_description.version()
+                    timestamp.snapshot().version()
                 )));
-            } else if snapshot_description.version() == current_version {
+            } else if timestamp.snapshot().version() == current_version {
                 return Ok(false);
             }
 
@@ -190,11 +181,11 @@ impl<D: DataInterchange> Tuf<D> {
 
             let snapshot: SnapshotMetadata = D::deserialize(&signed_snapshot.signed())?;
 
-            if snapshot.version() != snapshot_description.version() {
+            if snapshot.version() != timestamp.snapshot().version() {
                 return Err(Error::VerificationFailure(format!(
                     "The timestamp metadata reported that the snapshot metadata should be at \
                     version {} but version {} was found instead.",
-                    snapshot_description.version(),
+                    timestamp.snapshot().version(),
                     snapshot.version()
                 )));
             }

@@ -637,7 +637,7 @@ impl<'de> Deserialize<'de> for MetadataPath {
 pub struct TimestampMetadata {
     version: u32,
     expires: DateTime<Utc>,
-    meta: HashMap<MetadataPath, MetadataDescription>,
+    snapshot: MetadataDescription,
 }
 
 impl TimestampMetadata {
@@ -645,7 +645,7 @@ impl TimestampMetadata {
     pub fn new(
         version: u32,
         expires: DateTime<Utc>,
-        meta: HashMap<MetadataPath, MetadataDescription>,
+        snapshot: MetadataDescription,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
@@ -657,7 +657,7 @@ impl TimestampMetadata {
         Ok(TimestampMetadata {
             version: version,
             expires: expires,
-            meta: meta,
+            snapshot: snapshot,
         })
     }
 
@@ -671,9 +671,9 @@ impl TimestampMetadata {
         &self.expires
     }
 
-    /// An immutable reference to the metadata paths and descriptions.
-    pub fn meta(&self) -> &HashMap<MetadataPath, MetadataDescription> {
-        &self.meta
+    /// An immutable reference to the snapshot description.
+    pub fn snapshot(&self) -> &MetadataDescription {
+        &self.snapshot
     }
 }
 
@@ -1502,27 +1502,22 @@ mod test {
         let timestamp = TimestampMetadata::new(
             1,
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-            hashmap!{
-                MetadataPath::new("foo".into()).unwrap() =>
-                    MetadataDescription::new(
-                        1,
-                        100,
-                        hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) }
-                    ).unwrap(),
-            },
+            MetadataDescription::new(
+                1,
+                100,
+                hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) }
+            ).unwrap(),
         ).unwrap();
 
         let jsn = json!({
             "type": "timestamp",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
-            "meta": {
-                "foo": {
-                    "version": 1,
-                    "size": 100,
-                    "hashes": {
-                        "sha256": "",
-                    },
+            "snapshot": {
+                "version": 1,
+                "size": 100,
+                "hashes": {
+                    "sha256": "",
                 },
             },
         });

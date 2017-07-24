@@ -169,16 +169,7 @@ where
         T: Repository<D>,
     {
         let snapshot_description = match tuf.timestamp() {
-            Some(ts) => {
-                match ts.meta().get(&MetadataPath::from_role(&Role::Snapshot)) {
-                    Some(d) => Ok(d),
-                    None => Err(Error::VerificationFailure(
-                        "Timestamp metadata did not contain a description of the \
-                                current snapshot metadata."
-                            .into(),
-                    )),
-                }
-            }
+            Some(ts) => Ok(ts.snapshot()),
             None => Err(Error::MissingMetadata(Role::Timestamp)),
         }?
             .clone();
