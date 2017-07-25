@@ -1224,6 +1224,10 @@ impl Delegation {
             return Err(Error::IllegalArgument("Cannot have threshold < 1".into()));
         }
 
+        if (key_ids.len() as u64) < (threshold as u64) {
+            return Err(Error::IllegalArgument("Cannot have threshold less than number of keys".into()))
+        }
+
         Ok(Delegation {
             role: role,
             terminating: terminating,
@@ -1787,6 +1791,46 @@ mod test {
         json::to_value(&timestamp).unwrap()
     }
 
+    fn make_targets() -> json::Value {
+        let targets= TargetsMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            hashmap!(),
+            None,
+        ).unwrap();
+
+        json::to_value(&targets).unwrap()
+    }
+
+    fn make_delegations() -> json::Value {
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().public().clone();
+        let delegations = Delegations::new(
+            vec![key.clone()],
+            vec![Delegation::new(
+                MetadataPath::new("foo".into()).unwrap(),
+                false,
+                1,
+                hashset!(key.key_id().clone()),
+                hashset!(TargetPath::new("bar".into()).unwrap()),
+            ).unwrap()],
+        ).unwrap();
+
+        json::to_value(&delegations).unwrap()
+    }
+
+    fn make_delegation() -> json::Value {
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().public().clone();
+        let delegation = Delegation::new(
+            MetadataPath::new("foo".into()).unwrap(),
+            false,
+            1,
+            hashset!(key.key_id().clone()),
+            hashset!(TargetPath::new("bar".into()).unwrap()),
+        ).unwrap();
+
+        json::to_value(&delegation).unwrap()
+    }
+
     fn set_version(value: &mut json::Value, version: i64) {
         match value.as_object_mut() {
             Some(obj) => {
@@ -1832,6 +1876,15 @@ mod test {
         assert!(json::from_value::<RootMetadata>(root_json).is_err());
     }
 
+    fn set_threshold(value: &mut json::Value, threshold: i32) {
+        match value.as_object_mut() {
+            Some(obj) => {
+                let _ = obj.insert("threshold".into(), json!(threshold));
+            }
+            None => panic!(),
+        }
+    }
+
     // Refuse to deserialize role definitions with illegal thresholds
     #[test]
     fn deserialize_json_role_definition_illegal_threshold() {
@@ -1839,15 +1892,6 @@ mod test {
             1,
             hashset!(PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().key_id().clone()),
         ).unwrap();
-
-        fn set_threshold(value: &mut json::Value, threshold: i32) {
-            match value.as_object_mut() {
-                Some(obj) => {
-                    let _ = obj.insert("threshold".into(), json!(threshold));
-                }
-                None => panic!(),
-            }
-        }
 
         let mut jsn = json::to_value(&role_def).unwrap();
         set_threshold(&mut jsn, 0);
@@ -1939,5 +1983,80 @@ mod test {
         let mut timestamp = make_timestamp();
         let _ = timestamp.as_object_mut().unwrap().insert("type".into(), json!("root"));
         assert!(json::from_value::<TimestampMetadata>(timestamp).is_err());
+    }
+
+    // Refuse to deserialize targets metadata with illegal versions
+    #[test]
+    fn deserialize_json_targets_illegal_version() {
+        let mut targets = make_targets();
+        set_version(&mut targets, 0);
+        assert!(json::from_value::<TargetsMetadata>(targets).is_err());
+
+        let mut targets = make_targets();
+        set_version(&mut targets, -1);
+        assert!(json::from_value::<TargetsMetadata>(targets).is_err());
+    }
+
+    // Refuse to deserialilze targets metadata with wrong type field
+    #[test]
+    fn deserialize_json_targets_bad_type() {
+        let mut targets = make_targets();
+        let _ = targets.as_object_mut().unwrap().insert("type".into(), json!("root"));
+        assert!(json::from_value::<TargetsMetadata>(targets).is_err());
+    }
+
+    // Refuse to deserialize delegations with no keys
+    #[test]
+    fn deserialize_json_delegations_no_keys() {
+        let mut delegations = make_delegations();
+        delegations.as_object_mut().unwrap().get_mut("keys".into()).unwrap().as_object_mut().unwrap().clear();
+        assert!(json::from_value::<Delegations>(delegations).is_err());
+    }
+
+    // Refuse to deserialize delegations with no roles
+    #[test]
+    fn deserialize_json_delegations_no_roles() {
+        let mut delegations = make_delegations();
+        delegations.as_object_mut().unwrap().get_mut("roles".into()).unwrap().as_array_mut().unwrap().clear();
+        assert!(json::from_value::<Delegations>(delegations).is_err());
+    }
+
+    // Refuse to deserialize delegations with duplicated roles
+    #[test]
+    fn deserialize_json_delegations_duplicated_roles() {
+        let mut delegations = make_delegations();
+        let dupe = delegations.as_object().unwrap().get("roles".into()).unwrap().as_array().unwrap()[0].clone();
+        delegations.as_object_mut().unwrap().get_mut("roles".into()).unwrap().as_array_mut().unwrap().push(dupe);
+        assert!(json::from_value::<Delegations>(delegations).is_err());
+    }
+
+    // Refuse to deserialize a delegation with insufficient threshold
+    #[test]
+    fn deserialize_json_delegation_bad_threshold() {
+        let mut delegation = make_delegation();
+        set_threshold(&mut delegation, 0);
+        assert!(json::from_value::<Delegation>(delegation).is_err());
+
+        let mut delegation = make_delegation();
+        set_threshold(&mut delegation, 2);
+        assert!(json::from_value::<Delegation>(delegation).is_err());
+    }
+
+    // Refuse to deserialize a delegation with duplicate key IDs
+    #[test]
+    fn deserialize_json_delegation_duplicate_key_ids() {
+        let mut delegation = make_delegation();
+        let dupe = delegation.as_object().unwrap().get("key_ids".into()).unwrap().as_array().unwrap()[0].clone();
+        delegation.as_object_mut().unwrap().get_mut("key_ids".into()).unwrap().as_array_mut().unwrap().push(dupe);
+        assert!(json::from_value::<Delegation>(delegation).is_err());
+    }
+
+    // Refuse to deserialize a delegation with duplicate paths
+    #[test]
+    fn deserialize_json_delegation_duplicate_paths() {
+        let mut delegation = make_delegation();
+        let dupe = delegation.as_object().unwrap().get("paths".into()).unwrap().as_array().unwrap()[0].clone();
+        delegation.as_object_mut().unwrap().get_mut("paths".into()).unwrap().as_array_mut().unwrap().push(dupe);
+        assert!(json::from_value::<Delegation>(delegation).is_err());
     }
 }
