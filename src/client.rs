@@ -609,10 +609,8 @@ mod test {
         let mut root: SignedMetadata<JsonDataInterchange, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[1], SignatureScheme::Ed25519).unwrap();
 
-        root.add_signature(
-            &KEYS[0],
-            SignatureScheme::Ed25519,
-        ).unwrap();
+        root.add_signature(&KEYS[0], SignatureScheme::Ed25519)
+            .unwrap();
 
         repo.store_metadata(
             &Role::Root,
@@ -634,10 +632,8 @@ mod test {
         let mut root: SignedMetadata<JsonDataInterchange, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[2], SignatureScheme::Ed25519).unwrap();
 
-        root.add_signature(
-            &KEYS[1],
-            SignatureScheme::Ed25519,
-        ).unwrap();
+        root.add_signature(&KEYS[1], SignatureScheme::Ed25519)
+            .unwrap();
 
         repo.store_metadata(
             &Role::Root,
@@ -652,7 +648,12 @@ mod test {
             &root,
         ).unwrap();
 
-        let mut client = Client::new(tuf, Config::build().finish().unwrap(), repo, EphemeralRepository::new()).unwrap();
+        let mut client = Client::new(
+            tuf,
+            Config::build().finish().unwrap(),
+            repo,
+            EphemeralRepository::new(),
+        ).unwrap();
         assert_eq!(client.update_local(), Ok(true));
         assert_eq!(client.tuf.root().version(), 3);
     }
