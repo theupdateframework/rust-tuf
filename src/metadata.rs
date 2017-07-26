@@ -258,6 +258,11 @@ where
 
     /// Append a signature to this signed metadata. Will overwrite signature by keys with the same
     /// ID.
+    ///
+    /// **WARNING**: You should never have multiple TUF private keys on the same machine, so if
+    /// you're using this to append several signatures are once, you are doing something wrong. The
+    /// preferred method is to generate your copy of the metadata locally and use `merge_signatures`
+    /// to perform the "append" operations.
     pub fn add_signature(
         &mut self,
         private_key: &PrivateKey,
@@ -270,6 +275,32 @@ where
             |s| s.key_id() != private_key.key_id(),
         );
         self.signatures.push(sig);
+        Ok(())
+    }
+
+    /// Merge the singatures from `other` into `self` if and only if
+    /// `self.signed() == other.signed()`. If `self` and `other` contain signatures from the same
+    /// key ID, then the signatures from `self` will replace the signatures from `other`.
+    pub fn merge_signatures(&mut self, other: &Self) -> Result<()> {
+        if self.signed() != other.signed() {
+            return Err(Error::IllegalArgument(
+                "Attempted to merge unequal metadata".into(),
+            ));
+        }
+
+        let key_ids = self.signatures
+            .iter()
+            .map(|s| s.key_id().clone())
+            .collect::<HashSet<KeyId>>();
+
+        self.signatures.extend(
+            other
+                .signatures
+                .iter()
+                .filter(|s| !key_ids.contains(s.key_id()))
+                .cloned(),
+        );
+
         Ok(())
     }
 
@@ -314,7 +345,7 @@ where
         for sig in self.signatures.iter() {
             if !authorized_key_ids.contains(sig.key_id()) {
                 warn!(
-                    "Key ID {:?} is not authorized to sign root metadata.",
+                    "Key ID {:?} is not authorized to sign metadata.",
                     sig.key_id()
                 );
                 continue;
@@ -357,7 +388,7 @@ where
 }
 
 /// Metadata for the root role.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RootMetadata {
     version: u32,
     expires: DateTime<Utc>,
@@ -633,7 +664,7 @@ impl<'de> Deserialize<'de> for MetadataPath {
 }
 
 /// Metadata for the timestamp role.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TimestampMetadata {
     version: u32,
     expires: DateTime<Utc>,
@@ -1225,7 +1256,9 @@ impl Delegation {
         }
 
         if (key_ids.len() as u64) < (threshold as u64) {
-            return Err(Error::IllegalArgument("Cannot have threshold less than number of keys".into()))
+            return Err(Error::IllegalArgument(
+                "Cannot have threshold less than number of keys".into(),
+            ));
         }
 
         Ok(Delegation {
@@ -1509,7 +1542,7 @@ mod test {
             MetadataDescription::new(
                 1,
                 100,
-                hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) }
+                hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
             ).unwrap(),
         ).unwrap();
 
@@ -1772,11 +1805,8 @@ mod test {
     }
 
     fn make_snapshot() -> json::Value {
-        let snapshot = SnapshotMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            hashmap!(),
-        ).unwrap();
+        let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!())
+            .unwrap();
 
         json::to_value(&snapshot).unwrap()
     }
@@ -1785,25 +1815,26 @@ mod test {
         let timestamp = TimestampMetadata::new(
             1,
             Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256])
+                .unwrap(),
         ).unwrap();
 
         json::to_value(&timestamp).unwrap()
     }
 
     fn make_targets() -> json::Value {
-        let targets= TargetsMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            hashmap!(),
-            None,
-        ).unwrap();
+        let targets =
+            TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
+                .unwrap();
 
         json::to_value(&targets).unwrap()
     }
 
     fn make_delegations() -> json::Value {
-        let key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().public().clone();
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8)
+            .unwrap()
+            .public()
+            .clone();
         let delegations = Delegations::new(
             vec![key.clone()],
             vec![Delegation::new(
@@ -1819,7 +1850,10 @@ mod test {
     }
 
     fn make_delegation() -> json::Value {
-        let key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().public().clone();
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8)
+            .unwrap()
+            .public()
+            .clone();
         let delegation = Delegation::new(
             MetadataPath::new("foo".into()).unwrap(),
             false,
@@ -1918,7 +1952,10 @@ mod test {
     #[test]
     fn deserialize_json_root_bad_type() {
         let mut root = make_root();
-        let _ = root.as_object_mut().unwrap().insert("type".into(), json!("snapshot"));
+        let _ = root.as_object_mut().unwrap().insert(
+            "type".into(),
+            json!("snapshot"),
+        );
         assert!(json::from_value::<RootMetadata>(root).is_err());
     }
 
@@ -1961,7 +1998,10 @@ mod test {
     #[test]
     fn deserialize_json_snapshot_bad_type() {
         let mut snapshot = make_snapshot();
-        let _ = snapshot.as_object_mut().unwrap().insert("type".into(), json!("root"));
+        let _ = snapshot.as_object_mut().unwrap().insert(
+            "type".into(),
+            json!("root"),
+        );
         assert!(json::from_value::<SnapshotMetadata>(snapshot).is_err());
     }
 
@@ -1981,7 +2021,10 @@ mod test {
     #[test]
     fn deserialize_json_timestamp_bad_type() {
         let mut timestamp = make_timestamp();
-        let _ = timestamp.as_object_mut().unwrap().insert("type".into(), json!("root"));
+        let _ = timestamp.as_object_mut().unwrap().insert(
+            "type".into(),
+            json!("root"),
+        );
         assert!(json::from_value::<TimestampMetadata>(timestamp).is_err());
     }
 
@@ -2001,7 +2044,10 @@ mod test {
     #[test]
     fn deserialize_json_targets_bad_type() {
         let mut targets = make_targets();
-        let _ = targets.as_object_mut().unwrap().insert("type".into(), json!("root"));
+        let _ = targets.as_object_mut().unwrap().insert(
+            "type".into(),
+            json!("root"),
+        );
         assert!(json::from_value::<TargetsMetadata>(targets).is_err());
     }
 
@@ -2009,7 +2055,14 @@ mod test {
     #[test]
     fn deserialize_json_delegations_no_keys() {
         let mut delegations = make_delegations();
-        delegations.as_object_mut().unwrap().get_mut("keys".into()).unwrap().as_object_mut().unwrap().clear();
+        delegations
+            .as_object_mut()
+            .unwrap()
+            .get_mut("keys".into())
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .clear();
         assert!(json::from_value::<Delegations>(delegations).is_err());
     }
 
@@ -2017,7 +2070,14 @@ mod test {
     #[test]
     fn deserialize_json_delegations_no_roles() {
         let mut delegations = make_delegations();
-        delegations.as_object_mut().unwrap().get_mut("roles".into()).unwrap().as_array_mut().unwrap().clear();
+        delegations
+            .as_object_mut()
+            .unwrap()
+            .get_mut("roles".into())
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .clear();
         assert!(json::from_value::<Delegations>(delegations).is_err());
     }
 
@@ -2025,8 +2085,23 @@ mod test {
     #[test]
     fn deserialize_json_delegations_duplicated_roles() {
         let mut delegations = make_delegations();
-        let dupe = delegations.as_object().unwrap().get("roles".into()).unwrap().as_array().unwrap()[0].clone();
-        delegations.as_object_mut().unwrap().get_mut("roles".into()).unwrap().as_array_mut().unwrap().push(dupe);
+        let dupe = delegations
+            .as_object()
+            .unwrap()
+            .get("roles".into())
+            .unwrap()
+            .as_array()
+            .unwrap()
+            [0]
+            .clone();
+        delegations
+            .as_object_mut()
+            .unwrap()
+            .get_mut("roles".into())
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(dupe);
         assert!(json::from_value::<Delegations>(delegations).is_err());
     }
 
@@ -2046,8 +2121,23 @@ mod test {
     #[test]
     fn deserialize_json_delegation_duplicate_key_ids() {
         let mut delegation = make_delegation();
-        let dupe = delegation.as_object().unwrap().get("key_ids".into()).unwrap().as_array().unwrap()[0].clone();
-        delegation.as_object_mut().unwrap().get_mut("key_ids".into()).unwrap().as_array_mut().unwrap().push(dupe);
+        let dupe = delegation
+            .as_object()
+            .unwrap()
+            .get("key_ids".into())
+            .unwrap()
+            .as_array()
+            .unwrap()
+            [0]
+            .clone();
+        delegation
+            .as_object_mut()
+            .unwrap()
+            .get_mut("key_ids".into())
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(dupe);
         assert!(json::from_value::<Delegation>(delegation).is_err());
     }
 
@@ -2055,8 +2145,23 @@ mod test {
     #[test]
     fn deserialize_json_delegation_duplicate_paths() {
         let mut delegation = make_delegation();
-        let dupe = delegation.as_object().unwrap().get("paths".into()).unwrap().as_array().unwrap()[0].clone();
-        delegation.as_object_mut().unwrap().get_mut("paths".into()).unwrap().as_array_mut().unwrap().push(dupe);
+        let dupe = delegation
+            .as_object()
+            .unwrap()
+            .get("paths".into())
+            .unwrap()
+            .as_array()
+            .unwrap()
+            [0]
+            .clone();
+        delegation
+            .as_object_mut()
+            .unwrap()
+            .get_mut("paths".into())
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(dupe);
         assert!(json::from_value::<Delegation>(delegation).is_err());
     }
 }

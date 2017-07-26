@@ -190,9 +190,8 @@ impl<D: DataInterchange> Tuf<D> {
                 )));
             }
 
-            if snapshot.expires() <= &Utc::now() {
-                return Err(Error::ExpiredMetadata(Role::Snapshot));
-            }
+            // Note: this doesn't check the expiration because we need to be able to update it
+            // regardless so we can prevent rollback attacks againsts targets/delegations.
 
             snapshot
         };
@@ -498,5 +497,202 @@ impl<D: DataInterchange> Tuf<D> {
             }
             &None => Err(Error::MissingMetadata(Role::Timestamp)),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use chrono::prelude::*;
+    use crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+    use interchange::JsonDataInterchange;
+    use metadata::{RoleDefinition, MetadataDescription};
+
+    lazy_static! {
+        static ref KEYS: Vec<PrivateKey> = {
+            let keys: &[&[u8]] = &[
+                include_bytes!("../tests/ed25519/ed25519-1.pk8.der"),
+                include_bytes!("../tests/ed25519/ed25519-2.pk8.der"),
+                include_bytes!("../tests/ed25519/ed25519-3.pk8.der"),
+                include_bytes!("../tests/ed25519/ed25519-4.pk8.der"),
+                include_bytes!("../tests/ed25519/ed25519-5.pk8.der"),
+                include_bytes!("../tests/ed25519/ed25519-6.pk8.der"),
+            ];
+            keys.iter().map(|b| PrivateKey::from_pkcs8(b).unwrap()).collect()
+        };
+    }
+
+    #[test]
+    fn root_pinned_success() {
+        let root_key = &KEYS[0];
+        let root = RootMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            vec![KEYS[0].public().clone()],
+            RoleDefinition::new(1, hashset!(root_key.key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+        ).unwrap();
+        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+            SignedMetadata::new(&root, &root_key, SignatureScheme::Ed25519).unwrap();
+
+        assert!(Tuf::from_root_pinned(root, &[root_key.key_id().clone()]).is_ok());
+    }
+
+    #[test]
+    fn root_pinned_failure() {
+        let root = RootMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            vec![KEYS[0].public().clone()],
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+        ).unwrap();
+        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
+
+        assert!(Tuf::from_root_pinned(root, &[KEYS[1].key_id().clone()]).is_err());
+    }
+
+    #[test]
+    fn good_root_rotation() {
+        let root = RootMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            vec![KEYS[0].public().clone()],
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+        ).unwrap();
+        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
+
+        let mut tuf = Tuf::from_root(root).unwrap();
+
+        let root = RootMetadata::new(
+            2,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            vec![KEYS[1].public().clone()],
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+        ).unwrap();
+        let mut root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[1], SignatureScheme::Ed25519).unwrap();
+
+        // add the original key's signature to make it cross signed
+        root.add_signature(&KEYS[0], SignatureScheme::Ed25519)
+            .unwrap();
+
+        assert_eq!(tuf.update_root(root.clone()), Ok(true));
+
+        // second update should do nothing
+        assert_eq!(tuf.update_root(root), Ok(false));
+    }
+
+    #[test]
+    fn no_cross_sign_root_rotation() {
+        let root = RootMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            vec![KEYS[0].public().clone()],
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+        ).unwrap();
+        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
+
+        let mut tuf = Tuf::from_root(root).unwrap();
+
+        let root = RootMetadata::new(
+            2,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            // include the old key to prevent short circuiting the verify logic
+            vec![KEYS[0].public().clone(), KEYS[1].public().clone()],
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+        ).unwrap();
+        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[1], SignatureScheme::Ed25519).unwrap();
+
+        assert!(tuf.update_root(root).is_err());
+    }
+
+    #[test]
+    fn good_timestamp_update() {
+        let root = RootMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            vec![KEYS[0].public().clone(), KEYS[1].public().clone()],
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+        ).unwrap();
+        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
+
+        let mut tuf = Tuf::from_root(root).unwrap();
+
+        let timestamp = TimestampMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256])
+                .unwrap(),
+        ).unwrap();
+        let timestamp: SignedMetadata<JsonDataInterchange, TimestampMetadata> =
+            SignedMetadata::new(&timestamp, &KEYS[1], SignatureScheme::Ed25519).unwrap();
+
+        assert_eq!(tuf.update_timestamp(timestamp.clone()), Ok(true));
+
+        // second update should do nothing
+        assert_eq!(tuf.update_timestamp(timestamp), Ok(false))
+    }
+
+    #[test]
+    fn bad_timestamp_update_wrong_key() {
+        let root = RootMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            vec![KEYS[0].public().clone(), KEYS[1].public().clone()],
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+        ).unwrap();
+        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
+
+        let mut tuf = Tuf::from_root(root).unwrap();
+
+        let timestamp = TimestampMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256])
+                .unwrap(),
+        ).unwrap();
+
+        // sign it with the root key
+        let timestamp: SignedMetadata<JsonDataInterchange, TimestampMetadata> =
+            SignedMetadata::new(&timestamp, &KEYS[0], SignatureScheme::Ed25519).unwrap();
+
+        assert!(tuf.update_timestamp(timestamp).is_err())
     }
 }

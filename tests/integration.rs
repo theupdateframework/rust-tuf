@@ -63,8 +63,7 @@ fn simple_delegation() {
 
     //// build the timestamp ////
     let snap = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
-    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap)
-        .unwrap();
+    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap).unwrap();
 
     let signed = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
         &timestamp,
@@ -75,7 +74,8 @@ fn simple_delegation() {
     tuf.update_timestamp(signed).unwrap();
 
     //// build the snapshot ////
-    let meta_map = hashmap! {
+    let meta_map =
+        hashmap! {
         MetadataPath::new("targets".into()).unwrap() =>
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         MetadataPath::new("delegation".into()).unwrap() =>
@@ -128,7 +128,8 @@ fn simple_delegation() {
 
     //// build the delegation ////
     let target_file: &[u8] = b"bar";
-    let target_map = hashmap! {
+    let target_map =
+        hashmap! {
         TargetPath::new("foo".into()).unwrap() =>
             TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256]).unwrap(),
     };
@@ -194,8 +195,7 @@ fn nested_delegation() {
 
     //// build the timestamp ////
     let snap = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
-    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap)
-        .unwrap();
+    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap).unwrap();
 
     let signed = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
         &timestamp,
@@ -206,7 +206,8 @@ fn nested_delegation() {
     tuf.update_timestamp(signed).unwrap();
 
     //// build the snapshot ////
-    let meta_map = hashmap! {
+    let meta_map =
+        hashmap! {
         MetadataPath::new("targets".into()).unwrap() =>
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         MetadataPath::new("delegation-a".into()).unwrap() =>
@@ -296,7 +297,8 @@ fn nested_delegation() {
 
     //// build delegation B ////
     let target_file: &[u8] = b"bar";
-    let target_map = hashmap! {
+    let target_map =
+        hashmap! {
         TargetPath::new("foo".into()).unwrap() =>
             TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256]).unwrap(),
     };
