@@ -70,6 +70,9 @@ extern crate data_encoding;
 extern crate derp;
 extern crate hyper;
 extern crate itoa;
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
 #[macro_use]
 extern crate log;
 #[cfg(test)]

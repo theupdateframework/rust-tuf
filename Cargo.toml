@@ -47,5 +47,6 @@ untrusted = "0.5"
 uuid = { version = "0.5", features = [ "v4" ] }
 
 [dev-dependencies]
+lazy_static = "0.2.8"
 maplit = "0.1.4"
 tempdir = "0.3"

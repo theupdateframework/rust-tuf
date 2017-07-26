@@ -1,9 +1,11 @@
 extern crate chrono;
+#[macro_use]
+extern crate maplit;
 extern crate tuf;
 
 use chrono::prelude::*;
 use chrono::offset::Utc;
-use std::collections::{HashSet, HashMap};
+use std::collections::HashMap;
 use tuf::Tuf;
 use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
 use tuf::interchange::JsonDataInterchange;
@@ -34,21 +36,10 @@ fn simple_delegation() {
         timestamp_key.public().clone(),
     ];
 
-    let mut key_ids = HashSet::new();
-    key_ids.insert(root_key.key_id().clone());
-    let root_def = RoleDefinition::new(1, key_ids).unwrap();
-
-    let mut key_ids = HashSet::new();
-    key_ids.insert(snapshot_key.key_id().clone());
-    let snapshot_def = RoleDefinition::new(1, key_ids).unwrap();
-
-    let mut key_ids = HashSet::new();
-    key_ids.insert(targets_key.key_id().clone());
-    let targets_def = RoleDefinition::new(1, key_ids).unwrap();
-
-    let mut key_ids = HashSet::new();
-    key_ids.insert(timestamp_key.key_id().clone());
-    let timestamp_def = RoleDefinition::new(1, key_ids).unwrap();
+    let root_def = RoleDefinition::new(1, hashset!(root_key.key_id().clone())).unwrap();
+    let snapshot_def = RoleDefinition::new(1, hashset!(snapshot_key.key_id().clone())).unwrap();
+    let targets_def = RoleDefinition::new(1, hashset!(targets_key.key_id().clone())).unwrap();
+    let timestamp_def = RoleDefinition::new(1, hashset!(timestamp_key.key_id().clone())).unwrap();
 
     let root = RootMetadata::new(
         1,
@@ -71,12 +62,8 @@ fn simple_delegation() {
         Tuf::<JsonDataInterchange>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
 
     //// build the timestamp ////
-    let mut meta_map = HashMap::new();
-    let path = MetadataPath::new("snapshot".into()).unwrap();
-    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
-    let _ = meta_map.insert(path, desc);
-    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
-        .unwrap();
+    let snap = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
+    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap).unwrap();
 
     let signed = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
         &timestamp,
@@ -87,13 +74,13 @@ fn simple_delegation() {
     tuf.update_timestamp(signed).unwrap();
 
     //// build the snapshot ////
-    let mut meta_map = HashMap::new();
-    let path = MetadataPath::new("targets".into()).unwrap();
-    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
-    let _ = meta_map.insert(path, desc);
-    let path = MetadataPath::new("delegation".into()).unwrap();
-    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
-    let _ = meta_map.insert(path, desc);
+    let meta_map =
+        hashmap! {
+        MetadataPath::new("targets".into()).unwrap() =>
+            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+        MetadataPath::new("delegation".into()).unwrap() =>
+            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+    };
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
         .unwrap();
 
@@ -141,12 +128,11 @@ fn simple_delegation() {
 
     //// build the delegation ////
     let target_file: &[u8] = b"bar";
-    let target_path = TargetPath::new("foo".into()).unwrap();
-    let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])
-        .unwrap();
-
-    let mut target_map = HashMap::new();
-    let _ = target_map.insert(target_path, target_description);
+    let target_map =
+        hashmap! {
+        TargetPath::new("foo".into()).unwrap() =>
+            TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256]).unwrap(),
+    };
     let delegation =
         TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None).unwrap();
 
@@ -182,21 +168,10 @@ fn nested_delegation() {
         timestamp_key.public().clone(),
     ];
 
-    let mut key_ids = HashSet::new();
-    key_ids.insert(root_key.key_id().clone());
-    let root_def = RoleDefinition::new(1, key_ids).unwrap();
-
-    let mut key_ids = HashSet::new();
-    key_ids.insert(snapshot_key.key_id().clone());
-    let snapshot_def = RoleDefinition::new(1, key_ids).unwrap();
-
-    let mut key_ids = HashSet::new();
-    key_ids.insert(targets_key.key_id().clone());
-    let targets_def = RoleDefinition::new(1, key_ids).unwrap();
-
-    let mut key_ids = HashSet::new();
-    key_ids.insert(timestamp_key.key_id().clone());
-    let timestamp_def = RoleDefinition::new(1, key_ids).unwrap();
+    let root_def = RoleDefinition::new(1, hashset!(root_key.key_id().clone())).unwrap();
+    let snapshot_def = RoleDefinition::new(1, hashset!(snapshot_key.key_id().clone())).unwrap();
+    let targets_def = RoleDefinition::new(1, hashset!(targets_key.key_id().clone())).unwrap();
+    let timestamp_def = RoleDefinition::new(1, hashset!(timestamp_key.key_id().clone())).unwrap();
 
     let root = RootMetadata::new(
         1,
@@ -219,12 +194,8 @@ fn nested_delegation() {
         Tuf::<JsonDataInterchange>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
 
     //// build the timestamp ////
-    let mut meta_map = HashMap::new();
-    let path = MetadataPath::new("snapshot".into()).unwrap();
-    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
-    let _ = meta_map.insert(path, desc);
-    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
-        .unwrap();
+    let snap = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
+    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap).unwrap();
 
     let signed = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
         &timestamp,
@@ -235,16 +206,15 @@ fn nested_delegation() {
     tuf.update_timestamp(signed).unwrap();
 
     //// build the snapshot ////
-    let mut meta_map = HashMap::new();
-    let path = MetadataPath::new("targets".into()).unwrap();
-    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
-    let _ = meta_map.insert(path, desc);
-    let path = MetadataPath::new("delegation-a".into()).unwrap();
-    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
-    let _ = meta_map.insert(path, desc);
-    let path = MetadataPath::new("delegation-b".into()).unwrap();
-    let desc = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
-    let _ = meta_map.insert(path, desc);
+    let meta_map =
+        hashmap! {
+        MetadataPath::new("targets".into()).unwrap() =>
+            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+        MetadataPath::new("delegation-a".into()).unwrap() =>
+            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+        MetadataPath::new("delegation-b".into()).unwrap() =>
+            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+    };
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
         .unwrap();
 
@@ -327,12 +297,11 @@ fn nested_delegation() {
 
     //// build delegation B ////
     let target_file: &[u8] = b"bar";
-    let target_path = TargetPath::new("foo".into()).unwrap();
-    let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])
-        .unwrap();
-
-    let mut target_map = HashMap::new();
-    let _ = target_map.insert(target_path, target_description);
+    let target_map =
+        hashmap! {
+        TargetPath::new("foo".into()).unwrap() =>
+            TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256]).unwrap(),
+    };
 
     let delegation =
         TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None).unwrap();

@@ -49,16 +49,8 @@ where
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
     pub fn update_local(&mut self) -> Result<bool> {
-        let r = Self::update_root(
-            &mut self.tuf,
-            &mut self.local,
-            &self.config,
-        )?;
-        let ts = match Self::update_timestamp(
-            &mut self.tuf,
-            &mut self.local,
-            &self.config,
-        ) {
+        let r = Self::update_root(&mut self.tuf, &mut self.local, &self.config)?;
+        let ts = match Self::update_timestamp(&mut self.tuf, &mut self.local, &self.config) {
             Ok(b) => b,
             Err(e) => {
                 warn!(
@@ -68,11 +60,7 @@ where
                 false
             }
         };
-        let sn = match Self::update_snapshot(
-            &mut self.tuf,
-            &mut self.local,
-            &self.config,
-        ) {
+        let sn = match Self::update_snapshot(&mut self.tuf, &mut self.local, &self.config) {
             Ok(b) => b,
             Err(e) => {
                 warn!(
@@ -82,11 +70,7 @@ where
                 false
             }
         };
-        let ta = match Self::update_targets(
-            &mut self.tuf,
-            &mut self.local,
-            &self.config,
-        ) {
+        let ta = match Self::update_targets(&mut self.tuf, &mut self.local, &self.config) {
             Ok(b) => b,
             Err(e) => {
                 warn!(
@@ -104,36 +88,16 @@ where
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
     pub fn update_remote(&mut self) -> Result<bool> {
-        let r = Self::update_root(
-            &mut self.tuf,
-            &mut self.remote,
-            &self.config,
-        )?;
-        let ts = Self::update_timestamp(
-            &mut self.tuf,
-            &mut self.remote,
-            &self.config,
-        )?;
-        let sn = Self::update_snapshot(
-            &mut self.tuf,
-            &mut self.remote,
-            &self.config,
-        )?;
-        let ta = Self::update_targets(
-            &mut self.tuf,
-            &mut self.remote,
-            &self.config,
-        )?;
+        let r = Self::update_root(&mut self.tuf, &mut self.remote, &self.config)?;
+        let ts = Self::update_timestamp(&mut self.tuf, &mut self.remote, &self.config)?;
+        let sn = Self::update_snapshot(&mut self.tuf, &mut self.remote, &self.config)?;
+        let ta = Self::update_targets(&mut self.tuf, &mut self.remote, &self.config)?;
 
         Ok(r || ts || sn || ta)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_root<T>(
-        tuf: &mut Tuf<D>,
-        repo: &mut T,
-        config: &Config,
-    ) -> Result<bool>
+    fn update_root<T>(tuf: &mut Tuf<D>, repo: &mut T, config: &Config) -> Result<bool>
     where
         T: Repository<D>,
     {
@@ -184,11 +148,7 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_timestamp<T>(
-        tuf: &mut Tuf<D>,
-        repo: &mut T,
-        config: &Config,
-    ) -> Result<bool>
+    fn update_timestamp<T>(tuf: &mut Tuf<D>, repo: &mut T, config: &Config) -> Result<bool>
     where
         T: Repository<D>,
     {
@@ -209,16 +169,7 @@ where
         T: Repository<D>,
     {
         let snapshot_description = match tuf.timestamp() {
-            Some(ts) => {
-                match ts.meta().get(&MetadataPath::from_role(&Role::Snapshot)) {
-                    Some(d) => Ok(d),
-                    None => Err(Error::VerificationFailure(
-                        "Timestamp metadata did not contain a description of the \
-                                current snapshot metadata."
-                            .into(),
-                    )),
-                }
-            }
+            Some(ts) => Ok(ts.snapshot()),
             None => Err(Error::MissingMetadata(Role::Timestamp)),
         }?
             .clone();
@@ -228,7 +179,7 @@ where
         }
 
         let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
-        
+
         let version = if tuf.root().consistent_snapshot() {
             MetadataVersion::Hash(value.clone())
         } else {
@@ -431,7 +382,13 @@ where
                             &signed_meta,
                         ) {
                             Ok(_) => (),
-                            Err(e) => warn!("Error storing metadata {:?} locally: {:?}", delegation.role(), e),
+                            Err(e) => {
+                                warn!(
+                                    "Error storing metadata {:?} locally: {:?}",
+                                    delegation.role(),
+                                    e
+                                )
+                            }
                         }
 
                         let meta = tuf.delegations().get(delegation.role()).unwrap().clone();
@@ -588,5 +545,116 @@ impl Default for ConfigBuilder {
             min_bytes_per_second: 4096,
             max_delegation_depth: 10,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use chrono::prelude::*;
+    use crypto::{PrivateKey, SignatureScheme};
+    use interchange::JsonDataInterchange;
+    use metadata::{RootMetadata, SignedMetadata, RoleDefinition, MetadataPath, MetadataVersion};
+    use repository::EphemeralRepository;
+
+    lazy_static! {
+        static ref KEYS: Vec<PrivateKey> = {
+            let keys: &[&[u8]] = &[
+                include_bytes!("../tests/ed25519/ed25519-1.pk8.der"),
+                include_bytes!("../tests/ed25519/ed25519-2.pk8.der"),
+                include_bytes!("../tests/ed25519/ed25519-3.pk8.der"),
+                include_bytes!("../tests/ed25519/ed25519-4.pk8.der"),
+                include_bytes!("../tests/ed25519/ed25519-5.pk8.der"),
+                include_bytes!("../tests/ed25519/ed25519-6.pk8.der"),
+            ];
+            keys.iter().map(|b| PrivateKey::from_pkcs8(b).unwrap()).collect()
+        };
+    }
+
+    #[test]
+    fn root_chain_update() {
+        let mut repo = EphemeralRepository::new();
+        let root = RootMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            vec![KEYS[0].public().clone()],
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
+        ).unwrap();
+        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
+
+        repo.store_metadata(
+            &Role::Root,
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::Number(1),
+            &root,
+        ).unwrap();
+
+        let tuf = Tuf::from_root(root).unwrap();
+
+        let root = RootMetadata::new(
+            2,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            vec![KEYS[1].public().clone()],
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
+        ).unwrap();
+        let mut root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[1], SignatureScheme::Ed25519).unwrap();
+
+        root.add_signature(&KEYS[0], SignatureScheme::Ed25519)
+            .unwrap();
+
+        repo.store_metadata(
+            &Role::Root,
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::Number(2),
+            &root,
+        ).unwrap();
+
+        let root = RootMetadata::new(
+            3,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            vec![KEYS[2].public().clone()],
+            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
+            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
+        ).unwrap();
+        let mut root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[2], SignatureScheme::Ed25519).unwrap();
+
+        root.add_signature(&KEYS[1], SignatureScheme::Ed25519)
+            .unwrap();
+
+        repo.store_metadata(
+            &Role::Root,
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::Number(3),
+            &root,
+        ).unwrap();
+        repo.store_metadata(
+            &Role::Root,
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::None,
+            &root,
+        ).unwrap();
+
+        let mut client = Client::new(
+            tuf,
+            Config::build().finish().unwrap(),
+            repo,
+            EphemeralRepository::new(),
+        ).unwrap();
+        assert_eq!(client.update_local(), Ok(true));
+        assert_eq!(client.tuf.root().version(), 3);
     }
 }

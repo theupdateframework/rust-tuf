@@ -48,12 +48,12 @@ impl RootMetadata {
         let mut keys = Vec::new();
         for (key_id, value) in self.keys.drain() {
             if &key_id != value.key_id() {
-                warn!(
+                return Err(Error::Encoding(format!(
                     "Received key with ID {:?} but calculated it's value as {:?}. \
                        Refusing to add it to the set of trusted keys.",
                     key_id,
                     value.key_id()
-                );
+                )));
             } else {
                 debug!(
                     "Found key with good ID {:?}. Adding it to the set of trusted keys.",
@@ -140,7 +140,7 @@ pub struct TimestampMetadata {
     typ: metadata::Role,
     version: u32,
     expires: DateTime<Utc>,
-    meta: HashMap<metadata::MetadataPath, metadata::MetadataDescription>,
+    snapshot: metadata::MetadataDescription,
 }
 
 impl TimestampMetadata {
@@ -149,7 +149,7 @@ impl TimestampMetadata {
             typ: metadata::Role::Timestamp,
             version: metadata.version(),
             expires: metadata.expires().clone(),
-            meta: metadata.meta().clone(),
+            snapshot: metadata.snapshot().clone(),
         })
     }
 
@@ -161,7 +161,7 @@ impl TimestampMetadata {
             )));
         }
 
-        metadata::TimestampMetadata::new(self.version, self.expires, self.meta)
+        metadata::TimestampMetadata::new(self.version, self.expires, self.snapshot)
     }
 }
 

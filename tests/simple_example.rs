@@ -167,12 +167,8 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
         JsonDataInterchange::canonicalize(&JsonDataInterchange::serialize(&signed)?)?;
 
     //// build the timestamp ////
-    let meta_map =
-        hashmap! {
-        MetadataPath::new("snapshot".into())? =>
-            MetadataDescription::from_reader(&*snapshot_bytes, 1, &[HashAlgorithm::Sha256])?,
-    };
-    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)?;
+    let snap = MetadataDescription::from_reader(&*snapshot_bytes, 1, &[HashAlgorithm::Sha256])?;
+    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap)?;
 
     let signed = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
         &timestamp,

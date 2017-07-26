@@ -258,6 +258,11 @@ where
 
     /// Append a signature to this signed metadata. Will overwrite signature by keys with the same
     /// ID.
+    ///
+    /// **WARNING**: You should never have multiple TUF private keys on the same machine, so if
+    /// you're using this to append several signatures are once, you are doing something wrong. The
+    /// preferred method is to generate your copy of the metadata locally and use `merge_signatures`
+    /// to perform the "append" operations.
     pub fn add_signature(
         &mut self,
         private_key: &PrivateKey,
@@ -270,6 +275,32 @@ where
             |s| s.key_id() != private_key.key_id(),
         );
         self.signatures.push(sig);
+        Ok(())
+    }
+
+    /// Merge the singatures from `other` into `self` if and only if
+    /// `self.signed() == other.signed()`. If `self` and `other` contain signatures from the same
+    /// key ID, then the signatures from `self` will replace the signatures from `other`.
+    pub fn merge_signatures(&mut self, other: &Self) -> Result<()> {
+        if self.signed() != other.signed() {
+            return Err(Error::IllegalArgument(
+                "Attempted to merge unequal metadata".into(),
+            ));
+        }
+
+        let key_ids = self.signatures
+            .iter()
+            .map(|s| s.key_id().clone())
+            .collect::<HashSet<KeyId>>();
+
+        self.signatures.extend(
+            other
+                .signatures
+                .iter()
+                .filter(|s| !key_ids.contains(s.key_id()))
+                .cloned(),
+        );
+
         Ok(())
     }
 
@@ -314,7 +345,7 @@ where
         for sig in self.signatures.iter() {
             if !authorized_key_ids.contains(sig.key_id()) {
                 warn!(
-                    "Key ID {:?} is not authorized to sign root metadata.",
+                    "Key ID {:?} is not authorized to sign metadata.",
                     sig.key_id()
                 );
                 continue;
@@ -357,7 +388,7 @@ where
 }
 
 /// Metadata for the root role.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RootMetadata {
     version: u32,
     expires: DateTime<Utc>,
@@ -633,11 +664,11 @@ impl<'de> Deserialize<'de> for MetadataPath {
 }
 
 /// Metadata for the timestamp role.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TimestampMetadata {
     version: u32,
     expires: DateTime<Utc>,
-    meta: HashMap<MetadataPath, MetadataDescription>,
+    snapshot: MetadataDescription,
 }
 
 impl TimestampMetadata {
@@ -645,7 +676,7 @@ impl TimestampMetadata {
     pub fn new(
         version: u32,
         expires: DateTime<Utc>,
-        meta: HashMap<MetadataPath, MetadataDescription>,
+        snapshot: MetadataDescription,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
@@ -657,7 +688,7 @@ impl TimestampMetadata {
         Ok(TimestampMetadata {
             version: version,
             expires: expires,
-            meta: meta,
+            snapshot: snapshot,
         })
     }
 
@@ -671,9 +702,9 @@ impl TimestampMetadata {
         &self.expires
     }
 
-    /// An immutable reference to the metadata paths and descriptions.
-    pub fn meta(&self) -> &HashMap<MetadataPath, MetadataDescription> {
-        &self.meta
+    /// An immutable reference to the snapshot description.
+    pub fn snapshot(&self) -> &MetadataDescription {
+        &self.snapshot
     }
 }
 
@@ -1224,6 +1255,12 @@ impl Delegation {
             return Err(Error::IllegalArgument("Cannot have threshold < 1".into()));
         }
 
+        if (key_ids.len() as u64) < (threshold as u64) {
+            return Err(Error::IllegalArgument(
+                "Cannot have threshold less than number of keys".into(),
+            ));
+        }
+
         Ok(Delegation {
             role: role,
             terminating: terminating,
@@ -1281,6 +1318,7 @@ impl<'de> Deserialize<'de> for Delegation {
 mod test {
     use super::*;
     use chrono::prelude::*;
+    use data_encoding::BASE64URL;
     use json;
     use interchange::JsonDataInterchange;
 
@@ -1501,27 +1539,22 @@ mod test {
         let timestamp = TimestampMetadata::new(
             1,
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-            hashmap!{
-                MetadataPath::new("foo".into()).unwrap() =>
-                    MetadataDescription::new(
-                        1,
-                        100,
-                        hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) }
-                    ).unwrap(),
-            },
+            MetadataDescription::new(
+                1,
+                100,
+                hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
+            ).unwrap(),
         ).unwrap();
 
         let jsn = json!({
             "type": "timestamp",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
-            "meta": {
-                "foo": {
-                    "version": 1,
-                    "size": 100,
-                    "hashes": {
-                        "sha256": "",
-                    },
+            "snapshot": {
+                "version": 1,
+                "size": 100,
+                "hashes": {
+                    "sha256": "",
                 },
             },
         });
@@ -1708,5 +1741,427 @@ mod test {
         let decoded: SignedMetadata<JsonDataInterchange, SnapshotMetadata> =
             json::from_value(encoded).unwrap();
         assert_eq!(decoded, signed);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    //
+    // Here there be test cases about what metadata is allowed to be parsed wherein we do all sorts
+    // of naughty things and make sure the parsers puke appropriately.
+    //                                   ______________
+    //                             ,===:'.,            `-._
+    //                                  `:.`---.__         `-._
+    //                                    `:.     `--.         `.
+    //                                      \.        `.         `.
+    //                              (,,(,    \.         `.   ____,-`.,
+    //                           (,'     `/   \.   ,--.___`.'
+    //                       ,  ,'  ,--.  `,   \.;'         `
+    //                        `{o, {    \  :    \;
+    //                          |,,'    /  /    //
+    //                          j;;    /  ,' ,-//.    ,---.      ,
+    //                          \;'   /  ,' /  _  \  /  _  \   ,'/
+    //                                \   `'  / \  `'  / \  `.' /
+    //                                 `.___,'   `.__,'   `.__,'
+    //
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    fn make_root() -> json::Value {
+        let root_def = RoleDefinition::new(
+            1,
+            hashset!(PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().key_id().clone()),
+        ).unwrap();
+
+        let snapshot_def = RoleDefinition::new(
+            1,
+            hashset!(PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap().key_id().clone()),
+        ).unwrap();
+
+        let targets_def = RoleDefinition::new(
+            1,
+            hashset!(PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap().key_id().clone()),
+        ).unwrap();
+
+        let timestamp_def = RoleDefinition::new(
+            1,
+            hashset!(PrivateKey::from_pkcs8(ED25519_4_PK8).unwrap().key_id().clone()),
+        ).unwrap();
+
+        let root = RootMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            false,
+            vec!(
+                PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().public().clone(),
+                PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap().public().clone(),
+                PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap().public().clone(),
+                PrivateKey::from_pkcs8(ED25519_4_PK8).unwrap().public().clone(),
+            ),
+            root_def,
+            snapshot_def,
+            targets_def,
+            timestamp_def,
+        ).unwrap();
+
+        json::to_value(&root).unwrap()
+    }
+
+    fn make_snapshot() -> json::Value {
+        let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!())
+            .unwrap();
+
+        json::to_value(&snapshot).unwrap()
+    }
+
+    fn make_timestamp() -> json::Value {
+        let timestamp = TimestampMetadata::new(
+            1,
+            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
+            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256])
+                .unwrap(),
+        ).unwrap();
+
+        json::to_value(&timestamp).unwrap()
+    }
+
+    fn make_targets() -> json::Value {
+        let targets =
+            TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
+                .unwrap();
+
+        json::to_value(&targets).unwrap()
+    }
+
+    fn make_delegations() -> json::Value {
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8)
+            .unwrap()
+            .public()
+            .clone();
+        let delegations = Delegations::new(
+            vec![key.clone()],
+            vec![Delegation::new(
+                MetadataPath::new("foo".into()).unwrap(),
+                false,
+                1,
+                hashset!(key.key_id().clone()),
+                hashset!(TargetPath::new("bar".into()).unwrap()),
+            ).unwrap()],
+        ).unwrap();
+
+        json::to_value(&delegations).unwrap()
+    }
+
+    fn make_delegation() -> json::Value {
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8)
+            .unwrap()
+            .public()
+            .clone();
+        let delegation = Delegation::new(
+            MetadataPath::new("foo".into()).unwrap(),
+            false,
+            1,
+            hashset!(key.key_id().clone()),
+            hashset!(TargetPath::new("bar".into()).unwrap()),
+        ).unwrap();
+
+        json::to_value(&delegation).unwrap()
+    }
+
+    fn set_version(value: &mut json::Value, version: i64) {
+        match value.as_object_mut() {
+            Some(obj) => {
+                let _ = obj.insert("version".into(), json!(version));
+            }
+            None => panic!(),
+        }
+    }
+
+    // Refuse to deserialize root metadata if the version is not > 0
+    #[test]
+    fn deserialize_json_root_illegal_version() {
+        let mut root_json = make_root();
+        set_version(&mut root_json, 0);
+        assert!(json::from_value::<RootMetadata>(root_json.clone()).is_err());
+
+        let mut root_json = make_root();
+        set_version(&mut root_json, -1);
+        assert!(json::from_value::<RootMetadata>(root_json).is_err());
+    }
+
+    // Refuse to deserialize root metadata if any of the defined keys don't match their key ID
+    #[test]
+    fn deserialize_json_root_bad_key_ids() {
+        let mut root_json = make_root();
+        match root_json.as_object_mut() {
+            Some(obj) => {
+                match obj.get_mut("keys").unwrap().as_object_mut() {
+                    Some(keys) => {
+                        let key_id = keys.keys().next().unwrap().clone();
+                        let key = keys.get(&key_id).unwrap().clone();
+                        let mut bytes = BASE64URL.decode(key_id.as_bytes()).unwrap();
+                        bytes[0] ^= 0x01;
+                        let key_id = BASE64URL.encode(&bytes);
+                        let _ = keys.insert(key_id, key);
+                    }
+                    None => panic!(),
+                }
+            }
+            None => panic!(),
+        }
+
+        assert!(json::from_value::<RootMetadata>(root_json).is_err());
+    }
+
+    fn set_threshold(value: &mut json::Value, threshold: i32) {
+        match value.as_object_mut() {
+            Some(obj) => {
+                let _ = obj.insert("threshold".into(), json!(threshold));
+            }
+            None => panic!(),
+        }
+    }
+
+    // Refuse to deserialize role definitions with illegal thresholds
+    #[test]
+    fn deserialize_json_role_definition_illegal_threshold() {
+        let role_def = RoleDefinition::new(
+            1,
+            hashset!(PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().key_id().clone()),
+        ).unwrap();
+
+        let mut jsn = json::to_value(&role_def).unwrap();
+        set_threshold(&mut jsn, 0);
+        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+
+        let mut jsn = json::to_value(&role_def).unwrap();
+        set_threshold(&mut jsn, -1);
+        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+
+        let role_def = RoleDefinition::new(
+            2,
+            hashset!(
+                PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap().key_id().clone(),
+                PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap().key_id().clone(),
+            ),
+        ).unwrap();
+
+        let mut jsn = json::to_value(&role_def).unwrap();
+        set_threshold(&mut jsn, 3);
+        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+    }
+
+    // Refuse to deserialilze root metadata with wrong type field
+    #[test]
+    fn deserialize_json_root_bad_type() {
+        let mut root = make_root();
+        let _ = root.as_object_mut().unwrap().insert(
+            "type".into(),
+            json!("snapshot"),
+        );
+        assert!(json::from_value::<RootMetadata>(root).is_err());
+    }
+
+    // Refuse to deserialize role definitions with duplicated key ids
+    #[test]
+    fn deserialize_json_role_definition_duplicate_key_ids() {
+        let key_id = PrivateKey::from_pkcs8(ED25519_1_PK8)
+            .unwrap()
+            .key_id()
+            .clone();
+        let role_def = RoleDefinition::new(1, hashset!(key_id.clone())).unwrap();
+        let mut jsn = json::to_value(&role_def).unwrap();
+
+        match jsn.as_object_mut() {
+            Some(obj) => {
+                match obj.get_mut("key_ids").unwrap().as_array_mut() {
+                    Some(arr) => arr.push(json!(key_id)),
+                    None => panic!(),
+                }
+            }
+            None => panic!(),
+        }
+
+        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+    }
+
+    // Refuse to deserialize snapshot metadata with illegal versions
+    #[test]
+    fn deserialize_json_snapshot_illegal_version() {
+        let mut snapshot = make_snapshot();
+        set_version(&mut snapshot, 0);
+        assert!(json::from_value::<SnapshotMetadata>(snapshot).is_err());
+
+        let mut snapshot = make_snapshot();
+        set_version(&mut snapshot, -1);
+        assert!(json::from_value::<SnapshotMetadata>(snapshot).is_err());
+    }
+
+    // Refuse to deserialilze snapshot metadata with wrong type field
+    #[test]
+    fn deserialize_json_snapshot_bad_type() {
+        let mut snapshot = make_snapshot();
+        let _ = snapshot.as_object_mut().unwrap().insert(
+            "type".into(),
+            json!("root"),
+        );
+        assert!(json::from_value::<SnapshotMetadata>(snapshot).is_err());
+    }
+
+    // Refuse to deserialize timestamp metadata with illegal versions
+    #[test]
+    fn deserialize_json_timestamp_illegal_version() {
+        let mut timestamp = make_timestamp();
+        set_version(&mut timestamp, 0);
+        assert!(json::from_value::<TimestampMetadata>(timestamp).is_err());
+
+        let mut timestamp = make_timestamp();
+        set_version(&mut timestamp, -1);
+        assert!(json::from_value::<TimestampMetadata>(timestamp).is_err());
+    }
+
+    // Refuse to deserialilze timestamp metadata with wrong type field
+    #[test]
+    fn deserialize_json_timestamp_bad_type() {
+        let mut timestamp = make_timestamp();
+        let _ = timestamp.as_object_mut().unwrap().insert(
+            "type".into(),
+            json!("root"),
+        );
+        assert!(json::from_value::<TimestampMetadata>(timestamp).is_err());
+    }
+
+    // Refuse to deserialize targets metadata with illegal versions
+    #[test]
+    fn deserialize_json_targets_illegal_version() {
+        let mut targets = make_targets();
+        set_version(&mut targets, 0);
+        assert!(json::from_value::<TargetsMetadata>(targets).is_err());
+
+        let mut targets = make_targets();
+        set_version(&mut targets, -1);
+        assert!(json::from_value::<TargetsMetadata>(targets).is_err());
+    }
+
+    // Refuse to deserialilze targets metadata with wrong type field
+    #[test]
+    fn deserialize_json_targets_bad_type() {
+        let mut targets = make_targets();
+        let _ = targets.as_object_mut().unwrap().insert(
+            "type".into(),
+            json!("root"),
+        );
+        assert!(json::from_value::<TargetsMetadata>(targets).is_err());
+    }
+
+    // Refuse to deserialize delegations with no keys
+    #[test]
+    fn deserialize_json_delegations_no_keys() {
+        let mut delegations = make_delegations();
+        delegations
+            .as_object_mut()
+            .unwrap()
+            .get_mut("keys".into())
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .clear();
+        assert!(json::from_value::<Delegations>(delegations).is_err());
+    }
+
+    // Refuse to deserialize delegations with no roles
+    #[test]
+    fn deserialize_json_delegations_no_roles() {
+        let mut delegations = make_delegations();
+        delegations
+            .as_object_mut()
+            .unwrap()
+            .get_mut("roles".into())
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .clear();
+        assert!(json::from_value::<Delegations>(delegations).is_err());
+    }
+
+    // Refuse to deserialize delegations with duplicated roles
+    #[test]
+    fn deserialize_json_delegations_duplicated_roles() {
+        let mut delegations = make_delegations();
+        let dupe = delegations
+            .as_object()
+            .unwrap()
+            .get("roles".into())
+            .unwrap()
+            .as_array()
+            .unwrap()
+            [0]
+            .clone();
+        delegations
+            .as_object_mut()
+            .unwrap()
+            .get_mut("roles".into())
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(dupe);
+        assert!(json::from_value::<Delegations>(delegations).is_err());
+    }
+
+    // Refuse to deserialize a delegation with insufficient threshold
+    #[test]
+    fn deserialize_json_delegation_bad_threshold() {
+        let mut delegation = make_delegation();
+        set_threshold(&mut delegation, 0);
+        assert!(json::from_value::<Delegation>(delegation).is_err());
+
+        let mut delegation = make_delegation();
+        set_threshold(&mut delegation, 2);
+        assert!(json::from_value::<Delegation>(delegation).is_err());
+    }
+
+    // Refuse to deserialize a delegation with duplicate key IDs
+    #[test]
+    fn deserialize_json_delegation_duplicate_key_ids() {
+        let mut delegation = make_delegation();
+        let dupe = delegation
+            .as_object()
+            .unwrap()
+            .get("key_ids".into())
+            .unwrap()
+            .as_array()
+            .unwrap()
+            [0]
+            .clone();
+        delegation
+            .as_object_mut()
+            .unwrap()
+            .get_mut("key_ids".into())
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(dupe);
+        assert!(json::from_value::<Delegation>(delegation).is_err());
+    }
+
+    // Refuse to deserialize a delegation with duplicate paths
+    #[test]
+    fn deserialize_json_delegation_duplicate_paths() {
+        let mut delegation = make_delegation();
+        let dupe = delegation
+            .as_object()
+            .unwrap()
+            .get("paths".into())
+            .unwrap()
+            .as_array()
+            .unwrap()
+            [0]
+            .clone();
+        delegation
+            .as_object_mut()
+            .unwrap()
+            .get_mut("paths".into())
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(dupe);
+        assert!(json::from_value::<Delegation>(delegation).is_err());
     }
 }

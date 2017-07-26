@@ -14,7 +14,7 @@ use error::Error;
 /// The format used for data interchange, serialization, and deserialization.
 pub trait DataInterchange: Debug + PartialEq + Clone {
     /// The type of data that is contained in the `signed` portion of metadata.
-    type RawData: Serialize + DeserializeOwned + Clone;
+    type RawData: Serialize + DeserializeOwned + Clone + PartialEq;
 
     /// The data interchange's extension.
     fn extension() -> &'static str;
