@@ -1,4 +1,4 @@
-//! TUF metadata
+//! TUF metadata.
 
 use chrono::DateTime;
 use chrono::offset::Utc;
