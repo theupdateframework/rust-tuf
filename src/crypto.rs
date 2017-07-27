@@ -116,7 +116,8 @@ fn calculate_key_id(public_key: &[u8]) -> KeyId {
 ///
 /// # Calculating
 /// A `KeyId` is calculated as `sha256(spki(pub_key_bytes))` where `spki` is a function that takes
-/// any encoding for a public key an converts it into the `SubjectPublicKeyInfo` (SPKI) encoding.
+/// any encoding for a public key an converts it into the `SubjectPublicKeyInfo` (SPKI) DER
+/// encoding.
 ///
 /// Note: Historically the TUF spec says that a key's ID should be calculated with
 /// `sha256(cjson(encoded(pub_key_bytes)))`, but since there could be multiple supported data
@@ -125,24 +126,30 @@ fn calculate_key_id(public_key: &[u8]) -> KeyId {
 /// # ASN.1
 /// ```bash
 /// PublicKey ::= CHOICE {
+///     -- This field is checked for consistency against `subjectPublicKey`.
+///     -- The OID determines how we attempt to parse the `BIT STRING`.
 ///     algorithm        AlgorithmIdentifier,
-///     subjectPublicKey BIT STRING (CONTAINING PublicKeyChoice)
+///     -- Either:
+///     --   1. Encapsulates an `RsaPublicKey`
+///     --   2. Equals an `Ed25519PublicKey`
+///     subjectPublicKey BIT STRING
 /// }
-/// 
+///
 /// AlgorithmIdentifier ::= SEQUENCE {
-///     -- 1.2.840.113549.1.1.1 rsaEncryption(PKCS #1)
-///     -- 1.3.101.112 curveEd25519(EdDSA 25519 signature algorithm)
+///     -- Either:
+///     --   1. 1.2.840.113549.1.1.1 rsaEncryption(PKCS #1)
+///     --   2. 1.3.101.112 curveEd25519(EdDSA 25519 signature algorithm)
 ///     algorithm  OBJECT IDENTIFIER,
+///     -- In our cases, this is always `NULL`.
 ///     parameters ANY DEFINED BY algorithm OPTIONAL
 /// }
 ///
-/// PublicKeyChoice ::= CHOICE {
-///     rsa     SEQUENCE {
-///                 modulus  INTEGER (1..MAX),
-///                 exponent INTEGER (1..MAX)
-///             },
-///     ed25519 BIT STRING
+/// RsaPublicKey ::= SEQUENCE {
+///     modulus  INTEGER (1..MAX),
+///     exponent INTEGER (1..MAX)
 /// }
+///
+/// Ed25519PublicKey ::= BIT STRING
 /// ```
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct KeyId(Vec<u8>);
@@ -370,7 +377,7 @@ impl PrivateKey {
     /// Create a private key from PKCS#8v2 DER bytes.
     ///
     /// # Generating Keys
-    /// 
+    ///
     /// If you use `cargo install tuf`, you will have access to the TUF CLI tool that will allow
     /// you to generate keys. If you do not want to do this, the following can be used instead.
     ///

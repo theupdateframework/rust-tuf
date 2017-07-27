@@ -302,7 +302,7 @@ where
     /// fn main() {
     ///     let key_1: &[u8] = include_bytes!("./tests/ed25519/ed25519-1.pk8.der");
     ///     let key_1 = PrivateKey::from_pkcs8(&key_1).unwrap();
-    ///     
+    ///
     ///     // Note: This is for demonstration purposes only.
     ///     // You should never have multiple private keys on the same device.
     ///     let key_2: &[u8] = include_bytes!("./tests/ed25519/ed25519-2.pk8.der");
@@ -332,7 +332,9 @@ where
         let raw = D::serialize(&self.signed)?;
         let bytes = D::canonicalize(&raw)?;
         let sig = private_key.sign(&bytes, scheme)?;
-        self.signatures.retain(|s| s.key_id() != private_key.key_id());
+        self.signatures.retain(
+            |s| s.key_id() != private_key.key_id(),
+        );
         self.signatures.push(sig);
         Ok(())
     }
@@ -409,37 +411,35 @@ where
     ///
     ///     assert!(timestamp.verify(
     ///         1,
-    ///         &hashset!(key_1.key_id().clone()),
-    ///         &hashmap!(key_1.key_id().clone() => key_1.public().clone()),
+    ///         vec![key_1.public()],
     ///     ).is_ok());
     ///
     ///     // fail with increased threshold
     ///     assert!(timestamp.verify(
     ///         2,
-    ///         &hashset!(key_1.key_id().clone()),
-    ///         &hashmap!(key_1.key_id().clone() => key_1.public().clone()),
+    ///         vec![key_1.public()],
     ///     ).is_err());
     ///
     ///     // fail when the keys aren't authorized
     ///     assert!(timestamp.verify(
     ///         1,
-    ///         &hashset!(key_2.key_id().clone()),
-    ///         &hashmap!(key_1.key_id().clone() => key_1.public().clone()),
+    ///         vec![key_2.public()],
     ///     ).is_err());
     ///
     ///     // fail when the keys don't exist
     ///     assert!(timestamp.verify(
     ///         1,
-    ///         &hashset!(key_1.key_id().clone()),
-    ///         &hashmap!(key_2.key_id().clone() => key_2.public().clone()),
+    ///         &[],
     ///     ).is_err());
     /// }
-    pub fn verify(
+    pub fn verify<'a, I>(
         &self,
         threshold: u32,
-        authorized_key_ids: &HashSet<KeyId>,
-        available_keys: &HashMap<KeyId, PublicKey>,
-    ) -> Result<()> {
+        authorized_keys: I,
+    ) -> Result<()> 
+    where
+        I: IntoIterator<Item = &'a PublicKey>
+    {
         if self.signatures.len() < 1 {
             return Err(Error::VerificationFailure(
                 "The metadata was not signed with any authorized keys."
@@ -453,19 +453,13 @@ where
             ));
         }
 
+        let authorized_keys = authorized_keys.into_iter().map(|k| (k.key_id(), k)).collect::<HashMap<&KeyId, &PublicKey>>();
+
         let canonical_bytes = D::canonicalize(&self.signed)?;
 
         let mut signatures_needed = threshold;
         for sig in self.signatures.iter() {
-            if !authorized_key_ids.contains(sig.key_id()) {
-                warn!(
-                    "Key ID {:?} is not authorized to sign metadata.",
-                    sig.key_id()
-                );
-                continue;
-            }
-
-            match available_keys.get(sig.key_id()) {
+            match authorized_keys.get(sig.key_id()) {
                 Some(ref pub_key) => {
                     match pub_key.verify(&canonical_bytes, &sig) {
                         Ok(()) => {
@@ -479,7 +473,7 @@ where
                 }
                 None => {
                     warn!(
-                        "Key ID {:?} was not found in the set of available keys.",
+                        "Key ID {:?} was not found in the set of authorized keys.",
                         sig.key_id()
                     );
                 }
