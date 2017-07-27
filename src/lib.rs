@@ -1,11 +1,24 @@
 //! This crate provides an API for talking to repositories that implement The Update Framework
 //! (TUF).
 //!
-//! If you are unfamiliar with TUF, you should read up on via the [official
+//! If you are unfamiliar with TUF, you should read up on it via the [official
 //! website](http://theupdateframework.github.io/). This crate aims to implement the entirety of
 //! the specification as defined at the [head of the `develop`
 //! branch](https://github.com/theupdateframework/tuf/blob/develop/docs/tuf-spec.txt) in the
 //! official TUF git repository.
+//!
+//! Additionally, the following two papers are valuable supplements in understanding how to
+//! actually implement TUF for a community repository.
+//!
+//! - [The Diplomat Paper
+//! (2016)](https://www.usenix.org/conference/nsdi16/technical-sessions/presentation/kuppusamy)
+//! - [The Mercury Paper
+//! (2017)](https://www.usenix.org/conference/atc17/technical-sessions/presentation/kuppusamy)
+//!
+//! Failure to read the spec and the above papers will likely lead to an implementation that does
+//! not take advantage of all the security guarantees that TUF offers.
+//!
+//! # Interoperability
 //!
 //! It should be noted that historically the TUF spec defined exactly one metadata format and one
 //! way of organizing metadata within a repository. Thus, all TUF implementation could perfectly
@@ -14,7 +27,6 @@
 //! will work with any other TUF implemenation. Should you want to access a TUF repository that
 //! uses `rust-tuf` as its backend from another language, ASN.1 modules and metadata schemas are
 //! provided that will allow you to interoperate with this library.
-//!
 
 #![deny(missing_docs)]
 

@@ -33,7 +33,7 @@ where
 
     /// Store signed metadata.
     ///
-    /// Note: This *MUST* canonicalize the bytes before storing them as a read will expect the
+    /// Note: This **MUST** canonicalize the bytes before storing them as a read will expect the
     /// hashes of the metadata to match.
     fn store_metadata<M>(
         &mut self,
