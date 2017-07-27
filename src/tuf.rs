@@ -25,10 +25,15 @@ pub struct Tuf<D: DataInterchange> {
 impl<D: DataInterchange> Tuf<D> {
     /// Create a new `TUF` struct from a known set of pinned root keys that are used to verify the
     /// signed metadata.
-    pub fn from_root_pinned(
+    pub fn from_root_pinned<'a, I>(
         mut signed_root: SignedMetadata<D, RootMetadata>,
-        root_key_ids: &[KeyId],
-    ) -> Result<Self> {
+        root_key_ids: I,
+    ) -> Result<Self>
+    where
+        I: IntoIterator<Item=&'a KeyId>,
+    {
+        let root_key_ids = root_key_ids.into_iter().collect::<HashSet<&KeyId>>();
+
         signed_root.signatures_mut().retain(|s| {
             root_key_ids.contains(s.key_id())
         });

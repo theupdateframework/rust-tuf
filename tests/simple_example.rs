@@ -5,7 +5,7 @@ extern crate tuf;
 
 use chrono::prelude::*;
 use chrono::offset::Utc;
-use tuf::{Tuf, Error};
+use tuf::Error;
 use tuf::client::{Client, Config};
 use tuf::crypto::{PrivateKey, SignatureScheme, KeyId, HashAlgorithm};
 use tuf::interchange::{DataInterchange, JsonDataInterchange};
@@ -25,26 +25,17 @@ const ED25519_4_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-4.pk8.der
 fn main() {
     let mut remote = EphemeralRepository::<JsonDataInterchange>::new();
     let root_key_ids = init_server(&mut remote).unwrap();
-    init_client(root_key_ids, remote).unwrap();
+    init_client(&root_key_ids, remote).unwrap();
 }
 
 fn init_client(
-    root_key_ids: Vec<KeyId>,
-    mut remote: EphemeralRepository<JsonDataInterchange>,
+    root_key_ids: &[KeyId],
+    remote: EphemeralRepository<JsonDataInterchange>,
 ) -> Result<(), Error> {
     let local = EphemeralRepository::<JsonDataInterchange>::new();
     let config = Config::build().finish()?;
-    let root = remote.fetch_metadata(
-        &Role::Root,
-        &MetadataPath::from_role(&Role::Root),
-        &MetadataVersion::None,
-        config.max_root_size(),
-        config.min_bytes_per_second(),
-        None,
-    )?;
 
-    let tuf = Tuf::<JsonDataInterchange>::from_root_pinned(root, &root_key_ids)?;
-    let mut client = Client::new(tuf, config, local, remote)?;
+    let mut client = Client::with_root_pinned(root_key_ids, config, local, remote)?;
     match client.update_local() {
         Ok(_) => (),
         Err(e) => println!("{:?}", e),

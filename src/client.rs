@@ -29,9 +29,9 @@
 //!         .map(|k| KeyId::from_string(k).unwrap())
 //!         .collect();
 //!
-//!     let mut local = FileSystemRepository::new(PathBuf::from("~/.rustup"));
+//!     let local = FileSystemRepository::<JsonDataInterchange>::new(PathBuf::from("~/.rustup"));
 //!
-//!     let mut remote = HttpRepository::new(
+//!     let remote = HttpRepository::new(
 //!         Url::parse("https://static.rust-lang.org/").unwrap(),
 //!         HttpClient::new(),
 //!         Some("rustup/1.4.0".into()),
@@ -39,18 +39,7 @@
 //!
 //!     let config = Config::build().finish().unwrap();
 //!
-//!     // fetching this original root from the network is safe because
-//!     // we are using trusted, pinned keys to verify it
-//!     let root = remote.fetch_metadata(&Role::Root,
-//!                                      &MetadataPath::from_role(&Role::Root),
-//!                                      &MetadataVersion::None,
-//!                                      config.max_root_size(),
-//!                                      config.min_bytes_per_second(),
-//!                                      None).unwrap();
-//!
-//!     let tuf = Tuf::<JsonDataInterchange>::from_root_pinned(root, &key_ids).unwrap();
-//!
-//!     let mut client = Client::new(tuf, config, local, remote).unwrap();
+//!     let mut client = Client::with_root_pinned(&key_ids, config, local, remote).unwrap();
 //!     let _ = client.update_local().unwrap();
 //!     let _ = client.update_remote().unwrap();
 //! }
@@ -59,7 +48,7 @@
 use std::io::{Read, Write};
 
 use Result;
-use crypto;
+use crypto::{self, KeyId};
 use error::Error;
 use interchange::DataInterchange;
 use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath, TargetPath, TargetDescription,
@@ -87,11 +76,74 @@ where
     L: Repository<D>,
     R: Repository<D>,
 {
-    /// Create a new TUF client from the given `Tuf` (metadata storage) and local and remote
-    /// repositories.
-    pub fn new(tuf: Tuf<D>, config: Config, mut local: L, mut remote: R) -> Result<Self> {
+    /// Create a new TUF client. It will attempt to load initial root metadata from the local repo
+    /// and return an error if it cannot do so.
+    ///
+    /// **WARNING**: This method offers weaker security guarantees than the related method
+    /// `with_root_pinned`.
+    pub fn new(config: Config, mut local: L, mut remote: R) -> Result<Self> {
         local.initialize()?;
         remote.initialize()?;
+
+        let root = local.fetch_metadata(
+            &Role::Root,
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::Number(1),
+            &config.max_root_size,
+            config.min_bytes_per_second,
+            None
+        ).or_else(|_| local.fetch_metadata(
+            &Role::Root,
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::Number(1),
+            &config.max_root_size,
+            config.min_bytes_per_second,
+            None
+        ))?;
+
+        let tuf = Tuf::from_root(root)?;
+
+        Ok(Client {
+            tuf: tuf,
+            config: config,
+            local: local,
+            remote: remote,
+        })
+    }
+
+    /// Create a new TUF client. It will attempt to load initial root metadata the local and remote
+    /// repositories using the provided key IDs to pin the verification.
+    /// 
+    /// This is the preferred method of creating a client.
+    pub fn with_root_pinned<'a, I>(
+        trusted_root_keys: I,
+        config: Config,
+        mut local: L,
+        mut remote: R
+    ) -> Result<Self>
+    where
+        I: IntoIterator<Item = &'a KeyId>,
+    {
+        local.initialize()?;
+        remote.initialize()?;
+
+        let root = local.fetch_metadata(
+            &Role::Root,
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::Number(1),
+            &config.max_root_size,
+            config.min_bytes_per_second,
+            None
+        ).or_else(|_| remote.fetch_metadata(
+            &Role::Root,
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::Number(1),
+            &config.max_root_size,
+            config.min_bytes_per_second,
+            None
+        ))?;
+
+        let tuf = Tuf::from_root_pinned(root, trusted_root_keys)?;
 
         Ok(Client {
             tuf: tuf,
@@ -650,8 +702,6 @@ mod test {
             &root,
         ).unwrap();
 
-        let tuf = Tuf::from_root(root).unwrap();
-
         let root = RootMetadata::new(
             2,
             Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
@@ -705,7 +755,6 @@ mod test {
         ).unwrap();
 
         let mut client = Client::new(
-            tuf,
             Config::build().finish().unwrap(),
             repo,
             EphemeralRepository::new(),
