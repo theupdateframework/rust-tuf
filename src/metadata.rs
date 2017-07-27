@@ -432,13 +432,9 @@ where
     ///         &[],
     ///     ).is_err());
     /// }
-    pub fn verify<'a, I>(
-        &self,
-        threshold: u32,
-        authorized_keys: I,
-    ) -> Result<()> 
+    pub fn verify<'a, I>(&self, threshold: u32, authorized_keys: I) -> Result<()>
     where
-        I: IntoIterator<Item = &'a PublicKey>
+        I: IntoIterator<Item = &'a PublicKey>,
     {
         if self.signatures.len() < 1 {
             return Err(Error::VerificationFailure(
@@ -453,7 +449,10 @@ where
             ));
         }
 
-        let authorized_keys = authorized_keys.into_iter().map(|k| (k.key_id(), k)).collect::<HashMap<&KeyId, &PublicKey>>();
+        let authorized_keys = authorized_keys
+            .into_iter()
+            .map(|k| (k.key_id(), k))
+            .collect::<HashMap<&KeyId, &PublicKey>>();
 
         let canonical_bytes = D::canonicalize(&self.signed)?;
 

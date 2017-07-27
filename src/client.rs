@@ -85,21 +85,25 @@ where
         local.initialize()?;
         remote.initialize()?;
 
-        let root = local.fetch_metadata(
-            &Role::Root,
-            &MetadataPath::from_role(&Role::Root),
-            &MetadataVersion::Number(1),
-            &config.max_root_size,
-            config.min_bytes_per_second,
-            None
-        ).or_else(|_| local.fetch_metadata(
-            &Role::Root,
-            &MetadataPath::from_role(&Role::Root),
-            &MetadataVersion::Number(1),
-            &config.max_root_size,
-            config.min_bytes_per_second,
-            None
-        ))?;
+        let root = local
+            .fetch_metadata(
+                &Role::Root,
+                &MetadataPath::from_role(&Role::Root),
+                &MetadataVersion::Number(1),
+                &config.max_root_size,
+                config.min_bytes_per_second,
+                None,
+            )
+            .or_else(|_| {
+                local.fetch_metadata(
+                    &Role::Root,
+                    &MetadataPath::from_role(&Role::Root),
+                    &MetadataVersion::Number(1),
+                    &config.max_root_size,
+                    config.min_bytes_per_second,
+                    None,
+                )
+            })?;
 
         let tuf = Tuf::from_root(root)?;
 
@@ -113,13 +117,13 @@ where
 
     /// Create a new TUF client. It will attempt to load initial root metadata the local and remote
     /// repositories using the provided key IDs to pin the verification.
-    /// 
+    ///
     /// This is the preferred method of creating a client.
     pub fn with_root_pinned<'a, I>(
         trusted_root_keys: I,
         config: Config,
         mut local: L,
-        mut remote: R
+        mut remote: R,
     ) -> Result<Self>
     where
         I: IntoIterator<Item = &'a KeyId>,
@@ -127,21 +131,25 @@ where
         local.initialize()?;
         remote.initialize()?;
 
-        let root = local.fetch_metadata(
-            &Role::Root,
-            &MetadataPath::from_role(&Role::Root),
-            &MetadataVersion::Number(1),
-            &config.max_root_size,
-            config.min_bytes_per_second,
-            None
-        ).or_else(|_| remote.fetch_metadata(
-            &Role::Root,
-            &MetadataPath::from_role(&Role::Root),
-            &MetadataVersion::Number(1),
-            &config.max_root_size,
-            config.min_bytes_per_second,
-            None
-        ))?;
+        let root = local
+            .fetch_metadata(
+                &Role::Root,
+                &MetadataPath::from_role(&Role::Root),
+                &MetadataVersion::Number(1),
+                &config.max_root_size,
+                config.min_bytes_per_second,
+                None,
+            )
+            .or_else(|_| {
+                remote.fetch_metadata(
+                    &Role::Root,
+                    &MetadataPath::from_role(&Role::Root),
+                    &MetadataVersion::Number(1),
+                    &config.max_root_size,
+                    config.min_bytes_per_second,
+                    None,
+                )
+            })?;
 
         let tuf = Tuf::from_root_pinned(root, trusted_root_keys)?;
 

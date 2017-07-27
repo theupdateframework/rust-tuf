@@ -30,7 +30,7 @@ impl<D: DataInterchange> Tuf<D> {
         root_key_ids: I,
     ) -> Result<Self>
     where
-        I: IntoIterator<Item=&'a KeyId>,
+        I: IntoIterator<Item = &'a KeyId>,
     {
         let root_key_ids = root_key_ids.into_iter().collect::<HashSet<&KeyId>>();
 
@@ -48,7 +48,16 @@ impl<D: DataInterchange> Tuf<D> {
         let root = D::deserialize::<RootMetadata>(signed_root.signed())?;
         let _ = signed_root.verify(
             root.root().threshold(),
-            root.keys().iter().filter_map(|(k, v)| if root.root().key_ids().contains(k) { Some(v) } else { None }),
+            root.keys().iter().filter_map(
+                |(k, v)| if root.root()
+                    .key_ids()
+                    .contains(k)
+                {
+                    Some(v)
+                } else {
+                    None
+                },
+            ),
         )?;
         Ok(Tuf {
             root: root,
@@ -89,7 +98,13 @@ impl<D: DataInterchange> Tuf<D> {
     pub fn update_root(&mut self, signed_root: SignedMetadata<D, RootMetadata>) -> Result<bool> {
         signed_root.verify(
             self.root.root().threshold(),
-            self.root.keys().iter().filter_map(|(k, v)| if self.root.root().key_ids().contains(k) { Some(v) } else { None }),
+            self.root.keys().iter().filter_map(|(k, v)| {
+                if self.root.root().key_ids().contains(k) {
+                    Some(v)
+                } else {
+                    None
+                }
+            }),
         )?;
 
         let root = D::deserialize::<RootMetadata>(signed_root.signed())?;
@@ -114,7 +129,16 @@ impl<D: DataInterchange> Tuf<D> {
 
         let _ = signed_root.verify(
             root.root().threshold(),
-            root.keys().iter().filter_map(|(k, v)| if root.root().key_ids().contains(k) { Some(v) } else { None }),
+            root.keys().iter().filter_map(
+                |(k, v)| if root.root()
+                    .key_ids()
+                    .contains(k)
+                {
+                    Some(v)
+                } else {
+                    None
+                },
+            ),
         )?;
 
         self.purge_metadata();
@@ -130,7 +154,15 @@ impl<D: DataInterchange> Tuf<D> {
     ) -> Result<bool> {
         signed_timestamp.verify(
             self.root.timestamp().threshold(),
-            self.root.keys().iter().filter_map(|(k, v)| if self.root.timestamp().key_ids().contains(k) { Some(v) } else { None }),
+            self.root.keys().iter().filter_map(
+                |(k, v)| {
+                    if self.root.timestamp().key_ids().contains(k) {
+                        Some(v)
+                    } else {
+                        None
+                    }
+                },
+            ),
         )?;
 
         let current_version = self.timestamp.as_ref().map(|t| t.version()).unwrap_or(0);
@@ -176,7 +208,15 @@ impl<D: DataInterchange> Tuf<D> {
 
             signed_snapshot.verify(
                 root.snapshot().threshold(),
-                self.root.keys().iter().filter_map(|(k, v)| if root.snapshot().key_ids().contains(k) { Some(v) } else { None }),
+                self.root.keys().iter().filter_map(
+                    |(k, v)| {
+                        if root.snapshot().key_ids().contains(k) {
+                            Some(v)
+                        } else {
+                            None
+                        }
+                    },
+                ),
             )?;
 
             let snapshot: SnapshotMetadata = D::deserialize(&signed_snapshot.signed())?;
@@ -260,7 +300,13 @@ impl<D: DataInterchange> Tuf<D> {
 
             signed_targets.verify(
                 root.targets().threshold(),
-                root.keys().iter().filter_map(|(k, v)| if root.targets().key_ids().contains(k) { Some(v) } else { None }),
+                root.keys().iter().filter_map(|(k, v)| {
+                    if root.targets().key_ids().contains(k) {
+                        Some(v)
+                    } else {
+                        None
+                    }
+                }),
             )?;
 
             let targets: TargetsMetadata = D::deserialize(&signed_targets.signed())?;
@@ -339,7 +385,16 @@ impl<D: DataInterchange> Tuf<D> {
 
                 signed.verify(
                     delegation.threshold(),
-                    parent.keys().iter().filter_map(|(k, v)| if delegation.key_ids().contains(k) { Some(v) } else { None }),
+                    parent.keys().iter().filter_map(
+                        |(k, v)| if delegation
+                            .key_ids()
+                            .contains(k)
+                        {
+                            Some(v)
+                        } else {
+                            None
+                        },
+                    ),
                 )?;
             }
 
