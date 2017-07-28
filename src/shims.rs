@@ -1,4 +1,4 @@
-use chrono::DateTime;
+use chrono::prelude::*;
 use chrono::offset::Utc;
 use data_encoding::BASE64URL;
 use std::collections::{HashMap, HashSet};
@@ -8,13 +8,22 @@ use crypto;
 use error::Error;
 use metadata;
 
+fn parse_datetime(ts: &str) -> Result<DateTime<Utc>> {
+    Utc.datetime_from_str(ts, "%FT%TZ")
+        .map_err(|e| Error::Encoding(format!("Can't parse DateTime: {:?}", e)))
+}
+
+fn format_datetime(ts: &DateTime<Utc>) -> String {
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", ts.year(), ts.month(), ts.day(), ts.hour(), ts.minute(), ts.second())
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RootMetadata {
     #[serde(rename = "type")]
     typ: metadata::Role,
     version: u32,
     consistent_snapshot: bool,
-    expires: DateTime<Utc>,
+    expires: String,
     keys: Vec<crypto::PublicKey>,
     root: metadata::RoleDefinition,
     snapshot: metadata::RoleDefinition,
@@ -30,7 +39,7 @@ impl RootMetadata {
         Ok(RootMetadata {
             typ: metadata::Role::Root,
             version: meta.version(),
-            expires: meta.expires().clone(),
+            expires: format_datetime(&meta.expires()),
             consistent_snapshot: meta.consistent_snapshot(),
             keys: keys,
             root: meta.root().clone(),
@@ -50,7 +59,7 @@ impl RootMetadata {
 
         metadata::RootMetadata::new(
             self.version,
-            self.expires,
+            parse_datetime(&self.expires)?,
             self.consistent_snapshot,
             self.keys,
             self.root,
@@ -107,7 +116,7 @@ pub struct TimestampMetadata {
     #[serde(rename = "type")]
     typ: metadata::Role,
     version: u32,
-    expires: DateTime<Utc>,
+    expires: String,
     snapshot: metadata::MetadataDescription,
 }
 
@@ -116,7 +125,7 @@ impl TimestampMetadata {
         Ok(TimestampMetadata {
             typ: metadata::Role::Timestamp,
             version: metadata.version(),
-            expires: metadata.expires().clone(),
+            expires: format_datetime(metadata.expires()),
             snapshot: metadata.snapshot().clone(),
         })
     }
@@ -124,12 +133,12 @@ impl TimestampMetadata {
     pub fn try_into(self) -> Result<metadata::TimestampMetadata> {
         if self.typ != metadata::Role::Timestamp {
             return Err(Error::Encoding(format!(
-                "Attempted to decode timestamp metdata labeled as {:?}",
+                "Attempted to decode datetime metdata labeled as {:?}",
                 self.typ
             )));
         }
 
-        metadata::TimestampMetadata::new(self.version, self.expires, self.snapshot)
+        metadata::TimestampMetadata::new(self.version, parse_datetime(&self.expires)?, self.snapshot)
     }
 }
 
@@ -138,7 +147,7 @@ pub struct SnapshotMetadata {
     #[serde(rename = "type")]
     typ: metadata::Role,
     version: u32,
-    expires: DateTime<Utc>,
+    expires: String,
     meta: HashMap<metadata::MetadataPath, metadata::MetadataDescription>,
 }
 
@@ -147,7 +156,7 @@ impl SnapshotMetadata {
         Ok(SnapshotMetadata {
             typ: metadata::Role::Snapshot,
             version: metadata.version(),
-            expires: metadata.expires().clone(),
+            expires: format_datetime(&metadata.expires()),
             meta: metadata.meta().clone(),
         })
     }
@@ -160,7 +169,7 @@ impl SnapshotMetadata {
             )));
         }
 
-        metadata::SnapshotMetadata::new(self.version, self.expires, self.meta)
+        metadata::SnapshotMetadata::new(self.version, parse_datetime(&self.expires)?, self.meta)
     }
 }
 
@@ -170,7 +179,7 @@ pub struct TargetsMetadata {
     #[serde(rename = "type")]
     typ: metadata::Role,
     version: u32,
-    expires: DateTime<Utc>,
+    expires: String,
     targets: HashMap<metadata::TargetPath, metadata::TargetDescription>,
     #[serde(skip_serializing_if = "Option::is_none")]
     delegations: Option<metadata::Delegations>,
@@ -181,7 +190,7 @@ impl TargetsMetadata {
         Ok(TargetsMetadata {
             typ: metadata::Role::Targets,
             version: metadata.version(),
-            expires: metadata.expires().clone(),
+            expires: format_datetime(&metadata.expires()),
             targets: metadata.targets().clone(),
             delegations: metadata.delegations().cloned(),
         })
@@ -195,7 +204,7 @@ impl TargetsMetadata {
             )));
         }
 
-        metadata::TargetsMetadata::new(self.version, self.expires, self.targets, self.delegations)
+        metadata::TargetsMetadata::new(self.version, parse_datetime(&self.expires)?, self.targets, self.delegations)
     }
 }
 

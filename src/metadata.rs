@@ -1430,7 +1430,6 @@ impl<'de> Deserialize<'de> for Delegation {
 mod test {
     use super::*;
     use chrono::prelude::*;
-    use data_encoding::BASE64URL;
     use json;
     use interchange::JsonDataInterchange;
 
