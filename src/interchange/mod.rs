@@ -34,7 +34,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 
     /// Write a struct to a stream.
     ///
-    /// Note: This *MUST* writer the bytes canonically for hashes to line up correctly in other
+    /// Note: This *MUST* write the bytes canonically for hashes to line up correctly in other
     /// areas of the library.
     fn to_writer<W, T: Sized>(writer: W, value: &T) -> Result<()>
     where
@@ -51,19 +51,30 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 /// JSON data interchange.
 ///
 /// # Schema
-/// 
+///
 /// This doesn't use JSON Schema because that specification language is rage inducing. Here's
 /// something else instead.
 ///
 /// ## Common Entities
 ///
 /// `NATURAL_NUMBER` is an integer in the range `[1, 2**32)`.
-/// 
+///
 /// `EXPIRES` is an ISO-8601 date time in format `YYYY-MM-DD'T'hh:mm:ss'Z'`.
 ///
 /// `KEY_ID` is the base64url encoded value of `sha256(spki(pub_key))`.
 ///
-/// `PUB_KEY` is a base64url encoded `SubjectPublicKeyInfo` DER public key.
+/// `PUB_KEY` is the following:
+///
+/// ```bash
+/// {
+///   "type": KEY_TYPE,
+///   "value": PUBLIC
+/// }
+/// ```
+///
+/// `PUBLIC` is a base64url encoded `SubjectPublicKeyInfo` DER public key.
+///
+/// `KEY_TYPE` is a string (either `rsa` or `ed25519`).
 ///
 /// `HASH_VALUE` is a base64url encoded hash value.
 ///
@@ -90,7 +101,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 /// ```
 ///
 /// `SIGNED` is one of:
-/// 
+///
 /// - `RootMetadata`
 /// - `SnapshotMetadata`
 /// - `TargetsMetadata`
@@ -115,9 +126,9 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///   "timestamp": ROLE_DESCRIPTION
 /// }
 /// ```
-/// 
+///
 /// `ROLE_DESCRIPTION` is the following:
-/// 
+///
 /// ```bash
 /// {
 ///   "threshold": NATURAL_NUMBER,
@@ -137,7 +148,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///   }
 /// }
 /// ```
-/// 
+///
 /// `META_PATH` is a string.
 ///
 ///
