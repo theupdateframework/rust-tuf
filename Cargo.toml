@@ -31,22 +31,22 @@ cli = [ "clap" ]
 
 [dependencies]
 chrono = { version = "0.4", features = [ "serde" ] }
-clap = { version = "2.25", optional = true }
+clap = { version = "2", optional = true }
 data-encoding = "2.0.0-rc.1"
 derp = "0.0.4"
-hyper = "0.10.10"
+hyper = "0.10"
 itoa = "0.3"
 log = "0.3"
 ring = { version = "0.11", features = [ "rsa_signing" ] }
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
-tempfile = "2.1.5"
+tempfile = "2.1"
 url = "1.4"
 untrusted = "0.5"
 uuid = { version = "0.5", features = [ "v4" ] }
 
 [dev-dependencies]
-lazy_static = "0.2.8"
-maplit = "0.1.4"
+lazy_static = "0.2"
+maplit = "0.1"
 tempdir = "0.3"
