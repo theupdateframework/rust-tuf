@@ -25,10 +25,15 @@ pub struct Tuf<D: DataInterchange> {
 impl<D: DataInterchange> Tuf<D> {
     /// Create a new `TUF` struct from a known set of pinned root keys that are used to verify the
     /// signed metadata.
-    pub fn from_root_pinned(
+    pub fn from_root_pinned<'a, I>(
         mut signed_root: SignedMetadata<D, RootMetadata>,
-        root_key_ids: &[KeyId],
-    ) -> Result<Self> {
+        root_key_ids: I,
+    ) -> Result<Self>
+    where
+        I: IntoIterator<Item = &'a KeyId>,
+    {
+        let root_key_ids = root_key_ids.into_iter().collect::<HashSet<&KeyId>>();
+
         signed_root.signatures_mut().retain(|s| {
             root_key_ids.contains(s.key_id())
         });
@@ -43,8 +48,16 @@ impl<D: DataInterchange> Tuf<D> {
         let root = D::deserialize::<RootMetadata>(signed_root.signed())?;
         let _ = signed_root.verify(
             root.root().threshold(),
-            root.root().key_ids(),
-            root.keys(),
+            root.keys().iter().filter_map(
+                |(k, v)| if root.root()
+                    .key_ids()
+                    .contains(k)
+                {
+                    Some(v)
+                } else {
+                    None
+                },
+            ),
         )?;
         Ok(Tuf {
             root: root,
@@ -85,8 +98,13 @@ impl<D: DataInterchange> Tuf<D> {
     pub fn update_root(&mut self, signed_root: SignedMetadata<D, RootMetadata>) -> Result<bool> {
         signed_root.verify(
             self.root.root().threshold(),
-            self.root.root().key_ids(),
-            self.root.keys(),
+            self.root.keys().iter().filter_map(|(k, v)| {
+                if self.root.root().key_ids().contains(k) {
+                    Some(v)
+                } else {
+                    None
+                }
+            }),
         )?;
 
         let root = D::deserialize::<RootMetadata>(signed_root.signed())?;
@@ -111,8 +129,16 @@ impl<D: DataInterchange> Tuf<D> {
 
         let _ = signed_root.verify(
             root.root().threshold(),
-            root.root().key_ids(),
-            root.keys(),
+            root.keys().iter().filter_map(
+                |(k, v)| if root.root()
+                    .key_ids()
+                    .contains(k)
+                {
+                    Some(v)
+                } else {
+                    None
+                },
+            ),
         )?;
 
         self.purge_metadata();
@@ -128,8 +154,15 @@ impl<D: DataInterchange> Tuf<D> {
     ) -> Result<bool> {
         signed_timestamp.verify(
             self.root.timestamp().threshold(),
-            self.root.timestamp().key_ids(),
-            self.root.keys(),
+            self.root.keys().iter().filter_map(
+                |(k, v)| {
+                    if self.root.timestamp().key_ids().contains(k) {
+                        Some(v)
+                    } else {
+                        None
+                    }
+                },
+            ),
         )?;
 
         let current_version = self.timestamp.as_ref().map(|t| t.version()).unwrap_or(0);
@@ -175,8 +208,15 @@ impl<D: DataInterchange> Tuf<D> {
 
             signed_snapshot.verify(
                 root.snapshot().threshold(),
-                root.snapshot().key_ids(),
-                root.keys(),
+                self.root.keys().iter().filter_map(
+                    |(k, v)| {
+                        if root.snapshot().key_ids().contains(k) {
+                            Some(v)
+                        } else {
+                            None
+                        }
+                    },
+                ),
             )?;
 
             let snapshot: SnapshotMetadata = D::deserialize(&signed_snapshot.signed())?;
@@ -260,8 +300,13 @@ impl<D: DataInterchange> Tuf<D> {
 
             signed_targets.verify(
                 root.targets().threshold(),
-                root.targets().key_ids(),
-                root.keys(),
+                root.keys().iter().filter_map(|(k, v)| {
+                    if root.targets().key_ids().contains(k) {
+                        Some(v)
+                    } else {
+                        None
+                    }
+                }),
             )?;
 
             let targets: TargetsMetadata = D::deserialize(&signed_targets.signed())?;
@@ -340,8 +385,16 @@ impl<D: DataInterchange> Tuf<D> {
 
                 signed.verify(
                     delegation.threshold(),
-                    delegation.key_ids(),
-                    parent.keys(),
+                    parent.keys().iter().filter_map(
+                        |(k, v)| if delegation
+                            .key_ids()
+                            .contains(k)
+                        {
+                            Some(v)
+                        } else {
+                            None
+                        },
+                    ),
                 )?;
             }
 
@@ -852,7 +905,8 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let meta_map = hashmap!(
+        let meta_map =
+            hashmap!(
             MetadataPath::from_role(&Role::Targets) =>
                 MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
         );
@@ -863,12 +917,9 @@ mod test {
 
         tuf.update_snapshot(snapshot).unwrap();
 
-        let targets = TargetsMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            hashmap!(),
-            None,
-        ).unwrap();
+        let targets =
+            TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
+                .unwrap();
         let targets: SignedMetadata<JsonDataInterchange, TargetsMetadata> =
             SignedMetadata::new(&targets, &KEYS[2], SignatureScheme::Ed25519).unwrap();
 
@@ -911,7 +962,8 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let meta_map = hashmap!(
+        let meta_map =
+            hashmap!(
             MetadataPath::from_role(&Role::Targets) =>
                 MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
         );
@@ -922,12 +974,9 @@ mod test {
 
         tuf.update_snapshot(snapshot).unwrap();
 
-        let targets = TargetsMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            hashmap!(),
-            None,
-        ).unwrap();
+        let targets =
+            TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
+                .unwrap();
         let targets: SignedMetadata<JsonDataInterchange, TargetsMetadata> =
             SignedMetadata::new(&targets, &KEYS[3], SignatureScheme::Ed25519).unwrap();
 
@@ -967,7 +1016,8 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let meta_map = hashmap!(
+        let meta_map =
+            hashmap!(
             MetadataPath::from_role(&Role::Targets) =>
                 MetadataDescription::from_reader(&*vec![], 2, &[HashAlgorithm::Sha256]).unwrap(),
         );
@@ -978,12 +1028,9 @@ mod test {
 
         tuf.update_snapshot(snapshot).unwrap();
 
-        let targets = TargetsMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            hashmap!(),
-            None,
-        ).unwrap();
+        let targets =
+            TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
+                .unwrap();
         let targets: SignedMetadata<JsonDataInterchange, TargetsMetadata> =
             SignedMetadata::new(&targets, &KEYS[2], SignatureScheme::Ed25519).unwrap();
 

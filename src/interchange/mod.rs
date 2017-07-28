@@ -34,7 +34,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 
     /// Write a struct to a stream.
     ///
-    /// Note: This *MUST* writer the bytes canonically for hashes to line up correctly in other
+    /// Note: This *MUST* write the bytes canonically for hashes to line up correctly in other
     /// areas of the library.
     fn to_writer<W, T: Sized>(writer: W, value: &T) -> Result<()>
     where
@@ -49,6 +49,165 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 }
 
 /// JSON data interchange.
+///
+/// # Schema
+///
+/// This doesn't use JSON Schema because that specification language is rage inducing. Here's
+/// something else instead.
+///
+/// ## Common Entities
+///
+/// `NATURAL_NUMBER` is an integer in the range `[1, 2**32)`.
+///
+/// `EXPIRES` is an ISO-8601 date time in format `YYYY-MM-DD'T'hh:mm:ss'Z'`.
+///
+/// `KEY_ID` is the base64url encoded value of `sha256(spki(pub_key))`.
+///
+/// `PUB_KEY` is the following:
+///
+/// ```bash
+/// {
+///   "type": KEY_TYPE,
+///   "value": PUBLIC
+/// }
+/// ```
+///
+/// `PUBLIC` is a base64url encoded `SubjectPublicKeyInfo` DER public key.
+///
+/// `KEY_TYPE` is a string (either `rsa` or `ed25519`).
+///
+/// `HASH_VALUE` is a base64url encoded hash value.
+///
+/// `METADATA_DESCRIPTION` is the following:
+///
+/// ```bash
+/// {
+///   "version": NATURAL_NUMBER,
+///   "size": NATURAL_NUMBER,
+///   "hashes": {
+///     HASH_ALGORITHM: HASH_VALUE
+///     ...
+///   }
+/// }
+/// ```
+///
+/// ## `SignedMetadata`
+///
+/// ```bash
+/// {
+///   "signatures": [SIGNATURE],
+///   "signed": SIGNED
+/// }
+/// ```
+///
+/// `SIGNED` is one of:
+///
+/// - `RootMetadata`
+/// - `SnapshotMetadata`
+/// - `TargetsMetadata`
+/// - `TimestampMetadata`
+///
+/// The the elements of `signatures` must have unique `key_id`s.
+///
+/// ## `RootMetadata`
+///
+/// ```bash
+/// {
+///   "type": "root",
+///   "version": NATURAL_NUMBER,
+///   "expires": EXPIRES,
+///   "keys": {
+///     KEY_ID: PUB_KEY,
+///     ...
+///   },
+///   "root": ROLE_DESCRIPTION,
+///   "snapshot": ROLE_DESCRIPTION,
+///   "targets": ROLE_DESCRIPTION,
+///   "timestamp": ROLE_DESCRIPTION
+/// }
+/// ```
+///
+/// `ROLE_DESCRIPTION` is the following:
+///
+/// ```bash
+/// {
+///   "threshold": NATURAL_NUMBER,
+///   "key_ids": [KEY_ID]
+/// }
+/// ```
+///
+/// ## `SnapshotMetadata`
+///
+/// ```bash
+/// {
+///   "type": "snapshot",
+///   "version": NATURAL_NUMBER,
+///   "expires": EXPIRES,
+///   "meta": {
+///     META_PATH: METADATA_DESCRIPTION
+///   }
+/// }
+/// ```
+///
+/// `META_PATH` is a string.
+///
+///
+/// ## `TargetsMetadata`
+///
+/// ```bash
+/// {
+///   "type": "timestamp",
+///   "version": NATURAL_NUMBER,
+///   "expires": EXPIRES,
+///   "targets": {
+///     TARGET_PATH: TARGET_DESCRIPTION
+///     ...
+///   },
+///   "delegations": DELEGATIONS
+/// }
+/// ```
+///
+/// `DELEGATIONS` is optional and is described by the following:
+///
+/// ```bash
+/// {
+///   "keys": {
+///     KEY_ID: PUB_KEY,
+///     ...
+///   },
+///   "roles": {
+///     ROLE: DELEGATION,
+///     ...
+///   }
+/// }
+/// ```
+///
+/// `DELEGATION` is:
+///
+/// ```bash
+/// {
+///   "name": ROLE,
+///   "threshold": NATURAL_NUMBER,
+///   "terminating": BOOLEAN,
+///   "key_ids": [KEY_ID],
+///   "paths": [PATH]
+/// }
+/// ```
+///
+/// `ROLE` is a string,
+///
+/// `PATH` is a string.
+///
+/// ## `TimestampMetadata`
+///
+/// ```bash
+/// {
+///   "type": "timestamp",
+///   "version": NATURAL_NUMBER,
+///   "expires": EXPIRES,
+///   "snapshot": METADATA_DESCRIPTION
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsonDataInterchange {}
 impl DataInterchange for JsonDataInterchange {

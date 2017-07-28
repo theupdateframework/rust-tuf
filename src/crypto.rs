@@ -106,11 +106,6 @@ pub fn calculate_hashes<R: Read>(
     Ok((size, hashes))
 }
 
-/// Calculate the given key's ID.
-///
-/// A `KeyId` is calculated as `sha256(public_key_bytes)`. The TUF spec says that it should be
-/// `sha256(cjson(encoded(public_key_bytes)))`, but this is meaningless once the spec moves away
-/// from using only JSON as the data interchange format.
 fn calculate_key_id(public_key: &[u8]) -> KeyId {
     let mut context = digest::Context::new(&SHA256);
     context.update(&public_key);
@@ -120,27 +115,41 @@ fn calculate_key_id(public_key: &[u8]) -> KeyId {
 /// Wrapper type for public key's ID.
 ///
 /// # Calculating
-/// In order to future proof the calculation of key IDs and preserver them across encoding types,
-/// a key's ID is calculated as the Sha-256 hash of the DER bytes of a key in Subject Public Key
-/// Info (SPKI) format.
+/// A `KeyId` is calculated as `sha256(spki(pub_key_bytes))` where `spki` is a function that takes
+/// any encoding for a public key an converts it into the `SubjectPublicKeyInfo` (SPKI) DER
+/// encoding.
 ///
+/// Note: Historically the TUF spec says that a key's ID should be calculated with
+/// `sha256(cjson(encoded(pub_key_bytes)))`, but since there could be multiple supported data
+/// interchange formats, relying on an encoding that uses JSON does not make sense.
+///
+/// # ASN.1
 /// ```bash
-/// SEQUENCE {
-///   SEQUENCE {
-///     OBJECT IDENTIFIER
-///     NULL
-///   }
-///   BIT STTRING
+/// PublicKey ::= CHOICE {
+///     -- This field is checked for consistency against `subjectPublicKey`.
+///     -- The OID determines how we attempt to parse the `BIT STRING`.
+///     algorithm        AlgorithmIdentifier,
+///     -- Either:
+///     --   1. Encapsulates an `RsaPublicKey`
+///     --   2. Equals an `Ed25519PublicKey`
+///     subjectPublicKey BIT STRING
 /// }
-/// ```
 ///
-/// Where `BIT STRING` encapsulates the actual public key. In the case of RSA this is:
-///
-/// ```bash
-/// SEQUENCE {
-///   INTEGER (n, modulus)
-///   INTEGER (e, exponent)
+/// AlgorithmIdentifier ::= SEQUENCE {
+///     -- Either:
+///     --   1. 1.2.840.113549.1.1.1 rsaEncryption(PKCS #1)
+///     --   2. 1.3.101.112 curveEd25519(EdDSA 25519 signature algorithm)
+///     algorithm  OBJECT IDENTIFIER,
+///     -- In our cases, this is always `NULL`.
+///     parameters ANY DEFINED BY algorithm OPTIONAL
 /// }
+///
+/// RsaPublicKey ::= SEQUENCE {
+///     modulus  INTEGER (1..MAX),
+///     exponent INTEGER (1..MAX)
+/// }
+///
+/// Ed25519PublicKey ::= BIT STRING
 /// ```
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct KeyId(Vec<u8>);
@@ -237,11 +246,15 @@ pub struct SignatureValue(Vec<u8>);
 
 impl SignatureValue {
     /// Create a new `SignatureValue` from the given bytes.
+    ///
+    /// Note: It is unlikely that you ever want to do this manually.
     pub fn new(bytes: Vec<u8>) -> Self {
         SignatureValue(bytes)
     }
 
     /// Create a new `SignatureValue` from the given base64url string.
+    ///
+    /// Note: It is unlikely that you ever want to do this manually.
     pub fn from_string(string: &str) -> Result<Self> {
         Ok(SignatureValue(BASE64URL.decode(string.as_bytes())?))
     }
@@ -286,7 +299,7 @@ impl KeyType {
             x if x == RSA_SPKI_OID => Ok(KeyType::Rsa),
             x if x == ED25519_SPKI_OID => Ok(KeyType::Ed25519),
             x => Err(Error::Encoding(format!(
-                "Unknown OID:{}",
+                "Unknown OID: {}",
                 x.iter().map(|b| format!("{:x}", b)).collect::<String>()
             ))),
         }
@@ -364,6 +377,9 @@ impl PrivateKey {
     /// Create a private key from PKCS#8v2 DER bytes.
     ///
     /// # Generating Keys
+    ///
+    /// If you use `cargo install tuf`, you will have access to the TUF CLI tool that will allow
+    /// you to generate keys. If you do not want to do this, the following can be used instead.
     ///
     /// ## Ed25519
     ///
@@ -532,6 +548,8 @@ pub struct PublicKey {
 
 impl PublicKey {
     /// Parse DER bytes as an SPKI key.
+    ///
+    /// See the documentation on `KeyValue` for more information on SPKI.
     pub fn from_spki(der_bytes: &[u8]) -> Result<Self> {
         let input = Input::from(der_bytes);
         let (typ, value) = input.read_all(derp::Error::Read, |input| {
@@ -541,6 +559,7 @@ impl PublicKey {
                     let typ = KeyType::from_oid(typ.as_slice_less_safe()).map_err(|_| {
                         derp::Error::WrongValue
                     })?;
+                    // for RSA / ed25519 this is null, so don't both parsing it
                     let _ = derp::read_null(input)?;
                     Ok(typ)
                 })?;
@@ -557,6 +576,8 @@ impl PublicKey {
     }
 
     /// Write the public key as SPKI DER bytes.
+    ///
+    /// See the documentation on `KeyValue` for more information on SPKI.
     pub fn as_spki(&self) -> Result<Vec<u8>> {
         Ok(write_spki(&self.value.0, &self.typ)?)
     }
@@ -643,7 +664,7 @@ pub struct Signature {
 }
 
 impl Signature {
-    /// An immutable reference to the `KeyId` that produced the signature.
+    /// An immutable reference to the `KeyId` of the key that produced the signature.
     pub fn key_id(&self) -> &KeyId {
         &self.key_id
     }

@@ -1,4 +1,4 @@
-//! Structures used to represent TUF metadata
+//! TUF metadata.
 
 use chrono::DateTime;
 use chrono::offset::Utc;
@@ -194,7 +194,7 @@ impl Display for Role {
 /// Enum used for addressing versioned TUF metadata.
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum MetadataVersion {
-    /// The metadata is unversioned.
+    /// The metadata is unversioned. This is the latest version of the metadata.
     None,
     /// The metadata is addressed by a specific version number.
     Number(u32),
@@ -239,7 +239,33 @@ where
     D: DataInterchange,
     M: Metadata,
 {
-    /// Create a new `SignedMetadata`.
+    /// Create a new `SignedMetadata`. The supplied private key is used to sign the canonicalized
+    /// bytes of the provided metadata with the provided scheme.
+    ///
+    /// ```
+    /// extern crate chrono;
+    /// extern crate tuf;
+    ///
+    /// use chrono::prelude::*;
+    /// use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+    /// use tuf::interchange::JsonDataInterchange;
+    /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    ///
+    /// fn main() {
+    ///     let key: &[u8] = include_bytes!("./tests/ed25519/ed25519-1.pk8.der");
+    ///     let key = PrivateKey::from_pkcs8(&key).unwrap();
+    ///
+    ///     let timestamp = TimestampMetadata::new(
+    ///         1,
+    ///         Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+    ///         MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
+    ///             &[HashAlgorithm::Sha256]).unwrap()
+    ///     ).unwrap();
+    ///
+    ///     SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
+    ///         &timestamp, &key, SignatureScheme::Ed25519).unwrap();
+    /// }
+    /// ```
     pub fn new(
         metadata: &M,
         private_key: &PrivateKey,
@@ -263,6 +289,41 @@ where
     /// you're using this to append several signatures are once, you are doing something wrong. The
     /// preferred method is to generate your copy of the metadata locally and use `merge_signatures`
     /// to perform the "append" operations.
+    ///
+    /// ```
+    /// extern crate chrono;
+    /// extern crate tuf;
+    ///
+    /// use chrono::prelude::*;
+    /// use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+    /// use tuf::interchange::JsonDataInterchange;
+    /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    ///
+    /// fn main() {
+    ///     let key_1: &[u8] = include_bytes!("./tests/ed25519/ed25519-1.pk8.der");
+    ///     let key_1 = PrivateKey::from_pkcs8(&key_1).unwrap();
+    ///
+    ///     // Note: This is for demonstration purposes only.
+    ///     // You should never have multiple private keys on the same device.
+    ///     let key_2: &[u8] = include_bytes!("./tests/ed25519/ed25519-2.pk8.der");
+    ///     let key_2 = PrivateKey::from_pkcs8(&key_2).unwrap();
+    ///
+    ///     let timestamp = TimestampMetadata::new(
+    ///         1,
+    ///         Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+    ///         MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
+    ///             &[HashAlgorithm::Sha256]).unwrap()
+    ///     ).unwrap();
+    ///     let mut timestamp = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
+    ///         &timestamp, &key_1, SignatureScheme::Ed25519).unwrap();
+    ///
+    ///     timestamp.add_signature(&key_2, SignatureScheme::Ed25519).unwrap();
+    ///     assert_eq!(timestamp.signatures().len(), 2);
+    ///
+    ///     timestamp.add_signature(&key_2, SignatureScheme::Ed25519).unwrap();
+    ///     assert_eq!(timestamp.signatures().len(), 2);
+    /// }
+    /// ```
     pub fn add_signature(
         &mut self,
         private_key: &PrivateKey,
@@ -320,12 +381,61 @@ where
     }
 
     /// Verify this metadata.
-    pub fn verify(
-        &self,
-        threshold: u32,
-        authorized_key_ids: &HashSet<KeyId>,
-        available_keys: &HashMap<KeyId, PublicKey>,
-    ) -> Result<()> {
+    ///
+    /// ```
+    /// extern crate chrono;
+    /// #[macro_use]
+    /// extern crate maplit;
+    /// extern crate tuf;
+    ///
+    /// use chrono::prelude::*;
+    /// use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+    /// use tuf::interchange::JsonDataInterchange;
+    /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    ///
+    /// fn main() {
+    ///     let key_1: &[u8] = include_bytes!("./tests/ed25519/ed25519-1.pk8.der");
+    ///     let key_1 = PrivateKey::from_pkcs8(&key_1).unwrap();
+    ///
+    ///     let key_2: &[u8] = include_bytes!("./tests/ed25519/ed25519-2.pk8.der");
+    ///     let key_2 = PrivateKey::from_pkcs8(&key_2).unwrap();
+    ///
+    ///     let timestamp = TimestampMetadata::new(
+    ///         1,
+    ///         Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+    ///         MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
+    ///             &[HashAlgorithm::Sha256]).unwrap()
+    ///     ).unwrap();
+    ///     let timestamp = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
+    ///         &timestamp, &key_1, SignatureScheme::Ed25519).unwrap();
+    ///
+    ///     assert!(timestamp.verify(
+    ///         1,
+    ///         vec![key_1.public()],
+    ///     ).is_ok());
+    ///
+    ///     // fail with increased threshold
+    ///     assert!(timestamp.verify(
+    ///         2,
+    ///         vec![key_1.public()],
+    ///     ).is_err());
+    ///
+    ///     // fail when the keys aren't authorized
+    ///     assert!(timestamp.verify(
+    ///         1,
+    ///         vec![key_2.public()],
+    ///     ).is_err());
+    ///
+    ///     // fail when the keys don't exist
+    ///     assert!(timestamp.verify(
+    ///         1,
+    ///         &[],
+    ///     ).is_err());
+    /// }
+    pub fn verify<'a, I>(&self, threshold: u32, authorized_keys: I) -> Result<()>
+    where
+        I: IntoIterator<Item = &'a PublicKey>,
+    {
         if self.signatures.len() < 1 {
             return Err(Error::VerificationFailure(
                 "The metadata was not signed with any authorized keys."
@@ -339,19 +449,16 @@ where
             ));
         }
 
+        let authorized_keys = authorized_keys
+            .into_iter()
+            .map(|k| (k.key_id(), k))
+            .collect::<HashMap<&KeyId, &PublicKey>>();
+
         let canonical_bytes = D::canonicalize(&self.signed)?;
 
         let mut signatures_needed = threshold;
         for sig in self.signatures.iter() {
-            if !authorized_key_ids.contains(sig.key_id()) {
-                warn!(
-                    "Key ID {:?} is not authorized to sign metadata.",
-                    sig.key_id()
-                );
-                continue;
-            }
-
-            match available_keys.get(sig.key_id()) {
+            match authorized_keys.get(sig.key_id()) {
                 Some(ref pub_key) => {
                     match pub_key.verify(&canonical_bytes, &sig) {
                         Ok(()) => {
@@ -365,7 +472,7 @@ where
                 }
                 None => {
                     warn!(
-                        "Key ID {:?} was not found in the set of available keys.",
+                        "Key ID {:?} was not found in the set of authorized keys.",
                         sig.key_id()
                     );
                 }
