@@ -181,7 +181,12 @@ impl<D: DataInterchange> Tuf<D> {
         } else if timestamp.version() == current_version {
             Ok(false)
         } else {
+            if self.snapshot.as_ref().map(|s| s.version()).unwrap_or(0) != timestamp.snapshot().version() {
+                self.snapshot = None;
+            }
+
             self.timestamp = Some(timestamp);
+
             Ok(true)
         }
     }
@@ -235,6 +240,10 @@ impl<D: DataInterchange> Tuf<D> {
 
             snapshot
         };
+
+        if self.targets.as_ref().map(|s| s.version()).unwrap_or(0) != snapshot.meta().get(&MetadataPath::from_role(&Role::Targets)).map(|m| m.version()).unwrap_or(0) {
+            self.targets = None;
+        }
 
         self.snapshot = Some(snapshot);
         self.purge_delegations();
