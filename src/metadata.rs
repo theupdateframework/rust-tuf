@@ -526,7 +526,12 @@ impl RootMetadata {
             )));
         }
 
+        let keys_len = keys.len();
         let keys = HashMap::from_iter(keys.drain(..).map(|k| (k.key_id().clone(), k)));
+        
+        if keys.len() != keys_len {
+            return Err(Error::IllegalArgument("Cannot have duplicate keys".into()));
+        }
 
         Ok(RootMetadata {
             version: version,
@@ -1593,45 +1598,43 @@ mod test {
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
-            "keys": {
-                "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
-                    "type": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb\
-                        -WO5CJQDTjK9GHGWjtg==",
-                },
-                "4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o=": {
-                    "type": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQ\
-                        vtGgZ_8giaAwL7q3PQ==",
-                },
-                "5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs=": {
-                    "type": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao_\
-                        NhZ1_7zzCKL8rKzsg==",
-                },
-                "C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw=": {
+            "keys": [
+                {
                     "type": "ed25519",
                     "public_key": "MCwwBwYDK2VwBQADIQAUEK4wU6pwu_qYQoqHnWTTACo1\
                         ePffquscsHZOhg9-Cw==",
                 },
+                {
+                    "type": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb\
+                        -WO5CJQDTjK9GHGWjtg==",
+                },
+                {
+                    "type": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQ\
+                        vtGgZ_8giaAwL7q3PQ==",
+                },
+                {
+                    "type": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao_\
+                        NhZ1_7zzCKL8rKzsg==",
+                },
+            ],
+            "root": {
+                "threshold": 1,
+                "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
             },
-            "roles": {
-                "root": {
-                    "threshold": 1,
-                    "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
-                },
-                "snapshot": {
-                    "threshold": 1,
-                    "key_ids": ["5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs="],
-                },
-                "targets": {
-                    "threshold": 1,
-                    "key_ids": ["4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o="],
-                },
-                "timestamp": {
-                    "threshold": 1,
-                    "key_ids": ["C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw="],
-                },
+            "snapshot": {
+                "threshold": 1,
+                "key_ids": ["5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs="],
+            },
+            "targets": {
+                "threshold": 1,
+                "key_ids": ["4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o="],
+            },
+            "timestamp": {
+                "threshold": 1,
+                "key_ids": ["C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw="],
             },
         });
 
@@ -1990,30 +1993,6 @@ mod test {
 
         let mut root_json = make_root();
         set_version(&mut root_json, -1);
-        assert!(json::from_value::<RootMetadata>(root_json).is_err());
-    }
-
-    // Refuse to deserialize root metadata if any of the defined keys don't match their key ID
-    #[test]
-    fn deserialize_json_root_bad_key_ids() {
-        let mut root_json = make_root();
-        match root_json.as_object_mut() {
-            Some(obj) => {
-                match obj.get_mut("keys").unwrap().as_object_mut() {
-                    Some(keys) => {
-                        let key_id = keys.keys().next().unwrap().clone();
-                        let key = keys.get(&key_id).unwrap().clone();
-                        let mut bytes = BASE64URL.decode(key_id.as_bytes()).unwrap();
-                        bytes[0] ^= 0x01;
-                        let key_id = BASE64URL.encode(&bytes);
-                        let _ = keys.insert(key_id, key);
-                    }
-                    None => panic!(),
-                }
-            }
-            None => panic!(),
-        }
-
         assert!(json::from_value::<RootMetadata>(root_json).is_err());
     }
 

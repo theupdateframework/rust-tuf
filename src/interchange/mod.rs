@@ -116,10 +116,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///   "type": "root",
 ///   "version": NATURAL_NUMBER,
 ///   "expires": EXPIRES,
-///   "keys": {
-///     KEY_ID: PUB_KEY,
-///     ...
-///   },
+///   "keys": [PUB_KEY, ...]
 ///   "root": ROLE_DESCRIPTION,
 ///   "snapshot": ROLE_DESCRIPTION,
 ///   "targets": ROLE_DESCRIPTION,
@@ -132,7 +129,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 /// ```bash
 /// {
 ///   "threshold": NATURAL_NUMBER,
-///   "key_ids": [KEY_ID]
+///   "key_ids": [KEY_ID, ...]
 /// }
 /// ```
 ///
@@ -189,8 +186,8 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///   "name": ROLE,
 ///   "threshold": NATURAL_NUMBER,
 ///   "terminating": BOOLEAN,
-///   "key_ids": [KEY_ID],
-///   "paths": [PATH]
+///   "key_ids": [KEY_ID, ...],
+///   "paths": [PATH, ...]
 /// }
 /// ```
 ///

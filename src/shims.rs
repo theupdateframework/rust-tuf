@@ -15,29 +15,32 @@ pub struct RootMetadata {
     version: u32,
     consistent_snapshot: bool,
     expires: DateTime<Utc>,
-    keys: HashMap<crypto::KeyId, crypto::PublicKey>,
-    roles: HashMap<metadata::Role, metadata::RoleDefinition>,
+    keys: Vec<crypto::PublicKey>,
+    root: metadata::RoleDefinition,
+    snapshot: metadata::RoleDefinition,
+    targets: metadata::RoleDefinition,
+    timestamp: metadata::RoleDefinition,
 }
 
 impl RootMetadata {
     pub fn from(meta: &metadata::RootMetadata) -> Result<Self> {
-        let mut roles = HashMap::new();
-        let _ = roles.insert(metadata::Role::Root, meta.root().clone());
-        let _ = roles.insert(metadata::Role::Snapshot, meta.snapshot().clone());
-        let _ = roles.insert(metadata::Role::Targets, meta.targets().clone());
-        let _ = roles.insert(metadata::Role::Timestamp, meta.timestamp().clone());
+        let mut keys = meta.keys().iter().map(|(_, v)| v.clone()).collect::<Vec<crypto::PublicKey>>();
+        keys.sort_by_key(|k| k.key_id().clone());
 
         Ok(RootMetadata {
             typ: metadata::Role::Root,
             version: meta.version(),
             expires: meta.expires().clone(),
             consistent_snapshot: meta.consistent_snapshot(),
-            keys: meta.keys().clone(),
-            roles: roles,
+            keys: keys,
+            root: meta.root().clone(),
+            snapshot: meta.snapshot().clone(),
+            targets: meta.targets().clone(),
+            timestamp: meta.timestamp().clone(),
         })
     }
 
-    pub fn try_into(mut self) -> Result<metadata::RootMetadata> {
+    pub fn try_into(self) -> Result<metadata::RootMetadata> {
         if self.typ != metadata::Role::Root {
             return Err(Error::Encoding(format!(
                 "Attempted to decode root metdata labeled as {:?}",
@@ -45,50 +48,15 @@ impl RootMetadata {
             )));
         }
 
-        let mut keys = Vec::new();
-        for (key_id, value) in self.keys.drain() {
-            if &key_id != value.key_id() {
-                return Err(Error::Encoding(format!(
-                    "Received key with ID {:?} but calculated it's value as {:?}. \
-                       Refusing to add it to the set of trusted keys.",
-                    key_id,
-                    value.key_id()
-                )));
-            } else {
-                debug!(
-                    "Found key with good ID {:?}. Adding it to the set of trusted keys.",
-                    key_id
-                );
-                keys.push(value);
-            }
-        }
-
-        let root = self.roles.remove(&metadata::Role::Root).ok_or_else(|| {
-            Error::Encoding("Missing root role definition".into())
-        })?;
-        let snapshot = self.roles.remove(&metadata::Role::Snapshot).ok_or_else(
-            || {
-                Error::Encoding("Missing snapshot role definition".into())
-            },
-        )?;
-        let targets = self.roles.remove(&metadata::Role::Targets).ok_or_else(|| {
-            Error::Encoding("Missing targets role definition".into())
-        })?;
-        let timestamp = self.roles.remove(&metadata::Role::Timestamp).ok_or_else(
-            || {
-                Error::Encoding("Missing timestamp role definition".into())
-            },
-        )?;
-
         metadata::RootMetadata::new(
             self.version,
             self.expires,
             self.consistent_snapshot,
-            keys,
-            root,
-            snapshot,
-            targets,
-            timestamp,
+            self.keys,
+            self.root,
+            self.snapshot,
+            self.targets,
+            self.timestamp,
         )
     }
 }
