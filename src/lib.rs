@@ -55,7 +55,7 @@
 //! situations are considered critically unsafe. Whatever number of keys are used, it should be
 //! assumed that some small number may be lost or compromised.
 //!
-//! These root keys should be kept offline on secure media.
+//! These root keys **MUST** be kept offline on secure media.
 //!
 //! ## Delegations
 //!
@@ -69,7 +69,7 @@
 //!
 //! There are several approaches for dealing with the above scenarios. We are only going to discuss
 //! on here as it is the recommended approach. This approach is taken directly from Section 6.1 of
-//! he Diplomat paper
+//! the Diplomat paper
 //!
 //! ### Maximum Security Model
 //!
