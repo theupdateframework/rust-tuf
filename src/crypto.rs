@@ -189,55 +189,17 @@ impl<'de> Deserialize<'de> for KeyId {
 }
 
 /// Cryptographic signature schemes.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SignatureScheme {
     /// [Ed25519](https://ed25519.cr.yp.to/)
+    #[serde(rename="ed25519")]
     Ed25519,
     /// [RSASSA-PSS](https://tools.ietf.org/html/rfc5756) calculated over SHA256
+    #[serde(rename="rsassa-pss-sha256")]
     RsaSsaPssSha256,
     /// [RSASSA-PSS](https://tools.ietf.org/html/rfc5756) calculated over SHA512
+    #[serde(rename="rsassa-pss-sha512")]
     RsaSsaPssSha512,
-}
-
-impl ToString for SignatureScheme {
-    fn to_string(&self) -> String {
-        match self {
-            &SignatureScheme::Ed25519 => "ed25519",
-            &SignatureScheme::RsaSsaPssSha256 => "rsassa-pss-sha256",
-            &SignatureScheme::RsaSsaPssSha512 => "rsassa-pss-sha512",
-        }.to_string()
-    }
-}
-
-impl FromStr for SignatureScheme {
-    type Err = Error;
-
-    fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
-        match s {
-            "ed25519" => Ok(SignatureScheme::Ed25519),
-            "rsassa-pss-sha256" => Ok(SignatureScheme::RsaSsaPssSha256),
-            "rsassa-pss-sha512" => Ok(SignatureScheme::RsaSsaPssSha512),
-            typ => Err(Error::Encoding(typ.into())),
-        }
-    }
-}
-
-impl Serialize for SignatureScheme {
-    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        ser.serialize_str(&self.to_string())
-    }
-}
-
-impl<'de> Deserialize<'de> for SignatureScheme {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
-        let string: String = Deserialize::deserialize(de)?;
-        string.parse().map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
-        })
-    }
 }
 
 /// Wrapper type for the value of a cryptographic signature.
