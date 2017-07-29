@@ -305,33 +305,34 @@ impl Delegation {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Delegations {
-    keys: HashMap<crypto::KeyId, crypto::PublicKey>,
+    keys: Vec<crypto::PublicKey>,
     roles: Vec<metadata::Delegation>,
 }
 
 
 impl Delegations {
-    pub fn try_into(mut self) -> Result<metadata::Delegations> {
-        let mut keys = Vec::new();
-        for (key_id, value) in self.keys.drain() {
-            if &key_id != value.key_id() {
-                warn!(
-                    "Received key with ID {:?} but calculated it's value as {:?}. \
-                       Refusing to add it to the set of trusted keys.",
-                    key_id,
-                    value.key_id()
-                );
-            } else {
-                debug!(
-                    "Found key with good ID {:?}. Adding it to the set of trusted keys.",
-                    key_id
-                );
-                keys.push(value);
-            }
-        }
+    pub fn from(delegations: &metadata::Delegations) -> Delegations {
+        let mut keys = delegations
+            .keys()
+            .iter()
+            .map(|(_, k)| k.clone())
+            .collect::<Vec<crypto::PublicKey>>();
+        keys.sort();
 
+        Delegations {
+            keys: keys,
+            roles: delegations.roles().clone(),
+        }
+    }
+
+    pub fn try_into(mut self) -> Result<metadata::Delegations> {
+        let keys_len = self.keys.len();
+        let keys = self.keys.drain(..).collect::<HashSet<crypto::PublicKey>>();
+        if keys.len() != keys_len {
+            return Err(Error::Encoding("Cannot have duplicate keys".into()));
+        }
         metadata::Delegations::new(keys, self.roles)
     }
 }

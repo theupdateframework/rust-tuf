@@ -1279,7 +1279,7 @@ impl<'de> Deserialize<'de> for TargetsMetadata {
 }
 
 /// Wrapper to described a collections of delegations.
-#[derive(Debug, PartialEq, Clone, Serialize)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Delegations {
     keys: HashMap<KeyId, PublicKey>,
     roles: Vec<Delegation>,
@@ -1289,7 +1289,7 @@ impl Delegations {
     // TODO check all keys are used
     // TODO check all roles have their ID in the set of keys
     /// Create a new `Delegations` wrapper from the given set of trusted keys and roles.
-    pub fn new(mut keys: Vec<PublicKey>, roles: Vec<Delegation>) -> Result<Self> {
+    pub fn new(keys: HashSet<PublicKey>, roles: Vec<Delegation>) -> Result<Self> {
         if keys.is_empty() {
             return Err(Error::IllegalArgument("Keys cannot be empty.".into()));
         }
@@ -1311,7 +1311,10 @@ impl Delegations {
         }
 
         Ok(Delegations {
-            keys: HashMap::from_iter(keys.drain(..).map(|k| (k.key_id().clone(), k))),
+            keys: keys.iter()
+                .cloned()
+                .map(|k| (k.key_id().clone(), k))
+                .collect(),
             roles: roles,
         })
     }
@@ -1326,6 +1329,16 @@ impl Delegations {
         &self.roles
     }
 }
+
+impl Serialize for Delegations {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        shims::Delegations::from(self).serialize(ser)
+    }
+}
+
 
 impl<'de> Deserialize<'de> for Delegations {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
@@ -1749,7 +1762,7 @@ mod test {
     fn serde_targets_with_delegations_metadata() {
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let delegations = Delegations::new(
-            vec![key.public().clone()],
+            hashset![key.public().clone()],
             vec![Delegation::new(
                 MetadataPath::new("foo/bar".into()).unwrap(),
                 false,
@@ -1772,13 +1785,13 @@ mod test {
             "expires": "2017-01-01T00:00:00Z",
             "targets": {},
             "delegations": {
-                "keys": {
-                    "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
+                "keys": [
+                    {
                         "type": "ed25519",
                         "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb\
                             -WO5CJQDTjK9GHGWjtg==",
                     },
-                },
+                ],
                 "roles": [
                     {
                         "role": "foo/bar",
@@ -1944,7 +1957,7 @@ mod test {
             .public()
             .clone();
         let delegations = Delegations::new(
-            vec![key.clone()],
+            hashset![key.clone()],
             vec![Delegation::new(
                 MetadataPath::new("foo".into()).unwrap(),
                 false,
@@ -2168,7 +2181,7 @@ mod test {
             .unwrap()
             .get_mut("keys".into())
             .unwrap()
-            .as_object_mut()
+            .as_array_mut()
             .unwrap()
             .clear();
         assert!(json::from_value::<Delegations>(delegations).is_err());
@@ -2271,5 +2284,44 @@ mod test {
             .unwrap()
             .push(dupe);
         assert!(json::from_value::<Delegation>(delegation).is_err());
+    }
+
+    // Refuse to deserialize a Delegations struct with duplicate keys
+    #[test]
+    fn deserialize_json_delegations_duplicate_keys() {
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8)
+            .unwrap()
+            .public()
+            .clone();
+        let delegations = Delegations::new(
+            hashset!(key.clone()),
+            vec![Delegation::new(
+                MetadataPath::new("foo".into()).unwrap(),
+                false,
+                1,
+                hashset!(key.key_id().clone()),
+                hashset!(TargetPath::new("bar".into()).unwrap()),
+            ).unwrap()],
+        ).unwrap();
+        let mut delegations = json::to_value(delegations).unwrap();
+
+        let dupe = delegations
+            .as_object()
+            .unwrap()
+            .get("keys".into())
+            .unwrap()
+            .as_array()
+            .unwrap()
+            [0]
+            .clone();
+        delegations
+            .as_object_mut()
+            .unwrap()
+            .get_mut("keys".into())
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(dupe);
+        assert!(json::from_value::<Delegations>(delegations).is_err());
     }
 }

@@ -168,10 +168,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///
 /// ```bash
 /// {
-///   "keys": {
-///     KEY_ID: PUB_KEY,
-///     ...
-///   },
+///   "keys": [PUB_KEY, ...]
 ///   "roles": {
 ///     ROLE: DELEGATION,
 ///     ...

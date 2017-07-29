@@ -91,7 +91,7 @@ fn simple_delegation() {
 
     //// build the targets ////
     let delegations = Delegations::new(
-        vec![delegation_key.public().clone()],
+        hashset![delegation_key.public().clone()],
         vec![
             Delegation::new(
                 MetadataPath::new("delegation".into()).unwrap(),
@@ -222,7 +222,7 @@ fn nested_delegation() {
 
     //// build the targets ////
     let delegations = Delegations::new(
-        vec![delegation_a_key.public().clone()],
+        hashset![delegation_a_key.public().clone()],
         vec![
             Delegation::new(
                 MetadataPath::new("delegation-a".into()).unwrap(),
@@ -256,7 +256,7 @@ fn nested_delegation() {
 
     //// build delegation A ////
     let delegations = Delegations::new(
-        vec![delegation_b_key.public().clone()],
+        hashset![delegation_b_key.public().clone()],
         vec![
             Delegation::new(
                 MetadataPath::new("delegation-b".into()).unwrap(),

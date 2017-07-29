@@ -12,7 +12,9 @@ use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use serde::ser::{Serialize, Serializer, Error as SerializeError};
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Display};
+use std::hash;
 use std::io::Read;
+use std::cmp::Ordering;
 use std::str::FromStr;
 use std::sync::Arc;
 use untrusted::Input;
@@ -192,13 +194,13 @@ impl<'de> Deserialize<'de> for KeyId {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SignatureScheme {
     /// [Ed25519](https://ed25519.cr.yp.to/)
-    #[serde(rename="ed25519")]
+    #[serde(rename = "ed25519")]
     Ed25519,
     /// [RSASSA-PSS](https://tools.ietf.org/html/rfc5756) calculated over SHA256
-    #[serde(rename="rsassa-pss-sha256")]
+    #[serde(rename = "rsassa-pss-sha256")]
     RsaSsaPssSha256,
     /// [RSASSA-PSS](https://tools.ietf.org/html/rfc5756) calculated over SHA512
-    #[serde(rename="rsassa-pss-sha512")]
+    #[serde(rename = "rsassa-pss-sha512")]
     RsaSsaPssSha512,
 }
 
@@ -247,7 +249,7 @@ impl<'de> Deserialize<'de> for SignatureValue {
 }
 
 /// Types of public keys.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Eq)]
 pub enum KeyType {
     /// [Ed25519](https://ed25519.cr.yp.to/)
     Ed25519,
@@ -501,7 +503,7 @@ impl PrivateKey {
 
 
 /// A structure containing information about a public key.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct PublicKey {
     typ: KeyType,
     key_id: KeyId,
@@ -571,6 +573,34 @@ impl PublicKey {
     }
 }
 
+impl PartialEq for PublicKey {
+    fn eq(&self, other: &Self) -> bool {
+        // the other two fields are derived from this one, we ignore them
+        self.value == other.value
+    }
+}
+
+impl Eq for PublicKey {}
+
+impl Ord for PublicKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.key_id.cmp(&other.key_id)
+    }
+}
+
+impl PartialOrd for PublicKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.key_id.cmp(&other.key_id))
+    }
+}
+
+impl hash::Hash for PublicKey {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        // the other two fields are derived from this one, we ignore them
+        self.value.hash(state);
+    }
+}
+
 impl Serialize for PublicKey {
     fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
     where
@@ -608,7 +638,7 @@ impl<'de> Deserialize<'de> for PublicKey {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Hash, Eq)]
 struct PublicKeyValue(Vec<u8>);
 
 impl Debug for PublicKeyValue {
