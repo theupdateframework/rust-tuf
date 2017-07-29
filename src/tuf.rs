@@ -181,7 +181,9 @@ impl<D: DataInterchange> Tuf<D> {
         } else if timestamp.version() == current_version {
             Ok(false)
         } else {
-            if self.snapshot.as_ref().map(|s| s.version()).unwrap_or(0) != timestamp.snapshot().version() {
+            if self.snapshot.as_ref().map(|s| s.version()).unwrap_or(0) !=
+                timestamp.snapshot().version()
+            {
                 self.snapshot = None;
             }
 
@@ -241,7 +243,13 @@ impl<D: DataInterchange> Tuf<D> {
             snapshot
         };
 
-        if self.targets.as_ref().map(|s| s.version()).unwrap_or(0) != snapshot.meta().get(&MetadataPath::from_role(&Role::Targets)).map(|m| m.version()).unwrap_or(0) {
+        if self.targets.as_ref().map(|s| s.version()).unwrap_or(0) !=
+            snapshot
+                .meta()
+                .get(&MetadataPath::from_role(&Role::Targets))
+                .map(|m| m.version())
+                .unwrap_or(0)
+        {
             self.targets = None;
         }
 
@@ -567,7 +575,7 @@ mod test {
     use super::*;
     use chrono::prelude::*;
     use crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
-    use interchange::JsonDataInterchange;
+    use interchange::Json;
     use metadata::{RoleDefinition, MetadataDescription};
 
     lazy_static! {
@@ -597,7 +605,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &root_key, SignatureScheme::Ed25519).unwrap();
 
         assert!(Tuf::from_root_pinned(root, &[root_key.key_id().clone()]).is_ok());
@@ -615,7 +623,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         assert!(Tuf::from_root_pinned(root, &[KEYS[1].key_id().clone()]).is_err());
@@ -633,7 +641,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
@@ -648,7 +656,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
         ).unwrap();
-        let mut root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let mut root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[1], SignatureScheme::Ed25519).unwrap();
 
         // add the original key's signature to make it cross signed
@@ -673,7 +681,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
@@ -689,7 +697,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[1], SignatureScheme::Ed25519).unwrap();
 
         assert!(tuf.update_root(root).is_err());
@@ -707,7 +715,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
@@ -718,7 +726,7 @@ mod test {
             MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256])
                 .unwrap(),
         ).unwrap();
-        let timestamp: SignedMetadata<JsonDataInterchange, TimestampMetadata> =
+        let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[1], SignatureScheme::Ed25519).unwrap();
 
         assert_eq!(tuf.update_timestamp(timestamp.clone()), Ok(true));
@@ -739,7 +747,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
@@ -752,7 +760,7 @@ mod test {
         ).unwrap();
 
         // sign it with the root key
-        let timestamp: SignedMetadata<JsonDataInterchange, TimestampMetadata> =
+        let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         assert!(tuf.update_timestamp(timestamp).is_err())
@@ -774,7 +782,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
@@ -785,14 +793,14 @@ mod test {
             MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256])
                 .unwrap(),
         ).unwrap();
-        let timestamp: SignedMetadata<JsonDataInterchange, TimestampMetadata> =
+        let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[2], SignatureScheme::Ed25519).unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
 
         let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!())
             .unwrap();
-        let snapshot: SignedMetadata<JsonDataInterchange, SnapshotMetadata> =
+        let snapshot: SignedMetadata<Json, SnapshotMetadata> =
             SignedMetadata::new(&snapshot, &KEYS[1], SignatureScheme::Ed25519).unwrap();
 
         assert_eq!(tuf.update_snapshot(snapshot.clone()), Ok(true));
@@ -817,7 +825,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
@@ -828,14 +836,14 @@ mod test {
             MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256])
                 .unwrap(),
         ).unwrap();
-        let timestamp: SignedMetadata<JsonDataInterchange, TimestampMetadata> =
+        let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[2], SignatureScheme::Ed25519).unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
 
         let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!())
             .unwrap();
-        let snapshot: SignedMetadata<JsonDataInterchange, SnapshotMetadata> =
+        let snapshot: SignedMetadata<Json, SnapshotMetadata> =
             SignedMetadata::new(&snapshot, &KEYS[2], SignatureScheme::Ed25519).unwrap();
 
         assert!(tuf.update_snapshot(snapshot.clone()).is_err());
@@ -857,7 +865,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
@@ -868,14 +876,14 @@ mod test {
             MetadataDescription::from_reader(&*vec![], 2, &[HashAlgorithm::Sha256])
                 .unwrap(),
         ).unwrap();
-        let timestamp: SignedMetadata<JsonDataInterchange, TimestampMetadata> =
+        let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[2], SignatureScheme::Ed25519).unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
 
         let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!())
             .unwrap();
-        let snapshot: SignedMetadata<JsonDataInterchange, SnapshotMetadata> =
+        let snapshot: SignedMetadata<Json, SnapshotMetadata> =
             SignedMetadata::new(&snapshot, &KEYS[1], SignatureScheme::Ed25519).unwrap();
 
         assert!(tuf.update_snapshot(snapshot).is_err());
@@ -898,7 +906,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[3].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
@@ -909,7 +917,7 @@ mod test {
             MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256])
                 .unwrap(),
         ).unwrap();
-        let timestamp: SignedMetadata<JsonDataInterchange, TimestampMetadata> =
+        let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[3], SignatureScheme::Ed25519).unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
@@ -921,7 +929,7 @@ mod test {
         );
         let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
             .unwrap();
-        let snapshot: SignedMetadata<JsonDataInterchange, SnapshotMetadata> =
+        let snapshot: SignedMetadata<Json, SnapshotMetadata> =
             SignedMetadata::new(&snapshot, &KEYS[1], SignatureScheme::Ed25519).unwrap();
 
         tuf.update_snapshot(snapshot).unwrap();
@@ -929,7 +937,7 @@ mod test {
         let targets =
             TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
                 .unwrap();
-        let targets: SignedMetadata<JsonDataInterchange, TargetsMetadata> =
+        let targets: SignedMetadata<Json, TargetsMetadata> =
             SignedMetadata::new(&targets, &KEYS[2], SignatureScheme::Ed25519).unwrap();
 
         assert_eq!(tuf.update_targets(targets.clone()), Ok(true));
@@ -955,7 +963,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[3].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
@@ -966,7 +974,7 @@ mod test {
             MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256])
                 .unwrap(),
         ).unwrap();
-        let timestamp: SignedMetadata<JsonDataInterchange, TimestampMetadata> =
+        let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[3], SignatureScheme::Ed25519).unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
@@ -978,7 +986,7 @@ mod test {
         );
         let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
             .unwrap();
-        let snapshot: SignedMetadata<JsonDataInterchange, SnapshotMetadata> =
+        let snapshot: SignedMetadata<Json, SnapshotMetadata> =
             SignedMetadata::new(&snapshot, &KEYS[1], SignatureScheme::Ed25519).unwrap();
 
         tuf.update_snapshot(snapshot).unwrap();
@@ -986,7 +994,7 @@ mod test {
         let targets =
             TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
                 .unwrap();
-        let targets: SignedMetadata<JsonDataInterchange, TargetsMetadata> =
+        let targets: SignedMetadata<Json, TargetsMetadata> =
             SignedMetadata::new(&targets, &KEYS[3], SignatureScheme::Ed25519).unwrap();
 
         assert!(tuf.update_targets(targets).is_err());
@@ -1009,7 +1017,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[3].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
@@ -1020,7 +1028,7 @@ mod test {
             MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256])
                 .unwrap(),
         ).unwrap();
-        let timestamp: SignedMetadata<JsonDataInterchange, TimestampMetadata> =
+        let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[3], SignatureScheme::Ed25519).unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
@@ -1032,7 +1040,7 @@ mod test {
         );
         let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
             .unwrap();
-        let snapshot: SignedMetadata<JsonDataInterchange, SnapshotMetadata> =
+        let snapshot: SignedMetadata<Json, SnapshotMetadata> =
             SignedMetadata::new(&snapshot, &KEYS[1], SignatureScheme::Ed25519).unwrap();
 
         tuf.update_snapshot(snapshot).unwrap();
@@ -1040,7 +1048,7 @@ mod test {
         let targets =
             TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
                 .unwrap();
-        let targets: SignedMetadata<JsonDataInterchange, TargetsMetadata> =
+        let targets: SignedMetadata<Json, TargetsMetadata> =
             SignedMetadata::new(&targets, &KEYS[2], SignatureScheme::Ed25519).unwrap();
 
         assert!(tuf.update_targets(targets).is_err());

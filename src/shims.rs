@@ -9,12 +9,21 @@ use error::Error;
 use metadata;
 
 fn parse_datetime(ts: &str) -> Result<DateTime<Utc>> {
-    Utc.datetime_from_str(ts, "%FT%TZ")
-        .map_err(|e| Error::Encoding(format!("Can't parse DateTime: {:?}", e)))
+    Utc.datetime_from_str(ts, "%FT%TZ").map_err(|e| {
+        Error::Encoding(format!("Can't parse DateTime: {:?}", e))
+    })
 }
 
 fn format_datetime(ts: &DateTime<Utc>) -> String {
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", ts.year(), ts.month(), ts.day(), ts.hour(), ts.minute(), ts.second())
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        ts.year(),
+        ts.month(),
+        ts.day(),
+        ts.hour(),
+        ts.minute(),
+        ts.second()
+    )
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -33,7 +42,10 @@ pub struct RootMetadata {
 
 impl RootMetadata {
     pub fn from(meta: &metadata::RootMetadata) -> Result<Self> {
-        let mut keys = meta.keys().iter().map(|(_, v)| v.clone()).collect::<Vec<crypto::PublicKey>>();
+        let mut keys = meta.keys()
+            .iter()
+            .map(|(_, v)| v.clone())
+            .collect::<Vec<crypto::PublicKey>>();
         keys.sort_by_key(|k| k.key_id().clone());
 
         Ok(RootMetadata {
@@ -138,7 +150,11 @@ impl TimestampMetadata {
             )));
         }
 
-        metadata::TimestampMetadata::new(self.version, parse_datetime(&self.expires)?, self.snapshot)
+        metadata::TimestampMetadata::new(
+            self.version,
+            parse_datetime(&self.expires)?,
+            self.snapshot,
+        )
     }
 }
 
@@ -204,7 +220,12 @@ impl TargetsMetadata {
             )));
         }
 
-        metadata::TargetsMetadata::new(self.version, parse_datetime(&self.expires)?, self.targets, self.delegations)
+        metadata::TargetsMetadata::new(
+            self.version,
+            parse_datetime(&self.expires)?,
+            self.targets,
+            self.delegations,
+        )
     }
 }
 

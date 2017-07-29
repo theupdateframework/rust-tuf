@@ -248,7 +248,7 @@ where
     ///
     /// use chrono::prelude::*;
     /// use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
-    /// use tuf::interchange::JsonDataInterchange;
+    /// use tuf::interchange::Json;
     /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
     ///
     /// fn main() {
@@ -262,7 +262,7 @@ where
     ///             &[HashAlgorithm::Sha256]).unwrap()
     ///     ).unwrap();
     ///
-    ///     SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
+    ///     SignedMetadata::<Json, TimestampMetadata>::new(
     ///         &timestamp, &key, SignatureScheme::Ed25519).unwrap();
     /// }
     /// ```
@@ -296,7 +296,7 @@ where
     ///
     /// use chrono::prelude::*;
     /// use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
-    /// use tuf::interchange::JsonDataInterchange;
+    /// use tuf::interchange::Json;
     /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
     ///
     /// fn main() {
@@ -314,7 +314,7 @@ where
     ///         MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
     ///             &[HashAlgorithm::Sha256]).unwrap()
     ///     ).unwrap();
-    ///     let mut timestamp = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
+    ///     let mut timestamp = SignedMetadata::<Json, TimestampMetadata>::new(
     ///         &timestamp, &key_1, SignatureScheme::Ed25519).unwrap();
     ///
     ///     timestamp.add_signature(&key_2, SignatureScheme::Ed25519).unwrap();
@@ -390,7 +390,7 @@ where
     ///
     /// use chrono::prelude::*;
     /// use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
-    /// use tuf::interchange::JsonDataInterchange;
+    /// use tuf::interchange::Json;
     /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
     ///
     /// fn main() {
@@ -406,7 +406,7 @@ where
     ///         MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
     ///             &[HashAlgorithm::Sha256]).unwrap()
     ///     ).unwrap();
-    ///     let timestamp = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
+    ///     let timestamp = SignedMetadata::<Json, TimestampMetadata>::new(
     ///         &timestamp, &key_1, SignatureScheme::Ed25519).unwrap();
     ///
     ///     assert!(timestamp.verify(
@@ -528,7 +528,7 @@ impl RootMetadata {
 
         let keys_len = keys.len();
         let keys = HashMap::from_iter(keys.drain(..).map(|k| (k.key_id().clone(), k)));
-        
+
         if keys.len() != keys_len {
             return Err(Error::IllegalArgument("Cannot have duplicate keys".into()));
         }
@@ -739,15 +739,15 @@ impl MetadataPath {
     ///
     /// ```
     /// use tuf::crypto::HashValue;
-    /// use tuf::interchange::JsonDataInterchange;
+    /// use tuf::interchange::Json;
     /// use tuf::metadata::{MetadataPath, MetadataVersion};
     ///
     /// let path = MetadataPath::new("foo/bar".into()).unwrap();
-    /// assert_eq!(path.components::<JsonDataInterchange>(&MetadataVersion::None),
+    /// assert_eq!(path.components::<Json>(&MetadataVersion::None),
     ///            ["foo".to_string(), "bar.json".to_string()]);
-    /// assert_eq!(path.components::<JsonDataInterchange>(&MetadataVersion::Number(1)),
+    /// assert_eq!(path.components::<Json>(&MetadataVersion::Number(1)),
     ///            ["foo".to_string(), "1.bar.json".to_string()]);
-    /// assert_eq!(path.components::<JsonDataInterchange>(
+    /// assert_eq!(path.components::<Json>(
     ///                 &MetadataVersion::Hash(HashValue::new(vec![0x69, 0xb7, 0x1d]))),
     ///            ["foo".to_string(), "abcd.bar.json".to_string()]);
     /// ```
@@ -1431,7 +1431,7 @@ mod test {
     use super::*;
     use chrono::prelude::*;
     use json;
-    use interchange::JsonDataInterchange;
+    use interchange::Json;
 
     const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
@@ -1814,7 +1814,7 @@ mod test {
 
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
 
-        let signed = SignedMetadata::<JsonDataInterchange, SnapshotMetadata>::new(
+        let signed = SignedMetadata::<Json, SnapshotMetadata>::new(
             &snapshot,
             &key,
             SignatureScheme::Ed25519,
@@ -1847,8 +1847,7 @@ mod test {
 
         let encoded = json::to_value(&signed).unwrap();
         assert_eq!(encoded, jsn);
-        let decoded: SignedMetadata<JsonDataInterchange, SnapshotMetadata> =
-            json::from_value(encoded).unwrap();
+        let decoded: SignedMetadata<Json, SnapshotMetadata> = json::from_value(encoded).unwrap();
         assert_eq!(decoded, signed);
     }
 

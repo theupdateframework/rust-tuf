@@ -8,7 +8,7 @@ use chrono::offset::Utc;
 use std::collections::HashMap;
 use tuf::Tuf;
 use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
-use tuf::interchange::JsonDataInterchange;
+use tuf::interchange::Json;
 use tuf::metadata::{RoleDefinition, RootMetadata, MetadataPath, SignedMetadata, TargetDescription,
                     TargetPath, TargetsMetadata, MetadataDescription, SnapshotMetadata,
                     TimestampMetadata, Delegation, Delegations};
@@ -52,20 +52,17 @@ fn simple_delegation() {
         timestamp_def,
     ).unwrap();
 
-    let signed = SignedMetadata::<JsonDataInterchange, RootMetadata>::new(
-        &root,
-        &root_key,
-        SignatureScheme::Ed25519,
-    ).unwrap();
+    let signed =
+        SignedMetadata::<Json, RootMetadata>::new(&root, &root_key, SignatureScheme::Ed25519)
+            .unwrap();
 
-    let mut tuf =
-        Tuf::<JsonDataInterchange>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
+    let mut tuf = Tuf::<Json>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
 
     //// build the timestamp ////
     let snap = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
     let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap).unwrap();
 
-    let signed = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
+    let signed = SignedMetadata::<Json, TimestampMetadata>::new(
         &timestamp,
         &timestamp_key,
         SignatureScheme::Ed25519,
@@ -84,7 +81,7 @@ fn simple_delegation() {
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
         .unwrap();
 
-    let signed = SignedMetadata::<JsonDataInterchange, SnapshotMetadata>::new(
+    let signed = SignedMetadata::<Json, SnapshotMetadata>::new(
         &snapshot,
         &snapshot_key,
         SignatureScheme::Ed25519,
@@ -118,7 +115,7 @@ fn simple_delegation() {
         Some(delegations),
     ).unwrap();
 
-    let signed = SignedMetadata::<JsonDataInterchange, TargetsMetadata>::new(
+    let signed = SignedMetadata::<Json, TargetsMetadata>::new(
         &targets,
         &targets_key,
         SignatureScheme::Ed25519,
@@ -136,7 +133,7 @@ fn simple_delegation() {
     let delegation =
         TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None).unwrap();
 
-    let signed = SignedMetadata::<JsonDataInterchange, TargetsMetadata>::new(
+    let signed = SignedMetadata::<Json, TargetsMetadata>::new(
         &delegation,
         &delegation_key,
         SignatureScheme::Ed25519,
@@ -184,20 +181,17 @@ fn nested_delegation() {
         timestamp_def,
     ).unwrap();
 
-    let signed = SignedMetadata::<JsonDataInterchange, RootMetadata>::new(
-        &root,
-        &root_key,
-        SignatureScheme::Ed25519,
-    ).unwrap();
+    let signed =
+        SignedMetadata::<Json, RootMetadata>::new(&root, &root_key, SignatureScheme::Ed25519)
+            .unwrap();
 
-    let mut tuf =
-        Tuf::<JsonDataInterchange>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
+    let mut tuf = Tuf::<Json>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
 
     //// build the timestamp ////
     let snap = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
     let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap).unwrap();
 
-    let signed = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
+    let signed = SignedMetadata::<Json, TimestampMetadata>::new(
         &timestamp,
         &timestamp_key,
         SignatureScheme::Ed25519,
@@ -218,7 +212,7 @@ fn nested_delegation() {
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
         .unwrap();
 
-    let signed = SignedMetadata::<JsonDataInterchange, SnapshotMetadata>::new(
+    let signed = SignedMetadata::<Json, SnapshotMetadata>::new(
         &snapshot,
         &snapshot_key,
         SignatureScheme::Ed25519,
@@ -252,7 +246,7 @@ fn nested_delegation() {
         Some(delegations),
     ).unwrap();
 
-    let signed = SignedMetadata::<JsonDataInterchange, TargetsMetadata>::new(
+    let signed = SignedMetadata::<Json, TargetsMetadata>::new(
         &targets,
         &targets_key,
         SignatureScheme::Ed25519,
@@ -286,7 +280,7 @@ fn nested_delegation() {
         Some(delegations),
     ).unwrap();
 
-    let signed = SignedMetadata::<JsonDataInterchange, TargetsMetadata>::new(
+    let signed = SignedMetadata::<Json, TargetsMetadata>::new(
         &delegation,
         &delegation_a_key,
         SignatureScheme::Ed25519,
@@ -306,7 +300,7 @@ fn nested_delegation() {
     let delegation =
         TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None).unwrap();
 
-    let signed = SignedMetadata::<JsonDataInterchange, TargetsMetadata>::new(
+    let signed = SignedMetadata::<Json, TargetsMetadata>::new(
         &delegation,
         &delegation_b_key,
         SignatureScheme::Ed25519,

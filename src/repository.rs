@@ -511,11 +511,11 @@ where
 mod test {
     use super::*;
     use tempdir::TempDir;
-    use interchange::JsonDataInterchange;
+    use interchange::Json;
 
     #[test]
     fn ephemeral_repo_targets() {
-        let mut repo = EphemeralRepository::<JsonDataInterchange>::new();
+        let mut repo = EphemeralRepository::<Json>::new();
         repo.initialize().unwrap();
 
         let data: &[u8] = b"like tears in the rain";
@@ -538,8 +538,7 @@ mod test {
     #[test]
     fn file_system_repo_targets() {
         let temp_dir = TempDir::new("rust-tuf").unwrap();
-        let mut repo =
-            FileSystemRepository::<JsonDataInterchange>::new(temp_dir.path().to_path_buf());
+        let mut repo = FileSystemRepository::<Json>::new(temp_dir.path().to_path_buf());
         repo.initialize().unwrap();
 
         let data: &[u8] = b"like tears in the rain";

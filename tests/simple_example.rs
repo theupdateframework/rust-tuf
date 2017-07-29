@@ -8,7 +8,7 @@ use chrono::offset::Utc;
 use tuf::Error;
 use tuf::client::{Client, Config};
 use tuf::crypto::{PrivateKey, SignatureScheme, KeyId, HashAlgorithm};
-use tuf::interchange::{DataInterchange, JsonDataInterchange};
+use tuf::interchange::{DataInterchange, Json};
 use tuf::metadata::{RoleDefinition, RootMetadata, Role, MetadataVersion, MetadataPath,
                     SignedMetadata, TargetDescription, TargetPath, TargetsMetadata,
                     MetadataDescription, SnapshotMetadata, TimestampMetadata};
@@ -23,16 +23,13 @@ const ED25519_4_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-4.pk8.der
 
 #[test]
 fn main() {
-    let mut remote = EphemeralRepository::<JsonDataInterchange>::new();
+    let mut remote = EphemeralRepository::<Json>::new();
     let root_key_ids = init_server(&mut remote).unwrap();
     init_client(&root_key_ids, remote).unwrap();
 }
 
-fn init_client(
-    root_key_ids: &[KeyId],
-    remote: EphemeralRepository<JsonDataInterchange>,
-) -> Result<(), Error> {
-    let local = EphemeralRepository::<JsonDataInterchange>::new();
+fn init_client(root_key_ids: &[KeyId], remote: EphemeralRepository<Json>) -> Result<(), Error> {
+    let local = EphemeralRepository::<Json>::new();
     let config = Config::build().finish()?;
 
     let mut client = Client::with_root_pinned(root_key_ids, config, local, remote)?;
@@ -44,7 +41,7 @@ fn init_client(
     client.fetch_target(&TargetPath::new("grendel".into())?)
 }
 
-fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<Vec<KeyId>, Error> {
+fn init_server(remote: &mut EphemeralRepository<Json>) -> Result<Vec<KeyId>, Error> {
     // in real life, you wouldn't want these keys on the same machine ever
     let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8)?;
     let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8)?;
@@ -76,11 +73,8 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
         timestamp_def,
     )?;
 
-    let signed = SignedMetadata::<JsonDataInterchange, RootMetadata>::new(
-        &root,
-        &root_key,
-        SignatureScheme::Ed25519,
-    )?;
+    let signed =
+        SignedMetadata::<Json, RootMetadata>::new(&root, &root_key, SignatureScheme::Ed25519)?;
 
     remote.store_metadata(
         &Role::Root,
@@ -105,7 +99,7 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
     let target_map = hashmap!(target_path => target_description);
     let targets = TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None)?;
 
-    let signed = SignedMetadata::<JsonDataInterchange, TargetsMetadata>::new(
+    let signed = SignedMetadata::<Json, TargetsMetadata>::new(
         &targets,
         &targets_key,
         SignatureScheme::Ed25519,
@@ -124,8 +118,7 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
         &signed,
     )?;
 
-    let targets_bytes =
-        JsonDataInterchange::canonicalize(&JsonDataInterchange::serialize(&signed)?)?;
+    let targets_bytes = Json::canonicalize(&Json::serialize(&signed)?)?;
 
     //// build the snapshot ////
     let meta_map =
@@ -135,7 +128,7 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
     };
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)?;
 
-    let signed = SignedMetadata::<JsonDataInterchange, SnapshotMetadata>::new(
+    let signed = SignedMetadata::<Json, SnapshotMetadata>::new(
         &snapshot,
         &snapshot_key,
         SignatureScheme::Ed25519,
@@ -154,14 +147,13 @@ fn init_server(remote: &mut EphemeralRepository<JsonDataInterchange>) -> Result<
         &signed,
     )?;
 
-    let snapshot_bytes =
-        JsonDataInterchange::canonicalize(&JsonDataInterchange::serialize(&signed)?)?;
+    let snapshot_bytes = Json::canonicalize(&Json::serialize(&signed)?)?;
 
     //// build the timestamp ////
     let snap = MetadataDescription::from_reader(&*snapshot_bytes, 1, &[HashAlgorithm::Sha256])?;
     let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap)?;
 
-    let signed = SignedMetadata::<JsonDataInterchange, TimestampMetadata>::new(
+    let signed = SignedMetadata::<Json, TimestampMetadata>::new(
         &timestamp,
         &timestamp_key,
         SignatureScheme::Ed25519,

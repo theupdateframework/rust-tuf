@@ -14,7 +14,7 @@
 //! use tuf::client::{Client, Config};
 //! use tuf::metadata::{RootMetadata, SignedMetadata, Role, MetadataPath,
 //!     MetadataVersion};
-//! use tuf::interchange::JsonDataInterchange;
+//! use tuf::interchange::Json;
 //! use tuf::repository::{Repository, FileSystemRepository, HttpRepository};
 //! use url::Url;
 //!
@@ -29,7 +29,7 @@
 //!         .map(|k| KeyId::from_string(k).unwrap())
 //!         .collect();
 //!
-//!     let local = FileSystemRepository::<JsonDataInterchange>::new(PathBuf::from("~/.rustup"));
+//!     let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"));
 //!
 //!     let remote = HttpRepository::new(
 //!         Url::parse("https://static.rust-lang.org/").unwrap(),
@@ -669,7 +669,7 @@ mod test {
     use super::*;
     use chrono::prelude::*;
     use crypto::{PrivateKey, SignatureScheme};
-    use interchange::JsonDataInterchange;
+    use interchange::Json;
     use metadata::{RootMetadata, SignedMetadata, RoleDefinition, MetadataPath, MetadataVersion};
     use repository::EphemeralRepository;
 
@@ -700,7 +700,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
 
         repo.store_metadata(
@@ -720,7 +720,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
         ).unwrap();
-        let mut root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let mut root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[1], SignatureScheme::Ed25519).unwrap();
 
         root.add_signature(&KEYS[0], SignatureScheme::Ed25519)
@@ -743,7 +743,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
         ).unwrap();
-        let mut root: SignedMetadata<JsonDataInterchange, RootMetadata> =
+        let mut root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[2], SignatureScheme::Ed25519).unwrap();
 
         root.add_signature(&KEYS[1], SignatureScheme::Ed25519)

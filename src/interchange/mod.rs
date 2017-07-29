@@ -206,26 +206,26 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 /// }
 /// ```
 #[derive(Debug, Clone, PartialEq)]
-pub struct JsonDataInterchange {}
-impl DataInterchange for JsonDataInterchange {
+pub struct Json {}
+impl DataInterchange for Json {
     type RawData = json::Value;
 
     /// ```
-    /// use tuf::interchange::{DataInterchange, JsonDataInterchange};
+    /// use tuf::interchange::{DataInterchange, Json};
     ///
-    /// assert_eq!(JsonDataInterchange::extension(), "json");
+    /// assert_eq!(Json::extension(), "json");
     /// ```
     fn extension() -> &'static str {
         "json"
     }
 
     /// ```
-    /// use tuf::interchange::{DataInterchange, JsonDataInterchange};
+    /// use tuf::interchange::{DataInterchange, Json};
     /// use std::collections::HashMap;
     ///
     /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
-    /// let raw = JsonDataInterchange::from_reader(jsn).unwrap();
-    /// let out = JsonDataInterchange::canonicalize(&raw).unwrap();
+    /// let raw = Json::from_reader(jsn).unwrap();
+    /// let out = Json::canonicalize(&raw).unwrap();
     /// assert_eq!(out, br#"{"baz":"quux","foo":"bar"}"#);
     /// ```
     fn canonicalize(raw_data: &Self::RawData) -> Result<Vec<u8>> {
@@ -239,7 +239,7 @@ impl DataInterchange for JsonDataInterchange {
     /// extern crate serde_json;
     /// extern crate tuf;
     ///
-    /// use tuf::interchange::{DataInterchange, JsonDataInterchange};
+    /// use tuf::interchange::{DataInterchange, Json};
     /// use std::collections::HashMap;
     ///
     /// #[derive(Deserialize, Debug, PartialEq)]
@@ -251,7 +251,7 @@ impl DataInterchange for JsonDataInterchange {
     /// fn main() {
     ///     let jsn = json!({"foo": "wat", "bar": "lol"});
     ///     let thing = Thing { foo: "wat".into(), bar: "lol".into() };
-    ///     let de: Thing = JsonDataInterchange::deserialize(&jsn).unwrap();
+    ///     let de: Thing = Json::deserialize(&jsn).unwrap();
     ///     assert_eq!(de, thing);
     /// }
     /// ```
@@ -269,7 +269,7 @@ impl DataInterchange for JsonDataInterchange {
     /// extern crate serde_json;
     /// extern crate tuf;
     ///
-    /// use tuf::interchange::{DataInterchange, JsonDataInterchange};
+    /// use tuf::interchange::{DataInterchange, Json};
     /// use std::collections::HashMap;
     ///
     /// #[derive(Serialize)]
@@ -281,7 +281,7 @@ impl DataInterchange for JsonDataInterchange {
     /// fn main() {
     ///     let jsn = json!({"foo": "wat", "bar": "lol"});
     ///     let thing = Thing { foo: "wat".into(), bar: "lol".into() };
-    ///     let se: serde_json::Value = JsonDataInterchange::serialize(&thing).unwrap();
+    ///     let se: serde_json::Value = Json::serialize(&thing).unwrap();
     ///     assert_eq!(se, jsn);
     /// }
     /// ```
@@ -293,11 +293,11 @@ impl DataInterchange for JsonDataInterchange {
     }
 
     /// ```
-    /// use tuf::interchange::{DataInterchange, JsonDataInterchange};
+    /// use tuf::interchange::{DataInterchange, Json};
     ///
     /// let arr = vec![1, 2, 3];
     /// let mut buf = Vec::new();
-    /// JsonDataInterchange::to_writer(&mut buf, &arr).unwrap();
+    /// Json::to_writer(&mut buf, &arr).unwrap();
     /// assert!(&buf == b"[1, 2, 3]" || &buf == b"[1,2,3]");
     /// ```
     fn to_writer<W, T: Sized>(mut writer: W, value: &T) -> Result<()>
@@ -311,11 +311,11 @@ impl DataInterchange for JsonDataInterchange {
     }
 
     /// ```
-    /// use tuf::interchange::{DataInterchange, JsonDataInterchange};
+    /// use tuf::interchange::{DataInterchange, Json};
     /// use std::collections::HashMap;
     ///
     /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
-    /// let _: HashMap<String, String> = JsonDataInterchange::from_reader(jsn).unwrap();
+    /// let _: HashMap<String, String> = Json::from_reader(jsn).unwrap();
     /// ```
     fn from_reader<R, T>(rdr: R) -> Result<T>
     where
