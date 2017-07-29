@@ -30,8 +30,7 @@ fn main() {
 
 fn init_client(root_key_ids: &[KeyId], remote: EphemeralRepository<Json>) -> Result<(), Error> {
     let local = EphemeralRepository::<Json>::new();
-    let config = Config::build().finish()?;
-
+    let config = Config::default();
     let mut client = Client::with_root_pinned(root_key_ids, config, local, remote)?;
     match client.update_local() {
         Ok(_) => (),

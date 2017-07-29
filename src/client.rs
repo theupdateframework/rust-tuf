@@ -37,9 +37,7 @@
 //!         Some("rustup/1.4.0".into()),
 //!         None);
 //!
-//!     let config = Config::build().finish().unwrap();
-//!
-//!     let mut client = Client::with_root_pinned(&key_ids, config, local, remote).unwrap();
+//!     let mut client = Client::with_root_pinned(&key_ids, Config::default(), local, remote).unwrap();
 //!     let _ = client.update_local().unwrap();
 //!     let _ = client.update_remote().unwrap();
 //! }
@@ -561,6 +559,22 @@ where
 }
 
 /// Configuration for a TUF `Client`.
+///
+/// # Defaults
+///
+/// The following values are considered reasonably safe defaults, however these values may change
+/// as this crate moves out of beta. If you are concered about them changing, you should use the
+/// `ConfigBuilder` and set your own values.
+///
+/// ```
+/// use tuf::client::Config;
+///
+/// let config = Config::default();
+/// assert_eq!(config.max_root_size(), &Some(1024 * 1024));
+/// assert_eq!(config.max_timestamp_size(), &Some(32 * 1024));
+/// assert_eq!(config.min_bytes_per_second(), 4096);
+/// assert_eq!(config.max_delegation_depth(), 8);
+/// ```
 #[derive(Debug)]
 pub struct Config {
     max_root_size: Option<usize>,
@@ -593,6 +607,17 @@ impl Config {
     /// The maximum number of steps used when walking the delegation graph.
     pub fn max_delegation_depth(&self) -> u32 {
         self.max_delegation_depth
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            max_root_size: Some(1024 * 1024),
+            max_timestamp_size: Some(32 * 1024),
+            min_bytes_per_second: 4096,
+            max_delegation_depth: 8,
+        }
     }
 }
 
@@ -642,24 +667,13 @@ impl ConfigBuilder {
 }
 
 impl Default for ConfigBuilder {
-    /// ```
-    /// use tuf::client::ConfigBuilder;
-    ///
-    /// let default = ConfigBuilder::default();
-    /// let config = ConfigBuilder::default()
-    ///     .max_root_size(Some(1024 * 1024))
-    ///     .max_timestamp_size(Some(32 * 1024))
-    ///     .min_bytes_per_second(4096)
-    ///     .max_delegation_depth(10);
-    /// assert_eq!(config, default);
-    /// assert!(default.finish().is_ok())
-    /// ```
     fn default() -> Self {
+        let cfg = Config::default();
         ConfigBuilder {
-            max_root_size: Some(1024 * 1024),
-            max_timestamp_size: Some(32 * 1024),
-            min_bytes_per_second: 4096,
-            max_delegation_depth: 10,
+            max_root_size: cfg.max_root_size,
+            max_timestamp_size: cfg.max_timestamp_size,
+            min_bytes_per_second: cfg.min_bytes_per_second,
+            max_delegation_depth: cfg.max_delegation_depth,
         }
     }
 }

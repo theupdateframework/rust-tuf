@@ -255,7 +255,7 @@ where
     ///
     /// The argument `metadata_prefix` is used provide an alternate path where metadata is stored on
     /// the repository. If `None`, this defaults to `/`. For example, if there is a TUF repository
-    /// at `https://tuf.example.comi/`, but all metadata is stored at `/meta/`, then passing the
+    /// at `https://tuf.example.com/`, but all metadata is stored at `/meta/`, then passing the
     /// arg `Some("meta".into())` would cause `root.json` to be fetched from
     /// `https://tuf.example.com/meta/root.json`.
     pub fn new(
