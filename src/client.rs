@@ -37,7 +37,12 @@
 //!         Some("rustup/1.4.0".into()),
 //!         None);
 //!
-//!     let mut client = Client::with_root_pinned(&key_ids, Config::default(), local, remote).unwrap();
+//!     let mut client = Client::with_root_pinned(
+//!         &key_ids,
+//!         Config::default(),
+//!         local,
+//!         remote,
+//!     ).unwrap();
 //!     let _ = client.update_local().unwrap();
 //!     let _ = client.update_remote().unwrap();
 //! }

@@ -1994,6 +1994,30 @@ mod test {
         assert!(json::from_value::<RootMetadata>(root_json).is_err());
     }
 
+    // Refuse to deserialize root metadata if it contains duplicate keys
+    #[test]
+    fn deserialize_json_root_duplicate_keys() {
+        let mut root_json = make_root();
+        let dupe = root_json
+            .as_object()
+            .unwrap()
+            .get("keys")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            [0]
+            .clone();
+        root_json
+            .as_object_mut()
+            .unwrap()
+            .get_mut("keys")
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(dupe);
+        assert!(json::from_value::<RootMetadata>(root_json).is_err());
+    }
+
     fn set_threshold(value: &mut json::Value, threshold: i32) {
         match value.as_object_mut() {
             Some(obj) => {
