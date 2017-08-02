@@ -8,7 +8,7 @@ repository = "https://github.com/heartsucker/rust-tuf"
 documentation = "https://docs.rs/tuf"
 readme = "README.md"
 license = "MIT/Apache-2.0"
-keywords = [ "security" ]
+keywords = [ "security", "update", "repository" ]
 categories = [ "cryptography" ]
 
 [badges]
