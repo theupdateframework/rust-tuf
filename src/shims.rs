@@ -233,19 +233,25 @@ impl TargetsMetadata {
 pub struct PublicKey {
     #[serde(rename = "type")]
     typ: crypto::KeyType,
+    scheme: crypto::SignatureScheme,
     public_key: String,
 }
 
 impl PublicKey {
-    pub fn new(typ: crypto::KeyType, public_key_bytes: &[u8]) -> Self {
+    pub fn new(typ: crypto::KeyType, scheme: crypto::SignatureScheme, public_key_bytes: &[u8]) -> Self {
         PublicKey {
             typ: typ,
+            scheme: scheme,
             public_key: BASE64URL.encode(public_key_bytes),
         }
     }
 
     pub fn public_key(&self) -> &String {
         &self.public_key
+    }
+
+    pub fn scheme(&self) -> &crypto::SignatureScheme {
+        &self.scheme
     }
 
     pub fn typ(&self) -> &crypto::KeyType {

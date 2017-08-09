@@ -375,11 +375,18 @@ impl PrivateKey {
     ///     -pkeyopt rsa_keygen_pubexp:65537 | \
     ///     openssl pkcs8 -topk8 -nocrypt -outform der > rsa-4096-private-key.pk8
     /// ```
-    pub fn from_pkcs8(der_key: &[u8]) -> Result<Self> {
+    pub fn from_pkcs8(der_key: &[u8], scheme: SignatureScheme) -> Result<Self> {
         match Self::ed25519_from_pkcs8(der_key) {
-            Ok(k) => Ok(k),
+            Ok(k) => {
+                match scheme {
+                    SignatureScheme::Ed25519 => (),
+                    s => return Err(Error::IllegalArgument(format!(
+                        "Cannot use signature scheme {:?} with Ed25519 keys", s)))
+                };
+                Ok(k)
+            },
             Err(e1) => {
-                match Self::rsa_from_pkcs8(der_key) {
+                match Self::rsa_from_pkcs8(der_key, scheme) {
                     Ok(k) => Ok(k),
                     Err(e2) => Err(Error::Opaque(format!(
                         "Key was neither Ed25519 nor RSA: {:?} {:?}",
@@ -400,6 +407,7 @@ impl PrivateKey {
 
         let public = PublicKey {
             typ: KeyType::Ed25519,
+            scheme: SignatureScheme::Ed25519,
             key_id: calculate_key_id(&write_spki(key.public_key_bytes(), &KeyType::Ed25519)?),
             value: PublicKeyValue(key.public_key_bytes().to_vec()),
         };
@@ -411,7 +419,13 @@ impl PrivateKey {
         })
     }
 
-    fn rsa_from_pkcs8(der_key: &[u8]) -> Result<Self> {
+    fn rsa_from_pkcs8(der_key: &[u8], scheme: SignatureScheme) -> Result<Self> {
+        match &scheme {
+            &SignatureScheme::Ed25519 => return Err(Error::IllegalArgument(
+                    "RSA keys do not support the Ed25519 signing scheme".into())),
+            _ => (),
+        }
+
         let key = RSAKeyPair::from_pkcs8(Input::from(der_key)).map_err(|_| {
             Error::Encoding("Could not parse key as PKCS#8v2".into())
         })?;
@@ -427,6 +441,7 @@ impl PrivateKey {
 
         let public = PublicKey {
             typ: KeyType::Rsa,
+            scheme: scheme,
             key_id: calculate_key_id(&write_spki(&pub_key, &KeyType::Rsa)?),
             value: PublicKeyValue(pub_key),
         };
@@ -438,19 +453,9 @@ impl PrivateKey {
         })
     }
 
-    /// Return whether or not this key supports the given signature scheme.
-    pub fn supports(&self, scheme: &SignatureScheme) -> bool {
-        match (&self.private, scheme) {
-            (&PrivateKeyType::Rsa(_), &SignatureScheme::RsaSsaPssSha256) => true,
-            (&PrivateKeyType::Rsa(_), &SignatureScheme::RsaSsaPssSha512) => true,
-            (&PrivateKeyType::Ed25519(_), &SignatureScheme::Ed25519) => true,
-            _ => false,
-        }
-    }
-
     /// Sign a message with the given scheme.
-    pub fn sign(&self, msg: &[u8], scheme: SignatureScheme) -> Result<Signature> {
-        let value = match (&self.private, &scheme) {
+    pub fn sign(&self, msg: &[u8]) -> Result<Signature> {
+        let value = match (&self.private, &self.public.scheme) {
             (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha256) => {
                 let mut signing_state = RSASigningState::new(rsa.clone()).map_err(|_| {
                     Error::Opaque("Could not initialize RSA signing state.".into())
@@ -485,7 +490,6 @@ impl PrivateKey {
 
         Ok(Signature {
             key_id: self.key_id().clone(),
-            scheme: scheme,
             value: value,
         })
     }
@@ -507,6 +511,7 @@ impl PrivateKey {
 pub struct PublicKey {
     typ: KeyType,
     key_id: KeyId,
+    scheme: SignatureScheme,
     value: PublicKeyValue,
 }
 
@@ -514,15 +519,18 @@ impl PublicKey {
     /// Parse DER bytes as an SPKI key.
     ///
     /// See the documentation on `KeyValue` for more information on SPKI.
-    pub fn from_spki(der_bytes: &[u8]) -> Result<Self> {
+    pub fn from_spki(der_bytes: &[u8], scheme: SignatureScheme) -> Result<Self> {
         let input = Input::from(der_bytes);
+
         let (typ, value) = input.read_all(derp::Error::Read, |input| {
             derp::nested(input, Tag::Sequence, |input| {
                 let typ = derp::nested(input, Tag::Sequence, |input| {
                     let typ = derp::expect_tag_and_get_value(input, Tag::Oid)?;
+
                     let typ = KeyType::from_oid(typ.as_slice_less_safe()).map_err(|_| {
                         derp::Error::WrongValue
                     })?;
+
                     // for RSA / ed25519 this is null, so don't both parsing it
                     let _ = derp::read_null(input)?;
                     Ok(typ)
@@ -531,10 +539,12 @@ impl PublicKey {
                 Ok((typ, value.as_slice_less_safe().to_vec()))
             })
         })?;
+
         let key_id = calculate_key_id(der_bytes);
         Ok(PublicKey {
             typ: typ,
             key_id: key_id,
+            scheme: scheme,
             value: PublicKeyValue(value),
         })
     }
@@ -550,6 +560,11 @@ impl PublicKey {
     pub fn typ(&self) -> &KeyType {
         &self.typ
     }
+    
+    /// An immutable referece to the key's authorized signing scheme.
+    pub fn scheme(&self) -> &SignatureScheme {
+        &self.scheme
+    }
 
     /// An immutable reference to the key's ID.
     pub fn key_id(&self) -> &KeyId {
@@ -558,7 +573,7 @@ impl PublicKey {
 
     /// Use this key to verify a message with a signature.
     pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<()> {
-        let alg: &ring::signature::VerificationAlgorithm = match sig.scheme() {
+        let alg: &ring::signature::VerificationAlgorithm = match &self.scheme {
             &SignatureScheme::Ed25519 => &ED25519,
             &SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
             &SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
@@ -609,7 +624,7 @@ impl Serialize for PublicKey {
         let bytes = self.as_spki().map_err(|e| {
             SerializeError::custom(format!("Couldn't write key as SPKI: {:?}", e))
         })?;
-        shims::PublicKey::new(self.typ.clone(), &bytes).serialize(ser)
+        shims::PublicKey::new(self.typ.clone(), self.scheme.clone(), &bytes).serialize(ser)
     }
 }
 
@@ -620,7 +635,7 @@ impl<'de> Deserialize<'de> for PublicKey {
             .decode(intermediate.public_key().as_bytes())
             .map_err(|e| DeserializeError::custom(format!("{:?}", e)))?;
 
-        let key = PublicKey::from_spki(&bytes).map_err(|e| {
+        let key = PublicKey::from_spki(&bytes, intermediate.scheme().clone()).map_err(|e| {
             DeserializeError::custom(format!("Couldn't parse key as SPKI: {:?}", e))
         })?;
 
@@ -651,7 +666,6 @@ impl Debug for PublicKeyValue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Signature {
     key_id: KeyId,
-    scheme: SignatureScheme,
     value: SignatureValue,
 }
 
@@ -659,11 +673,6 @@ impl Signature {
     /// An immutable reference to the `KeyId` of the key that produced the signature.
     pub fn key_id(&self) -> &KeyId {
         &self.key_id
-    }
-
-    /// An immutable reference to the `SignatureScheme` used to create this signature.
-    pub fn scheme(&self) -> &SignatureScheme {
-        &self.scheme
     }
 
     /// An immutable reference to the `SignatureValue`.
@@ -806,45 +815,44 @@ mod test {
     const RSA_4096_PKCS1: &'static [u8] = include_bytes!("../tests/rsa/rsa-4096.pkcs1.der");
 
     const ED25519_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
+    const ED25519_SPKI: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.spki.der");
 
     #[test]
     fn parse_rsa_2048_spki() {
-        let key = PublicKey::from_spki(RSA_2048_SPKI).unwrap();
+        let key = PublicKey::from_spki(RSA_2048_SPKI, SignatureScheme::RsaSsaPssSha256).unwrap();
         assert_eq!(key.typ, KeyType::Rsa);
     }
 
     #[test]
     fn parse_rsa_4096_spki() {
-        let key = PublicKey::from_spki(RSA_4096_SPKI).unwrap();
+        let key = PublicKey::from_spki(RSA_4096_SPKI, SignatureScheme::RsaSsaPssSha256).unwrap();
         assert_eq!(key.typ, KeyType::Rsa);
     }
 
     #[test]
     fn rsa_2048_read_pkcs8_and_sign() {
-        let key = PrivateKey::from_pkcs8(RSA_2048_PK8).unwrap();
         let msg = b"test";
 
-        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha256).unwrap();
+        let key = PrivateKey::from_pkcs8(RSA_2048_PK8, SignatureScheme::RsaSsaPssSha256).unwrap();
+        let sig = key.sign(msg).unwrap();
         key.public.verify(msg, &sig).unwrap();
 
-        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha512).unwrap();
+        let key = PrivateKey::from_pkcs8(RSA_2048_PK8, SignatureScheme::RsaSsaPssSha512).unwrap();
+        let sig = key.sign(msg).unwrap();
         key.public.verify(msg, &sig).unwrap();
-
-        assert!(key.sign(msg, SignatureScheme::Ed25519).is_err());
     }
 
     #[test]
     fn rsa_4096_read_pkcs8_and_sign() {
-        let key = PrivateKey::from_pkcs8(RSA_4096_PK8).unwrap();
         let msg = b"test";
 
-        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha256).unwrap();
+        let key = PrivateKey::from_pkcs8(RSA_4096_PK8, SignatureScheme::RsaSsaPssSha256).unwrap();
+        let sig = key.sign(msg).unwrap();
         key.public.verify(msg, &sig).unwrap();
 
-        let sig = key.sign(msg, SignatureScheme::RsaSsaPssSha512).unwrap();
+        let key = PrivateKey::from_pkcs8(RSA_4096_PK8, SignatureScheme::RsaSsaPssSha512).unwrap();
+        let sig = key.sign(msg).unwrap();
         key.public.verify(msg, &sig).unwrap();
-
-        assert!(key.sign(msg, SignatureScheme::Ed25519).is_err());
     }
 
     #[test]
@@ -861,16 +869,13 @@ mod test {
 
     #[test]
     fn ed25519_read_pkcs8_and_sign() {
-        let key = PrivateKey::from_pkcs8(ED25519_PK8).unwrap();
+        let key = PrivateKey::from_pkcs8(ED25519_PK8, SignatureScheme::Ed25519).unwrap();
         let msg = b"test";
 
-        let sig = key.sign(msg, SignatureScheme::Ed25519).unwrap();
+        let sig = key.sign(msg).unwrap();
 
-        let public = PublicKey::from_spki(&key.public.as_spki().unwrap()).unwrap();
+        let public = PublicKey::from_spki(&key.public.as_spki().unwrap(), SignatureScheme::Ed25519).unwrap();
         public.verify(msg, &sig).unwrap();
-
-        assert!(key.sign(msg, SignatureScheme::RsaSsaPssSha256).is_err());
-        assert!(key.sign(msg, SignatureScheme::RsaSsaPssSha512).is_err());
     }
 
     #[test]
@@ -896,10 +901,26 @@ mod test {
     #[test]
     fn serde_rsa_public_key() {
         let der = RSA_2048_SPKI;
-        let pub_key = PublicKey::from_spki(der).unwrap();
+        let pub_key = PublicKey::from_spki(der, SignatureScheme::RsaSsaPssSha256).unwrap();
         let encoded = json::to_value(&pub_key).unwrap();
         let jsn = json!({
             "type": "rsa",
+            "scheme": "rsassa-pss-sha256",
+            "public_key": BASE64URL.encode(der),
+        });
+        assert_eq!(encoded, jsn);
+        let decoded: PublicKey = json::from_value(encoded).unwrap();
+        assert_eq!(decoded, pub_key);
+    }
+
+    #[test]
+    fn serde_ed25519_public_key() {
+        let der = ED25519_SPKI;
+        let pub_key = PublicKey::from_spki(der, SignatureScheme::Ed25519).unwrap();
+        let encoded = json::to_value(&pub_key).unwrap();
+        let jsn = json!({
+            "type": "ed25519",
+            "scheme": "ed25519",
             "public_key": BASE64URL.encode(der),
         });
         assert_eq!(encoded, jsn);
@@ -909,13 +930,12 @@ mod test {
 
     #[test]
     fn serde_signature() {
-        let key = PrivateKey::from_pkcs8(ED25519_PK8).unwrap();
+        let key = PrivateKey::from_pkcs8(ED25519_PK8, SignatureScheme::Ed25519).unwrap();
         let msg = b"test";
-        let sig = key.sign(msg, SignatureScheme::Ed25519).unwrap();
+        let sig = key.sign(msg).unwrap();
         let encoded = json::to_value(&sig).unwrap();
         let jsn = json!({
             "key_id": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-            "scheme": "ed25519",
             "value": "_k0Tsqc8Azod5_UQeyBfx7oOFWbLlbkjScrmqkU4lWATv-D3v5d8sHK7Z\
                 eh4K18zoFc_54gWKZoBfKW6VZ45DA==",
         });

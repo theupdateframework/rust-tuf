@@ -42,10 +42,10 @@ fn init_client(root_key_ids: &[KeyId], remote: EphemeralRepository<Json>) -> Res
 
 fn init_server(remote: &mut EphemeralRepository<Json>) -> Result<Vec<KeyId>, Error> {
     // in real life, you wouldn't want these keys on the same machine ever
-    let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8)?;
-    let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8)?;
-    let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8)?;
-    let timestamp_key = PrivateKey::from_pkcs8(ED25519_4_PK8)?;
+    let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)?;
+    let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)?;
+    let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519)?;
+    let timestamp_key = PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519)?;
 
     //// build the root ////
 
@@ -73,7 +73,7 @@ fn init_server(remote: &mut EphemeralRepository<Json>) -> Result<Vec<KeyId>, Err
     )?;
 
     let signed =
-        SignedMetadata::<Json, RootMetadata>::new(&root, &root_key, SignatureScheme::Ed25519)?;
+        SignedMetadata::<Json, RootMetadata>::new(&root, &root_key)?;
 
     remote.store_metadata(
         &Role::Root,
@@ -101,7 +101,6 @@ fn init_server(remote: &mut EphemeralRepository<Json>) -> Result<Vec<KeyId>, Err
     let signed = SignedMetadata::<Json, TargetsMetadata>::new(
         &targets,
         &targets_key,
-        SignatureScheme::Ed25519,
     )?;
 
     remote.store_metadata(
@@ -130,7 +129,6 @@ fn init_server(remote: &mut EphemeralRepository<Json>) -> Result<Vec<KeyId>, Err
     let signed = SignedMetadata::<Json, SnapshotMetadata>::new(
         &snapshot,
         &snapshot_key,
-        SignatureScheme::Ed25519,
     )?;
 
     remote.store_metadata(
@@ -155,7 +153,6 @@ fn init_server(remote: &mut EphemeralRepository<Json>) -> Result<Vec<KeyId>, Err
     let signed = SignedMetadata::<Json, TimestampMetadata>::new(
         &timestamp,
         &timestamp_key,
-        SignatureScheme::Ed25519,
     )?;
 
     remote.store_metadata(

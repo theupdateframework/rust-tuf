@@ -702,7 +702,7 @@ mod test {
                 include_bytes!("../tests/ed25519/ed25519-5.pk8.der"),
                 include_bytes!("../tests/ed25519/ed25519-6.pk8.der"),
             ];
-            keys.iter().map(|b| PrivateKey::from_pkcs8(b).unwrap()).collect()
+            keys.iter().map(|b| PrivateKey::from_pkcs8(b, SignatureScheme::Ed25519).unwrap()).collect()
         };
     }
 
@@ -720,7 +720,7 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
         ).unwrap();
         let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0], SignatureScheme::Ed25519).unwrap();
+            SignedMetadata::new(&root, &KEYS[0]).unwrap();
 
         repo.store_metadata(
             &Role::Root,
@@ -740,9 +740,9 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
         ).unwrap();
         let mut root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[1], SignatureScheme::Ed25519).unwrap();
+            SignedMetadata::new(&root, &KEYS[1]).unwrap();
 
-        root.add_signature(&KEYS[0], SignatureScheme::Ed25519)
+        root.add_signature(&KEYS[0])
             .unwrap();
 
         repo.store_metadata(
@@ -763,9 +763,9 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
         ).unwrap();
         let mut root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[2], SignatureScheme::Ed25519).unwrap();
+            SignedMetadata::new(&root, &KEYS[2]).unwrap();
 
-        root.add_signature(&KEYS[1], SignatureScheme::Ed25519)
+        root.add_signature(&KEYS[1])
             .unwrap();
 
         repo.store_metadata(
