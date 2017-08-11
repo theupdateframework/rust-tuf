@@ -68,6 +68,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 /// ```bash
 /// {
 ///   "type": KEY_TYPE,
+///   "scheme": SCHEME,
 ///   "value": PUBLIC
 /// }
 /// ```
@@ -76,7 +77,11 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///
 /// `KEY_TYPE` is a string (either `rsa` or `ed25519`).
 ///
+/// `SCHEME` is a string (either `ed25519`, `rsassa-pss-sha256`, or `rsassa-pss-sha512`
+///
 /// `HASH_VALUE` is a base64url encoded hash value.
+///
+/// `SIG_VALUE` is a base64url encoded signature value.
 ///
 /// `METADATA_DESCRIPTION` is the following:
 ///
@@ -97,6 +102,15 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 /// {
 ///   "signatures": [SIGNATURE],
 ///   "signed": SIGNED
+/// }
+/// ```
+///
+/// `SIGNATURE` is:
+///
+/// ```bash
+/// {
+///   "key_id": KEY_ID,
+///   "signature": SIG_VALUE
 /// }
 /// ```
 ///
