@@ -242,27 +242,27 @@ where
     /// bytes of the provided metadata with the provided scheme.
     ///
     /// ```
-    /// extern crate chrono;
-    /// extern crate tuf;
+    /// # extern crate chrono;
+    /// # extern crate tuf;
+    /// #
+    /// # use chrono::prelude::*;
+    /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+    /// # use tuf::interchange::Json;
+    /// # use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    /// #
+    /// # fn main() {
+    /// # let key: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
+    /// let key = PrivateKey::from_pkcs8(&key, SignatureScheme::Ed25519).unwrap();
     ///
-    /// use chrono::prelude::*;
-    /// use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
-    /// use tuf::interchange::Json;
-    /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    /// let timestamp = TimestampMetadata::new(
+    ///     1,
+    ///     Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+    ///     MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
+    ///         &[HashAlgorithm::Sha256]).unwrap()
+    /// ).unwrap();
     ///
-    /// fn main() {
-    ///     let key: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
-    ///     let key = PrivateKey::from_pkcs8(&key, SignatureScheme::Ed25519).unwrap();
-    ///
-    ///     let timestamp = TimestampMetadata::new(
-    ///         1,
-    ///         Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-    ///         MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
-    ///             &[HashAlgorithm::Sha256]).unwrap()
-    ///     ).unwrap();
-    ///
-    ///     SignedMetadata::<Json, TimestampMetadata>::new(&timestamp, &key).unwrap();
-    /// }
+    /// SignedMetadata::<Json, TimestampMetadata>::new(&timestamp, &key).unwrap();
+    /// # }
     /// ```
     pub fn new(
         metadata: &M,
@@ -288,38 +288,38 @@ where
     /// to perform the "append" operations.
     ///
     /// ```
-    /// extern crate chrono;
-    /// extern crate tuf;
+    /// # extern crate chrono;
+    /// # extern crate tuf;
+    /// #
+    /// # use chrono::prelude::*;
+    /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+    /// # use tuf::interchange::Json;
+    /// # use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    /// #
+    /// # fn main() {
+    /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
+    /// let key_1 = PrivateKey::from_pkcs8(&key_1, SignatureScheme::Ed25519).unwrap();
     ///
-    /// use chrono::prelude::*;
-    /// use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
-    /// use tuf::interchange::Json;
-    /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    /// // Note: This is for demonstration purposes only.
+    /// // You should never have multiple private keys on the same device.
+    /// let key_2: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
+    /// let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
     ///
-    /// fn main() {
-    ///     let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
-    ///     let key_1 = PrivateKey::from_pkcs8(&key_1, SignatureScheme::Ed25519).unwrap();
+    /// let timestamp = TimestampMetadata::new(
+    ///     1,
+    ///     Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+    ///     MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
+    ///         &[HashAlgorithm::Sha256]).unwrap()
+    /// ).unwrap();
+    /// let mut timestamp = SignedMetadata::<Json, TimestampMetadata>::new(
+    ///     &timestamp, &key_1).unwrap();
     ///
-    ///     // Note: This is for demonstration purposes only.
-    ///     // You should never have multiple private keys on the same device.
-    ///     let key_2: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
-    ///     let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
+    /// timestamp.add_signature(&key_2).unwrap();
+    /// assert_eq!(timestamp.signatures().len(), 2);
     ///
-    ///     let timestamp = TimestampMetadata::new(
-    ///         1,
-    ///         Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-    ///         MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
-    ///             &[HashAlgorithm::Sha256]).unwrap()
-    ///     ).unwrap();
-    ///     let mut timestamp = SignedMetadata::<Json, TimestampMetadata>::new(
-    ///         &timestamp, &key_1).unwrap();
-    ///
-    ///     timestamp.add_signature(&key_2).unwrap();
-    ///     assert_eq!(timestamp.signatures().len(), 2);
-    ///
-    ///     timestamp.add_signature(&key_2).unwrap();
-    ///     assert_eq!(timestamp.signatures().len(), 2);
-    /// }
+    /// timestamp.add_signature(&key_2).unwrap();
+    /// assert_eq!(timestamp.signatures().len(), 2);
+    /// # }
     /// ```
     pub fn add_signature(
         &mut self,
@@ -379,55 +379,55 @@ where
     /// Verify this metadata.
     ///
     /// ```
-    /// extern crate chrono;
-    /// #[macro_use]
-    /// extern crate maplit;
-    /// extern crate tuf;
+    /// # extern crate chrono;
+    /// # #[macro_use]
+    /// # extern crate maplit;
+    /// # extern crate tuf;
     ///
-    /// use chrono::prelude::*;
-    /// use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
-    /// use tuf::interchange::Json;
-    /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    /// # use chrono::prelude::*;
+    /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+    /// # use tuf::interchange::Json;
+    /// # use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
     ///
-    /// fn main() {
-    ///     let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
-    ///     let key_1 = PrivateKey::from_pkcs8(&key_1, SignatureScheme::Ed25519).unwrap();
+    /// # fn main() {
+    /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
+    /// let key_1 = PrivateKey::from_pkcs8(&key_1, SignatureScheme::Ed25519).unwrap();
     ///
-    ///     let key_2: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
-    ///     let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
+    /// let key_2: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
+    /// let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
     ///
-    ///     let timestamp = TimestampMetadata::new(
-    ///         1,
-    ///         Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-    ///         MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
-    ///             &[HashAlgorithm::Sha256]).unwrap()
-    ///     ).unwrap();
-    ///     let timestamp = SignedMetadata::<Json, TimestampMetadata>::new(
-    ///         &timestamp, &key_1).unwrap();
+    /// let timestamp = TimestampMetadata::new(
+    ///     1,
+    ///     Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
+    ///     MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
+    ///         &[HashAlgorithm::Sha256]).unwrap()
+    /// ).unwrap();
+    /// let timestamp = SignedMetadata::<Json, TimestampMetadata>::new(
+    ///     &timestamp, &key_1).unwrap();
     ///
-    ///     assert!(timestamp.verify(
-    ///         1,
-    ///         vec![key_1.public()],
-    ///     ).is_ok());
+    /// assert!(timestamp.verify(
+    ///     1,
+    ///     vec![key_1.public()],
+    /// ).is_ok());
     ///
-    ///     // fail with increased threshold
-    ///     assert!(timestamp.verify(
-    ///         2,
-    ///         vec![key_1.public()],
-    ///     ).is_err());
+    /// // fail with increased threshold
+    /// assert!(timestamp.verify(
+    ///     2,
+    ///     vec![key_1.public()],
+    /// ).is_err());
     ///
-    ///     // fail when the keys aren't authorized
-    ///     assert!(timestamp.verify(
-    ///         1,
-    ///         vec![key_2.public()],
-    ///     ).is_err());
+    /// // fail when the keys aren't authorized
+    /// assert!(timestamp.verify(
+    ///     1,
+    ///     vec![key_2.public()],
+    /// ).is_err());
     ///
-    ///     // fail when the keys don't exist
-    ///     assert!(timestamp.verify(
-    ///         1,
-    ///         &[],
-    ///     ).is_err());
-    /// }
+    /// // fail when the keys don't exist
+    /// assert!(timestamp.verify(
+    ///     1,
+    ///     &[],
+    /// ).is_err());
+    /// # }
     pub fn verify<'a, I>(&self, threshold: u32, authorized_keys: I) -> Result<()>
     where
         I: IntoIterator<Item = &'a PublicKey>,
@@ -696,8 +696,7 @@ impl MetadataPath {
     /// Create a new `MetadataPath` from a `String`.
     ///
     /// ```
-    /// use tuf::metadata::MetadataPath;
-    ///
+    /// # use tuf::metadata::MetadataPath;
     /// assert!(MetadataPath::new("foo".into()).is_ok());
     /// assert!(MetadataPath::new("/foo".into()).is_err());
     /// assert!(MetadataPath::new("../foo".into()).is_err());
@@ -715,8 +714,7 @@ impl MetadataPath {
     /// Create a metadata path from the given role.
     ///
     /// ```
-    /// use tuf::metadata::{Role, MetadataPath};
-    ///
+    /// # use tuf::metadata::{Role, MetadataPath};
     /// assert_eq!(MetadataPath::from_role(&Role::Root),
     ///            MetadataPath::new("root".into()).unwrap());
     /// assert_eq!(MetadataPath::from_role(&Role::Snapshot),
@@ -734,10 +732,10 @@ impl MetadataPath {
     /// Windows paths.
     ///
     /// ```
-    /// use tuf::crypto::HashValue;
-    /// use tuf::interchange::Json;
-    /// use tuf::metadata::{MetadataPath, MetadataVersion};
-    ///
+    /// # use tuf::crypto::HashValue;
+    /// # use tuf::interchange::Json;
+    /// # use tuf::metadata::{MetadataPath, MetadataVersion};
+    /// #
     /// let path = MetadataPath::new("foo/bar".into()).unwrap();
     /// assert_eq!(path.components::<Json>(&MetadataVersion::None),
     ///            ["foo".to_string(), "bar.json".to_string()]);
@@ -1009,8 +1007,7 @@ impl TargetPath {
     /// Create a new `TargetPath` from a `String`.
     ///
     /// ```
-    /// use tuf::metadata::TargetPath;
-    ///
+    /// # use tuf::metadata::TargetPath;
     /// assert!(TargetPath::new("foo".into()).is_ok());
     /// assert!(TargetPath::new("/foo".into()).is_err());
     /// assert!(TargetPath::new("../foo".into()).is_err());
@@ -1029,8 +1026,7 @@ impl TargetPath {
     /// Windows paths.
     ///
     /// ```
-    /// use tuf::metadata::TargetPath;
-    ///
+    /// # use tuf::metadata::TargetPath;
     /// let path = TargetPath::new("foo/bar".into()).unwrap();
     /// assert_eq!(path.components(), ["foo".to_string(), "bar".to_string()]);
     /// ```
@@ -1041,8 +1037,7 @@ impl TargetPath {
     /// Return whether this path is the child of another path.
     ///
     /// ```
-    /// use tuf::metadata::TargetPath;
-    ///
+    /// # use tuf::metadata::TargetPath;
     /// let path1 = TargetPath::new("foo".into()).unwrap();
     /// let path2 = TargetPath::new("foo/bar".into()).unwrap();
     /// assert!(!path2.is_child(&path1));

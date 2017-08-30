@@ -222,8 +222,7 @@ impl DataInterchange for Json {
     type RawData = json::Value;
 
     /// ```
-    /// use tuf::interchange::{DataInterchange, Json};
-    ///
+    /// # use tuf::interchange::{DataInterchange, Json};
     /// assert_eq!(Json::extension(), "json");
     /// ```
     fn extension() -> &'static str {
@@ -231,9 +230,8 @@ impl DataInterchange for Json {
     }
 
     /// ```
-    /// use tuf::interchange::{DataInterchange, Json};
-    /// use std::collections::HashMap;
-    ///
+    /// # use tuf::interchange::{DataInterchange, Json};
+    /// # use std::collections::HashMap;
     /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
     /// let raw = Json::from_reader(jsn).unwrap();
     /// let out = Json::canonicalize(&raw).unwrap();
@@ -244,27 +242,26 @@ impl DataInterchange for Json {
     }
 
     /// ```
-    /// #[macro_use]
-    /// extern crate serde_derive;
-    /// #[macro_use]
-    /// extern crate serde_json;
-    /// extern crate tuf;
-    ///
-    /// use tuf::interchange::{DataInterchange, Json};
-    /// use std::collections::HashMap;
-    ///
+    /// # #[macro_use]
+    /// # extern crate serde_derive;
+    /// # #[macro_use]
+    /// # extern crate serde_json;
+    /// # extern crate tuf;
+    /// # use tuf::interchange::{DataInterchange, Json};
+    /// # use std::collections::HashMap;
+    /// #
     /// #[derive(Deserialize, Debug, PartialEq)]
     /// struct Thing {
     ///    foo: String,
     ///    bar: String,
     /// }
     ///
-    /// fn main() {
-    ///     let jsn = json!({"foo": "wat", "bar": "lol"});
-    ///     let thing = Thing { foo: "wat".into(), bar: "lol".into() };
-    ///     let de: Thing = Json::deserialize(&jsn).unwrap();
-    ///     assert_eq!(de, thing);
-    /// }
+    /// # fn main() {
+    /// let jsn = json!({"foo": "wat", "bar": "lol"});
+    /// let thing = Thing { foo: "wat".into(), bar: "lol".into() };
+    /// let de: Thing = Json::deserialize(&jsn).unwrap();
+    /// assert_eq!(de, thing);
+    /// # }
     /// ```
     fn deserialize<T>(raw_data: &Self::RawData) -> Result<T>
     where
@@ -274,27 +271,26 @@ impl DataInterchange for Json {
     }
 
     /// ```
-    /// #[macro_use]
-    /// extern crate serde_derive;
-    /// #[macro_use]
-    /// extern crate serde_json;
-    /// extern crate tuf;
-    ///
-    /// use tuf::interchange::{DataInterchange, Json};
-    /// use std::collections::HashMap;
-    ///
+    /// # #[macro_use]
+    /// # extern crate serde_derive;
+    /// # #[macro_use]
+    /// # extern crate serde_json;
+    /// # extern crate tuf;
+    /// # use tuf::interchange::{DataInterchange, Json};
+    /// # use std::collections::HashMap;
+    /// #
     /// #[derive(Serialize)]
     /// struct Thing {
     ///    foo: String,
     ///    bar: String,
     /// }
     ///
-    /// fn main() {
-    ///     let jsn = json!({"foo": "wat", "bar": "lol"});
-    ///     let thing = Thing { foo: "wat".into(), bar: "lol".into() };
-    ///     let se: serde_json::Value = Json::serialize(&thing).unwrap();
-    ///     assert_eq!(se, jsn);
-    /// }
+    /// # fn main() {
+    /// let jsn = json!({"foo": "wat", "bar": "lol"});
+    /// let thing = Thing { foo: "wat".into(), bar: "lol".into() };
+    /// let se: serde_json::Value = Json::serialize(&thing).unwrap();
+    /// assert_eq!(se, jsn);
+    /// # }
     /// ```
     fn serialize<T>(data: &T) -> Result<Self::RawData>
     where
@@ -304,8 +300,7 @@ impl DataInterchange for Json {
     }
 
     /// ```
-    /// use tuf::interchange::{DataInterchange, Json};
-    ///
+    /// # use tuf::interchange::{DataInterchange, Json};
     /// let arr = vec![1, 2, 3];
     /// let mut buf = Vec::new();
     /// Json::to_writer(&mut buf, &arr).unwrap();
@@ -322,9 +317,8 @@ impl DataInterchange for Json {
     }
 
     /// ```
-    /// use tuf::interchange::{DataInterchange, Json};
-    /// use std::collections::HashMap;
-    ///
+    /// # use tuf::interchange::{DataInterchange, Json};
+    /// # use std::collections::HashMap;
     /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
     /// let _: HashMap<String, String> = Json::from_reader(jsn).unwrap();
     /// ```

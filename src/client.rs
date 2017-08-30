@@ -572,8 +572,7 @@ where
 /// `ConfigBuilder` and set your own values.
 ///
 /// ```
-/// use tuf::client::Config;
-///
+/// # use tuf::client::Config;
 /// let config = Config::default();
 /// assert_eq!(config.max_root_size(), &Some(1024 * 1024));
 /// assert_eq!(config.max_timestamp_size(), &Some(32 * 1024));

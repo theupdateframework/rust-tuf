@@ -76,14 +76,14 @@
 //! The top-level targets role delegates to three other roles and are listed in the following order:
 //!
 //! 1. `claimed-projects`
-//!   - `terminating: true`
+//!   - Terminating
 //!   - Delegates to project-specific roles that have registered keys with TUF
 //! 2. `rarely-updated-projects`
-//!   - `terminating: true`
+//!   - Terminating
 //!   - Signs all packages for all projects that have been "abandoned" or left unupdated for a long
 //!   time AND have not yet registered keys with TUF
 //! 3. `new-projects`
-//!   - `terminating: false`
+//!   - Non-terminating
 //!   - Signs all packages for all new projects as well as projects that were relegated to
 //!   `rarely-updated-projects`
 //!
