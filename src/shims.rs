@@ -238,7 +238,11 @@ pub struct PublicKey {
 }
 
 impl PublicKey {
-    pub fn new(typ: crypto::KeyType, scheme: crypto::SignatureScheme, public_key_bytes: &[u8]) -> Self {
+    pub fn new(
+        typ: crypto::KeyType,
+        scheme: crypto::SignatureScheme,
+        public_key_bytes: &[u8],
+    ) -> Self {
         PublicKey {
             typ: typ,
             scheme: scheme,

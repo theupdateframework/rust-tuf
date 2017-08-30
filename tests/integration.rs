@@ -52,9 +52,7 @@ fn simple_delegation() {
         timestamp_def,
     ).unwrap();
 
-    let signed =
-        SignedMetadata::<Json, RootMetadata>::new(&root, &root_key)
-            .unwrap();
+    let signed = SignedMetadata::<Json, RootMetadata>::new(&root, &root_key).unwrap();
 
     let mut tuf = Tuf::<Json>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
 
@@ -62,10 +60,8 @@ fn simple_delegation() {
     let snap = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
     let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap).unwrap();
 
-    let signed = SignedMetadata::<Json, TimestampMetadata>::new(
-        &timestamp,
-        &timestamp_key,
-    ).unwrap();
+    let signed = SignedMetadata::<Json, TimestampMetadata>::new(&timestamp, &timestamp_key)
+        .unwrap();
 
     tuf.update_timestamp(signed).unwrap();
 
@@ -80,10 +76,7 @@ fn simple_delegation() {
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
         .unwrap();
 
-    let signed = SignedMetadata::<Json, SnapshotMetadata>::new(
-        &snapshot,
-        &snapshot_key,
-    ).unwrap();
+    let signed = SignedMetadata::<Json, SnapshotMetadata>::new(&snapshot, &snapshot_key).unwrap();
 
     tuf.update_snapshot(signed).unwrap();
 
@@ -113,10 +106,7 @@ fn simple_delegation() {
         Some(delegations),
     ).unwrap();
 
-    let signed = SignedMetadata::<Json, TargetsMetadata>::new(
-        &targets,
-        &targets_key,
-    ).unwrap();
+    let signed = SignedMetadata::<Json, TargetsMetadata>::new(&targets, &targets_key).unwrap();
 
     tuf.update_targets(signed).unwrap();
 
@@ -130,10 +120,8 @@ fn simple_delegation() {
     let delegation =
         TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None).unwrap();
 
-    let signed = SignedMetadata::<Json, TargetsMetadata>::new(
-        &delegation,
-        &delegation_key,
-    ).unwrap();
+    let signed = SignedMetadata::<Json, TargetsMetadata>::new(&delegation, &delegation_key)
+        .unwrap();
 
     tuf.update_delegation(&MetadataPath::new("delegation".into()).unwrap(), signed)
         .unwrap();
@@ -177,9 +165,7 @@ fn nested_delegation() {
         timestamp_def,
     ).unwrap();
 
-    let signed =
-        SignedMetadata::<Json, RootMetadata>::new(&root, &root_key)
-            .unwrap();
+    let signed = SignedMetadata::<Json, RootMetadata>::new(&root, &root_key).unwrap();
 
     let mut tuf = Tuf::<Json>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
 
@@ -187,10 +173,8 @@ fn nested_delegation() {
     let snap = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
     let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap).unwrap();
 
-    let signed = SignedMetadata::<Json, TimestampMetadata>::new(
-        &timestamp,
-        &timestamp_key,
-    ).unwrap();
+    let signed = SignedMetadata::<Json, TimestampMetadata>::new(&timestamp, &timestamp_key)
+        .unwrap();
 
     tuf.update_timestamp(signed).unwrap();
 
@@ -207,10 +191,7 @@ fn nested_delegation() {
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)
         .unwrap();
 
-    let signed = SignedMetadata::<Json, SnapshotMetadata>::new(
-        &snapshot,
-        &snapshot_key,
-    ).unwrap();
+    let signed = SignedMetadata::<Json, SnapshotMetadata>::new(&snapshot, &snapshot_key).unwrap();
 
     tuf.update_snapshot(signed).unwrap();
 
@@ -240,10 +221,7 @@ fn nested_delegation() {
         Some(delegations),
     ).unwrap();
 
-    let signed = SignedMetadata::<Json, TargetsMetadata>::new(
-        &targets,
-        &targets_key,
-    ).unwrap();
+    let signed = SignedMetadata::<Json, TargetsMetadata>::new(&targets, &targets_key).unwrap();
 
     tuf.update_targets(signed).unwrap();
 
@@ -273,10 +251,8 @@ fn nested_delegation() {
         Some(delegations),
     ).unwrap();
 
-    let signed = SignedMetadata::<Json, TargetsMetadata>::new(
-        &delegation,
-        &delegation_a_key,
-    ).unwrap();
+    let signed = SignedMetadata::<Json, TargetsMetadata>::new(&delegation, &delegation_a_key)
+        .unwrap();
 
     tuf.update_delegation(&MetadataPath::new("delegation-a".into()).unwrap(), signed)
         .unwrap();
@@ -292,10 +268,8 @@ fn nested_delegation() {
     let delegation =
         TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None).unwrap();
 
-    let signed = SignedMetadata::<Json, TargetsMetadata>::new(
-        &delegation,
-        &delegation_b_key,
-    ).unwrap();
+    let signed = SignedMetadata::<Json, TargetsMetadata>::new(&delegation, &delegation_b_key)
+        .unwrap();
 
     tuf.update_delegation(&MetadataPath::new("delegation-b".into()).unwrap(), signed)
         .unwrap();

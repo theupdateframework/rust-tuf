@@ -72,8 +72,7 @@ fn init_server(remote: &mut EphemeralRepository<Json>) -> Result<Vec<KeyId>, Err
         timestamp_def,
     )?;
 
-    let signed =
-        SignedMetadata::<Json, RootMetadata>::new(&root, &root_key)?;
+    let signed = SignedMetadata::<Json, RootMetadata>::new(&root, &root_key)?;
 
     remote.store_metadata(
         &Role::Root,
@@ -98,10 +97,7 @@ fn init_server(remote: &mut EphemeralRepository<Json>) -> Result<Vec<KeyId>, Err
     let target_map = hashmap!(target_path => target_description);
     let targets = TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None)?;
 
-    let signed = SignedMetadata::<Json, TargetsMetadata>::new(
-        &targets,
-        &targets_key,
-    )?;
+    let signed = SignedMetadata::<Json, TargetsMetadata>::new(&targets, &targets_key)?;
 
     remote.store_metadata(
         &Role::Targets,
@@ -126,10 +122,7 @@ fn init_server(remote: &mut EphemeralRepository<Json>) -> Result<Vec<KeyId>, Err
     };
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)?;
 
-    let signed = SignedMetadata::<Json, SnapshotMetadata>::new(
-        &snapshot,
-        &snapshot_key,
-    )?;
+    let signed = SignedMetadata::<Json, SnapshotMetadata>::new(&snapshot, &snapshot_key)?;
 
     remote.store_metadata(
         &Role::Snapshot,
@@ -150,10 +143,7 @@ fn init_server(remote: &mut EphemeralRepository<Json>) -> Result<Vec<KeyId>, Err
     let snap = MetadataDescription::from_reader(&*snapshot_bytes, 1, &[HashAlgorithm::Sha256])?;
     let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap)?;
 
-    let signed = SignedMetadata::<Json, TimestampMetadata>::new(
-        &timestamp,
-        &timestamp_key,
-    )?;
+    let signed = SignedMetadata::<Json, TimestampMetadata>::new(&timestamp, &timestamp_key)?;
 
     remote.store_metadata(
         &Role::Timestamp,

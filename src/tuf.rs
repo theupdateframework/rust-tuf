@@ -588,7 +588,8 @@ mod test {
                 include_bytes!("../tests/ed25519/ed25519-5.pk8.der"),
                 include_bytes!("../tests/ed25519/ed25519-6.pk8.der"),
             ];
-            keys.iter().map(|b| PrivateKey::from_pkcs8(b, SignatureScheme::Ed25519).unwrap()).collect()
+            keys.iter().map(|b| PrivateKey::from_pkcs8(b, SignatureScheme::Ed25519).unwrap())
+                .collect()
         };
     }
 
@@ -605,8 +606,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &root_key).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &root_key)
+            .unwrap();
 
         assert!(Tuf::from_root_pinned(root, &[root_key.key_id().clone()]).is_ok());
     }
@@ -623,8 +624,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0]).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
+            .unwrap();
 
         assert!(Tuf::from_root_pinned(root, &[KEYS[1].key_id().clone()]).is_err());
     }
@@ -641,8 +642,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0]).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -656,12 +657,11 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
         ).unwrap();
-        let mut root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[1]).unwrap();
+        let mut root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[1])
+            .unwrap();
 
         // add the original key's signature to make it cross signed
-        root.add_signature(&KEYS[0])
-            .unwrap();
+        root.add_signature(&KEYS[0]).unwrap();
 
         assert_eq!(tuf.update_root(root.clone()), Ok(true));
 
@@ -681,8 +681,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0]).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -697,8 +697,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[1]).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[1])
+            .unwrap();
 
         assert!(tuf.update_root(root).is_err());
     }
@@ -715,8 +715,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0]).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -747,8 +747,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0]).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -782,8 +782,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0]).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -825,8 +825,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0]).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -865,8 +865,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0]).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -906,8 +906,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[3].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0]).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -963,8 +963,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[3].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0]).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -1017,8 +1017,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[3].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0]).unwrap();
+        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 

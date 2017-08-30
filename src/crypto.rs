@@ -380,11 +380,15 @@ impl PrivateKey {
             Ok(k) => {
                 match scheme {
                     SignatureScheme::Ed25519 => (),
-                    s => return Err(Error::IllegalArgument(format!(
-                        "Cannot use signature scheme {:?} with Ed25519 keys", s)))
+                    s => {
+                        return Err(Error::IllegalArgument(format!(
+                            "Cannot use signature scheme {:?} with Ed25519 keys",
+                            s
+                        )))
+                    }
                 };
                 Ok(k)
-            },
+            }
             Err(e1) => {
                 match Self::rsa_from_pkcs8(der_key, scheme) {
                     Ok(k) => Ok(k),
@@ -421,8 +425,11 @@ impl PrivateKey {
 
     fn rsa_from_pkcs8(der_key: &[u8], scheme: SignatureScheme) -> Result<Self> {
         match &scheme {
-            &SignatureScheme::Ed25519 => return Err(Error::IllegalArgument(
-                    "RSA keys do not support the Ed25519 signing scheme".into())),
+            &SignatureScheme::Ed25519 => {
+                return Err(Error::IllegalArgument(
+                    "RSA keys do not support the Ed25519 signing scheme".into(),
+                ))
+            }
             _ => (),
         }
 
@@ -560,7 +567,7 @@ impl PublicKey {
     pub fn typ(&self) -> &KeyType {
         &self.typ
     }
-    
+
     /// An immutable referece to the key's authorized signing scheme.
     pub fn scheme(&self) -> &SignatureScheme {
         &self.scheme
@@ -635,9 +642,10 @@ impl<'de> Deserialize<'de> for PublicKey {
             .decode(intermediate.public_key().as_bytes())
             .map_err(|e| DeserializeError::custom(format!("{:?}", e)))?;
 
-        let key = PublicKey::from_spki(&bytes, intermediate.scheme().clone()).map_err(|e| {
-            DeserializeError::custom(format!("Couldn't parse key as SPKI: {:?}", e))
-        })?;
+        let key = PublicKey::from_spki(&bytes, intermediate.scheme().clone())
+            .map_err(|e| {
+                DeserializeError::custom(format!("Couldn't parse key as SPKI: {:?}", e))
+            })?;
 
         if intermediate.typ() != &key.typ {
             return Err(DeserializeError::custom(
@@ -874,7 +882,8 @@ mod test {
 
         let sig = key.sign(msg).unwrap();
 
-        let public = PublicKey::from_spki(&key.public.as_spki().unwrap(), SignatureScheme::Ed25519).unwrap();
+        let public = PublicKey::from_spki(&key.public.as_spki().unwrap(), SignatureScheme::Ed25519)
+            .unwrap();
         public.verify(msg, &sig).unwrap();
     }
 
