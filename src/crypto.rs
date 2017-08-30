@@ -91,7 +91,7 @@ pub fn calculate_hashes<R: Read>(
 
                 size += read_bytes as u64;
 
-                for (_, mut context) in hashes.iter_mut() {
+                for (_, context) in hashes.iter_mut() {
                     context.update(&buf[0..read_bytes]);
                 }
             }
@@ -453,7 +453,7 @@ impl PrivateKey {
         })
     }
 
-    /// Sign a message with the given scheme.
+    /// Sign a message.
     pub fn sign(&self, msg: &[u8]) -> Result<Signature> {
         let value = match (&self.private, &self.public.scheme) {
             (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha256) => {

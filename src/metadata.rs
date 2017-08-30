@@ -251,7 +251,7 @@ where
     /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
     ///
     /// fn main() {
-    ///     let key: &[u8] = include_bytes!("./tests/ed25519/ed25519-1.pk8.der");
+    ///     let key: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     ///     let key = PrivateKey::from_pkcs8(&key, SignatureScheme::Ed25519).unwrap();
     ///
     ///     let timestamp = TimestampMetadata::new(
@@ -297,12 +297,12 @@ where
     /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
     ///
     /// fn main() {
-    ///     let key_1: &[u8] = include_bytes!("./tests/ed25519/ed25519-1.pk8.der");
+    ///     let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     ///     let key_1 = PrivateKey::from_pkcs8(&key_1, SignatureScheme::Ed25519).unwrap();
     ///
     ///     // Note: This is for demonstration purposes only.
     ///     // You should never have multiple private keys on the same device.
-    ///     let key_2: &[u8] = include_bytes!("./tests/ed25519/ed25519-2.pk8.der");
+    ///     let key_2: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
     ///     let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
     ///
     ///     let timestamp = TimestampMetadata::new(
@@ -390,10 +390,10 @@ where
     /// use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
     ///
     /// fn main() {
-    ///     let key_1: &[u8] = include_bytes!("./tests/ed25519/ed25519-1.pk8.der");
+    ///     let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     ///     let key_1 = PrivateKey::from_pkcs8(&key_1, SignatureScheme::Ed25519).unwrap();
     ///
-    ///     let key_2: &[u8] = include_bytes!("./tests/ed25519/ed25519-2.pk8.der");
+    ///     let key_2: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
     ///     let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
     ///
     ///     let timestamp = TimestampMetadata::new(
