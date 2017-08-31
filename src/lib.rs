@@ -130,9 +130,7 @@ extern crate serde_json as json;
 #[cfg(test)]
 extern crate tempdir;
 extern crate tempfile;
-extern crate url;
 extern crate untrusted;
-extern crate uuid;
 
 pub mod error;
 

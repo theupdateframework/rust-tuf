@@ -5,9 +5,9 @@
 //! ```no_run
 //! extern crate hyper;
 //! extern crate tuf;
-//! extern crate url;
 //!
 //! use hyper::client::Client as HttpClient;
+//! use hyper::Url;
 //! use std::path::PathBuf;
 //! use tuf::Tuf;
 //! use tuf::crypto::KeyId;
@@ -16,7 +16,6 @@
 //!     MetadataVersion};
 //! use tuf::interchange::Json;
 //! use tuf::repository::{Repository, FileSystemRepository, HttpRepository};
-//! use url::Url;
 //!
 //! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
 //!     "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
