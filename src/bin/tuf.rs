@@ -1,6 +1,5 @@
 extern crate clap;
 extern crate ring;
-extern crate tuf;
 
 use clap::{App, AppSettings, SubCommand, Arg, ArgMatches};
 use ring::rand::SystemRandom;

@@ -10,7 +10,7 @@ use tuf::Tuf;
 use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
 use tuf::interchange::Json;
 use tuf::metadata::{RoleDefinition, RootMetadata, MetadataPath, SignedMetadata, TargetDescription,
-                    TargetPath, TargetsMetadata, MetadataDescription, SnapshotMetadata,
+                    VirtualTargetPath, TargetsMetadata, MetadataDescription, SnapshotMetadata,
                     TimestampMetadata, Delegation, Delegations};
 
 const ED25519_1_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-1.pk8.der");
@@ -92,7 +92,7 @@ fn simple_delegation() {
                     .iter()
                     .cloned()
                     .collect(),
-                vec![TargetPath::new("foo".into()).unwrap()]
+                vec![VirtualTargetPath::new("foo".into()).unwrap()]
                     .iter()
                     .cloned()
                     .collect()
@@ -114,7 +114,7 @@ fn simple_delegation() {
     let target_file: &[u8] = b"bar";
     let target_map =
         hashmap! {
-        TargetPath::new("foo".into()).unwrap() =>
+        VirtualTargetPath::new("foo".into()).unwrap() =>
             TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256]).unwrap(),
     };
     let delegation =
@@ -127,7 +127,7 @@ fn simple_delegation() {
         .unwrap();
 
     assert!(
-        tuf.target_description(&TargetPath::new("foo".into()).unwrap())
+        tuf.target_description(&VirtualTargetPath::new("foo".into()).unwrap())
             .is_ok()
     );
 }
@@ -207,7 +207,7 @@ fn nested_delegation() {
                     .iter()
                     .cloned()
                     .collect(),
-                vec![TargetPath::new("foo".into()).unwrap()]
+                vec![VirtualTargetPath::new("foo".into()).unwrap()]
                     .iter()
                     .cloned()
                     .collect()
@@ -237,7 +237,7 @@ fn nested_delegation() {
                     .iter()
                     .cloned()
                     .collect(),
-                vec![TargetPath::new("foo".into()).unwrap()]
+                vec![VirtualTargetPath::new("foo".into()).unwrap()]
                     .iter()
                     .cloned()
                     .collect()
@@ -261,7 +261,7 @@ fn nested_delegation() {
     let target_file: &[u8] = b"bar";
     let target_map =
         hashmap! {
-        TargetPath::new("foo".into()).unwrap() =>
+        VirtualTargetPath::new("foo".into()).unwrap() =>
             TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256]).unwrap(),
     };
 
@@ -275,7 +275,7 @@ fn nested_delegation() {
         .unwrap();
 
     assert!(
-        tuf.target_description(&TargetPath::new("foo".into()).unwrap())
+        tuf.target_description(&VirtualTargetPath::new("foo".into()).unwrap())
             .is_ok()
     );
 }

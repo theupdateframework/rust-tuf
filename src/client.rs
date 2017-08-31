@@ -53,37 +53,84 @@ use Result;
 use crypto::{self, KeyId};
 use error::Error;
 use interchange::DataInterchange;
-use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath, TargetPath, TargetDescription,
-               TargetsMetadata, SnapshotMetadata};
+use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath, VirtualTargetPath,
+               TargetDescription, TargetsMetadata, SnapshotMetadata, TargetPath};
 use repository::Repository;
 use tuf::Tuf;
 use util::SafeReader;
 
+
+/// Translates real paths (where a file is stored) into virtual paths (how it is addressed in TUF)
+/// and back.
+///
+/// Implementations must obey the following identities for all possible inputs.
+///
+/// ```
+/// # use tuf::client::{PathTranslator, DefaultTranslator};
+/// # use tuf::metadata::{VirtualTargetPath, TargetPath};
+/// # let path = TargetPath::new("foo".into()).unwrap();
+/// # let virt = VirtualTargetPath::new("foo".into()).unwrap();
+/// # let translator = DefaultTranslator::new();
+/// assert_eq!(path,
+///            translator.virtual_to_real(&translator.real_to_virtual(&path).unwrap()).unwrap());
+/// assert_eq!(virt,
+///            translator.real_to_virtual(&translator.virtual_to_real(&virt).unwrap()).unwrap());
+/// ```
+pub trait PathTranslator {
+    /// Convert a real path into a virtual path.
+    fn real_to_virtual(&self, path: &TargetPath) -> Result<VirtualTargetPath>;
+
+    /// Convert a virtual path into a real path.
+    fn virtual_to_real(&self, path: &VirtualTargetPath) -> Result<TargetPath>;
+}
+
+/// A `PathTranslator` that does nothing.
+pub struct DefaultTranslator {}
+
+impl DefaultTranslator {
+    /// Create a new `DefaultTranslator`.
+    pub fn new() -> Self {
+        DefaultTranslator {}
+    }
+}
+
+impl PathTranslator for DefaultTranslator {
+    fn real_to_virtual(&self, path: &TargetPath) -> Result<VirtualTargetPath> {
+        VirtualTargetPath::new(path.value().into())
+    }
+
+    fn virtual_to_real(&self, path: &VirtualTargetPath) -> Result<TargetPath> {
+        TargetPath::new(path.value().into())
+    }
+}
+
 /// A client that interacts with TUF repositories.
-pub struct Client<D, L, R>
+pub struct Client<D, L, R, T>
 where
     D: DataInterchange,
     L: Repository<D>,
     R: Repository<D>,
+    T: PathTranslator,
 {
     tuf: Tuf<D>,
-    config: Config,
+    config: Config<T>,
     local: L,
     remote: R,
 }
 
-impl<D, L, R> Client<D, L, R>
+impl<D, L, R, T> Client<D, L, R, T>
 where
     D: DataInterchange,
     L: Repository<D>,
     R: Repository<D>,
+    T: PathTranslator,
 {
     /// Create a new TUF client. It will attempt to load initial root metadata from the local repo
     /// and return an error if it cannot do so.
     ///
     /// **WARNING**: This method offers weaker security guarantees than the related method
     /// `with_root_pinned`.
-    pub fn new(config: Config, mut local: L, mut remote: R) -> Result<Self> {
+    pub fn new(config: Config<T>, mut local: L, mut remote: R) -> Result<Self> {
         local.initialize()?;
         remote.initialize()?;
 
@@ -123,12 +170,13 @@ where
     /// This is the preferred method of creating a client.
     pub fn with_root_pinned<'a, I>(
         trusted_root_keys: I,
-        config: Config,
+        config: Config<T>,
         mut local: L,
         mut remote: R,
     ) -> Result<Self>
     where
         I: IntoIterator<Item = &'a KeyId>,
+        T: PathTranslator,
     {
         local.initialize()?;
         remote.initialize()?;
@@ -215,9 +263,10 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_root<T>(tuf: &mut Tuf<D>, repo: &mut T, config: &Config) -> Result<bool>
+    fn update_root<V, U>(tuf: &mut Tuf<D>, repo: &mut V, config: &Config<U>) -> Result<bool>
     where
-        T: Repository<D>,
+        V: Repository<D>,
+        U: PathTranslator,
     {
         let latest_root = repo.fetch_metadata(
             &Role::Root,
@@ -266,9 +315,10 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_timestamp<T>(tuf: &mut Tuf<D>, repo: &mut T, config: &Config) -> Result<bool>
+    fn update_timestamp<V, U>(tuf: &mut Tuf<D>, repo: &mut V, config: &Config<U>) -> Result<bool>
     where
-        T: Repository<D>,
+        V: Repository<D>,
+        U: PathTranslator,
     {
         let ts = repo.fetch_metadata(
             &Role::Timestamp,
@@ -282,9 +332,10 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_snapshot<T>(tuf: &mut Tuf<D>, repo: &mut T, config: &Config) -> Result<bool>
+    fn update_snapshot<V, U>(tuf: &mut Tuf<D>, repo: &mut V, config: &Config<U>) -> Result<bool>
     where
-        T: Repository<D>,
+        V: Repository<D>,
+        U: PathTranslator,
     {
         let snapshot_description = match tuf.timestamp() {
             Some(ts) => Ok(ts.snapshot()),
@@ -316,9 +367,10 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_targets<T>(tuf: &mut Tuf<D>, repo: &mut T, config: &Config) -> Result<bool>
+    fn update_targets<V, U>(tuf: &mut Tuf<D>, repo: &mut V, config: &Config<U>) -> Result<bool>
     where
-        T: Repository<D>,
+        V: Repository<D>,
+        U: PathTranslator,
     {
         let targets_description = match tuf.snapshot() {
             Some(sn) => {
@@ -360,7 +412,8 @@ where
 
     /// Fetch a target from the remote repo and write it to the local repo.
     pub fn fetch_target(&mut self, target: &TargetPath) -> Result<()> {
-        let read = self._fetch_target(target)?;
+        let virt = self.config.path_translator.real_to_virtual(target)?;
+        let read = self._fetch_target(&virt)?;
         self.local.store_target(read, target)
     }
 
@@ -370,7 +423,8 @@ where
         target: &TargetPath,
         mut write: W,
     ) -> Result<()> {
-        let mut read = self._fetch_target(target)?;
+        let virt = self.config.path_translator.real_to_virtual(target)?;
+        let mut read = self._fetch_target(&virt)?;
         let mut buf = [0; 1024];
         loop {
             let bytes_read = read.read(&mut buf)?;
@@ -383,22 +437,23 @@ where
     }
 
     // TODO this should check the local repo first
-    fn _fetch_target(&mut self, target: &TargetPath) -> Result<SafeReader<R::TargetRead>> {
-        fn lookup<_D, _L, _R>(
-            tuf: &mut Tuf<_D>,
-            config: &Config,
+    fn _fetch_target(&mut self, target: &VirtualTargetPath) -> Result<SafeReader<R::TargetRead>> {
+        fn lookup<D_, L_, R_, T_>(
+            tuf: &mut Tuf<D_>,
+            config: &Config<T_>,
             default_terminate: bool,
             current_depth: u32,
-            target: &TargetPath,
+            target: &VirtualTargetPath,
             snapshot: &SnapshotMetadata,
             targets: Option<&TargetsMetadata>,
-            local: &mut _L,
-            remote: &mut _R,
+            local: &mut L_,
+            remote: &mut R_,
         ) -> (bool, Result<TargetDescription>)
         where
-            _D: DataInterchange,
-            _L: Repository<_D>,
-            _R: Repository<_D>,
+            D_: DataInterchange,
+            L_: Repository<D_>,
+            R_: Repository<D_>,
+            T_: PathTranslator,
         {
             if current_depth > config.max_delegation_depth {
                 warn!(
@@ -555,7 +610,7 @@ where
         let target_description = target_description?;
 
         self.remote.fetch_target(
-            target,
+            &self.config.path_translator.virtual_to_real(&target)?,
             &target_description,
             self.config.min_bytes_per_second,
         )
@@ -571,27 +626,37 @@ where
 /// `ConfigBuilder` and set your own values.
 ///
 /// ```
-/// # use tuf::client::Config;
+/// # use tuf::client::{Config, DefaultTranslator};
 /// let config = Config::default();
 /// assert_eq!(config.max_root_size(), &Some(1024 * 1024));
 /// assert_eq!(config.max_timestamp_size(), &Some(32 * 1024));
 /// assert_eq!(config.min_bytes_per_second(), 4096);
 /// assert_eq!(config.max_delegation_depth(), 8);
+/// let _: &DefaultTranslator = config.path_translator();
 /// ```
 #[derive(Debug)]
-pub struct Config {
+pub struct Config<T>
+where
+    T: PathTranslator,
+{
     max_root_size: Option<usize>,
     max_timestamp_size: Option<usize>,
     min_bytes_per_second: u32,
     max_delegation_depth: u32,
+    path_translator: T,
 }
 
-impl Config {
+impl Config<DefaultTranslator> {
     /// Initialize a `ConfigBuilder` with the default values.
-    pub fn build() -> ConfigBuilder {
+    pub fn build() -> ConfigBuilder<DefaultTranslator> {
         ConfigBuilder::default()
     }
+}
 
+impl<T> Config<T>
+where
+    T: PathTranslator,
+{
     /// Return the optional maximum root metadata size.
     pub fn max_root_size(&self) -> &Option<usize> {
         &self.max_root_size
@@ -611,36 +676,50 @@ impl Config {
     pub fn max_delegation_depth(&self) -> u32 {
         self.max_delegation_depth
     }
+
+    /// The `PathTranslator`.
+    pub fn path_translator(&self) -> &T {
+        &self.path_translator
+    }
 }
 
-impl Default for Config {
+impl Default for Config<DefaultTranslator> {
     fn default() -> Self {
         Config {
             max_root_size: Some(1024 * 1024),
             max_timestamp_size: Some(32 * 1024),
             min_bytes_per_second: 4096,
             max_delegation_depth: 8,
+            path_translator: DefaultTranslator::new(),
         }
     }
 }
 
 /// Helper for building and validating a TUF client `Config`.
 #[derive(Debug, PartialEq)]
-pub struct ConfigBuilder {
+pub struct ConfigBuilder<T>
+where
+    T: PathTranslator,
+{
     max_root_size: Option<usize>,
     max_timestamp_size: Option<usize>,
     min_bytes_per_second: u32,
     max_delegation_depth: u32,
+    path_translator: T,
 }
 
-impl ConfigBuilder {
+impl<T> ConfigBuilder<T>
+where
+    T: PathTranslator,
+{
     /// Validate this builder return a `Config` if validation succeeds.
-    pub fn finish(self) -> Result<Config> {
+    pub fn finish(self) -> Result<Config<T>> {
         Ok(Config {
             max_root_size: self.max_root_size,
             max_timestamp_size: self.max_timestamp_size,
             min_bytes_per_second: self.min_bytes_per_second,
             max_delegation_depth: self.max_delegation_depth,
+            path_translator: self.path_translator,
         })
     }
 
@@ -667,16 +746,31 @@ impl ConfigBuilder {
         self.max_delegation_depth = max;
         self
     }
+
+    /// Set the `PathTranslator`.
+    pub fn path_translator<TT>(self, path_translator: TT) -> ConfigBuilder<TT>
+    where
+        TT: PathTranslator,
+    {
+        ConfigBuilder {
+            max_root_size: self.max_root_size,
+            max_timestamp_size: self.max_timestamp_size,
+            min_bytes_per_second: self.min_bytes_per_second,
+            max_delegation_depth: self.max_delegation_depth,
+            path_translator: path_translator,
+        }
+    }
 }
 
-impl Default for ConfigBuilder {
-    fn default() -> Self {
+impl Default for ConfigBuilder<DefaultTranslator> {
+    fn default() -> ConfigBuilder<DefaultTranslator> {
         let cfg = Config::default();
         ConfigBuilder {
             max_root_size: cfg.max_root_size,
             max_timestamp_size: cfg.max_timestamp_size,
             min_bytes_per_second: cfg.min_bytes_per_second,
             max_delegation_depth: cfg.max_delegation_depth,
+            path_translator: cfg.path_translator,
         }
     }
 }
