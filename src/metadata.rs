@@ -230,7 +230,7 @@ where
     #[serde(skip_serializing, skip_deserializing)]
     _interchage: PhantomData<D>,
     #[serde(skip_serializing, skip_deserializing)]
-    _metadata: PhantomData<M>,
+    metadata: PhantomData<M>,
 }
 
 impl<D, M> SignedMetadata<D, M>
@@ -272,7 +272,7 @@ where
             signatures: vec![sig],
             signed: raw,
             _interchage: PhantomData,
-            _metadata: PhantomData,
+            metadata: PhantomData,
         })
     }
 
@@ -993,35 +993,35 @@ impl<'de> Deserialize<'de> for SnapshotMetadata {
 }
 
 
-/// Wrapper for a path to a target.
+/// Wrapper for the virtual path to a target.
 #[derive(Debug, Clone, PartialEq, Hash, Eq, PartialOrd, Ord, Serialize)]
-pub struct TargetPath(String);
+pub struct VirtualTargetPath(String);
 
-impl TargetPath {
-    /// Create a new `TargetPath` from a `String`.
+impl VirtualTargetPath {
+    /// Create a new `VirtualTargetPath` from a `String`.
     ///
     /// ```
-    /// # use tuf::metadata::TargetPath;
-    /// assert!(TargetPath::new("foo".into()).is_ok());
-    /// assert!(TargetPath::new("/foo".into()).is_err());
-    /// assert!(TargetPath::new("../foo".into()).is_err());
-    /// assert!(TargetPath::new("foo/..".into()).is_err());
-    /// assert!(TargetPath::new("foo/../bar".into()).is_err());
-    /// assert!(TargetPath::new("..foo".into()).is_ok());
-    /// assert!(TargetPath::new("foo/..bar".into()).is_ok());
-    /// assert!(TargetPath::new("foo/bar..".into()).is_ok());
+    /// # use tuf::metadata::VirtualTargetPath;
+    /// assert!(VirtualTargetPath::new("foo".into()).is_ok());
+    /// assert!(VirtualTargetPath::new("/foo".into()).is_err());
+    /// assert!(VirtualTargetPath::new("../foo".into()).is_err());
+    /// assert!(VirtualTargetPath::new("foo/..".into()).is_err());
+    /// assert!(VirtualTargetPath::new("foo/../bar".into()).is_err());
+    /// assert!(VirtualTargetPath::new("..foo".into()).is_ok());
+    /// assert!(VirtualTargetPath::new("foo/..bar".into()).is_ok());
+    /// assert!(VirtualTargetPath::new("foo/bar..".into()).is_ok());
     /// ```
     pub fn new(path: String) -> Result<Self> {
         safe_path(&path)?;
-        Ok(TargetPath(path))
+        Ok(VirtualTargetPath(path))
     }
 
-    /// Split `TargetPath` into components that can be joined to create URL paths, Unix paths, or
-    /// Windows paths.
+    /// Split `VirtualTargetPath` into components that can be joined to create URL paths, Unix
+    /// paths, or Windows paths.
     ///
     /// ```
-    /// # use tuf::metadata::TargetPath;
-    /// let path = TargetPath::new("foo/bar".into()).unwrap();
+    /// # use tuf::metadata::VirtualTargetPath;
+    /// let path = VirtualTargetPath::new("foo/bar".into()).unwrap();
     /// assert_eq!(path.components(), ["foo".to_string(), "bar".to_string()]);
     /// ```
     pub fn components(&self) -> Vec<String> {
@@ -1031,19 +1031,19 @@ impl TargetPath {
     /// Return whether this path is the child of another path.
     ///
     /// ```
-    /// # use tuf::metadata::TargetPath;
-    /// let path1 = TargetPath::new("foo".into()).unwrap();
-    /// let path2 = TargetPath::new("foo/bar".into()).unwrap();
+    /// # use tuf::metadata::VirtualTargetPath;
+    /// let path1 = VirtualTargetPath::new("foo".into()).unwrap();
+    /// let path2 = VirtualTargetPath::new("foo/bar".into()).unwrap();
     /// assert!(!path2.is_child(&path1));
     ///
-    /// let path1 = TargetPath::new("foo/".into()).unwrap();
-    /// let path2 = TargetPath::new("foo/bar".into()).unwrap();
+    /// let path1 = VirtualTargetPath::new("foo/".into()).unwrap();
+    /// let path2 = VirtualTargetPath::new("foo/bar".into()).unwrap();
     /// assert!(path2.is_child(&path1));
     ///
-    /// let path2 = TargetPath::new("foo/bar/baz".into()).unwrap();
+    /// let path2 = VirtualTargetPath::new("foo/bar/baz".into()).unwrap();
     /// assert!(path2.is_child(&path1));
     ///
-    /// let path2 = TargetPath::new("wat".into()).unwrap();
+    /// let path2 = VirtualTargetPath::new("wat".into()).unwrap();
     /// assert!(!path2.is_child(&path1))
     /// ```
     pub fn is_child(&self, parent: &Self) -> bool {
@@ -1059,7 +1059,7 @@ impl TargetPath {
     /// previous groups.
     // TODO this is hideous and uses way too much clone/heap but I think recursively,
     // so here we are
-    pub fn matches_chain(&self, parents: &[HashSet<TargetPath>]) -> bool {
+    pub fn matches_chain(&self, parents: &[HashSet<VirtualTargetPath>]) -> bool {
         if parents.is_empty() {
             return false;
         }
@@ -1083,18 +1083,52 @@ impl TargetPath {
             .collect::<Vec<_>>();
         self.matches_chain(&*new)
     }
+
+    /// The string value of the path.
+    pub fn value(&self) -> &str {
+        &self.0
+    }
 }
 
-impl ToString for TargetPath {
+impl ToString for VirtualTargetPath {
     fn to_string(&self) -> String {
         self.0.clone()
     }
 }
 
-impl<'de> Deserialize<'de> for TargetPath {
+impl<'de> Deserialize<'de> for VirtualTargetPath {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let s: String = Deserialize::deserialize(de)?;
-        TargetPath::new(s).map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        VirtualTargetPath::new(s).map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+    }
+}
+
+/// Wrapper for the real path to a target.
+#[derive(Debug, Clone, PartialEq, Hash, Eq, PartialOrd, Ord, Serialize)]
+pub struct TargetPath(String);
+
+impl TargetPath {
+    /// Create a new `TargetPath`.
+    pub fn new(path: String) -> Result<Self> {
+        safe_path(&path)?;
+        Ok(TargetPath(path))
+    }
+
+    /// Split `TargetPath` into components that can be joined to create URL paths, Unix paths, or
+    /// Windows paths.
+    ///
+    /// ```
+    /// # use tuf::metadata::TargetPath;
+    /// let path = TargetPath::new("foo/bar".into()).unwrap();
+    /// assert_eq!(path.components(), ["foo".to_string(), "bar".to_string()]);
+    /// ```
+    pub fn components(&self) -> Vec<String> {
+        self.0.split('/').map(|s| s.to_string()).collect()
+    }
+
+    /// The string value of the path.
+    pub fn value(&self) -> &str {
+        &self.0
     }
 }
 
@@ -1189,7 +1223,7 @@ impl<'de> Deserialize<'de> for TargetDescription {
 pub struct TargetsMetadata {
     version: u32,
     expires: DateTime<Utc>,
-    targets: HashMap<TargetPath, TargetDescription>,
+    targets: HashMap<VirtualTargetPath, TargetDescription>,
     delegations: Option<Delegations>,
 }
 
@@ -1198,7 +1232,7 @@ impl TargetsMetadata {
     pub fn new(
         version: u32,
         expires: DateTime<Utc>,
-        targets: HashMap<TargetPath, TargetDescription>,
+        targets: HashMap<VirtualTargetPath, TargetDescription>,
         delegations: Option<Delegations>,
     ) -> Result<Self> {
         if version < 1 {
@@ -1227,7 +1261,7 @@ impl TargetsMetadata {
     }
 
     /// An immutable reference to the descriptions of targets.
-    pub fn targets(&self) -> &HashMap<TargetPath, TargetDescription> {
+    pub fn targets(&self) -> &HashMap<VirtualTargetPath, TargetDescription> {
         &self.targets
     }
 
@@ -1341,7 +1375,7 @@ pub struct Delegation {
     terminating: bool,
     threshold: u32,
     key_ids: HashSet<KeyId>,
-    paths: HashSet<TargetPath>,
+    paths: HashSet<VirtualTargetPath>,
 }
 
 impl Delegation {
@@ -1351,7 +1385,7 @@ impl Delegation {
         terminating: bool,
         threshold: u32,
         key_ids: HashSet<KeyId>,
-        paths: HashSet<TargetPath>,
+        paths: HashSet<VirtualTargetPath>,
     ) -> Result<Self> {
         if key_ids.is_empty() {
             return Err(Error::IllegalArgument("Cannot have empty key IDs".into()));
@@ -1401,7 +1435,7 @@ impl Delegation {
     }
 
     /// An immutable reference to the delegation's authorized paths.
-    pub fn paths(&self) -> &HashSet<TargetPath> {
+    pub fn paths(&self) -> &HashSet<VirtualTargetPath> {
         &self.paths
     }
 }
@@ -1469,13 +1503,13 @@ mod test {
 
         for case in test_cases {
             let expected = case.0;
-            let target = TargetPath::new(case.1.into()).unwrap();
+            let target = VirtualTargetPath::new(case.1.into()).unwrap();
             let parents = case.2
                 .iter()
                 .map(|group| {
                     group
                         .iter()
-                        .map(|p| TargetPath::new(p.to_string()).unwrap())
+                        .map(|p| VirtualTargetPath::new(p.to_string()).unwrap())
                         .collect::<HashSet<_>>()
                 })
                 .collect::<Vec<_>>();
@@ -1492,7 +1526,7 @@ mod test {
     #[test]
     fn serde_target_path() {
         let s = "foo/bar";
-        let t = json::from_str::<TargetPath>(&format!("\"{}\"", s)).unwrap();
+        let t = json::from_str::<VirtualTargetPath>(&format!("\"{}\"", s)).unwrap();
         assert_eq!(t.to_string().as_str(), s);
         assert_eq!(json::to_value(t).unwrap(), json!("foo/bar"));
     }
@@ -1720,7 +1754,7 @@ mod test {
             1,
             Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
             hashmap! {
-                TargetPath::new("foo".into()).unwrap() =>
+                VirtualTargetPath::new("foo".into()).unwrap() =>
                     TargetDescription::from_reader(
                         b"foo" as &[u8],
                         &[HashAlgorithm::Sha256],
@@ -1759,7 +1793,7 @@ mod test {
                 false,
                 1,
                 hashset!(key.key_id().clone()),
-                hashset!(TargetPath::new("baz/quux".into()).unwrap()),
+                hashset!(VirtualTargetPath::new("baz/quux".into()).unwrap()),
             ).unwrap()],
         ).unwrap();
 
@@ -1960,7 +1994,7 @@ mod test {
                 false,
                 1,
                 hashset!(key.key_id().clone()),
-                hashset!(TargetPath::new("bar".into()).unwrap()),
+                hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
             ).unwrap()],
         ).unwrap();
 
@@ -1977,7 +2011,7 @@ mod test {
             false,
             1,
             hashset!(key.key_id().clone()),
-            hashset!(TargetPath::new("bar".into()).unwrap()),
+            hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
         ).unwrap();
 
         json::to_value(&delegation).unwrap()
@@ -2300,7 +2334,7 @@ mod test {
                 false,
                 1,
                 hashset!(key.key_id().clone()),
-                hashset!(TargetPath::new("bar".into()).unwrap()),
+                hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
             ).unwrap()],
         ).unwrap();
         let mut delegations = json::to_value(delegations).unwrap();

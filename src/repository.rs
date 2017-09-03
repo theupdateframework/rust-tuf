@@ -100,7 +100,7 @@ where
     D: DataInterchange,
 {
     local_path: PathBuf,
-    _interchange: PhantomData<D>,
+    interchange: PhantomData<D>,
 }
 
 impl<D> FileSystemRepository<D>
@@ -111,7 +111,7 @@ where
     pub fn new(local_path: PathBuf) -> Self {
         FileSystemRepository {
             local_path: local_path,
-            _interchange: PhantomData,
+            interchange: PhantomData,
         }
     }
 }
@@ -241,7 +241,7 @@ where
     client: Client,
     user_agent: String,
     metadata_prefix: Option<Vec<String>>,
-    _interchange: PhantomData<D>,
+    interchange: PhantomData<D>,
 }
 
 impl<D> HttpRepository<D>
@@ -274,7 +274,7 @@ where
             client: client,
             user_agent: user_agent,
             metadata_prefix: metadata_prefix,
-            _interchange: PhantomData,
+            interchange: PhantomData,
         }
     }
 
@@ -399,7 +399,7 @@ where
 {
     metadata: HashMap<(MetadataPath, MetadataVersion), Vec<u8>>,
     targets: HashMap<TargetPath, Vec<u8>>,
-    _interchange: PhantomData<D>,
+    interchange: PhantomData<D>,
 }
 
 impl<D> EphemeralRepository<D>
@@ -411,7 +411,7 @@ where
         EphemeralRepository {
             metadata: HashMap::new(),
             targets: HashMap::new(),
-            _interchange: PhantomData,
+            interchange: PhantomData,
         }
     }
 }

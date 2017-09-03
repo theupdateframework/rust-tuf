@@ -9,7 +9,7 @@ use crypto::KeyId;
 use error::Error;
 use interchange::DataInterchange;
 use metadata::{SignedMetadata, RootMetadata, TimestampMetadata, Role, SnapshotMetadata,
-               MetadataPath, TargetsMetadata, TargetPath, TargetDescription, Delegations};
+               MetadataPath, TargetsMetadata, VirtualTargetPath, TargetDescription, Delegations};
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
@@ -19,7 +19,7 @@ pub struct Tuf<D: DataInterchange> {
     targets: Option<TargetsMetadata>,
     timestamp: Option<TimestampMetadata>,
     delegations: HashMap<MetadataPath, TargetsMetadata>,
-    _interchange: PhantomData<D>,
+    interchange: PhantomData<D>,
 }
 
 impl<D: DataInterchange> Tuf<D> {
@@ -65,7 +65,7 @@ impl<D: DataInterchange> Tuf<D> {
             targets: None,
             timestamp: None,
             delegations: HashMap::new(),
-            _interchange: PhantomData,
+            interchange: PhantomData,
         })
     }
 
@@ -439,10 +439,10 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// Get a reference to the description needed to verify the target defined by the given
-    /// `TargetPath`. Returns an `Error` if the target is not defined in the trusted metadata. This
-    /// may mean the target exists somewhere in the metadata, but the chain of trust to that target
-    /// may be invalid or incomplete.
-    pub fn target_description(&self, target_path: &TargetPath) -> Result<TargetDescription> {
+    /// `VirtualTargetPath`. Returns an `Error` if the target is not defined in the trusted
+    /// metadata. This may mean the target exists somewhere in the metadata, but the chain of trust
+    /// to that target may be invalid or incomplete.
+    pub fn target_description(&self, target_path: &VirtualTargetPath) -> Result<TargetDescription> {
         let _ = self.safe_root_ref()?;
         let _ = self.safe_snapshot_ref()?;
         let targets = self.safe_targets_ref()?;
@@ -456,9 +456,9 @@ impl<D: DataInterchange> Tuf<D> {
             tuf: &Tuf<D>,
             default_terminate: bool,
             current_depth: u32,
-            target_path: &TargetPath,
+            target_path: &VirtualTargetPath,
             delegations: &Delegations,
-            parents: Vec<HashSet<TargetPath>>,
+            parents: Vec<HashSet<VirtualTargetPath>>,
             visited: &mut HashSet<MetadataPath>,
         ) -> (bool, Option<TargetDescription>) {
             for delegation in delegations.roles() {

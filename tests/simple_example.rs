@@ -5,13 +5,13 @@ extern crate tuf;
 
 use chrono::prelude::*;
 use chrono::offset::Utc;
-use tuf::Error;
-use tuf::client::{Client, Config};
+use tuf::Result;
+use tuf::client::{Client, Config, PathTranslator};
 use tuf::crypto::{PrivateKey, SignatureScheme, KeyId, HashAlgorithm};
 use tuf::interchange::{DataInterchange, Json};
 use tuf::metadata::{RoleDefinition, RootMetadata, Role, MetadataVersion, MetadataPath,
-                    SignedMetadata, TargetDescription, TargetPath, TargetsMetadata,
-                    MetadataDescription, SnapshotMetadata, TimestampMetadata};
+                    SignedMetadata, TargetDescription, VirtualTargetPath, TargetsMetadata,
+                    MetadataDescription, SnapshotMetadata, TimestampMetadata, TargetPath};
 use tuf::repository::{EphemeralRepository, Repository};
 
 // Ironically, this is far from simple, but it's as simple as it can be made.
@@ -21,26 +21,59 @@ const ED25519_2_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-2.pk8.der
 const ED25519_3_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-3.pk8.der");
 const ED25519_4_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-4.pk8.der");
 
-#[test]
-fn main() {
-    let mut remote = EphemeralRepository::<Json>::new();
-    let root_key_ids = init_server(&mut remote).unwrap();
-    init_client(&root_key_ids, remote).unwrap();
+struct MyPathTranslator {}
+
+impl PathTranslator for MyPathTranslator {
+    fn real_to_virtual(&self, path: &TargetPath) -> Result<VirtualTargetPath> {
+        VirtualTargetPath::new(path.value().to_owned().replace("-", "/"))
+    }
+
+    fn virtual_to_real(&self, path: &VirtualTargetPath) -> Result<TargetPath> {
+        TargetPath::new(path.value().to_owned().replace("/", "-"))
+    }
 }
 
-fn init_client(root_key_ids: &[KeyId], remote: EphemeralRepository<Json>) -> Result<(), Error> {
-    let local = EphemeralRepository::<Json>::new();
+#[test]
+fn with_translator() {
+    let mut remote = EphemeralRepository::<Json>::new();
     let config = Config::default();
+    let root_key_ids = init_server(&mut remote, &config).unwrap();
+    init_client(&root_key_ids, remote, config).unwrap();
+}
+
+#[test]
+fn without_translator() {
+    let mut remote = EphemeralRepository::<Json>::new();
+    let config = Config::build()
+        .path_translator(MyPathTranslator {})
+        .finish()
+        .unwrap();
+    let root_key_ids = init_server(&mut remote, &config).unwrap();
+    init_client(&root_key_ids, remote, config).unwrap();
+}
+
+fn init_client<T>(
+    root_key_ids: &[KeyId],
+    remote: EphemeralRepository<Json>,
+    config: Config<T>,
+) -> Result<()>
+where
+    T: PathTranslator,
+{
+    let local = EphemeralRepository::<Json>::new();
     let mut client = Client::with_root_pinned(root_key_ids, config, local, remote)?;
     match client.update_local() {
         Ok(_) => (),
         Err(e) => println!("{:?}", e),
     }
     let _ = client.update_remote()?;
-    client.fetch_target(&TargetPath::new("grendel".into())?)
+    client.fetch_target(&TargetPath::new("foo-bar".into())?)
 }
 
-fn init_server(remote: &mut EphemeralRepository<Json>) -> Result<Vec<KeyId>, Error> {
+fn init_server<T>(remote: &mut EphemeralRepository<Json>, config: &Config<T>) -> Result<Vec<KeyId>>
+where
+    T: PathTranslator,
+{
     // in real life, you wouldn't want these keys on the same machine ever
     let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)?;
     let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)?;
@@ -90,11 +123,12 @@ fn init_server(remote: &mut EphemeralRepository<Json>) -> Result<Vec<KeyId>, Err
     //// build the targets ////
 
     let target_file: &[u8] = b"things fade, alternatives exclude";
-    let target_path = TargetPath::new("grendel".into())?;
+    let target_path = TargetPath::new("foo-bar".into())?;
     let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])?;
     let _ = remote.store_target(target_file, &target_path);
 
-    let target_map = hashmap!(target_path => target_description);
+    let target_map =
+        hashmap!(config.path_translator().real_to_virtual(&target_path)? => target_description);
     let targets = TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None)?;
 
     let signed = SignedMetadata::<Json, TargetsMetadata>::new(&targets, &targets_key)?;
