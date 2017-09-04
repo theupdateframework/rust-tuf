@@ -412,8 +412,7 @@ where
 
     /// Fetch a target from the remote repo and write it to the local repo.
     pub fn fetch_target(&mut self, target: &TargetPath) -> Result<()> {
-        let virt = self.config.path_translator.real_to_virtual(target)?;
-        let read = self._fetch_target(&virt)?;
+        let read = self._fetch_target(target)?;
         self.local.store_target(read, target)
     }
 
@@ -423,8 +422,7 @@ where
         target: &TargetPath,
         mut write: W,
     ) -> Result<()> {
-        let virt = self.config.path_translator.real_to_virtual(target)?;
-        let mut read = self._fetch_target(&virt)?;
+        let mut read = self._fetch_target(&target)?;
         let mut buf = [0; 1024];
         loop {
             let bytes_read = read.read(&mut buf)?;
@@ -437,7 +435,7 @@ where
     }
 
     // TODO this should check the local repo first
-    fn _fetch_target(&mut self, target: &VirtualTargetPath) -> Result<SafeReader<R::TargetRead>> {
+    fn _fetch_target(&mut self, target: &TargetPath) -> Result<SafeReader<R::TargetRead>> {
         fn lookup<D_, L_, R_, T_>(
             tuf: &mut Tuf<D_>,
             config: &Config<T_>,
@@ -592,6 +590,8 @@ where
             (default_terminate, Err(Error::NotFound))
         }
 
+        let virt = self.config.path_translator.real_to_virtual(target)?;
+
         let snapshot = self.tuf
             .snapshot()
             .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
@@ -601,7 +601,7 @@ where
             &self.config,
             false,
             0,
-            target,
+            &virt,
             &snapshot,
             None,
             &mut self.local,
@@ -610,7 +610,7 @@ where
         let target_description = target_description?;
 
         self.remote.fetch_target(
-            &self.config.path_translator.virtual_to_real(&target)?,
+            target,
             &target_description,
             self.config.min_bytes_per_second,
         )
