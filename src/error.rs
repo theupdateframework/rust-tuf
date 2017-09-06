@@ -4,6 +4,7 @@ use data_encoding::DecodeError;
 use derp;
 use hyper;
 use json;
+use std::fmt;
 use std::io;
 use std::path::Path;
 use tempfile;
@@ -37,6 +38,30 @@ pub enum Error {
     TargetUnavailable,
     /// The metadata or target failed to verify.
     VerificationFailure(String),
+}
+
+impl ::std::error::Error for Error {
+    fn description(&self) -> &str {
+        match *self {
+            Error::BadSignature => "bad signature",
+            Error::Encoding(_) => "encoding",
+            Error::ExpiredMetadata(_) => "expired metadata",
+            Error::IllegalArgument(_) => "illegal argument",
+            Error::MissingMetadata(_) => "missing metadata",
+            Error::NoSupportedHashAlgorithm => "no supported hash algorithm",
+            Error::NotFound => "not found",
+            Error::Opaque(_) => "opaque",
+            Error::Programming(_) => "programming",
+            Error::TargetUnavailable => "target unavailable",
+            Error::VerificationFailure(_) => "verification failure",
+        }
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
 }
 
 impl From<json::error::Error> for Error {
