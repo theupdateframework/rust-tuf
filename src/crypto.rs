@@ -10,11 +10,12 @@ use ring::signature::{RSAKeyPair, RSASigningState, Ed25519KeyPair, ED25519,
                       RSA_PSS_SHA512};
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use serde::ser::{Serialize, Serializer, Error as SerializeError};
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Display};
 use std::hash;
-use std::io::Read;
-use std::cmp::Ordering;
+use std::io::{Read, Write};
+use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::sync::Arc;
 use untrusted::Input;
@@ -338,6 +339,20 @@ pub struct PrivateKey {
 }
 
 impl PrivateKey {
+    /// Generate a new `PrivateKey`.
+    ///
+    /// Note: For RSA keys, `openssl` needs to the on the `$PATH`.
+    pub fn new(key_type: KeyType) -> Result<Vec<u8>> {
+        match key_type {
+            KeyType::Ed25519 => {
+                Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
+                    .map(|bytes| bytes.to_vec())
+                    .map_err(|_| Error::Opaque("Failed to generate Ed25519 key".into()))
+            },
+            KeyType::Rsa => Self::rsa_gen(),
+        }
+    }
+
     /// Create a private key from PKCS#8v2 DER bytes.
     ///
     /// # Generating Keys
@@ -501,6 +516,48 @@ impl PrivateKey {
         })
     }
 
+    fn rsa_gen() -> Result<Vec<u8>> {
+        let gen = Command::new("openssl")
+            .args(
+                &[
+                    "genpkey",
+                    "-algorithm",
+                    "RSA",
+                    "-pkeyopt",
+                    "rsa_keygen_bits:4096",
+                    "-pkeyopt",
+                    "rsa_keygen_pubexp:65537",
+                    "-outform",
+                    "der",
+                ],
+            )
+            .output()?;
+
+        let mut pk8 = Command::new("openssl")
+            .args(
+                &[
+                    "pkcs8",
+                    "-inform",
+                    "der",
+                    "-topk8",
+                    "-nocrypt",
+                    "-outform",
+                    "der",
+                ],
+            )
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()?;
+
+        match pk8.stdin {
+            Some(ref mut stdin) => stdin.write_all(&gen.stdout)?,
+            None => return Err(Error::Opaque("openssl has no stdin".into())),
+        };
+
+        Ok(pk8.wait_with_output()?.stdout)
+    }
+
+
     /// Return the public component of the key.
     pub fn public(&self) -> &PublicKey {
         &self.public
@@ -511,7 +568,6 @@ impl PrivateKey {
         &self.public.key_id
     }
 }
-
 
 /// A structure containing information about a public key.
 #[derive(Clone, Debug)]
@@ -952,5 +1008,18 @@ mod test {
 
         let decoded: Signature = json::from_value(encoded).unwrap();
         assert_eq!(decoded, sig);
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn new_rsa_key() {
+        let bytes = PrivateKey::new(KeyType::Rsa).unwrap();
+        let _ = PrivateKey::from_pkcs8(&bytes, SignatureScheme::RsaSsaPssSha256).unwrap();
+    }
+
+    #[test]
+    fn new_ed25519_key() {
+        let bytes = PrivateKey::new(KeyType::Ed25519).unwrap();
+        let _ = PrivateKey::from_pkcs8(&bytes, SignatureScheme::Ed25519).unwrap();
     }
 }
