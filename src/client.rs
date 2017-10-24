@@ -350,7 +350,7 @@ where
         let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
 
         let version = if tuf.root().consistent_snapshot() {
-            MetadataVersion::Hash(value.clone())
+            MetadataVersion::Number(snapshot_description.version())
         } else {
             MetadataVersion::None
         };
