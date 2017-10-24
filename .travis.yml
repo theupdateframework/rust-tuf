@@ -15,8 +15,8 @@ env:
     - RUSTFLAGS="-C link-dead-code"
 
 script:
-  - RUST_BACKTRACE=full cargo build --features=cli --verbose
-  - RUST_BACKTRACE=full cargo test --features=cli --verbose
+  - RUST_BACKTRACE=full cargo build --verbose
+  - RUST_BACKTRACE=full cargo test --verbose
 
 after_failure:
   - cat Cargo.lock
