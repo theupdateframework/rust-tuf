@@ -36,6 +36,10 @@ pub enum Error {
     /// The target is unavailable. This may mean it is either not in the metadata or the metadata
     /// chain to the target cannot be fully verified.
     TargetUnavailable,
+    /// There is no known or available hash algorithm.
+    UnkonwnHashAlgorithm(String), 
+    /// There is no known or available key type.
+    UnknownKeyType(String), 
     /// The metadata or target failed to verify.
     VerificationFailure(String),
 }
@@ -53,6 +57,8 @@ impl ::std::error::Error for Error {
             Error::Opaque(_) => "opaque",
             Error::Programming(_) => "programming",
             Error::TargetUnavailable => "target unavailable",
+            Error::UnkonwnHashAlgorithm(_) => "unknown hash algorithm",
+            Error::UnknownKeyType(_) => "unknown key type",
             Error::VerificationFailure(_) => "verification failure",
         }
     }

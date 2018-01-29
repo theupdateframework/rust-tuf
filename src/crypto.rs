@@ -77,6 +77,9 @@ pub fn calculate_hashes<R: Read>(
         let context = match alg {
             &HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
             &HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
+            &HashAlgorithm::Unknown(ref s) => return Err(Error::IllegalArgument(
+                format!("Unknown hash algorithm: {}", s)
+            )),
         };
 
         let _ = hashes.insert(alg, context);
@@ -203,6 +206,8 @@ pub enum SignatureScheme {
     /// [RSASSA-PSS](https://tools.ietf.org/html/rfc5756) calculated over SHA512
     #[serde(rename = "rsassa-pss-sha512")]
     RsaSsaPssSha512,
+    /// Placeholder for an unknown scheme.
+    Unknown(String),
 }
 
 /// Wrapper type for the value of a cryptographic signature.
@@ -256,6 +261,8 @@ pub enum KeyType {
     Ed25519,
     /// [RSA](https://en.wikipedia.org/wiki/RSA_%28cryptosystem%29)
     Rsa,
+    /// Placeholder for an unknown key type.
+    Unknown(String),
 }
 
 impl KeyType {
@@ -270,10 +277,11 @@ impl KeyType {
         }
     }
 
-    fn as_oid(&self) -> &'static [u8] {
+    fn as_oid(&self) -> Result<&'static [u8]> {
         match self {
-            &KeyType::Rsa => RSA_SPKI_OID,
-            &KeyType::Ed25519 => ED25519_SPKI_OID,
+            &KeyType::Rsa => Ok(RSA_SPKI_OID),
+            &KeyType::Ed25519 => Ok(ED25519_SPKI_OID),
+            &KeyType::Unknown(ref s) => Err(Error::UnknownKeyType(s.clone())),
         }
     }
 }
@@ -293,9 +301,10 @@ impl FromStr for KeyType {
 impl ToString for KeyType {
     fn to_string(&self) -> String {
         match self {
-            &KeyType::Ed25519 => "ed25519",
-            &KeyType::Rsa => "rsa",
-        }.to_string()
+            &KeyType::Ed25519 => "ed25519".to_string(),
+            &KeyType::Rsa => "rsa".to_string(),
+            &KeyType::Unknown(ref s) => s.to_string(),
+        }
     }
 }
 
@@ -350,6 +359,9 @@ impl PrivateKey {
                     .map_err(|_| Error::Opaque("Failed to generate Ed25519 key".into()))
             },
             KeyType::Rsa => Self::rsa_gen(),
+            KeyType::Unknown(s) => Err(Error::IllegalArgument(
+                format!("Unknown key type: {}", s)
+            )),
         }
     }
 
@@ -640,6 +652,9 @@ impl PublicKey {
             &SignatureScheme::Ed25519 => &ED25519,
             &SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
             &SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
+            &SignatureScheme::Unknown(ref s) => return Err(Error::IllegalArgument(
+                format!("Unknown signature scheme: {}", s)
+            )),
         };
 
         ring::signature::verify(
@@ -754,6 +769,8 @@ pub enum HashAlgorithm {
     /// SHA512 as describe in [RFC-6234](https://tools.ietf.org/html/rfc6234)
     #[serde(rename = "sha512")]
     Sha512,
+    /// Placeholder for an unknown hash algorithm.
+    Unknown(String),
 }
 
 /// Wrapper for the value of a hash digest.
@@ -809,8 +826,13 @@ fn write_spki(public: &[u8], key_type: &KeyType) -> ::std::result::Result<Vec<u8
         let mut der = Der::new(&mut output);
         der.write_sequence(|der| {
             der.write_sequence(|der| {
-                der.write_element(Tag::Oid, key_type.as_oid())?;
-                der.write_null()
+                match key_type.as_oid().ok() {
+                    Some(tag) => {
+                        der.write_element(Tag::Oid, tag)?;
+                        der.write_null()
+                    },
+                    None => Err(derp::Error::WrongValue)
+                }
             })?;
             der.write_bit_string(0, |der| der.write_raw(public))
         })?;

@@ -3,7 +3,9 @@ use chrono::DateTime;
 use ring::digest::{self, SHA256, SHA512};
 use std::io::{self, Read, ErrorKind};
 
+use Result;
 use crypto::{HashAlgorithm, HashValue};
+use error::Error;
 
 /// Wrapper to verify a byte stream as it is read.
 ///
@@ -36,24 +38,29 @@ impl<R: Read> SafeReader<R> {
         max_size: u64,
         min_bytes_per_second: u32,
         hash_data: Option<(&HashAlgorithm, HashValue)>,
-    ) -> Self {
-        let hasher = hash_data.map(|(alg, value)| {
-            let ctx = match alg {
-                &HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
-                &HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
-            };
+    ) -> Result<Self> {
+        let hasher = match hash_data {
+            Some((alg, value)) => {
+                let ctx = match alg {
+                    &HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
+                    &HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
+                    &HashAlgorithm::Unknown(ref s) => return Err(Error::IllegalArgument(
+                        format!("Unknown hash algorithm: {}", s)
+                    )),
+                };
+                Some((ctx, value))
+            },
+            None => None,
+        };
 
-            (ctx, value)
-        });
-
-        SafeReader {
+        Ok(SafeReader {
             inner: read,
             max_size: max_size,
             min_bytes_per_second: min_bytes_per_second,
             hasher: hasher,
             start_time: None,
             bytes_read: 0,
-        }
+        })
     }
 }
 
@@ -121,7 +128,7 @@ mod test {
     #[test]
     fn valid_read() {
         let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
-        let mut reader = SafeReader::new(bytes, bytes.len() as u64, 0, None);
+        let mut reader = SafeReader::new(bytes, bytes.len() as u64, 0, None).unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_ok());
         assert_eq!(buf, bytes);
@@ -130,7 +137,7 @@ mod test {
     #[test]
     fn valid_read_large_data() {
         let bytes: &[u8] = &[0x00; 64 * 1024];
-        let mut reader = SafeReader::new(bytes, bytes.len() as u64, 0, None);
+        let mut reader = SafeReader::new(bytes, bytes.len() as u64, 0, None).unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_ok());
         assert_eq!(buf, bytes);
@@ -139,7 +146,7 @@ mod test {
     #[test]
     fn valid_read_below_max_size() {
         let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
-        let mut reader = SafeReader::new(bytes, (bytes.len() as u64) + 1, 0, None);
+        let mut reader = SafeReader::new(bytes, (bytes.len() as u64) + 1, 0, None).unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_ok());
         assert_eq!(buf, bytes);
@@ -148,7 +155,7 @@ mod test {
     #[test]
     fn invalid_read_above_max_size() {
         let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
-        let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, 0, None);
+        let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, 0, None).unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_err());
     }
@@ -156,7 +163,7 @@ mod test {
     #[test]
     fn invalid_read_above_max_size_large_data() {
         let bytes: &[u8] = &[0x00; 64 * 1024];
-        let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, 0, None);
+        let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, 0, None).unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_err());
     }
@@ -172,7 +179,7 @@ mod test {
             bytes.len() as u64,
             0,
             Some((&HashAlgorithm::Sha256, hash_value)),
-        );
+        ).unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_ok());
         assert_eq!(buf, bytes);
@@ -190,7 +197,7 @@ mod test {
             bytes.len() as u64,
             0,
             Some((&HashAlgorithm::Sha256, hash_value)),
-        );
+        ).unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_err());
     }
@@ -206,7 +213,7 @@ mod test {
             bytes.len() as u64,
             0,
             Some((&HashAlgorithm::Sha256, hash_value)),
-        );
+        ).unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_ok());
         assert_eq!(buf, bytes);
@@ -224,7 +231,7 @@ mod test {
             bytes.len() as u64,
             0,
             Some((&HashAlgorithm::Sha256, hash_value)),
-        );
+        ).unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_err());
     }

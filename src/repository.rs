@@ -188,7 +188,7 @@ where
             max_size.unwrap_or(::std::usize::MAX) as u64,
             min_bytes_per_second,
             hash_data,
-        );
+        )?;
 
         Ok(D::from_reader(read)?)
     }
@@ -237,12 +237,12 @@ where
 
         let (alg, value) = crypto::hash_preference(target_description.hashes())?;
 
-        Ok(SafeReader::new(
+        SafeReader::new(
             File::open(&path)?,
             target_description.size(),
             min_bytes_per_second,
             Some((alg, value.clone())),
-        ))
+        )
     }
 }
 
@@ -375,7 +375,7 @@ where
             max_size.unwrap_or(::std::usize::MAX) as u64,
             min_bytes_per_second,
             hash_data,
-        );
+        )?;
         Ok(D::from_reader(read)?)
     }
 
@@ -402,7 +402,7 @@ where
             target_description.size(),
             min_bytes_per_second,
             Some((alg, value.clone())),
-        ))
+        )?)
     }
 }
 
@@ -482,7 +482,7 @@ where
                     max_size.unwrap_or(::std::usize::MAX) as u64,
                     min_bytes_per_second,
                     hash_data,
-                );
+                )?;
                 D::from_reader(reader)
             }
             None => Err(Error::NotFound),
@@ -514,7 +514,7 @@ where
                     target_description.size(),
                     min_bytes_per_second,
                     Some((alg, value.clone())),
-                );
+                )?;
                 Ok(read)
             }
             None => Err(Error::NotFound),
