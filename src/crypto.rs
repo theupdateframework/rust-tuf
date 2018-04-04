@@ -123,7 +123,7 @@ fn calculate_key_id(public_key: &[u8]) -> KeyId {
 /// # Calculating
 /// A `KeyId` is calculated as `sha256(spki(pub_key_bytes))` where `spki` is a function that takes
 /// any encoding for a public key an converts it into the `SubjectPublicKeyInfo` (SPKI) DER
-/// encoding.
+/// encoding as defined in [RFC 3280 Appendix A](https://www.ietf.org/rfc/rfc3280.txt).
 ///
 /// Note: Historically the TUF spec says that a key's ID should be calculated with
 /// `sha256(cjson(encoded(pub_key_bytes)))`, but since there could be multiple supported data
