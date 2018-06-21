@@ -824,17 +824,17 @@ fn write_spki(public: &[u8], key_type: &KeyType) -> ::std::result::Result<Vec<u8
     let mut output = Vec::new();
     {
         let mut der = Der::new(&mut output);
-        der.write_sequence(|der| {
-            der.write_sequence(|der| {
+        der.sequence(|der| {
+            der.sequence(|der| {
                 match key_type.as_oid().ok() {
                     Some(tag) => {
-                        der.write_element(Tag::Oid, tag)?;
-                        der.write_null()
+                        der.element(Tag::Oid, tag)?;
+                        der.null()
                     },
                     None => Err(derp::Error::WrongValue)
                 }
             })?;
-            der.write_bit_string(0, |der| der.write_raw(public))
+            der.bit_string(0,public)
         })?;
     }
 
@@ -878,9 +878,9 @@ fn write_pkcs1(n: &[u8], e: &[u8]) -> ::std::result::Result<Vec<u8>, derp::Error
     let mut output = Vec::new();
     {
         let mut der = Der::new(&mut output);
-        der.write_sequence(|der| {
-            der.write_positive_integer(n)?;
-            der.write_positive_integer(e)
+        der.sequence(|der| {
+            der.positive_integer(n)?;
+            der.positive_integer(e)
         })?;
     }
 
