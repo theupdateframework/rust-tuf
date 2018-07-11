@@ -524,14 +524,14 @@ impl RootMetadata {
         }
 
         Ok(RootMetadata {
-            version: version,
-            expires: expires,
-            consistent_snapshot: consistent_snapshot,
-            keys: keys,
-            root: root,
-            snapshot: snapshot,
-            targets: targets,
-            timestamp: timestamp,
+            version,
+            expires,
+            consistent_snapshot,
+            keys,
+            root,
+            snapshot,
+            targets,
+            timestamp,
         })
     }
 
@@ -633,8 +633,8 @@ impl RoleDefinition {
         }
 
         Ok(RoleDefinition {
-            threshold: threshold,
-            key_ids: key_ids,
+            threshold,
+            key_ids,
         })
     }
 
@@ -786,9 +786,9 @@ impl TimestampMetadata {
         }
 
         Ok(TimestampMetadata {
-            version: version,
-            expires: expires,
-            snapshot: snapshot,
+            version,
+            expires,
+            snapshot,
         })
     }
 
@@ -864,9 +864,9 @@ impl MetadataDescription {
         }
 
         Ok(MetadataDescription {
-            version: version,
+            version,
             size: size as usize,
-            hashes: hashes,
+            hashes,
         })
     }
 
@@ -890,9 +890,9 @@ impl MetadataDescription {
         }
 
         Ok(MetadataDescription {
-            version: version,
-            size: size,
-            hashes: hashes,
+            version,
+            size,
+            hashes,
         })
     }
 
@@ -944,9 +944,9 @@ impl SnapshotMetadata {
         }
 
         Ok(SnapshotMetadata {
-            version: version,
-            expires: expires,
-            meta: meta,
+            version,
+            expires,
+            meta,
         })
     }
 
@@ -1152,8 +1152,8 @@ impl TargetDescription {
         }
 
         Ok(TargetDescription {
-            size: size,
-            hashes: hashes,
+            size,
+            hashes,
         })
     }
 
@@ -1193,8 +1193,8 @@ impl TargetDescription {
     {
         let (size, hashes) = crypto::calculate_hashes(read, hash_algs)?;
         Ok(TargetDescription {
-            size: size,
-            hashes: hashes,
+            size,
+            hashes,
         })
     }
 
@@ -1243,10 +1243,10 @@ impl TargetsMetadata {
         }
 
         Ok(TargetsMetadata {
-            version: version,
-            expires: expires,
-            targets: targets,
-            delegations: delegations,
+            version,
+            expires,
+            targets,
+            delegations,
         })
     }
 
@@ -1334,7 +1334,7 @@ impl Delegations {
                 .cloned()
                 .map(|k| (k.key_id().clone(), k))
                 .collect(),
-            roles: roles,
+            roles,
         })
     }
 
@@ -1399,18 +1399,18 @@ impl Delegation {
             return Err(Error::IllegalArgument("Cannot have threshold < 1".into()));
         }
 
-        if (key_ids.len() as u64) < (threshold as u64) {
+        if (key_ids.len() as u64) < u64::from(threshold) {
             return Err(Error::IllegalArgument(
                 "Cannot have threshold less than number of keys".into(),
             ));
         }
 
         Ok(Delegation {
-            role: role,
-            terminating: terminating,
-            threshold: threshold,
-            key_ids: key_ids,
-            paths: paths,
+            role,
+            terminating,
+            threshold,
+            key_ids,
+            paths,
         })
     }
 

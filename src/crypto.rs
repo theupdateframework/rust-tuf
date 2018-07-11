@@ -445,8 +445,8 @@ impl PrivateKey {
         let private = PrivateKeyType::Ed25519(key);
 
         Ok(PrivateKey {
-            private: private,
-            public: public,
+            private,
+            public,
         })
     }
 
@@ -475,15 +475,15 @@ impl PrivateKey {
 
         let public = PublicKey {
             typ: KeyType::Rsa,
-            scheme: scheme,
+            scheme,
             key_id: calculate_key_id(&write_spki(&pub_key, &KeyType::Rsa)?),
             value: PublicKeyValue(pub_key),
         };
         let private = PrivateKeyType::Rsa(Arc::new(key));
 
         Ok(PrivateKey {
-            private: private,
-            public: public,
+            private,
+            public,
         })
     }
 
@@ -524,7 +524,7 @@ impl PrivateKey {
 
         Ok(Signature {
             key_id: self.key_id().clone(),
-            value: value,
+            value,
         })
     }
 
@@ -617,9 +617,9 @@ impl PublicKey {
 
         let key_id = calculate_key_id(der_bytes);
         Ok(PublicKey {
-            typ: typ,
-            key_id: key_id,
-            scheme: scheme,
+            typ,
+            key_id,
+            scheme,
             value: PublicKeyValue(value),
         })
     }

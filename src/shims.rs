@@ -53,7 +53,7 @@ impl RootMetadata {
             version: meta.version(),
             expires: format_datetime(&meta.expires()),
             consistent_snapshot: meta.consistent_snapshot(),
-            keys: keys,
+            keys,
             root: meta.root().clone(),
             snapshot: meta.snapshot().clone(),
             targets: meta.targets().clone(),
@@ -98,7 +98,7 @@ impl RoleDefinition {
 
         Ok(RoleDefinition {
             threshold: role.threshold(),
-            key_ids: key_ids,
+            key_ids,
         })
     }
 
@@ -244,8 +244,8 @@ impl PublicKey {
         public_key_bytes: &[u8],
     ) -> Self {
         PublicKey {
-            typ: typ,
-            scheme: scheme,
+            typ,
+            scheme,
             public_key: BASE64URL.encode(public_key_bytes),
         }
     }
@@ -289,8 +289,8 @@ impl Delegation {
             role: meta.role().clone(),
             terminating: meta.terminating(),
             threshold: meta.threshold(),
-            key_ids: key_ids,
-            paths: paths,
+            key_ids,
+            paths,
         }
     }
 
@@ -332,7 +332,7 @@ impl Delegations {
         keys.sort();
 
         Delegations {
-            keys: keys,
+            keys,
             roles: delegations.roles().clone(),
         }
     }

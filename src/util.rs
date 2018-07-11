@@ -55,9 +55,9 @@ impl<R: Read> SafeReader<R> {
 
         Ok(SafeReader {
             inner: read,
-            max_size: max_size,
-            min_bytes_per_second: min_bytes_per_second,
-            hasher: hasher,
+            max_size,
+            min_bytes_per_second,
+            hasher,
             start_time: None,
             bytes_read: 0,
         })

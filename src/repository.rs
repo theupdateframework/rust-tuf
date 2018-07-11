@@ -110,7 +110,7 @@ where
     /// Create a new repository on the local file system.
     pub fn new(local_path: PathBuf) -> Self {
         FileSystemRepository {
-            local_path: local_path,
+            local_path,
             interchange: PhantomData,
         }
     }
@@ -285,10 +285,10 @@ where
         };
 
         HttpRepository {
-            url: url,
-            client: client,
-            user_agent: user_agent,
-            metadata_prefix: metadata_prefix,
+            url,
+            client,
+            user_agent,
+            metadata_prefix,
             interchange: PhantomData,
         }
     }

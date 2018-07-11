@@ -158,10 +158,10 @@ where
         let tuf = Tuf::from_root(&root)?;
 
         Ok(Client {
-            tuf: tuf,
-            config: config,
-            local: local,
-            remote: remote,
+            tuf,
+            config,
+            local,
+            remote,
         })
     }
 
@@ -205,10 +205,10 @@ where
         let tuf = Tuf::from_root_pinned(root, trusted_root_keys)?;
 
         Ok(Client {
-            tuf: tuf,
-            config: config,
-            local: local,
-            remote: remote,
+            tuf,
+            config,
+            local,
+            remote,
         })
     }
 
@@ -758,7 +758,7 @@ where
             max_timestamp_size: self.max_timestamp_size,
             min_bytes_per_second: self.min_bytes_per_second,
             max_delegation_depth: self.max_delegation_depth,
-            path_translator: path_translator,
+            path_translator,
         }
     }
 }

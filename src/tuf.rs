@@ -60,7 +60,7 @@ impl<D: DataInterchange> Tuf<D> {
             ),
         )?;
         Ok(Tuf {
-            root: root,
+            root,
             snapshot: None,
             targets: None,
             timestamp: None,
