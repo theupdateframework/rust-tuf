@@ -479,9 +479,8 @@ where
                 }
             };
 
-            match targets.targets().get(target) {
-                Some(t) => return (default_terminate, Ok(t.clone())),
-                None => (),
+            if let Some(t) = targets.targets().get(target) {
+                return (default_terminate, Ok(t.clone()));
             }
 
             let delegations = match targets.delegations() {

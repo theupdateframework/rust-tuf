@@ -168,12 +168,12 @@ impl Role {
     /// assert!(!Role::Root.fuzzy_matches_path(&MetadataPath::new("wat".into()).unwrap()));
     /// ```
     pub fn fuzzy_matches_path(&self, path: &MetadataPath) -> bool {
-        match self {
-            &Role::Root if &path.0 == "root" => true,
-            &Role::Snapshot if &path.0 == "snapshot" => true,
-            &Role::Timestamp if &path.0 == "timestamp" => true,
-            &Role::Targets if &path.0 == "targets" => true,
-            &Role::Targets if !&["root", "snapshot", "targets"].contains(&path.0.as_str()) => true,
+        match *self {
+            Role::Root if &path.0 == "root" => true,
+            Role::Snapshot if &path.0 == "snapshot" => true,
+            Role::Timestamp if &path.0 == "timestamp" => true,
+            Role::Targets if &path.0 == "targets" => true,
+            Role::Targets if !&["root", "snapshot", "targets"].contains(&path.0.as_str()) => true,
             _ => false,
         }
     }
@@ -181,11 +181,11 @@ impl Role {
 
 impl Display for Role {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Role::Root => write!(f, "root"),
-            &Role::Snapshot => write!(f, "snapshot"),
-            &Role::Targets => write!(f, "targets"),
-            &Role::Timestamp => write!(f, "timestamp"),
+        match *self {
+            Role::Root => write!(f, "root"),
+            Role::Snapshot => write!(f, "snapshot"),
+            Role::Targets => write!(f, "targets"),
+            Role::Timestamp => write!(f, "timestamp"),
         }
     }
 }
@@ -204,10 +204,10 @@ pub enum MetadataVersion {
 impl MetadataVersion {
     /// Converts this struct into the string used for addressing metadata.
     pub fn prefix(&self) -> String {
-        match self {
-            &MetadataVersion::None => String::new(),
-            &MetadataVersion::Number(ref x) => format!("{}.", x),
-            &MetadataVersion::Hash(ref v) => format!("{}.", v),
+        match *self {
+            MetadataVersion::None => String::new(),
+            MetadataVersion::Number(ref x) => format!("{}.", x),
+            MetadataVersion::Hash(ref v) => format!("{}.", v),
         }
     }
 }

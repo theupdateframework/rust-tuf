@@ -302,7 +302,7 @@ where
             let mut segments = url.path_segments_mut().map_err(|_| {
                 Error::IllegalArgument(format!("URL was 'cannot-be-a-base': {:?}", self.url))
             })?;
-            if let &Some(ref prefix) = prefix {
+            if let Some(ref prefix) = prefix {
                 segments.extend(prefix);
             }
             segments.extend(components);

@@ -41,10 +41,10 @@ impl<R: Read> SafeReader<R> {
     ) -> Result<Self> {
         let hasher = match hash_data {
             Some((alg, value)) => {
-                let ctx = match alg {
-                    &HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
-                    &HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
-                    &HashAlgorithm::Unknown(ref s) => return Err(Error::IllegalArgument(
+                let ctx = match *alg {
+                    HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
+                    HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
+                    HashAlgorithm::Unknown(ref s) => return Err(Error::IllegalArgument(
                         format!("Unknown hash algorithm: {}", s)
                     )),
                 };
@@ -109,9 +109,8 @@ impl<R: Read> Read for SafeReader<R> {
                     }
                 }
 
-                match self.hasher {
-                    Some((ref mut context, _)) => context.update(&buf[..(read_bytes)]),
-                    None => (),
+                if let Some((ref mut context, _)) = self.hasher {
+                    context.update(&buf[..(read_bytes)]);
                 }
 
                 Ok(read_bytes)

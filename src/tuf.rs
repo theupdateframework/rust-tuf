@@ -535,37 +535,37 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     fn safe_snapshot_ref(&self) -> Result<&SnapshotMetadata> {
-        match &self.snapshot {
-            &Some(ref snapshot) => {
+        match self.snapshot {
+            Some(ref snapshot) => {
                 if snapshot.expires() <= &Utc::now() {
                     return Err(Error::ExpiredMetadata(Role::Snapshot));
                 }
                 Ok(snapshot)
             }
-            &None => Err(Error::MissingMetadata(Role::Snapshot)),
+            None => Err(Error::MissingMetadata(Role::Snapshot)),
         }
     }
 
     fn safe_targets_ref(&self) -> Result<&TargetsMetadata> {
-        match &self.targets {
-            &Some(ref targets) => {
+        match self.targets {
+            Some(ref targets) => {
                 if targets.expires() <= &Utc::now() {
                     return Err(Error::ExpiredMetadata(Role::Targets));
                 }
                 Ok(targets)
             }
-            &None => Err(Error::MissingMetadata(Role::Targets)),
+            None => Err(Error::MissingMetadata(Role::Targets)),
         }
     }
     fn safe_timestamp_ref(&self) -> Result<&TimestampMetadata> {
-        match &self.timestamp {
-            &Some(ref timestamp) => {
+        match self.timestamp {
+            Some(ref timestamp) => {
                 if timestamp.expires() <= &Utc::now() {
                     return Err(Error::ExpiredMetadata(Role::Timestamp));
                 }
                 Ok(timestamp)
             }
-            &None => Err(Error::MissingMetadata(Role::Timestamp)),
+            None => Err(Error::MissingMetadata(Role::Timestamp)),
         }
     }
 }

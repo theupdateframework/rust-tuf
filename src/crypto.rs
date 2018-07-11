@@ -74,10 +74,10 @@ pub fn calculate_hashes<R: Read>(
     let mut size = 0;
     let mut hashes = HashMap::new();
     for alg in hash_algs {
-        let context = match alg {
-            &HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
-            &HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
-            &HashAlgorithm::Unknown(ref s) => return Err(Error::IllegalArgument(
+        let context = match *alg {
+            HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
+            HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
+            HashAlgorithm::Unknown(ref s) => return Err(Error::IllegalArgument(
                 format!("Unknown hash algorithm: {}", s)
             )),
         };
@@ -278,10 +278,10 @@ impl KeyType {
     }
 
     fn as_oid(&self) -> Result<&'static [u8]> {
-        match self {
-            &KeyType::Rsa => Ok(RSA_SPKI_OID),
-            &KeyType::Ed25519 => Ok(ED25519_SPKI_OID),
-            &KeyType::Unknown(ref s) => Err(Error::UnknownKeyType(s.clone())),
+        match *self {
+            KeyType::Rsa => Ok(RSA_SPKI_OID),
+            KeyType::Ed25519 => Ok(ED25519_SPKI_OID),
+            KeyType::Unknown(ref s) => Err(Error::UnknownKeyType(s.clone())),
         }
     }
 }
@@ -300,10 +300,10 @@ impl FromStr for KeyType {
 
 impl ToString for KeyType {
     fn to_string(&self) -> String {
-        match self {
-            &KeyType::Ed25519 => "ed25519".to_string(),
-            &KeyType::Rsa => "rsa".to_string(),
-            &KeyType::Unknown(ref s) => s.to_string(),
+        match *self {
+            KeyType::Ed25519 => "ed25519".to_string(),
+            KeyType::Rsa => "rsa".to_string(),
+            KeyType::Unknown(ref s) => s.to_string(),
         }
     }
 }
@@ -333,9 +333,9 @@ enum PrivateKeyType {
 
 impl Debug for PrivateKeyType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = match self {
-            &PrivateKeyType::Ed25519(_) => "ed25519",
-            &PrivateKeyType::Rsa(_) => "rsa",
+        let s = match *self {
+            PrivateKeyType::Ed25519(_) => "ed25519",
+            PrivateKeyType::Rsa(_) => "rsa",
         };
         write!(f, "PrivateKeyType {{ \"{}\" }}", s)
     }
@@ -451,13 +451,10 @@ impl PrivateKey {
     }
 
     fn rsa_from_pkcs8(der_key: &[u8], scheme: SignatureScheme) -> Result<Self> {
-        match &scheme {
-            &SignatureScheme::Ed25519 => {
-                return Err(Error::IllegalArgument(
-                    "RSA keys do not support the Ed25519 signing scheme".into(),
-                ))
-            }
-            _ => (),
+        if let SignatureScheme::Ed25519 = scheme {
+            return Err(Error::IllegalArgument(
+                "RSA keys do not support the Ed25519 signing scheme".into(),
+            ));
         }
 
         let key = RSAKeyPair::from_pkcs8(Input::from(der_key)).map_err(|_| {
@@ -648,11 +645,11 @@ impl PublicKey {
 
     /// Use this key to verify a message with a signature.
     pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<()> {
-        let alg: &ring::signature::VerificationAlgorithm = match &self.scheme {
-            &SignatureScheme::Ed25519 => &ED25519,
-            &SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
-            &SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
-            &SignatureScheme::Unknown(ref s) => return Err(Error::IllegalArgument(
+        let alg: &ring::signature::VerificationAlgorithm = match self.scheme {
+            SignatureScheme::Ed25519 => &ED25519,
+            SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
+            SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
+            SignatureScheme::Unknown(ref s) => return Err(Error::IllegalArgument(
                 format!("Unknown signature scheme: {}", s)
             )),
         };
