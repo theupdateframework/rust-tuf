@@ -102,7 +102,7 @@ fn safe_path(path: &str) -> Result<()> {
         return Err(Error::IllegalArgument("Path cannot be empty".into()));
     }
 
-    if path.starts_with("/") {
+    if path.starts_with('/') {
         return Err(Error::IllegalArgument("Cannot start with '/'".into()));
     }
 
@@ -426,7 +426,7 @@ where
     where
         I: IntoIterator<Item = &'a PublicKey>,
     {
-        if self.signatures.len() < 1 {
+        if self.signatures.is_empty() {
             return Err(Error::VerificationFailure(
                 "The metadata was not signed with any authorized keys."
                     .into(),
@@ -447,7 +447,7 @@ where
         let canonical_bytes = D::canonicalize(&self.signed)?;
 
         let mut signatures_needed = threshold;
-        for sig in self.signatures.iter() {
+        for sig in &self.signatures {
             match authorized_keys.get(sig.key_id()) {
                 Some(ref pub_key) => {
                     match pub_key.verify(&canonical_bytes, &sig) {

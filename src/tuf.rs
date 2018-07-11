@@ -46,7 +46,7 @@ impl<D: DataInterchange> Tuf<D> {
     /// the related method `from_root_pinned`.
     pub fn from_root(signed_root: &SignedMetadata<D, RootMetadata>) -> Result<Self> {
         let root = D::deserialize::<RootMetadata>(signed_root.signed())?;
-        let _ = signed_root.verify(
+        signed_root.verify(
             root.root().threshold(),
             root.keys().iter().filter_map(
                 |(k, v)| if root.root()
@@ -127,7 +127,7 @@ impl<D: DataInterchange> Tuf<D> {
             _ => (),
         }
 
-        let _ = signed_root.verify(
+        signed_root.verify(
             root.root().threshold(),
             root.keys().iter().filter_map(
                 |(k, v)| if root.root()
@@ -281,7 +281,7 @@ impl<D: DataInterchange> Tuf<D> {
             purge
         };
 
-        for role in purge.iter() {
+        for role in &purge {
             let _ = self.delegations.remove(role);
         }
     }
@@ -389,13 +389,13 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
-            for (_, delegated_targets) in self.delegations.iter() {
+            for delegated_targets in self.delegations.values() {
                 let parent = match delegated_targets.delegations() {
                     Some(d) => d,
                     None => &targets_delegations,
                 };
 
-                let delegation = match parent.roles().iter().filter(|r| r.role() == role).next() {
+                let delegation = match parent.roles().iter().find(|r| r.role() == role) {
                     Some(d) => d,
                     None => continue,
                 };
@@ -447,9 +447,8 @@ impl<D: DataInterchange> Tuf<D> {
         let _ = self.safe_snapshot_ref()?;
         let targets = self.safe_targets_ref()?;
 
-        match targets.targets().get(target_path) {
-            Some(d) => return Ok(d.clone()),
-            None => (),
+        if let Some(d) = targets.targets().get(target_path) {
+            return Ok(d.clone());
         }
 
         fn lookup<D: DataInterchange>(

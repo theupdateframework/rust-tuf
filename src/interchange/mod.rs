@@ -238,7 +238,7 @@ impl DataInterchange for Json {
     /// assert_eq!(out, br#"{"baz":"quux","foo":"bar"}"#);
     /// ```
     fn canonicalize(raw_data: &Self::RawData) -> Result<Vec<u8>> {
-        cjson::canonicalize(raw_data).map_err(|e| Error::Opaque(e))
+        cjson::canonicalize(raw_data).map_err(Error::Opaque)
     }
 
     /// ```

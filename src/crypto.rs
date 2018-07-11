@@ -24,13 +24,13 @@ use Result;
 use error::Error;
 use shims;
 
-const HASH_ALG_PREFS: &'static [HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
+const HASH_ALG_PREFS: &[HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
 
 /// 1.2.840.113549.1.1.1 rsaEncryption(PKCS #1)
-const RSA_SPKI_OID: &'static [u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01];
+const RSA_SPKI_OID: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01];
 
 /// 1.3.101.112 curveEd25519(EdDSA 25519 signature algorithm)
-const ED25519_SPKI_OID: &'static [u8] = &[0x2b, 0x65, 0x70];
+const ED25519_SPKI_OID: &[u8] = &[0x2b, 0x65, 0x70];
 
 /// Given a map of hash algorithms and their values, get the prefered algorithm and the hash
 /// calculated by it. Returns an `Err` if there is no match.
@@ -65,7 +65,7 @@ pub fn calculate_hashes<R: Read>(
     mut read: R,
     hash_algs: &[HashAlgorithm],
 ) -> Result<(u64, HashMap<HashAlgorithm, HashValue>)> {
-    if hash_algs.len() == 0 {
+    if hash_algs.is_empty() {
         return Err(Error::IllegalArgument(
             "Cannot provide empty set of hash algorithms".into(),
         ));
@@ -95,7 +95,7 @@ pub fn calculate_hashes<R: Read>(
 
                 size += read_bytes as u64;
 
-                for (_, context) in hashes.iter_mut() {
+                for context in hashes.values_mut() {
                     context.update(&buf[0..read_bytes]);
                 }
             }
@@ -604,7 +604,7 @@ impl PublicKey {
                     })?;
 
                     // for RSA / ed25519 this is null, so don't both parsing it
-                    let _ = derp::read_null(input)?;
+                    derp::read_null(input)?;
                     Ok(typ)
                 })?;
                 let value = derp::bit_string_with_no_unused_bits(input)?;
