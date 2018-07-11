@@ -85,12 +85,13 @@ pub trait PathTranslator {
 }
 
 /// A `PathTranslator` that does nothing.
-pub struct DefaultTranslator {}
+#[derive(Default)]
+pub struct DefaultTranslator;
 
 impl DefaultTranslator {
     /// Create a new `DefaultTranslator`.
     pub fn new() -> Self {
-        DefaultTranslator {}
+        DefaultTranslator
     }
 }
 

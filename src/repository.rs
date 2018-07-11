@@ -431,6 +431,15 @@ where
     }
 }
 
+impl<D> Default for EphemeralRepository<D>
+where
+    D: DataInterchange,
+{
+    fn default() -> Self {
+        EphemeralRepository::new()
+    }
+}
+
 impl<D> Repository<D> for EphemeralRepository<D>
 where
     D: DataInterchange,
