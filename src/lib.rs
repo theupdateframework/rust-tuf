@@ -103,6 +103,17 @@
 
 #![deny(missing_docs)]
 
+#![cfg_attr(
+    feature = "cargo-clippy",
+    allow(
+        collapsible_if,
+        implicit_hasher,
+        new_ret_no_self,
+        op_ref,
+        too_many_arguments,
+    )
+)]
+
 extern crate chrono;
 extern crate data_encoding;
 extern crate derp;
