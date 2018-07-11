@@ -343,7 +343,7 @@ impl Delegations {
         if keys.len() != keys_len {
             return Err(Error::Encoding("Cannot have duplicate keys".into()));
         }
-        metadata::Delegations::new(keys, self.roles)
+        metadata::Delegations::new(&keys, self.roles)
     }
 }
 

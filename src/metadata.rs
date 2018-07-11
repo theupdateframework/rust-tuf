@@ -1308,7 +1308,7 @@ impl Delegations {
     // TODO check all keys are used
     // TODO check all roles have their ID in the set of keys
     /// Create a new `Delegations` wrapper from the given set of trusted keys and roles.
-    pub fn new(keys: HashSet<PublicKey>, roles: Vec<Delegation>) -> Result<Self> {
+    pub fn new(keys: &HashSet<PublicKey>, roles: Vec<Delegation>) -> Result<Self> {
         if keys.is_empty() {
             return Err(Error::IllegalArgument("Keys cannot be empty.".into()));
         }
@@ -1787,7 +1787,7 @@ mod test {
     fn serde_targets_with_delegations_metadata() {
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let delegations = Delegations::new(
-            hashset![key.public().clone()],
+            &hashset![key.public().clone()],
             vec![Delegation::new(
                 MetadataPath::new("foo/bar".into()).unwrap(),
                 false,
@@ -1988,7 +1988,7 @@ mod test {
             .public()
             .clone();
         let delegations = Delegations::new(
-            hashset![key.clone()],
+            &hashset![key.clone()],
             vec![Delegation::new(
                 MetadataPath::new("foo".into()).unwrap(),
                 false,
@@ -2328,7 +2328,7 @@ mod test {
             .public()
             .clone();
         let delegations = Delegations::new(
-            hashset!(key.clone()),
+            &hashset!(key.clone()),
             vec![Delegation::new(
                 MetadataPath::new("foo".into()).unwrap(),
                 false,

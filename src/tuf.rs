@@ -37,14 +37,14 @@ impl<D: DataInterchange> Tuf<D> {
         signed_root.signatures_mut().retain(|s| {
             root_key_ids.contains(s.key_id())
         });
-        Self::from_root(signed_root)
+        Self::from_root(&signed_root)
     }
 
     /// Create a new `TUF` struct from a piece of metadata that is assumed to be trusted.
     ///
     /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
     /// the related method `from_root_pinned`.
-    pub fn from_root(signed_root: SignedMetadata<D, RootMetadata>) -> Result<Self> {
+    pub fn from_root(signed_root: &SignedMetadata<D, RootMetadata>) -> Result<Self> {
         let root = D::deserialize::<RootMetadata>(signed_root.signed())?;
         let _ = signed_root.verify(
             root.root().threshold(),
@@ -95,7 +95,7 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// Verify and update the root metadata.
-    pub fn update_root(&mut self, signed_root: SignedMetadata<D, RootMetadata>) -> Result<bool> {
+    pub fn update_root(&mut self, signed_root: &SignedMetadata<D, RootMetadata>) -> Result<bool> {
         signed_root.verify(
             self.root.root().threshold(),
             self.root.keys().iter().filter_map(|(k, v)| {
@@ -150,7 +150,7 @@ impl<D: DataInterchange> Tuf<D> {
     /// Verify and update the timestamp metadata.
     pub fn update_timestamp(
         &mut self,
-        signed_timestamp: SignedMetadata<D, TimestampMetadata>,
+        signed_timestamp: &SignedMetadata<D, TimestampMetadata>,
     ) -> Result<bool> {
         signed_timestamp.verify(
             self.root.timestamp().threshold(),
@@ -196,7 +196,7 @@ impl<D: DataInterchange> Tuf<D> {
     /// Verify and update the snapshot metadata.
     pub fn update_snapshot(
         &mut self,
-        signed_snapshot: SignedMetadata<D, SnapshotMetadata>,
+        signed_snapshot: &SignedMetadata<D, SnapshotMetadata>,
     ) -> Result<bool> {
         let snapshot = {
             let root = self.safe_root_ref()?;
@@ -289,7 +289,7 @@ impl<D: DataInterchange> Tuf<D> {
     /// Verify and update the targets metadata.
     pub fn update_targets(
         &mut self,
-        signed_targets: SignedMetadata<D, TargetsMetadata>,
+        signed_targets: &SignedMetadata<D, TargetsMetadata>,
     ) -> Result<bool> {
         let targets = {
             let root = self.safe_root_ref()?;
@@ -351,7 +351,7 @@ impl<D: DataInterchange> Tuf<D> {
     pub fn update_delegation(
         &mut self,
         role: &MetadataPath,
-        signed: SignedMetadata<D, TargetsMetadata>,
+        signed: &SignedMetadata<D, TargetsMetadata>,
     ) -> Result<bool> {
         let delegation = {
             let _ = self.safe_root_ref()?;
@@ -458,7 +458,7 @@ impl<D: DataInterchange> Tuf<D> {
             current_depth: u32,
             target_path: &VirtualTargetPath,
             delegations: &Delegations,
-            parents: Vec<HashSet<VirtualTargetPath>>,
+            parents: &[HashSet<VirtualTargetPath>],
             visited: &mut HashSet<MetadataPath>,
         ) -> (bool, Option<TargetDescription>) {
             for delegation in delegations.roles() {
@@ -467,7 +467,7 @@ impl<D: DataInterchange> Tuf<D> {
                 }
                 let _ = visited.insert(delegation.role().clone());
 
-                let mut new_parents = parents.clone();
+                let mut new_parents = parents.to_owned();
                 new_parents.push(delegation.paths().clone());
 
                 if current_depth > 0 && !target_path.matches_chain(&parents) {
@@ -496,7 +496,7 @@ impl<D: DataInterchange> Tuf<D> {
                         current_depth + 1,
                         target_path,
                         d,
-                        new_parents,
+                        &new_parents,
                         visited,
                     );
                     if term {
@@ -512,7 +512,7 @@ impl<D: DataInterchange> Tuf<D> {
         match targets.delegations() {
             Some(d) => {
                 let mut visited = HashSet::new();
-                lookup(self, false, 0, target_path, d, vec![], &mut visited)
+                lookup(self, false, 0, target_path, d, &[], &mut visited)
                     .1
                     .ok_or_else(|| Error::TargetUnavailable)
             }
@@ -645,7 +645,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::from_root(&root).unwrap();
 
         let root = RootMetadata::new(
             2,
@@ -663,10 +663,10 @@ mod test {
         // add the original key's signature to make it cross signed
         root.add_signature(&KEYS[0]).unwrap();
 
-        assert_eq!(tuf.update_root(root.clone()), Ok(true));
+        assert_eq!(tuf.update_root(&root), Ok(true));
 
         // second update should do nothing
-        assert_eq!(tuf.update_root(root), Ok(false));
+        assert_eq!(tuf.update_root(&root), Ok(false));
     }
 
     #[test]
@@ -684,7 +684,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::from_root(&root).unwrap();
 
         let root = RootMetadata::new(
             2,
@@ -700,7 +700,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[1])
             .unwrap();
 
-        assert!(tuf.update_root(root).is_err());
+        assert!(tuf.update_root(&root).is_err());
     }
 
     #[test]
@@ -718,7 +718,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::from_root(&root).unwrap();
 
         let timestamp = TimestampMetadata::new(
             1,
@@ -729,10 +729,10 @@ mod test {
         let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[1]).unwrap();
 
-        assert_eq!(tuf.update_timestamp(timestamp.clone()), Ok(true));
+        assert_eq!(tuf.update_timestamp(&timestamp), Ok(true));
 
         // second update should do nothing
-        assert_eq!(tuf.update_timestamp(timestamp), Ok(false))
+        assert_eq!(tuf.update_timestamp(&timestamp), Ok(false))
     }
 
     #[test]
@@ -750,7 +750,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::from_root(&root).unwrap();
 
         let timestamp = TimestampMetadata::new(
             1,
@@ -763,7 +763,7 @@ mod test {
         let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[0]).unwrap();
 
-        assert!(tuf.update_timestamp(timestamp).is_err())
+        assert!(tuf.update_timestamp(&timestamp).is_err())
     }
 
     #[test]
@@ -785,7 +785,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::from_root(&root).unwrap();
 
         let timestamp = TimestampMetadata::new(
             1,
@@ -796,17 +796,17 @@ mod test {
         let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[2]).unwrap();
 
-        tuf.update_timestamp(timestamp).unwrap();
+        tuf.update_timestamp(&timestamp).unwrap();
 
         let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!())
             .unwrap();
         let snapshot: SignedMetadata<Json, SnapshotMetadata> =
             SignedMetadata::new(&snapshot, &KEYS[1]).unwrap();
 
-        assert_eq!(tuf.update_snapshot(snapshot.clone()), Ok(true));
+        assert_eq!(tuf.update_snapshot(&snapshot), Ok(true));
 
         // second update should do nothing
-        assert_eq!(tuf.update_snapshot(snapshot), Ok(false));
+        assert_eq!(tuf.update_snapshot(&snapshot), Ok(false));
     }
 
     #[test]
@@ -828,7 +828,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::from_root(&root).unwrap();
 
         let timestamp = TimestampMetadata::new(
             1,
@@ -839,14 +839,14 @@ mod test {
         let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[2]).unwrap();
 
-        tuf.update_timestamp(timestamp).unwrap();
+        tuf.update_timestamp(&timestamp).unwrap();
 
         let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!())
             .unwrap();
         let snapshot: SignedMetadata<Json, SnapshotMetadata> =
             SignedMetadata::new(&snapshot, &KEYS[2]).unwrap();
 
-        assert!(tuf.update_snapshot(snapshot.clone()).is_err());
+        assert!(tuf.update_snapshot(&snapshot).is_err());
     }
 
     #[test]
@@ -868,7 +868,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::from_root(&root).unwrap();
 
         let timestamp = TimestampMetadata::new(
             1,
@@ -879,14 +879,14 @@ mod test {
         let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[2]).unwrap();
 
-        tuf.update_timestamp(timestamp).unwrap();
+        tuf.update_timestamp(&timestamp).unwrap();
 
         let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!())
             .unwrap();
         let snapshot: SignedMetadata<Json, SnapshotMetadata> =
             SignedMetadata::new(&snapshot, &KEYS[1]).unwrap();
 
-        assert!(tuf.update_snapshot(snapshot).is_err());
+        assert!(tuf.update_snapshot(&snapshot).is_err());
     }
 
     #[test]
@@ -909,7 +909,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::from_root(&root).unwrap();
 
         let timestamp = TimestampMetadata::new(
             1,
@@ -920,7 +920,7 @@ mod test {
         let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[3]).unwrap();
 
-        tuf.update_timestamp(timestamp).unwrap();
+        tuf.update_timestamp(&timestamp).unwrap();
 
         let meta_map =
             hashmap!(
@@ -932,7 +932,7 @@ mod test {
         let snapshot: SignedMetadata<Json, SnapshotMetadata> =
             SignedMetadata::new(&snapshot, &KEYS[1]).unwrap();
 
-        tuf.update_snapshot(snapshot).unwrap();
+        tuf.update_snapshot(&snapshot).unwrap();
 
         let targets =
             TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
@@ -940,10 +940,10 @@ mod test {
         let targets: SignedMetadata<Json, TargetsMetadata> =
             SignedMetadata::new(&targets, &KEYS[2]).unwrap();
 
-        assert_eq!(tuf.update_targets(targets.clone()), Ok(true));
+        assert_eq!(tuf.update_targets(&targets), Ok(true));
 
         // second update should do nothing
-        assert_eq!(tuf.update_targets(targets), Ok(false));
+        assert_eq!(tuf.update_targets(&targets), Ok(false));
     }
 
     #[test]
@@ -966,7 +966,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::from_root(&root).unwrap();
 
         let timestamp = TimestampMetadata::new(
             1,
@@ -977,7 +977,7 @@ mod test {
         let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[3]).unwrap();
 
-        tuf.update_timestamp(timestamp).unwrap();
+        tuf.update_timestamp(&timestamp).unwrap();
 
         let meta_map =
             hashmap!(
@@ -989,7 +989,7 @@ mod test {
         let snapshot: SignedMetadata<Json, SnapshotMetadata> =
             SignedMetadata::new(&snapshot, &KEYS[1]).unwrap();
 
-        tuf.update_snapshot(snapshot).unwrap();
+        tuf.update_snapshot(&snapshot).unwrap();
 
         let targets =
             TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
@@ -997,7 +997,7 @@ mod test {
         let targets: SignedMetadata<Json, TargetsMetadata> =
             SignedMetadata::new(&targets, &KEYS[3]).unwrap();
 
-        assert!(tuf.update_targets(targets).is_err());
+        assert!(tuf.update_targets(&targets).is_err());
     }
 
     #[test]
@@ -1020,7 +1020,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::from_root(&root).unwrap();
 
         let timestamp = TimestampMetadata::new(
             1,
@@ -1031,7 +1031,7 @@ mod test {
         let timestamp: SignedMetadata<Json, TimestampMetadata> =
             SignedMetadata::new(&timestamp, &KEYS[3]).unwrap();
 
-        tuf.update_timestamp(timestamp).unwrap();
+        tuf.update_timestamp(&timestamp).unwrap();
 
         let meta_map =
             hashmap!(
@@ -1043,7 +1043,7 @@ mod test {
         let snapshot: SignedMetadata<Json, SnapshotMetadata> =
             SignedMetadata::new(&snapshot, &KEYS[1]).unwrap();
 
-        tuf.update_snapshot(snapshot).unwrap();
+        tuf.update_snapshot(&snapshot).unwrap();
 
         let targets =
             TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
@@ -1051,6 +1051,6 @@ mod test {
         let targets: SignedMetadata<Json, TargetsMetadata> =
             SignedMetadata::new(&targets, &KEYS[2]).unwrap();
 
-        assert!(tuf.update_targets(targets).is_err());
+        assert!(tuf.update_targets(&targets).is_err());
     }
 }

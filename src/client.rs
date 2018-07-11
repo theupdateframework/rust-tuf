@@ -155,7 +155,7 @@ where
                 )
             })?;
 
-        let tuf = Tuf::from_root(root)?;
+        let tuf = Tuf::from_root(&root)?;
 
         Ok(Client {
             tuf: tuf,
@@ -302,13 +302,13 @@ where
                 config.min_bytes_per_second,
                 None,
             )?;
-            if !tuf.update_root(signed)? {
+            if !tuf.update_root(&signed)? {
                 error!("{}", err_msg);
                 return Err(Error::Programming(err_msg.into()));
             }
         }
 
-        if !tuf.update_root(latest_root)? {
+        if !tuf.update_root(&latest_root)? {
             error!("{}", err_msg);
             return Err(Error::Programming(err_msg.into()));
         }
@@ -329,7 +329,7 @@ where
             config.min_bytes_per_second,
             None,
         )?;
-        tuf.update_timestamp(ts)
+        tuf.update_timestamp(&ts)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -364,7 +364,7 @@ where
             config.min_bytes_per_second,
             Some((alg, value.clone())),
         )?;
-        tuf.update_snapshot(snap)
+        tuf.update_snapshot(&snap)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -408,7 +408,7 @@ where
             config.min_bytes_per_second,
             Some((alg, value.clone())),
         )?;
-        tuf.update_targets(targets)
+        tuf.update_targets(&targets)
     }
 
     /// Fetch a target from the remote repo and write it to the local repo.
@@ -545,7 +545,7 @@ where
                     }
                 };
 
-                match tuf.update_delegation(delegation.role(), signed_meta.clone()) {
+                match tuf.update_delegation(delegation.role(), &signed_meta) {
                     Ok(_) => {
                         match local.store_metadata(
                             &Role::Targets,
