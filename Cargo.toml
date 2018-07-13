@@ -23,18 +23,18 @@ path = "./src/lib.rs"
 [dependencies]
 chrono = { version = "0.4", features = [ "serde" ] }
 data-encoding = "2.0.0-rc.2"
-derp = "0.0.4"
+derp = "0.0.10"
 hyper = "0.10"
-itoa = "0.3"
-log = "0.3"
+itoa = "0.4"
+log = "0.4"
 ring = { version = "0.12", features = [ "rsa_signing" ] }
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
-tempfile = "2.1"
+tempfile = "3"
 untrusted = "0.5"
 
 [dev-dependencies]
-lazy_static = "0.2"
-maplit = "0.1"
+lazy_static = "1"
+maplit = "1"
 tempdir = "0.3"
