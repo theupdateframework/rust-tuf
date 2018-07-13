@@ -102,7 +102,7 @@ fn safe_path(path: &str) -> Result<()> {
         return Err(Error::IllegalArgument("Path cannot be empty".into()));
     }
 
-    if path.starts_with("/") {
+    if path.starts_with('/') {
         return Err(Error::IllegalArgument("Cannot start with '/'".into()));
     }
 
@@ -168,12 +168,12 @@ impl Role {
     /// assert!(!Role::Root.fuzzy_matches_path(&MetadataPath::new("wat".into()).unwrap()));
     /// ```
     pub fn fuzzy_matches_path(&self, path: &MetadataPath) -> bool {
-        match self {
-            &Role::Root if &path.0 == "root" => true,
-            &Role::Snapshot if &path.0 == "snapshot" => true,
-            &Role::Timestamp if &path.0 == "timestamp" => true,
-            &Role::Targets if &path.0 == "targets" => true,
-            &Role::Targets if !&["root", "snapshot", "targets"].contains(&path.0.as_str()) => true,
+        match *self {
+            Role::Root if &path.0 == "root" => true,
+            Role::Snapshot if &path.0 == "snapshot" => true,
+            Role::Timestamp if &path.0 == "timestamp" => true,
+            Role::Targets if &path.0 == "targets" => true,
+            Role::Targets if !&["root", "snapshot", "targets"].contains(&path.0.as_str()) => true,
             _ => false,
         }
     }
@@ -181,11 +181,11 @@ impl Role {
 
 impl Display for Role {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Role::Root => write!(f, "root"),
-            &Role::Snapshot => write!(f, "snapshot"),
-            &Role::Targets => write!(f, "targets"),
-            &Role::Timestamp => write!(f, "timestamp"),
+        match *self {
+            Role::Root => write!(f, "root"),
+            Role::Snapshot => write!(f, "snapshot"),
+            Role::Targets => write!(f, "targets"),
+            Role::Timestamp => write!(f, "timestamp"),
         }
     }
 }
@@ -204,10 +204,10 @@ pub enum MetadataVersion {
 impl MetadataVersion {
     /// Converts this struct into the string used for addressing metadata.
     pub fn prefix(&self) -> String {
-        match self {
-            &MetadataVersion::None => String::new(),
-            &MetadataVersion::Number(ref x) => format!("{}.", x),
-            &MetadataVersion::Hash(ref v) => format!("{}.", v),
+        match *self {
+            MetadataVersion::None => String::new(),
+            MetadataVersion::Number(ref x) => format!("{}.", x),
+            MetadataVersion::Hash(ref v) => format!("{}.", v),
         }
     }
 }
@@ -426,7 +426,7 @@ where
     where
         I: IntoIterator<Item = &'a PublicKey>,
     {
-        if self.signatures.len() < 1 {
+        if self.signatures.is_empty() {
             return Err(Error::VerificationFailure(
                 "The metadata was not signed with any authorized keys."
                     .into(),
@@ -447,7 +447,7 @@ where
         let canonical_bytes = D::canonicalize(&self.signed)?;
 
         let mut signatures_needed = threshold;
-        for sig in self.signatures.iter() {
+        for sig in &self.signatures {
             match authorized_keys.get(sig.key_id()) {
                 Some(ref pub_key) => {
                     match pub_key.verify(&canonical_bytes, &sig) {
@@ -524,14 +524,14 @@ impl RootMetadata {
         }
 
         Ok(RootMetadata {
-            version: version,
-            expires: expires,
-            consistent_snapshot: consistent_snapshot,
-            keys: keys,
-            root: root,
-            snapshot: snapshot,
-            targets: targets,
-            timestamp: timestamp,
+            version,
+            expires,
+            consistent_snapshot,
+            keys,
+            root,
+            snapshot,
+            targets,
+            timestamp,
         })
     }
 
@@ -624,7 +624,7 @@ impl RoleDefinition {
             ));
         }
 
-        if (key_ids.len() as u64) < (threshold as u64) {
+        if (key_ids.len() as u64) < u64::from(threshold) {
             return Err(Error::IllegalArgument(format!(
                 "Cannot have a threshold greater than the number of associated key IDs. {} vs. {}",
                 threshold,
@@ -633,8 +633,8 @@ impl RoleDefinition {
         }
 
         Ok(RoleDefinition {
-            threshold: threshold,
-            key_ids: key_ids,
+            threshold,
+            key_ids,
         })
     }
 
@@ -786,9 +786,9 @@ impl TimestampMetadata {
         }
 
         Ok(TimestampMetadata {
-            version: version,
-            expires: expires,
-            snapshot: snapshot,
+            version,
+            expires,
+            snapshot,
         })
     }
 
@@ -864,9 +864,9 @@ impl MetadataDescription {
         }
 
         Ok(MetadataDescription {
-            version: version,
+            version,
             size: size as usize,
-            hashes: hashes,
+            hashes,
         })
     }
 
@@ -890,9 +890,9 @@ impl MetadataDescription {
         }
 
         Ok(MetadataDescription {
-            version: version,
-            size: size,
-            hashes: hashes,
+            version,
+            size,
+            hashes,
         })
     }
 
@@ -944,9 +944,9 @@ impl SnapshotMetadata {
         }
 
         Ok(SnapshotMetadata {
-            version: version,
-            expires: expires,
-            meta: meta,
+            version,
+            expires,
+            meta,
         })
     }
 
@@ -1152,8 +1152,8 @@ impl TargetDescription {
         }
 
         Ok(TargetDescription {
-            size: size,
-            hashes: hashes,
+            size,
+            hashes,
         })
     }
 
@@ -1193,8 +1193,8 @@ impl TargetDescription {
     {
         let (size, hashes) = crypto::calculate_hashes(read, hash_algs)?;
         Ok(TargetDescription {
-            size: size,
-            hashes: hashes,
+            size,
+            hashes,
         })
     }
 
@@ -1243,10 +1243,10 @@ impl TargetsMetadata {
         }
 
         Ok(TargetsMetadata {
-            version: version,
-            expires: expires,
-            targets: targets,
-            delegations: delegations,
+            version,
+            expires,
+            targets,
+            delegations,
         })
     }
 
@@ -1308,7 +1308,7 @@ impl Delegations {
     // TODO check all keys are used
     // TODO check all roles have their ID in the set of keys
     /// Create a new `Delegations` wrapper from the given set of trusted keys and roles.
-    pub fn new(keys: HashSet<PublicKey>, roles: Vec<Delegation>) -> Result<Self> {
+    pub fn new(keys: &HashSet<PublicKey>, roles: Vec<Delegation>) -> Result<Self> {
         if keys.is_empty() {
             return Err(Error::IllegalArgument("Keys cannot be empty.".into()));
         }
@@ -1334,7 +1334,7 @@ impl Delegations {
                 .cloned()
                 .map(|k| (k.key_id().clone(), k))
                 .collect(),
-            roles: roles,
+            roles,
         })
     }
 
@@ -1399,18 +1399,18 @@ impl Delegation {
             return Err(Error::IllegalArgument("Cannot have threshold < 1".into()));
         }
 
-        if (key_ids.len() as u64) < (threshold as u64) {
+        if (key_ids.len() as u64) < u64::from(threshold) {
             return Err(Error::IllegalArgument(
                 "Cannot have threshold less than number of keys".into(),
             ));
         }
 
         Ok(Delegation {
-            role: role,
-            terminating: terminating,
-            threshold: threshold,
-            key_ids: key_ids,
-            paths: paths,
+            role,
+            terminating,
+            threshold,
+            key_ids,
+            paths,
         })
     }
 
@@ -1787,7 +1787,7 @@ mod test {
     fn serde_targets_with_delegations_metadata() {
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let delegations = Delegations::new(
-            hashset![key.public().clone()],
+            &hashset![key.public().clone()],
             vec![Delegation::new(
                 MetadataPath::new("foo/bar".into()).unwrap(),
                 false,
@@ -1988,7 +1988,7 @@ mod test {
             .public()
             .clone();
         let delegations = Delegations::new(
-            hashset![key.clone()],
+            &hashset![key.clone()],
             vec![Delegation::new(
                 MetadataPath::new("foo".into()).unwrap(),
                 false,
@@ -2328,7 +2328,7 @@ mod test {
             .public()
             .clone();
         let delegations = Delegations::new(
-            hashset!(key.clone()),
+            &hashset!(key.clone()),
             vec![Delegation::new(
                 MetadataPath::new("foo".into()).unwrap(),
                 false,

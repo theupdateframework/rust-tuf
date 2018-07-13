@@ -110,7 +110,7 @@ where
     /// Create a new repository on the local file system.
     pub fn new(local_path: PathBuf) -> Self {
         FileSystemRepository {
-            local_path: local_path,
+            local_path,
             interchange: PhantomData,
         }
     }
@@ -285,10 +285,10 @@ where
         };
 
         HttpRepository {
-            url: url,
-            client: client,
-            user_agent: user_agent,
-            metadata_prefix: metadata_prefix,
+            url,
+            client,
+            user_agent,
+            metadata_prefix,
             interchange: PhantomData,
         }
     }
@@ -302,7 +302,7 @@ where
             let mut segments = url.path_segments_mut().map_err(|_| {
                 Error::IllegalArgument(format!("URL was 'cannot-be-a-base': {:?}", self.url))
             })?;
-            if let &Some(ref prefix) = prefix {
+            if let Some(ref prefix) = prefix {
                 segments.extend(prefix);
             }
             segments.extend(components);
@@ -428,6 +428,15 @@ where
             targets: HashMap::new(),
             interchange: PhantomData,
         }
+    }
+}
+
+impl<D> Default for EphemeralRepository<D>
+where
+    D: DataInterchange,
+{
+    fn default() -> Self {
+        EphemeralRepository::new()
     }
 }
 

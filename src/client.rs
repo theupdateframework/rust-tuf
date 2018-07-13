@@ -85,12 +85,13 @@ pub trait PathTranslator {
 }
 
 /// A `PathTranslator` that does nothing.
-pub struct DefaultTranslator {}
+#[derive(Default)]
+pub struct DefaultTranslator;
 
 impl DefaultTranslator {
     /// Create a new `DefaultTranslator`.
     pub fn new() -> Self {
-        DefaultTranslator {}
+        DefaultTranslator
     }
 }
 
@@ -154,13 +155,13 @@ where
                 )
             })?;
 
-        let tuf = Tuf::from_root(root)?;
+        let tuf = Tuf::from_root(&root)?;
 
         Ok(Client {
-            tuf: tuf,
-            config: config,
-            local: local,
-            remote: remote,
+            tuf,
+            config,
+            local,
+            remote,
         })
     }
 
@@ -204,10 +205,10 @@ where
         let tuf = Tuf::from_root_pinned(root, trusted_root_keys)?;
 
         Ok(Client {
-            tuf: tuf,
-            config: config,
-            local: local,
-            remote: remote,
+            tuf,
+            config,
+            local,
+            remote,
         })
     }
 
@@ -301,13 +302,13 @@ where
                 config.min_bytes_per_second,
                 None,
             )?;
-            if !tuf.update_root(signed)? {
+            if !tuf.update_root(&signed)? {
                 error!("{}", err_msg);
                 return Err(Error::Programming(err_msg.into()));
             }
         }
 
-        if !tuf.update_root(latest_root)? {
+        if !tuf.update_root(&latest_root)? {
             error!("{}", err_msg);
             return Err(Error::Programming(err_msg.into()));
         }
@@ -328,7 +329,7 @@ where
             config.min_bytes_per_second,
             None,
         )?;
-        tuf.update_timestamp(ts)
+        tuf.update_timestamp(&ts)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -363,7 +364,7 @@ where
             config.min_bytes_per_second,
             Some((alg, value.clone())),
         )?;
-        tuf.update_snapshot(snap)
+        tuf.update_snapshot(&snap)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -407,7 +408,7 @@ where
             config.min_bytes_per_second,
             Some((alg, value.clone())),
         )?;
-        tuf.update_targets(targets)
+        tuf.update_targets(&targets)
     }
 
     /// Fetch a target from the remote repo and write it to the local repo.
@@ -478,9 +479,8 @@ where
                 }
             };
 
-            match targets.targets().get(target) {
-                Some(t) => return (default_terminate, Ok(t.clone())),
-                None => (),
+            if let Some(t) = targets.targets().get(target) {
+                return (default_terminate, Ok(t.clone()));
             }
 
             let delegations = match targets.delegations() {
@@ -544,7 +544,7 @@ where
                     }
                 };
 
-                match tuf.update_delegation(delegation.role(), signed_meta.clone()) {
+                match tuf.update_delegation(delegation.role(), &signed_meta) {
                     Ok(_) => {
                         match local.store_metadata(
                             &Role::Targets,
@@ -757,7 +757,7 @@ where
             max_timestamp_size: self.max_timestamp_size,
             min_bytes_per_second: self.min_bytes_per_second,
             max_delegation_depth: self.max_delegation_depth,
-            path_translator: path_translator,
+            path_translator,
         }
     }
 }

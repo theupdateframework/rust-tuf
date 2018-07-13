@@ -20,27 +20,37 @@ enum Value {
 
 impl Value {
     fn write(&self, mut buf: &mut Vec<u8>) -> Result<(), String> {
-        match self {
-            &Value::Null => Ok(buf.extend(b"null")),
-            &Value::Bool(true) => Ok(buf.extend(b"true")),
-            &Value::Bool(false) => Ok(buf.extend(b"false")),
-            &Value::Number(Number::I64(n)) => {
+        match *self {
+            Value::Null => {
+                buf.extend(b"null");
+                Ok(())
+            }
+            Value::Bool(true) => {
+                buf.extend(b"true");
+                Ok(())
+            }
+            Value::Bool(false) => {
+                buf.extend(b"false");
+                Ok(())
+            }
+            Value::Number(Number::I64(n)) => {
                 itoa::write(buf, n).map(|_| ()).map_err(|err| {
                     format!("Write error: {}", err)
                 })
             }
-            &Value::Number(Number::U64(n)) => {
+            Value::Number(Number::U64(n)) => {
                 itoa::write(buf, n).map(|_| ()).map_err(|err| {
                     format!("Write error: {}", err)
                 })
             }
-            &Value::String(ref s) => {
+            Value::String(ref s) => {
                 // this mess is abusing serde_json to get json escaping
                 let s = json::Value::String(s.clone());
                 let s = json::to_string(&s).map_err(|e| format!("{:?}", e))?;
-                Ok(buf.extend(s.as_bytes()))
+                buf.extend(s.as_bytes());
+                Ok(())
             }
-            &Value::Array(ref arr) => {
+            Value::Array(ref arr) => {
                 buf.push(b'[');
                 let mut first = true;
                 for a in arr.iter() {
@@ -50,9 +60,10 @@ impl Value {
                     a.write(&mut buf)?;
                     first = false;
                 }
-                Ok(buf.push(b']'))
+                buf.push(b']');
+                Ok(())
             }
-            &Value::Object(ref obj) => {
+            Value::Object(ref obj) => {
                 buf.push(b'{');
                 let mut first = true;
                 for (k, v) in obj.iter() {
@@ -69,7 +80,8 @@ impl Value {
                     buf.push(b':');
                     v.write(&mut buf)?;
                 }
-                Ok(buf.push(b'}'))
+                buf.push(b'}');
+                Ok(())
             }
         }
     }
@@ -81,31 +93,31 @@ enum Number {
 }
 
 fn convert(jsn: &json::Value) -> Result<Value, String> {
-    match jsn {
-        &json::Value::Null => Ok(Value::Null),
-        &json::Value::Bool(b) => Ok(Value::Bool(b)),
-        &json::Value::Number(ref n) => {
+    match *jsn {
+        json::Value::Null => Ok(Value::Null),
+        json::Value::Bool(b) => Ok(Value::Bool(b)),
+        json::Value::Number(ref n) => {
             n.as_i64()
                 .map(Number::I64)
-                .or(n.as_u64().map(Number::U64))
+                .or_else(|| n.as_u64().map(Number::U64))
                 .map(Value::Number)
                 .ok_or_else(|| String::from("only i64 and u64 are supported"))
         }
-        &json::Value::Array(ref arr) => {
+        json::Value::Array(ref arr) => {
             let mut out = Vec::new();
             for res in arr.iter().map(|v| convert(v)) {
                 out.push(res?)
             }
             Ok(Value::Array(out))
         }
-        &json::Value::Object(ref obj) => {
+        json::Value::Object(ref obj) => {
             let mut out = BTreeMap::new();
             for (k, v) in obj.iter() {
                 let _ = out.insert(k.clone(), convert(v)?);
             }
             Ok(Value::Object(out))
         }
-        &json::Value::String(ref s) => Ok(Value::String(s.clone())),
+        json::Value::String(ref s) => Ok(Value::String(s.clone())),
     }
 }
 

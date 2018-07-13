@@ -24,13 +24,13 @@ use Result;
 use error::Error;
 use shims;
 
-const HASH_ALG_PREFS: &'static [HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
+const HASH_ALG_PREFS: &[HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
 
 /// 1.2.840.113549.1.1.1 rsaEncryption(PKCS #1)
-const RSA_SPKI_OID: &'static [u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01];
+const RSA_SPKI_OID: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01];
 
 /// 1.3.101.112 curveEd25519(EdDSA 25519 signature algorithm)
-const ED25519_SPKI_OID: &'static [u8] = &[0x2b, 0x65, 0x70];
+const ED25519_SPKI_OID: &[u8] = &[0x2b, 0x65, 0x70];
 
 /// Given a map of hash algorithms and their values, get the prefered algorithm and the hash
 /// calculated by it. Returns an `Err` if there is no match.
@@ -65,7 +65,7 @@ pub fn calculate_hashes<R: Read>(
     mut read: R,
     hash_algs: &[HashAlgorithm],
 ) -> Result<(u64, HashMap<HashAlgorithm, HashValue>)> {
-    if hash_algs.len() == 0 {
+    if hash_algs.is_empty() {
         return Err(Error::IllegalArgument(
             "Cannot provide empty set of hash algorithms".into(),
         ));
@@ -74,10 +74,10 @@ pub fn calculate_hashes<R: Read>(
     let mut size = 0;
     let mut hashes = HashMap::new();
     for alg in hash_algs {
-        let context = match alg {
-            &HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
-            &HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
-            &HashAlgorithm::Unknown(ref s) => return Err(Error::IllegalArgument(
+        let context = match *alg {
+            HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
+            HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
+            HashAlgorithm::Unknown(ref s) => return Err(Error::IllegalArgument(
                 format!("Unknown hash algorithm: {}", s)
             )),
         };
@@ -95,7 +95,7 @@ pub fn calculate_hashes<R: Read>(
 
                 size += read_bytes as u64;
 
-                for (_, context) in hashes.iter_mut() {
+                for context in hashes.values_mut() {
                     context.update(&buf[0..read_bytes]);
                 }
             }
@@ -278,10 +278,10 @@ impl KeyType {
     }
 
     fn as_oid(&self) -> Result<&'static [u8]> {
-        match self {
-            &KeyType::Rsa => Ok(RSA_SPKI_OID),
-            &KeyType::Ed25519 => Ok(ED25519_SPKI_OID),
-            &KeyType::Unknown(ref s) => Err(Error::UnknownKeyType(s.clone())),
+        match *self {
+            KeyType::Rsa => Ok(RSA_SPKI_OID),
+            KeyType::Ed25519 => Ok(ED25519_SPKI_OID),
+            KeyType::Unknown(ref s) => Err(Error::UnknownKeyType(s.clone())),
         }
     }
 }
@@ -300,10 +300,10 @@ impl FromStr for KeyType {
 
 impl ToString for KeyType {
     fn to_string(&self) -> String {
-        match self {
-            &KeyType::Ed25519 => "ed25519".to_string(),
-            &KeyType::Rsa => "rsa".to_string(),
-            &KeyType::Unknown(ref s) => s.to_string(),
+        match *self {
+            KeyType::Ed25519 => "ed25519".to_string(),
+            KeyType::Rsa => "rsa".to_string(),
+            KeyType::Unknown(ref s) => s.to_string(),
         }
     }
 }
@@ -333,9 +333,9 @@ enum PrivateKeyType {
 
 impl Debug for PrivateKeyType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = match self {
-            &PrivateKeyType::Ed25519(_) => "ed25519",
-            &PrivateKeyType::Rsa(_) => "rsa",
+        let s = match *self {
+            PrivateKeyType::Ed25519(_) => "ed25519",
+            PrivateKeyType::Rsa(_) => "rsa",
         };
         write!(f, "PrivateKeyType {{ \"{}\" }}", s)
     }
@@ -445,19 +445,16 @@ impl PrivateKey {
         let private = PrivateKeyType::Ed25519(key);
 
         Ok(PrivateKey {
-            private: private,
-            public: public,
+            private,
+            public,
         })
     }
 
     fn rsa_from_pkcs8(der_key: &[u8], scheme: SignatureScheme) -> Result<Self> {
-        match &scheme {
-            &SignatureScheme::Ed25519 => {
-                return Err(Error::IllegalArgument(
-                    "RSA keys do not support the Ed25519 signing scheme".into(),
-                ))
-            }
-            _ => (),
+        if let SignatureScheme::Ed25519 = scheme {
+            return Err(Error::IllegalArgument(
+                "RSA keys do not support the Ed25519 signing scheme".into(),
+            ));
         }
 
         let key = RSAKeyPair::from_pkcs8(Input::from(der_key)).map_err(|_| {
@@ -475,15 +472,15 @@ impl PrivateKey {
 
         let public = PublicKey {
             typ: KeyType::Rsa,
-            scheme: scheme,
+            scheme,
             key_id: calculate_key_id(&write_spki(&pub_key, &KeyType::Rsa)?),
             value: PublicKeyValue(pub_key),
         };
         let private = PrivateKeyType::Rsa(Arc::new(key));
 
         Ok(PrivateKey {
-            private: private,
-            public: public,
+            private,
+            public,
         })
     }
 
@@ -524,7 +521,7 @@ impl PrivateKey {
 
         Ok(Signature {
             key_id: self.key_id().clone(),
-            value: value,
+            value,
         })
     }
 
@@ -607,7 +604,7 @@ impl PublicKey {
                     })?;
 
                     // for RSA / ed25519 this is null, so don't both parsing it
-                    let _ = derp::read_null(input)?;
+                    derp::read_null(input)?;
                     Ok(typ)
                 })?;
                 let value = derp::bit_string_with_no_unused_bits(input)?;
@@ -617,9 +614,9 @@ impl PublicKey {
 
         let key_id = calculate_key_id(der_bytes);
         Ok(PublicKey {
-            typ: typ,
-            key_id: key_id,
-            scheme: scheme,
+            typ,
+            key_id,
+            scheme,
             value: PublicKeyValue(value),
         })
     }
@@ -648,11 +645,11 @@ impl PublicKey {
 
     /// Use this key to verify a message with a signature.
     pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<()> {
-        let alg: &ring::signature::VerificationAlgorithm = match &self.scheme {
-            &SignatureScheme::Ed25519 => &ED25519,
-            &SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
-            &SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
-            &SignatureScheme::Unknown(ref s) => return Err(Error::IllegalArgument(
+        let alg: &ring::signature::VerificationAlgorithm = match self.scheme {
+            SignatureScheme::Ed25519 => &ED25519,
+            SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
+            SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
+            SignatureScheme::Unknown(ref s) => return Err(Error::IllegalArgument(
                 format!("Unknown signature scheme: {}", s)
             )),
         };

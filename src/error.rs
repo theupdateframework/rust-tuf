@@ -78,7 +78,7 @@ impl From<json::error::Error> for Error {
 
 impl Error {
     /// Helper to include the path that causd the error for FS I/O errors.
-    pub fn from_io(err: io::Error, path: &Path) -> Error {
+    pub fn from_io(err: &io::Error, path: &Path) -> Error {
         Error::Opaque(format!("Path {:?} : {:?}", path, err))
     }
 }
