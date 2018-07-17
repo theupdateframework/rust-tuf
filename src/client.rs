@@ -133,7 +133,7 @@ where
     ///
     /// **WARNING**: This method offers weaker security guarantees than the related method
     /// `with_root_pinned`.
-    pub fn new(config: Config<T>, mut local: L, remote: R) -> Result<Self> {
+    pub fn new(config: Config<T>, local: L, remote: R) -> Result<Self> {
         let root = local
             .fetch_metadata(
                 &MetadataPath::from_role(&Role::Root),
@@ -169,8 +169,8 @@ where
     pub fn with_root_pinned<'a, I>(
         trusted_root_keys: I,
         config: Config<T>,
-        mut local: L,
-        mut remote: R,
+        local: L,
+        remote: R,
     ) -> Result<Self>
     where
         I: IntoIterator<Item = &'a KeyId>,
@@ -776,7 +776,7 @@ mod test {
 
     #[test]
     fn root_chain_update() {
-        let mut repo = EphemeralRepository::new();
+        let repo = EphemeralRepository::new();
         let root = RootMetadata::new(
             1,
             Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),

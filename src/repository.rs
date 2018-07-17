@@ -9,6 +9,7 @@ use std::fs::{self, DirBuilder, File};
 use std::io::{Cursor, Read, Write};
 use std::marker::PhantomData;
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 use tempfile::NamedTempFile;
 
 use crypto::{self, HashAlgorithm, HashValue};
@@ -34,7 +35,7 @@ where
     /// Note: This **MUST** canonicalize the bytes before storing them as a read will expect the
     /// hashes of the metadata to match.
     fn store_metadata<M>(
-        &mut self,
+        &self,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         metadata: &SignedMetadata<D, M>,
@@ -44,7 +45,7 @@ where
 
     /// Fetch signed metadata.
     fn fetch_metadata<M>(
-        &mut self,
+        &self,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         max_size: &Option<usize>,
@@ -55,13 +56,13 @@ where
         M: Metadata;
 
     /// Store the given target.
-    fn store_target<R>(&mut self, read: R, target_path: &TargetPath) -> Result<()>
+    fn store_target<R>(&self, read: R, target_path: &TargetPath) -> Result<()>
     where
         R: Read;
 
     /// Fetch the given target.
     fn fetch_target(
-        &mut self,
+        &self,
         target_path: &TargetPath,
         target_description: &TargetDescription,
         min_bytes_per_second: u32,
@@ -119,7 +120,7 @@ where
     type TargetRead = File;
 
     fn store_metadata<M>(
-        &mut self,
+        &self,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         metadata: &SignedMetadata<D, M>,
@@ -151,7 +152,7 @@ where
 
     /// Fetch signed metadata.
     fn fetch_metadata<M>(
-        &mut self,
+        &self,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         max_size: &Option<usize>,
@@ -176,7 +177,7 @@ where
         Ok(D::from_reader(read)?)
     }
 
-    fn store_target<R>(&mut self, mut read: R, target_path: &TargetPath) -> Result<()>
+    fn store_target<R>(&self, mut read: R, target_path: &TargetPath) -> Result<()>
     where
         R: Read,
     {
@@ -206,7 +207,7 @@ where
     }
 
     fn fetch_target(
-        &mut self,
+        &self,
         target_path: &TargetPath,
         target_description: &TargetDescription,
         min_bytes_per_second: u32,
@@ -316,7 +317,7 @@ where
 
     /// This always returns `Err` as storing over HTTP is not yet supported.
     fn store_metadata<M>(
-        &mut self,
+        &self,
         _: &MetadataPath,
         _: &MetadataVersion,
         _: &SignedMetadata<D, M>,
@@ -330,7 +331,7 @@ where
     }
 
     fn fetch_metadata<M>(
-        &mut self,
+        &self,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         max_size: &Option<usize>,
@@ -354,7 +355,7 @@ where
     }
 
     /// This always returns `Err` as storing over HTTP is not yet supported.
-    fn store_target<R>(&mut self, _: R, _: &TargetPath) -> Result<()>
+    fn store_target<R>(&self, _: R, _: &TargetPath) -> Result<()>
     where
         R: Read,
     {
@@ -362,7 +363,7 @@ where
     }
 
     fn fetch_target(
-        &mut self,
+        &self,
         target_path: &TargetPath,
         target_description: &TargetDescription,
         min_bytes_per_second: u32,
@@ -383,8 +384,8 @@ pub struct EphemeralRepository<D>
 where
     D: DataInterchange,
 {
-    metadata: HashMap<(MetadataPath, MetadataVersion), Vec<u8>>,
-    targets: HashMap<TargetPath, Vec<u8>>,
+    metadata: Arc<RwLock<HashMap<(MetadataPath, MetadataVersion), Vec<u8>>>>,
+    targets: Arc<RwLock<HashMap<TargetPath, Vec<u8>>>>,
     interchange: PhantomData<D>,
 }
 
@@ -395,8 +396,8 @@ where
     /// Create a new ephemercal repository.
     pub fn new() -> Self {
         EphemeralRepository {
-            metadata: HashMap::new(),
-            targets: HashMap::new(),
+            metadata: Arc::new(RwLock::new(HashMap::new())),
+            targets: Arc::new(RwLock::new(HashMap::new())),
             interchange: PhantomData,
         }
     }
@@ -418,7 +419,7 @@ where
     type TargetRead = Cursor<Vec<u8>>;
 
     fn store_metadata<M>(
-        &mut self,
+        &self,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         metadata: &SignedMetadata<D, M>,
@@ -429,13 +430,13 @@ where
         Self::check::<M>(meta_path)?;
         let mut buf = Vec::new();
         D::to_writer(&mut buf, metadata)?;
-        let _ = self.metadata
-            .insert((meta_path.clone(), version.clone()), buf);
+        let mut metadata = self.metadata.write().unwrap();
+        let _ = metadata.insert((meta_path.clone(), version.clone()), buf);
         Ok(())
     }
 
     fn fetch_metadata<M>(
-        &mut self,
+        &self,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         max_size: &Option<usize>,
@@ -447,7 +448,8 @@ where
     {
         Self::check::<M>(meta_path)?;
 
-        match self.metadata.get(&(meta_path.clone(), version.clone())) {
+        let metadata = self.metadata.read().unwrap();
+        match metadata.get(&(meta_path.clone(), version.clone())) {
             Some(bytes) => {
                 let reader = SafeReader::new(
                     &**bytes,
@@ -461,23 +463,25 @@ where
         }
     }
 
-    fn store_target<R>(&mut self, mut read: R, target_path: &TargetPath) -> Result<()>
+    fn store_target<R>(&self, mut read: R, target_path: &TargetPath) -> Result<()>
     where
         R: Read,
     {
         let mut buf = Vec::new();
         read.read_to_end(&mut buf)?;
-        let _ = self.targets.insert(target_path.clone(), buf);
+        let mut targets = self.targets.write().unwrap();
+        let _ = targets.insert(target_path.clone(), buf);
         Ok(())
     }
 
     fn fetch_target(
-        &mut self,
+        &self,
         target_path: &TargetPath,
         target_description: &TargetDescription,
         min_bytes_per_second: u32,
     ) -> Result<SafeReader<Self::TargetRead>> {
-        match self.targets.get(target_path) {
+        let targets = self.targets.read().unwrap();
+        match targets.get(target_path) {
             Some(bytes) => {
                 let cur = Cursor::new(bytes.clone());
                 let (alg, value) = crypto::hash_preference(target_description.hashes())?;
@@ -502,7 +506,7 @@ mod test {
 
     #[test]
     fn ephemeral_repo_targets() {
-        let mut repo = EphemeralRepository::<Json>::new();
+        let repo = EphemeralRepository::<Json>::new();
 
         let data: &[u8] = b"like tears in the rain";
         let target_description =
@@ -524,7 +528,7 @@ mod test {
     #[test]
     fn file_system_repo_targets() {
         let temp_dir = TempDir::new("rust-tuf").unwrap();
-        let mut repo = FileSystemRepository::<Json>::new(temp_dir.path().to_path_buf()).unwrap();
+        let repo = FileSystemRepository::<Json>::new(temp_dir.path().to_path_buf()).unwrap();
 
         // test that init worked
         assert!(temp_dir.path().join("metadata").exists());
