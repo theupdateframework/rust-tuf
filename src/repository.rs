@@ -28,9 +28,6 @@ where
     /// The type returned when reading a target.
     type TargetRead: Read;
 
-    /// Initialize the repository.
-    fn initialize(&mut self) -> Result<()>;
-
     /// Store signed metadata.
     ///
     /// Note: This **MUST** canonicalize the bytes before storing them as a read will expect the
@@ -108,11 +105,17 @@ where
     D: DataInterchange,
 {
     /// Create a new repository on the local file system.
-    pub fn new(local_path: PathBuf) -> Self {
-        FileSystemRepository {
+    pub fn new(local_path: PathBuf) -> Result<Self> {
+        for p in &["metadata", "targets", "temp"] {
+            DirBuilder::new().recursive(true).create(
+                local_path.join(p),
+            )?
+        }
+
+        Ok(FileSystemRepository {
             local_path,
             interchange: PhantomData,
-        }
+        })
     }
 }
 
@@ -121,16 +124,6 @@ where
     D: DataInterchange,
 {
     type TargetRead = File;
-
-    fn initialize(&mut self) -> Result<()> {
-        for p in &["metadata", "targets", "temp"] {
-            DirBuilder::new().recursive(true).create(
-                self.local_path.join(p),
-            )?
-        }
-
-        Ok(())
-    }
 
     fn store_metadata<M>(
         &mut self,
@@ -331,10 +324,6 @@ where
 {
     type TargetRead = Response;
 
-    fn initialize(&mut self) -> Result<()> {
-        Ok(())
-    }
-
     /// This always returns `Err` as storing over HTTP is not yet supported.
     fn store_metadata<M>(
         &mut self,
@@ -446,10 +435,6 @@ where
 {
     type TargetRead = Cursor<Vec<u8>>;
 
-    fn initialize(&mut self) -> Result<()> {
-        Ok(())
-    }
-
     fn store_metadata<M>(
         &mut self,
         role: &Role,
@@ -540,7 +525,6 @@ mod test {
     #[test]
     fn ephemeral_repo_targets() {
         let mut repo = EphemeralRepository::<Json>::new();
-        repo.initialize().unwrap();
 
         let data: &[u8] = b"like tears in the rain";
         let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256])
@@ -562,8 +546,7 @@ mod test {
     #[test]
     fn file_system_repo_targets() {
         let temp_dir = TempDir::new("rust-tuf").unwrap();
-        let mut repo = FileSystemRepository::<Json>::new(temp_dir.path().to_path_buf());
-        repo.initialize().unwrap();
+        let mut repo = FileSystemRepository::<Json>::new(temp_dir.path().to_path_buf()).unwrap();
 
         // test that init worked
         assert!(temp_dir.path().join("metadata").exists());

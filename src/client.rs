@@ -28,7 +28,8 @@
 //!         .map(|k| KeyId::from_string(k).unwrap())
 //!         .collect();
 //!
-//!     let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"));
+//!     let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))
+//!         .unwrap();
 //!
 //!     let remote = HttpRepository::new(
 //!         Url::parse("https://static.rust-lang.org/").unwrap(),
@@ -131,10 +132,7 @@ where
     ///
     /// **WARNING**: This method offers weaker security guarantees than the related method
     /// `with_root_pinned`.
-    pub fn new(config: Config<T>, mut local: L, mut remote: R) -> Result<Self> {
-        local.initialize()?;
-        remote.initialize()?;
-
+    pub fn new(config: Config<T>, mut local: L, remote: R) -> Result<Self> {
         let root = local
             .fetch_metadata(
                 &Role::Root,
@@ -179,9 +177,6 @@ where
         I: IntoIterator<Item = &'a KeyId>,
         T: PathTranslator,
     {
-        local.initialize()?;
-        remote.initialize()?;
-
         let root = local
             .fetch_metadata(
                 &Role::Root,
