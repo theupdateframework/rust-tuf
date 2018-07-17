@@ -577,10 +577,16 @@ mod test {
         repo.store_target(data, &path).unwrap();
         assert!(temp_dir.path().join("targets").join("foo").join("bar").join("baz").exists());
 
-        let mut read = repo.fetch_target(&path, &target_description, 0).unwrap();
         let mut buf = Vec::new();
-        read.read_to_end(&mut buf).unwrap();
-        assert_eq!(buf.as_slice(), data);
+
+        // Enclose `fetch_target` in a scope to make sure the file is closed.
+        // This is needed for `tempfile` on Windows, which doesn't open the
+        // files in a mode that allows the file to be opened multiple times.
+        {
+            let mut read = repo.fetch_target(&path, &target_description, 0).unwrap();
+            read.read_to_end(&mut buf).unwrap();
+            assert_eq!(buf.as_slice(), data);
+        }
 
         let bad_data: &[u8] = b"you're in a desert";
         repo.store_target(bad_data, &path).unwrap();
