@@ -1,11 +1,11 @@
 use chrono::offset::Utc;
 use chrono::DateTime;
 use ring::digest::{self, SHA256, SHA512};
-use std::io::{self, Read, ErrorKind};
+use std::io::{self, ErrorKind, Read};
 
-use Result;
 use crypto::{HashAlgorithm, HashValue};
 use error::Error;
+use Result;
 
 /// Wrapper to verify a byte stream as it is read.
 ///
@@ -44,12 +44,15 @@ impl<R: Read> SafeReader<R> {
                 let ctx = match *alg {
                     HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
                     HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
-                    HashAlgorithm::Unknown(ref s) => return Err(Error::IllegalArgument(
-                        format!("Unknown hash algorithm: {}", s)
-                    )),
+                    HashAlgorithm::Unknown(ref s) => {
+                        return Err(Error::IllegalArgument(format!(
+                            "Unknown hash algorithm: {}",
+                            s
+                        )))
+                    }
                 };
                 Some((ctx, value))
-            },
+            }
             None => None,
         };
 
@@ -99,8 +102,8 @@ impl<R: Read> Read for SafeReader<R> {
                 let duration = Utc::now().signed_duration_since(self.start_time.unwrap());
                 // 30 second grace period before we start checking the bitrate
                 if duration.num_seconds() >= 30 {
-                    if self.bytes_read as f32 / (duration.num_seconds() as f32) <
-                        self.min_bytes_per_second as f32
+                    if self.bytes_read as f32 / (duration.num_seconds() as f32)
+                        < self.min_bytes_per_second as f32
                     {
                         return Err(io::Error::new(
                             ErrorKind::TimedOut,

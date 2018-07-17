@@ -1,25 +1,25 @@
 //! TUF metadata.
 
-use chrono::DateTime;
 use chrono::offset::Utc;
+use chrono::DateTime;
 use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
-use serde::ser::{Serialize, Serializer, Error as SerializeError};
+use serde::ser::{Error as SerializeError, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display};
 use std::io::Read;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 
-use Result;
-use crypto::{self, KeyId, PublicKey, Signature, HashAlgorithm, HashValue, PrivateKey};
+use crypto::{self, HashAlgorithm, HashValue, KeyId, PrivateKey, PublicKey, Signature};
 use error::Error;
 use interchange::DataInterchange;
 use shims;
+use Result;
 
 static PATH_ILLEGAL_COMPONENTS: &'static [&str] = &[
     ".", // current dir
     "..", // parent dir
-    // TODO ? "0", // may translate to nul in windows
+         // TODO ? "0", // may translate to nul in windows
 ];
 
 static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &'static [&str] = &[
@@ -108,27 +108,30 @@ fn safe_path(path: &str) -> Result<()> {
 
     for bad_str in PATH_ILLEGAL_STRINGS {
         if path.contains(bad_str) {
-            return Err(Error::IllegalArgument(
-                format!("Path cannot contain {:?}", bad_str),
-            ));
+            return Err(Error::IllegalArgument(format!(
+                "Path cannot contain {:?}",
+                bad_str
+            )));
         }
     }
 
     for component in path.split('/') {
         for bad_str in PATH_ILLEGAL_COMPONENTS {
             if component == *bad_str {
-                return Err(Error::IllegalArgument(
-                    format!("Path cannot have component {:?}", component),
-                ));
+                return Err(Error::IllegalArgument(format!(
+                    "Path cannot have component {:?}",
+                    component
+                )));
             }
         }
 
         let component_lower = component.to_lowercase();
         for bad_str in PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE {
             if component_lower.as_str() == *bad_str {
-                return Err(Error::IllegalArgument(
-                    format!("Path cannot have component {:?}", component),
-                ));
+                return Err(Error::IllegalArgument(format!(
+                    "Path cannot have component {:?}",
+                    component
+                )));
             }
         }
     }
@@ -322,9 +325,8 @@ where
         let raw = D::serialize(&self.signed)?;
         let bytes = D::canonicalize(&raw)?;
         let sig = private_key.sign(&bytes)?;
-        self.signatures.retain(
-            |s| s.key_id() != private_key.key_id(),
-        );
+        self.signatures
+            .retain(|s| s.key_id() != private_key.key_id());
         self.signatures.push(sig);
         Ok(())
     }
@@ -428,8 +430,7 @@ where
     {
         if self.signatures.is_empty() {
             return Err(Error::VerificationFailure(
-                "The metadata was not signed with any authorized keys."
-                    .into(),
+                "The metadata was not signed with any authorized keys.".into(),
             ));
         }
 
@@ -449,17 +450,15 @@ where
         let mut signatures_needed = threshold;
         for sig in &self.signatures {
             match authorized_keys.get(sig.key_id()) {
-                Some(ref pub_key) => {
-                    match pub_key.verify(&canonical_bytes, &sig) {
-                        Ok(()) => {
-                            debug!("Good signature from key ID {:?}", pub_key.key_id());
-                            signatures_needed -= 1;
-                        }
-                        Err(e) => {
-                            warn!("Bad signature from key ID {:?}: {:?}", pub_key.key_id(), e);
-                        }
+                Some(ref pub_key) => match pub_key.verify(&canonical_bytes, &sig) {
+                    Ok(()) => {
+                        debug!("Good signature from key ID {:?}", pub_key.key_id());
+                        signatures_needed -= 1;
                     }
-                }
+                    Err(e) => {
+                        warn!("Bad signature from key ID {:?}: {:?}", pub_key.key_id(), e);
+                    }
+                },
                 None => {
                     warn!(
                         "Key ID {:?} was not found in the set of authorized keys.",
@@ -586,9 +585,8 @@ impl Serialize for RootMetadata {
     where
         S: Serializer,
     {
-        let m = shims::RootMetadata::from(self).map_err(|e| {
-            SerializeError::custom(format!("{:?}", e))
-        })?;
+        let m = shims::RootMetadata::from(self)
+            .map_err(|e| SerializeError::custom(format!("{:?}", e)))?;
         m.serialize(ser)
     }
 }
@@ -596,9 +594,9 @@ impl Serialize for RootMetadata {
 impl<'de> Deserialize<'de> for RootMetadata {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::RootMetadata = Deserialize::deserialize(de)?;
-        intermediate.try_into().map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
-        })
+        intermediate
+            .try_into()
+            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -630,10 +628,7 @@ impl RoleDefinition {
             )));
         }
 
-        Ok(RoleDefinition {
-            threshold,
-            key_ids,
-        })
+        Ok(RoleDefinition { threshold, key_ids })
     }
 
     /// The threshold number of signatures required for the role to be trusted.
@@ -661,9 +656,9 @@ impl Serialize for RoleDefinition {
 impl<'de> Deserialize<'de> for RoleDefinition {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::RoleDefinition = Deserialize::deserialize(de)?;
-        intermediate.try_into().map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
-        })
+        intermediate
+            .try_into()
+            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -824,9 +819,9 @@ impl Serialize for TimestampMetadata {
 impl<'de> Deserialize<'de> for TimestampMetadata {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::TimestampMetadata = Deserialize::deserialize(de)?;
-        intermediate.try_into().map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
-        })
+        intermediate
+            .try_into()
+            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -911,9 +906,9 @@ impl MetadataDescription {
 impl<'de> Deserialize<'de> for MetadataDescription {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::MetadataDescription = Deserialize::deserialize(de)?;
-        intermediate.try_into().map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
-        })
+        intermediate
+            .try_into()
+            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -980,12 +975,11 @@ impl Serialize for SnapshotMetadata {
 impl<'de> Deserialize<'de> for SnapshotMetadata {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::SnapshotMetadata = Deserialize::deserialize(de)?;
-        intermediate.try_into().map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
-        })
+        intermediate
+            .try_into()
+            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
-
 
 /// Wrapper for the virtual path to a target.
 #[derive(Debug, Clone, PartialEq, Hash, Eq, PartialOrd, Ord, Serialize)]
@@ -1067,9 +1061,9 @@ impl VirtualTargetPath {
                 group
                     .iter()
                     .filter(|parent| {
-                        parents[0].iter().any(
-                            |p| parent.is_child(p) || parent == &p,
-                        )
+                        parents[0]
+                            .iter()
+                            .any(|p| parent.is_child(p) || parent == &p)
                     })
                     .cloned()
                     .collect::<HashSet<_>>()
@@ -1145,10 +1139,7 @@ impl TargetDescription {
             ));
         }
 
-        Ok(TargetDescription {
-            size,
-            hashes,
-        })
+        Ok(TargetDescription { size, hashes })
     }
 
     /// Read the from the given reader and calculate the size and hash values.
@@ -1186,10 +1177,7 @@ impl TargetDescription {
         R: Read,
     {
         let (size, hashes) = crypto::calculate_hashes(read, hash_algs)?;
-        Ok(TargetDescription {
-            size,
-            hashes,
-        })
+        Ok(TargetDescription { size, hashes })
     }
 
     /// The maximum size of the target.
@@ -1206,9 +1194,9 @@ impl TargetDescription {
 impl<'de> Deserialize<'de> for TargetDescription {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::TargetDescription = Deserialize::deserialize(de)?;
-        intermediate.try_into().map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
-        })
+        intermediate
+            .try_into()
+            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -1283,9 +1271,9 @@ impl Serialize for TargetsMetadata {
 impl<'de> Deserialize<'de> for TargetsMetadata {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::TargetsMetadata = Deserialize::deserialize(de)?;
-        intermediate.try_into().map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
-        })
+        intermediate
+            .try_into()
+            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -1309,8 +1297,8 @@ impl Delegations {
             return Err(Error::IllegalArgument("Roles cannot be empty.".into()));
         }
 
-        if roles.len() !=
-            roles
+        if roles.len()
+            != roles
                 .iter()
                 .map(|r| &r.role)
                 .collect::<HashSet<&MetadataPath>>()
@@ -1350,13 +1338,12 @@ impl Serialize for Delegations {
     }
 }
 
-
 impl<'de> Deserialize<'de> for Delegations {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::Delegations = Deserialize::deserialize(de)?;
-        intermediate.try_into().map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
-        })
+        intermediate
+            .try_into()
+            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -1444,9 +1431,9 @@ impl Serialize for Delegation {
 impl<'de> Deserialize<'de> for Delegation {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::Delegation = Deserialize::deserialize(de)?;
-        intermediate.try_into().map_err(|e| {
-            DeserializeError::custom(format!("{:?}", e))
-        })
+        intermediate
+            .try_into()
+            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -1454,9 +1441,9 @@ impl<'de> Deserialize<'de> for Delegation {
 mod test {
     use super::*;
     use chrono::prelude::*;
-    use json;
     use crypto::SignatureScheme;
     use interchange::Json;
+    use json;
 
     const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
@@ -1483,33 +1470,32 @@ mod test {
 
     #[test]
     fn path_matches_chain() {
-        let test_cases: &[(bool, &str, &[&[&str]])] =
-            &[
-                // simplest case
-                (true, "foo", &[&["foo"]]),
-                // direct delegation case
-                (true, "foo", &[&["foo"], &["foo"]]),
-                // is a dir
-                (false, "foo", &[&["foo/"]]),
-                // target not in last position
-                (false, "foo", &[&["foo"], &["bar"]]),
-                // target nested
-                (true, "foo/bar", &[&["foo/"], &["foo/bar"]]),
-                // target illegally nested
-                (false, "foo/bar", &[&["baz/"], &["foo/bar"]]),
-                // target illegally deeply nested
-                (
-                    false,
-                    "foo/bar/baz",
-                    &[&["foo/"], &["foo/quux/"], &["foo/bar/baz"]],
-                ),
-                // empty
-                (false, "foo", &[&[]]),
-                // empty 2
-                (false, "foo", &[&[], &["foo"]]),
-                // empty 3
-                (false, "foo", &[&["foo"], &[]]),
-            ];
+        let test_cases: &[(bool, &str, &[&[&str]])] = &[
+            // simplest case
+            (true, "foo", &[&["foo"]]),
+            // direct delegation case
+            (true, "foo", &[&["foo"], &["foo"]]),
+            // is a dir
+            (false, "foo", &[&["foo/"]]),
+            // target not in last position
+            (false, "foo", &[&["foo"], &["bar"]]),
+            // target nested
+            (true, "foo/bar", &[&["foo/"], &["foo/bar"]]),
+            // target illegally nested
+            (false, "foo/bar", &[&["baz/"], &["foo/bar"]]),
+            // target illegally deeply nested
+            (
+                false,
+                "foo/bar/baz",
+                &[&["foo/"], &["foo/quux/"], &["foo/bar/baz"]],
+            ),
+            // empty
+            (false, "foo", &[&[]]),
+            // empty 2
+            (false, "foo", &[&[], &["foo"]]),
+            // empty 3
+            (false, "foo", &[&["foo"], &[]]),
+        ];
 
         for case in test_cases {
             let expected = case.0;
@@ -1525,9 +1511,7 @@ mod test {
                 .collect::<Vec<_>>();
             println!(
                 "CASE: expect: {} path: {:?} parents: {:?}",
-                expected,
-                target,
-                parents
+                expected, target, parents
             );
             assert_eq!(target.matches_chain(&parents), expected);
         }
@@ -1609,8 +1593,8 @@ mod test {
         let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519).unwrap();
         let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519).unwrap();
-        let timestamp_key = PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519)
-            .unwrap();
+        let timestamp_key =
+            PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519).unwrap();
 
         let keys = vec![
             root_key.public().clone(),
@@ -1622,8 +1606,8 @@ mod test {
         let root_def = RoleDefinition::new(1, hashset!(root_key.key_id().clone())).unwrap();
         let snapshot_def = RoleDefinition::new(1, hashset!(snapshot_key.key_id().clone())).unwrap();
         let targets_def = RoleDefinition::new(1, hashset!(targets_key.key_id().clone())).unwrap();
-        let timestamp_def = RoleDefinition::new(1, hashset!(timestamp_key.key_id().clone()))
-            .unwrap();
+        let timestamp_def =
+            RoleDefinition::new(1, hashset!(timestamp_key.key_id().clone())).unwrap();
 
         let root = RootMetadata::new(
             1,
@@ -1798,13 +1782,15 @@ mod test {
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let delegations = Delegations::new(
             &hashset![key.public().clone()],
-            vec![Delegation::new(
-                MetadataPath::new("foo/bar".into()).unwrap(),
-                false,
-                1,
-                hashset!(key.key_id().clone()),
-                hashset!(VirtualTargetPath::new("baz/quux".into()).unwrap()),
-            ).unwrap()],
+            vec![
+                Delegation::new(
+                    MetadataPath::new("foo/bar".into()).unwrap(),
+                    false,
+                    1,
+                    hashset!(key.key_id().clone()),
+                    hashset!(VirtualTargetPath::new("baz/quux".into()).unwrap()),
+                ).unwrap(),
+            ],
         ).unwrap();
 
         let targets = TargetsMetadata::new(
@@ -1921,42 +1907,66 @@ mod test {
     fn make_root() -> json::Value {
         let root_def = RoleDefinition::new(
             1,
-            hashset!(PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
-                     .unwrap().key_id().clone()),
+            hashset!(
+                PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+                    .unwrap()
+                    .key_id()
+                    .clone()
+            ),
         ).unwrap();
 
         let snapshot_def = RoleDefinition::new(
             1,
-            hashset!(PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
-                     .unwrap().key_id().clone()),
+            hashset!(
+                PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
+                    .unwrap()
+                    .key_id()
+                    .clone()
+            ),
         ).unwrap();
 
         let targets_def = RoleDefinition::new(
             1,
-            hashset!(PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519)
-                     .unwrap().key_id().clone()),
+            hashset!(
+                PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519)
+                    .unwrap()
+                    .key_id()
+                    .clone()
+            ),
         ).unwrap();
 
         let timestamp_def = RoleDefinition::new(
             1,
-            hashset!(PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519)
-                     .unwrap().key_id().clone()),
+            hashset!(
+                PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519)
+                    .unwrap()
+                    .key_id()
+                    .clone()
+            ),
         ).unwrap();
 
         let root = RootMetadata::new(
             1,
             Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
             false,
-            vec!(
+            vec![
                 PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
-                    .unwrap().public().clone(),
+                    .unwrap()
+                    .public()
+                    .clone(),
                 PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
-                    .unwrap().public().clone(),
+                    .unwrap()
+                    .public()
+                    .clone(),
                 PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519)
-                    .unwrap().public().clone(),
+                    .unwrap()
+                    .public()
+                    .clone(),
                 PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519)
-                    .unwrap().public().clone(),
-            ),
+                    .unwrap()
+                    .public()
+                    .clone(),
+            ],
             root_def,
             snapshot_def,
             targets_def,
@@ -1967,8 +1977,8 @@ mod test {
     }
 
     fn make_snapshot() -> json::Value {
-        let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!())
-            .unwrap();
+        let snapshot =
+            SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!()).unwrap();
 
         json::to_value(&snapshot).unwrap()
     }
@@ -1977,8 +1987,7 @@ mod test {
         let timestamp = TimestampMetadata::new(
             1,
             Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256])
-                .unwrap(),
+            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
         ).unwrap();
 
         json::to_value(&timestamp).unwrap()
@@ -1999,13 +2008,15 @@ mod test {
             .clone();
         let delegations = Delegations::new(
             &hashset![key.clone()],
-            vec![Delegation::new(
-                MetadataPath::new("foo".into()).unwrap(),
-                false,
-                1,
-                hashset!(key.key_id().clone()),
-                hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
-            ).unwrap()],
+            vec![
+                Delegation::new(
+                    MetadataPath::new("foo".into()).unwrap(),
+                    false,
+                    1,
+                    hashset!(key.key_id().clone()),
+                    hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
+                ).unwrap(),
+            ],
         ).unwrap();
 
         json::to_value(&delegations).unwrap()
@@ -2058,8 +2069,7 @@ mod test {
             .get("keys")
             .unwrap()
             .as_array()
-            .unwrap()
-            [0]
+            .unwrap()[0]
             .clone();
         root_json
             .as_object_mut()
@@ -2086,8 +2096,12 @@ mod test {
     fn deserialize_json_role_definition_illegal_threshold() {
         let role_def = RoleDefinition::new(
             1,
-            hashset!(PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
-                        .unwrap().key_id().clone()),
+            hashset!(
+                PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+                    .unwrap()
+                    .key_id()
+                    .clone()
+            ),
         ).unwrap();
 
         let mut jsn = json::to_value(&role_def).unwrap();
@@ -2102,9 +2116,13 @@ mod test {
             2,
             hashset!(
                 PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
-                    .unwrap().key_id().clone(),
+                    .unwrap()
+                    .key_id()
+                    .clone(),
                 PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
-                    .unwrap().key_id().clone(),
+                    .unwrap()
+                    .key_id()
+                    .clone(),
             ),
         ).unwrap();
 
@@ -2117,10 +2135,9 @@ mod test {
     #[test]
     fn deserialize_json_root_bad_type() {
         let mut root = make_root();
-        let _ = root.as_object_mut().unwrap().insert(
-            "type".into(),
-            json!("snapshot"),
-        );
+        let _ = root.as_object_mut()
+            .unwrap()
+            .insert("type".into(), json!("snapshot"));
         assert!(json::from_value::<RootMetadata>(root).is_err());
     }
 
@@ -2135,12 +2152,10 @@ mod test {
         let mut jsn = json::to_value(&role_def).unwrap();
 
         match jsn.as_object_mut() {
-            Some(obj) => {
-                match obj.get_mut("key_ids").unwrap().as_array_mut() {
-                    Some(arr) => arr.push(json!(key_id)),
-                    None => panic!(),
-                }
-            }
+            Some(obj) => match obj.get_mut("key_ids").unwrap().as_array_mut() {
+                Some(arr) => arr.push(json!(key_id)),
+                None => panic!(),
+            },
             None => panic!(),
         }
 
@@ -2163,10 +2178,10 @@ mod test {
     #[test]
     fn deserialize_json_snapshot_bad_type() {
         let mut snapshot = make_snapshot();
-        let _ = snapshot.as_object_mut().unwrap().insert(
-            "type".into(),
-            json!("root"),
-        );
+        let _ = snapshot
+            .as_object_mut()
+            .unwrap()
+            .insert("type".into(), json!("root"));
         assert!(json::from_value::<SnapshotMetadata>(snapshot).is_err());
     }
 
@@ -2186,10 +2201,10 @@ mod test {
     #[test]
     fn deserialize_json_timestamp_bad_type() {
         let mut timestamp = make_timestamp();
-        let _ = timestamp.as_object_mut().unwrap().insert(
-            "type".into(),
-            json!("root"),
-        );
+        let _ = timestamp
+            .as_object_mut()
+            .unwrap()
+            .insert("type".into(), json!("root"));
         assert!(json::from_value::<TimestampMetadata>(timestamp).is_err());
     }
 
@@ -2209,10 +2224,10 @@ mod test {
     #[test]
     fn deserialize_json_targets_bad_type() {
         let mut targets = make_targets();
-        let _ = targets.as_object_mut().unwrap().insert(
-            "type".into(),
-            json!("root"),
-        );
+        let _ = targets
+            .as_object_mut()
+            .unwrap()
+            .insert("type".into(), json!("root"));
         assert!(json::from_value::<TargetsMetadata>(targets).is_err());
     }
 
@@ -2256,8 +2271,7 @@ mod test {
             .get("roles".into())
             .unwrap()
             .as_array()
-            .unwrap()
-            [0]
+            .unwrap()[0]
             .clone();
         delegations
             .as_object_mut()
@@ -2292,8 +2306,7 @@ mod test {
             .get("key_ids".into())
             .unwrap()
             .as_array()
-            .unwrap()
-            [0]
+            .unwrap()[0]
             .clone();
         delegation
             .as_object_mut()
@@ -2316,8 +2329,7 @@ mod test {
             .get("paths".into())
             .unwrap()
             .as_array()
-            .unwrap()
-            [0]
+            .unwrap()[0]
             .clone();
         delegation
             .as_object_mut()
@@ -2339,13 +2351,15 @@ mod test {
             .clone();
         let delegations = Delegations::new(
             &hashset!(key.clone()),
-            vec![Delegation::new(
-                MetadataPath::new("foo".into()).unwrap(),
-                false,
-                1,
-                hashset!(key.key_id().clone()),
-                hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
-            ).unwrap()],
+            vec![
+                Delegation::new(
+                    MetadataPath::new("foo".into()).unwrap(),
+                    false,
+                    1,
+                    hashset!(key.key_id().clone()),
+                    hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
+                ).unwrap(),
+            ],
         ).unwrap();
         let mut delegations = json::to_value(delegations).unwrap();
 
@@ -2355,8 +2369,7 @@ mod test {
             .get("keys".into())
             .unwrap()
             .as_array()
-            .unwrap()
-            [0]
+            .unwrap()[0]
             .clone();
         delegations
             .as_object_mut()

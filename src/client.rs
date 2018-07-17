@@ -50,16 +50,17 @@
 
 use std::io::{Read, Write};
 
-use Result;
 use crypto::{self, KeyId};
 use error::Error;
 use interchange::DataInterchange;
-use metadata::{MetadataVersion, RootMetadata, Role, MetadataPath, VirtualTargetPath,
-               TargetDescription, TargetsMetadata, SnapshotMetadata, TargetPath};
+use metadata::{
+    MetadataPath, MetadataVersion, Role, RootMetadata, SnapshotMetadata, TargetDescription,
+    TargetPath, TargetsMetadata, VirtualTargetPath,
+};
 use repository::Repository;
 use tuf::Tuf;
 use util::SafeReader;
-
+use Result;
 
 /// Translates real paths (where a file is stored) into virtual paths (how it is addressed in TUF)
 /// and back.
@@ -267,8 +268,7 @@ where
             config.min_bytes_per_second,
             None,
         )?;
-        let latest_version = D::deserialize::<RootMetadata>(latest_root.signed())?
-            .version();
+        let latest_version = D::deserialize::<RootMetadata>(latest_root.signed())?.version();
 
         if latest_version < tuf.root().version() {
             return Err(Error::VerificationFailure(format!(
@@ -329,8 +329,7 @@ where
         let snapshot_description = match tuf.timestamp() {
             Some(ts) => Ok(ts.snapshot()),
             None => Err(Error::MissingMetadata(Role::Timestamp)),
-        }?
-            .clone();
+        }?.clone();
 
         if snapshot_description.version() <= tuf.snapshot().map(|s| s.version()).unwrap_or(0) {
             return Ok(false);
@@ -361,19 +360,16 @@ where
         U: PathTranslator,
     {
         let targets_description = match tuf.snapshot() {
-            Some(sn) => {
-                match sn.meta().get(&MetadataPath::from_role(&Role::Targets)) {
-                    Some(d) => Ok(d),
-                    None => Err(Error::VerificationFailure(
-                        "Snapshot metadata did not contain a description of the \
-                                current targets metadata."
-                            .into(),
-                    )),
-                }
-            }
+            Some(sn) => match sn.meta().get(&MetadataPath::from_role(&Role::Targets)) {
+                Some(d) => Ok(d),
+                None => Err(Error::VerificationFailure(
+                    "Snapshot metadata did not contain a description of the \
+                     current targets metadata."
+                        .into(),
+                )),
+            },
             None => Err(Error::MissingMetadata(Role::Snapshot)),
-        }?
-            .clone();
+        }?.clone();
 
         if targets_description.version() <= tuf.targets().map(|t| t.version()).unwrap_or(0) {
             return Ok(false);
@@ -452,17 +448,15 @@ where
             // tuf in the loop below
             let targets = match targets {
                 Some(t) => t.clone(),
-                None => {
-                    match tuf.targets() {
-                        Some(t) => t.clone(),
-                        None => {
-                            return (
-                                default_terminate,
-                                Err(Error::MissingMetadata(Role::Targets)),
-                            )
-                        }
+                None => match tuf.targets() {
+                    Some(t) => t.clone(),
+                    None => {
+                        return (
+                            default_terminate,
+                            Err(Error::MissingMetadata(Role::Targets)),
+                        )
                     }
-                }
+                },
             };
 
             if let Some(t) = targets.targets().get(target) {
@@ -536,13 +530,11 @@ where
                             &signed_meta,
                         ) {
                             Ok(_) => (),
-                            Err(e) => {
-                                warn!(
-                                    "Error storing metadata {:?} locally: {:?}",
-                                    delegation.role(),
-                                    e
-                                )
-                            }
+                            Err(e) => warn!(
+                                "Error storing metadata {:?} locally: {:?}",
+                                delegation.role(),
+                                e
+                            ),
                         }
 
                         let meta = tuf.delegations().get(delegation.role()).unwrap().clone();
@@ -566,7 +558,6 @@ where
                     }
                     Err(_) if !delegation.terminating() => continue,
                     Err(e) => return (true, Err(e)),
-
                 };
             }
 
@@ -764,7 +755,7 @@ mod test {
     use chrono::prelude::*;
     use crypto::{PrivateKey, SignatureScheme};
     use interchange::Json;
-    use metadata::{RootMetadata, SignedMetadata, RoleDefinition, MetadataPath, MetadataVersion};
+    use metadata::{MetadataPath, MetadataVersion, RoleDefinition, RootMetadata, SignedMetadata};
     use repository::EphemeralRepository;
 
     lazy_static! {
@@ -777,8 +768,9 @@ mod test {
                 include_bytes!("../tests/ed25519/ed25519-5.pk8.der"),
                 include_bytes!("../tests/ed25519/ed25519-6.pk8.der"),
             ];
-            keys.iter().map(|b| PrivateKey::from_pkcs8(b, SignatureScheme::Ed25519)
-                            .unwrap()).collect()
+            keys.iter()
+                .map(|b| PrivateKey::from_pkcs8(b, SignatureScheme::Ed25519).unwrap())
+                .collect()
         };
     }
 
@@ -795,8 +787,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[0])
-            .unwrap();
+        let root: SignedMetadata<Json, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[0]).unwrap();
 
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Root),
@@ -814,8 +806,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
         ).unwrap();
-        let mut root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[1])
-            .unwrap();
+        let mut root: SignedMetadata<Json, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[1]).unwrap();
 
         root.add_signature(&KEYS[0]).unwrap();
 
@@ -835,8 +827,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
         ).unwrap();
-        let mut root: SignedMetadata<Json, RootMetadata> = SignedMetadata::new(&root, &KEYS[2])
-            .unwrap();
+        let mut root: SignedMetadata<Json, RootMetadata> =
+            SignedMetadata::new(&root, &KEYS[2]).unwrap();
 
         root.add_signature(&KEYS[1]).unwrap();
 
