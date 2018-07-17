@@ -137,7 +137,6 @@ where
 
         let root = local
             .fetch_metadata(
-                &Role::Root,
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(1),
                 &config.max_root_size,
@@ -146,7 +145,6 @@ where
             )
             .or_else(|_| {
                 local.fetch_metadata(
-                    &Role::Root,
                     &MetadataPath::from_role(&Role::Root),
                     &MetadataVersion::Number(1),
                     &config.max_root_size,
@@ -184,7 +182,6 @@ where
 
         let root = local
             .fetch_metadata(
-                &Role::Root,
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(1),
                 &config.max_root_size,
@@ -193,7 +190,6 @@ where
             )
             .or_else(|_| {
                 remote.fetch_metadata(
-                    &Role::Root,
                     &MetadataPath::from_role(&Role::Root),
                     &MetadataVersion::Number(1),
                     &config.max_root_size,
@@ -270,7 +266,6 @@ where
         U: PathTranslator,
     {
         let latest_root = repo.fetch_metadata(
-            &Role::Root,
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::None,
             &config.max_root_size,
@@ -295,7 +290,6 @@ where
 
         for i in (tuf.root().version() + 1)..latest_version {
             let signed = repo.fetch_metadata(
-                &Role::Root,
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(i),
                 &config.max_root_size,
@@ -322,7 +316,6 @@ where
         U: PathTranslator,
     {
         let ts = repo.fetch_metadata(
-            &Role::Timestamp,
             &MetadataPath::from_role(&Role::Timestamp),
             &MetadataVersion::None,
             &config.max_timestamp_size,
@@ -357,7 +350,6 @@ where
         };
 
         let snap = repo.fetch_metadata(
-            &Role::Snapshot,
             &MetadataPath::from_role(&Role::Snapshot),
             &version,
             &Some(snapshot_description.size()),
@@ -401,7 +393,6 @@ where
         };
 
         let targets = repo.fetch_metadata(
-            &Role::Targets,
             &MetadataPath::from_role(&Role::Targets),
             &version,
             &Some(targets_description.size()),
@@ -516,7 +507,6 @@ where
 
                 let signed_meta = match local
                     .fetch_metadata::<TargetsMetadata>(
-                        &Role::Targets,
                         delegation.role(),
                         &MetadataVersion::None,
                         &Some(role_meta.size()),
@@ -525,7 +515,6 @@ where
                     )
                     .or_else(|_| {
                         remote.fetch_metadata::<TargetsMetadata>(
-                            &Role::Targets,
                             delegation.role(),
                             &version,
                             &Some(role_meta.size()),
@@ -547,7 +536,6 @@ where
                 match tuf.update_delegation(delegation.role(), &signed_meta) {
                     Ok(_) => {
                         match local.store_metadata(
-                            &Role::Targets,
                             delegation.role(),
                             &MetadataVersion::None,
                             &signed_meta,
@@ -816,7 +804,6 @@ mod test {
             .unwrap();
 
         repo.store_metadata(
-            &Role::Root,
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::Number(1),
             &root,
@@ -838,7 +825,6 @@ mod test {
         root.add_signature(&KEYS[0]).unwrap();
 
         repo.store_metadata(
-            &Role::Root,
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::Number(2),
             &root,
@@ -860,13 +846,11 @@ mod test {
         root.add_signature(&KEYS[1]).unwrap();
 
         repo.store_metadata(
-            &Role::Root,
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::Number(3),
             &root,
         ).unwrap();
         repo.store_metadata(
-            &Role::Root,
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::None,
             &root,

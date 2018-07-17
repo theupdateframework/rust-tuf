@@ -15,7 +15,7 @@ use Result;
 use crypto::{self, HashAlgorithm, HashValue};
 use error::Error;
 use interchange::DataInterchange;
-use metadata::{SignedMetadata, MetadataVersion, Role, Metadata, TargetPath, TargetDescription,
+use metadata::{SignedMetadata, MetadataVersion, Metadata, TargetPath, TargetDescription,
                MetadataPath};
 use util::SafeReader;
 
@@ -37,7 +37,6 @@ where
     /// hashes of the metadata to match.
     fn store_metadata<M>(
         &mut self,
-        role: &Role,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         metadata: &SignedMetadata<D, M>,
@@ -48,7 +47,6 @@ where
     /// Fetch signed metadata.
     fn fetch_metadata<M>(
         &mut self,
-        role: &Role,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         max_size: &Option<usize>,
@@ -72,21 +70,13 @@ where
     ) -> Result<SafeReader<Self::TargetRead>>;
 
     /// Perform a sanity check that `M`, `Role`, and `MetadataPath` all desrcribe the same entity.
-    fn check<M>(role: &Role, meta_path: &MetadataPath) -> Result<()>
+    fn check<M>(meta_path: &MetadataPath) -> Result<()>
     where
         M: Metadata,
     {
-        if role != &M::role() {
-            return Err(Error::IllegalArgument(format!(
-                "Attempted to store {} metadata as {}.",
-                M::role(),
-                role
-            )));
-        }
-
-        if !role.fuzzy_matches_path(meta_path) {
+        if !M::role().fuzzy_matches_path(meta_path) {
             return Err(Error::IllegalArgument(
-                format!("Role {} does not match path {:?}", role, meta_path),
+                format!("Role {} does not match path {:?}", M::role(), meta_path),
             ));
         }
 
@@ -134,7 +124,6 @@ where
 
     fn store_metadata<M>(
         &mut self,
-        role: &Role,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         metadata: &SignedMetadata<D, M>,
@@ -142,7 +131,7 @@ where
     where
         M: Metadata,
     {
-        Self::check::<M>(role, meta_path)?;
+        Self::check::<M>(meta_path)?;
         let components = meta_path.components::<D>(version);
 
         let mut path = self.local_path.join("metadata");
@@ -168,7 +157,6 @@ where
     /// Fetch signed metadata.
     fn fetch_metadata<M>(
         &mut self,
-        role: &Role,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         max_size: &Option<usize>,
@@ -178,7 +166,7 @@ where
     where
         M: Metadata,
     {
-        Self::check::<M>(role, meta_path)?;
+        Self::check::<M>(meta_path)?;
 
         let mut path = self.local_path.join("metadata");
         path.extend(meta_path.components::<D>(&version));
@@ -338,7 +326,6 @@ where
     /// This always returns `Err` as storing over HTTP is not yet supported.
     fn store_metadata<M>(
         &mut self,
-        _: &Role,
         _: &MetadataPath,
         _: &MetadataVersion,
         _: &SignedMetadata<D, M>,
@@ -353,7 +340,6 @@ where
 
     fn fetch_metadata<M>(
         &mut self,
-        role: &Role,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         max_size: &Option<usize>,
@@ -363,7 +349,7 @@ where
     where
         M: Metadata,
     {
-        Self::check::<M>(role, meta_path)?;
+        Self::check::<M>(meta_path)?;
 
         let resp = self.get(
             &self.metadata_prefix,
@@ -452,7 +438,6 @@ where
 
     fn store_metadata<M>(
         &mut self,
-        role: &Role,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         metadata: &SignedMetadata<D, M>,
@@ -460,7 +445,7 @@ where
     where
         M: Metadata,
     {
-        Self::check::<M>(role, meta_path)?;
+        Self::check::<M>(meta_path)?;
         let mut buf = Vec::new();
         D::to_writer(&mut buf, metadata)?;
         let _ = self.metadata.insert(
@@ -472,7 +457,6 @@ where
 
     fn fetch_metadata<M>(
         &mut self,
-        role: &Role,
         meta_path: &MetadataPath,
         version: &MetadataVersion,
         max_size: &Option<usize>,
@@ -482,7 +466,7 @@ where
     where
         M: Metadata,
     {
-        Self::check::<M>(role, meta_path)?;
+        Self::check::<M>(meta_path)?;
 
         match self.metadata.get(&(meta_path.clone(), version.clone())) {
             Some(bytes) => {
