@@ -74,9 +74,9 @@ where
     where
         M: Metadata,
     {
-        if !M::role().fuzzy_matches_path(meta_path) {
+        if !M::ROLE.fuzzy_matches_path(meta_path) {
             return Err(Error::IllegalArgument(
-                format!("Role {} does not match path {:?}", M::role(), meta_path),
+                format!("Role {} does not match path {:?}", M::ROLE, meta_path),
             ));
         }
 
