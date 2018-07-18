@@ -1464,6 +1464,24 @@ mod test {
     const ED25519_4_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-4.pk8.der");
 
     #[test]
+    fn no_pardir_in_target_path() {
+        let bad_paths = &[
+            "..",
+            "../some/path",
+            "../some/path/",
+            "some/../path",
+            "some/../path/..",
+        ];
+
+        for path in bad_paths.iter() {
+            assert!(safe_path(*path).is_err());
+            assert!(TargetPath::new(path.to_string()).is_err());
+            assert!(MetadataPath::new(path.to_string()).is_err());
+            assert!(VirtualTargetPath::new(path.to_string()).is_err());
+        }
+    }
+
+    #[test]
     fn path_matches_chain() {
         let test_cases: &[(bool, &str, &[&[&str]])] =
             &[
