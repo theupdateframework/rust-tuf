@@ -9,7 +9,7 @@ use tuf::Result;
 use tuf::client::{Client, Config, PathTranslator};
 use tuf::crypto::{PrivateKey, SignatureScheme, KeyId, HashAlgorithm};
 use tuf::interchange::{DataInterchange, Json};
-use tuf::metadata::{RoleDefinition, RootMetadata, Role, MetadataVersion, MetadataPath,
+use tuf::metadata::{RoleDefinition, RootMetadata, MetadataVersion, MetadataPath,
                     SignedMetadata, TargetDescription, VirtualTargetPath, TargetsMetadata,
                     MetadataDescription, SnapshotMetadata, TimestampMetadata, TargetPath};
 use tuf::repository::{EphemeralRepository, Repository};
@@ -108,13 +108,11 @@ where
     let signed = SignedMetadata::<Json, RootMetadata>::new(&root, &root_key)?;
 
     remote.store_metadata(
-        &Role::Root,
         &MetadataPath::new("root".into())?,
         &MetadataVersion::Number(1),
         &signed,
     )?;
     remote.store_metadata(
-        &Role::Root,
         &MetadataPath::new("root".into())?,
         &MetadataVersion::None,
         &signed,
@@ -134,13 +132,11 @@ where
     let signed = SignedMetadata::<Json, TargetsMetadata>::new(&targets, &targets_key)?;
 
     remote.store_metadata(
-        &Role::Targets,
         &MetadataPath::new("targets".into())?,
         &MetadataVersion::Number(1),
         &signed,
     )?;
     remote.store_metadata(
-        &Role::Targets,
         &MetadataPath::new("targets".into())?,
         &MetadataVersion::None,
         &signed,
@@ -159,13 +155,11 @@ where
     let signed = SignedMetadata::<Json, SnapshotMetadata>::new(&snapshot, &snapshot_key)?;
 
     remote.store_metadata(
-        &Role::Snapshot,
         &MetadataPath::new("snapshot".into())?,
         &MetadataVersion::Number(1),
         &signed,
     )?;
     remote.store_metadata(
-        &Role::Snapshot,
         &MetadataPath::new("snapshot".into())?,
         &MetadataVersion::None,
         &signed,
@@ -180,13 +174,11 @@ where
     let signed = SignedMetadata::<Json, TimestampMetadata>::new(&timestamp, &timestamp_key)?;
 
     remote.store_metadata(
-        &Role::Timestamp,
         &MetadataPath::new("timestamp".into())?,
         &MetadataVersion::Number(1),
         &signed,
     )?;
     remote.store_metadata(
-        &Role::Timestamp,
         &MetadataPath::new("timestamp".into())?,
         &MetadataVersion::None,
         &signed,

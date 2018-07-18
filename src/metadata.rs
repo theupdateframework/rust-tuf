@@ -215,7 +215,7 @@ impl MetadataVersion {
 /// Top level trait used for role metadata.
 pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {
     /// The role associated with the metadata.
-    fn role() -> Role;
+    const ROLE: Role;
 }
 
 /// A piece of raw metadata with attached signatures.
@@ -578,9 +578,7 @@ impl RootMetadata {
 }
 
 impl Metadata for RootMetadata {
-    fn role() -> Role {
-        Role::Root
-    }
+    const ROLE: Role = Role::Root;
 }
 
 impl Serialize for RootMetadata {
@@ -809,9 +807,7 @@ impl TimestampMetadata {
 }
 
 impl Metadata for TimestampMetadata {
-    fn role() -> Role {
-        Role::Timestamp
-    }
+    const ROLE: Role = Role::Timestamp;
 }
 
 impl Serialize for TimestampMetadata {
@@ -967,9 +963,7 @@ impl SnapshotMetadata {
 }
 
 impl Metadata for SnapshotMetadata {
-    fn role() -> Role {
-        Role::Snapshot
-    }
+    const ROLE: Role = Role::Snapshot;
 }
 
 impl Serialize for SnapshotMetadata {
@@ -1272,9 +1266,7 @@ impl TargetsMetadata {
 }
 
 impl Metadata for TargetsMetadata {
-    fn role() -> Role {
-        Role::Targets
-    }
+    const ROLE: Role = Role::Targets;
 }
 
 impl Serialize for TargetsMetadata {
