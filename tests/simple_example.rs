@@ -3,16 +3,18 @@ extern crate chrono;
 extern crate maplit;
 extern crate tuf;
 
-use chrono::prelude::*;
 use chrono::offset::Utc;
-use tuf::Result;
+use chrono::prelude::*;
 use tuf::client::{Client, Config, PathTranslator};
-use tuf::crypto::{PrivateKey, SignatureScheme, KeyId, HashAlgorithm};
+use tuf::crypto::{HashAlgorithm, KeyId, PrivateKey, SignatureScheme};
 use tuf::interchange::{DataInterchange, Json};
-use tuf::metadata::{RoleDefinition, RootMetadata, MetadataVersion, MetadataPath,
-                    SignedMetadata, TargetDescription, VirtualTargetPath, TargetsMetadata,
-                    MetadataDescription, SnapshotMetadata, TimestampMetadata, TargetPath};
+use tuf::metadata::{
+    MetadataDescription, MetadataPath, MetadataVersion, RoleDefinition, RootMetadata,
+    SignedMetadata, SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata,
+    TimestampMetadata, VirtualTargetPath,
+};
 use tuf::repository::{EphemeralRepository, Repository};
+use tuf::Result;
 
 // Ironically, this is far from simple, but it's as simple as it can be made.
 
@@ -145,8 +147,7 @@ where
     let targets_bytes = Json::canonicalize(&Json::serialize(&signed)?)?;
 
     //// build the snapshot ////
-    let meta_map =
-        hashmap! {
+    let meta_map = hashmap! {
         MetadataPath::new("targets".into())? =>
             MetadataDescription::from_reader(&*targets_bytes, 1, &[HashAlgorithm::Sha256])?,
     };

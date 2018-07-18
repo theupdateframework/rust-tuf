@@ -8,8 +8,8 @@ use serde::ser::Serialize;
 use std::fmt::Debug;
 use std::io::{Read, Write};
 
-use Result;
 use error::Error;
+use Result;
 
 /// The format used for data interchange, serialization, and deserialization.
 pub trait DataInterchange: Debug + PartialEq + Clone {

@@ -1,23 +1,24 @@
 //! Interfaces for interacting with different types of TUF repositories.
 
-use hyper::{Url, Client};
 use hyper::client::response::Response;
 use hyper::header::{Headers, UserAgent};
 use hyper::status::StatusCode;
+use hyper::{Client, Url};
 use std::collections::HashMap;
-use std::fs::{self, File, DirBuilder};
-use std::io::{Read, Write, Cursor};
+use std::fs::{self, DirBuilder, File};
+use std::io::{Cursor, Read, Write};
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
 
-use Result;
 use crypto::{self, HashAlgorithm, HashValue};
 use error::Error;
 use interchange::DataInterchange;
-use metadata::{SignedMetadata, MetadataVersion, Metadata, TargetPath, TargetDescription,
-               MetadataPath};
+use metadata::{
+    Metadata, MetadataPath, MetadataVersion, SignedMetadata, TargetDescription, TargetPath,
+};
 use util::SafeReader;
+use Result;
 
 /// Top-level trait that represents a TUF repository and contains all the ways it can be interacted
 /// with.
@@ -72,9 +73,11 @@ where
         M: Metadata,
     {
         if !M::ROLE.fuzzy_matches_path(meta_path) {
-            return Err(Error::IllegalArgument(
-                format!("Role {} does not match path {:?}", M::ROLE, meta_path),
-            ));
+            return Err(Error::IllegalArgument(format!(
+                "Role {} does not match path {:?}",
+                M::ROLE,
+                meta_path
+            )));
         }
 
         Ok(())
@@ -97,9 +100,9 @@ where
     /// Create a new repository on the local file system.
     pub fn new(local_path: PathBuf) -> Result<Self> {
         for p in &["metadata", "targets", "temp"] {
-            DirBuilder::new().recursive(true).create(
-                local_path.join(p),
-            )?
+            DirBuilder::new()
+                .recursive(true)
+                .create(local_path.join(p))?
         }
 
         Ok(FileSystemRepository {
@@ -144,7 +147,6 @@ where
         let mut file = File::create(&path)?;
         D::to_writer(&mut file, metadata)?;
         Ok(())
-
     }
 
     /// Fetch signed metadata.
@@ -227,7 +229,6 @@ where
     }
 }
 
-
 /// A repository accessible over HTTP.
 pub struct HttpRepository<D>
 where
@@ -296,9 +297,10 @@ where
             if resp.status == StatusCode::NotFound {
                 Err(Error::NotFound)
             } else {
-                Err(Error::Opaque(
-                    format!("Error getting {:?}: {:?}", url, resp),
-                ))
+                Err(Error::Opaque(format!(
+                    "Error getting {:?}: {:?}",
+                    url, resp
+                )))
             }
         } else {
             Ok(resp)
@@ -340,10 +342,7 @@ where
     {
         Self::check::<M>(meta_path)?;
 
-        let resp = self.get(
-            &self.metadata_prefix,
-            &meta_path.components::<D>(&version),
-        )?;
+        let resp = self.get(&self.metadata_prefix, &meta_path.components::<D>(&version))?;
 
         let read = SafeReader::new(
             resp,
@@ -359,9 +358,7 @@ where
     where
         R: Read,
     {
-        Err(Error::Opaque(
-            "Http repo store not implemented".to_string(),
-        ))
+        Err(Error::Opaque("Http repo store not implemented".to_string()))
     }
 
     fn fetch_target(
@@ -380,7 +377,6 @@ where
         )?)
     }
 }
-
 
 /// An ephemeral repository contained solely in memory.
 pub struct EphemeralRepository<D>
@@ -433,10 +429,8 @@ where
         Self::check::<M>(meta_path)?;
         let mut buf = Vec::new();
         D::to_writer(&mut buf, metadata)?;
-        let _ = self.metadata.insert(
-            (meta_path.clone(), version.clone()),
-            buf,
-        );
+        let _ = self.metadata
+            .insert((meta_path.clone(), version.clone()), buf);
         Ok(())
     }
 
@@ -503,16 +497,16 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use tempdir::TempDir;
     use interchange::Json;
+    use tempdir::TempDir;
 
     #[test]
     fn ephemeral_repo_targets() {
         let mut repo = EphemeralRepository::<Json>::new();
 
         let data: &[u8] = b"like tears in the rain";
-        let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256])
-            .unwrap();
+        let target_description =
+            TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
         let path = TargetPath::new("batty".into()).unwrap();
         repo.store_target(data, &path).unwrap();
 
@@ -538,11 +532,19 @@ mod test {
         assert!(temp_dir.path().join("temp").exists());
 
         let data: &[u8] = b"like tears in the rain";
-        let target_description = TargetDescription::from_reader(data, &[HashAlgorithm::Sha256])
-            .unwrap();
+        let target_description =
+            TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
         let path = TargetPath::new("foo/bar/baz".into()).unwrap();
         repo.store_target(data, &path).unwrap();
-        assert!(temp_dir.path().join("targets").join("foo").join("bar").join("baz").exists());
+        assert!(
+            temp_dir
+                .path()
+                .join("targets")
+                .join("foo")
+                .join("bar")
+                .join("baz")
+                .exists()
+        );
 
         let mut buf = Vec::new();
 

@@ -33,16 +33,12 @@ impl Value {
                 buf.extend(b"false");
                 Ok(())
             }
-            Value::Number(Number::I64(n)) => {
-                itoa::write(buf, n).map(|_| ()).map_err(|err| {
-                    format!("Write error: {}", err)
-                })
-            }
-            Value::Number(Number::U64(n)) => {
-                itoa::write(buf, n).map(|_| ()).map_err(|err| {
-                    format!("Write error: {}", err)
-                })
-            }
+            Value::Number(Number::I64(n)) => itoa::write(buf, n)
+                .map(|_| ())
+                .map_err(|err| format!("Write error: {}", err)),
+            Value::Number(Number::U64(n)) => itoa::write(buf, n)
+                .map(|_| ())
+                .map_err(|err| format!("Write error: {}", err)),
             Value::String(ref s) => {
                 // this mess is abusing serde_json to get json escaping
                 let s = json::Value::String(s.clone());
@@ -96,13 +92,11 @@ fn convert(jsn: &json::Value) -> Result<Value, String> {
     match *jsn {
         json::Value::Null => Ok(Value::Null),
         json::Value::Bool(b) => Ok(Value::Bool(b)),
-        json::Value::Number(ref n) => {
-            n.as_i64()
-                .map(Number::I64)
-                .or_else(|| n.as_u64().map(Number::U64))
-                .map(Value::Number)
-                .ok_or_else(|| String::from("only i64 and u64 are supported"))
-        }
+        json::Value::Number(ref n) => n.as_i64()
+            .map(Number::I64)
+            .or_else(|| n.as_u64().map(Number::U64))
+            .map(Value::Number)
+            .ok_or_else(|| String::from("only i64 and u64 are supported")),
         json::Value::Array(ref arr) => {
             let mut out = Vec::new();
             for res in arr.iter().map(|v| convert(v)) {

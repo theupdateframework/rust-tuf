@@ -37,9 +37,9 @@ pub enum Error {
     /// chain to the target cannot be fully verified.
     TargetUnavailable,
     /// There is no known or available hash algorithm.
-    UnkonwnHashAlgorithm(String), 
+    UnkonwnHashAlgorithm(String),
     /// There is no known or available key type.
-    UnknownKeyType(String), 
+    UnknownKeyType(String),
     /// The metadata or target failed to verify.
     VerificationFailure(String),
 }

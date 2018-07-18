@@ -1,17 +1,16 @@
-use chrono::prelude::*;
 use chrono::offset::Utc;
+use chrono::prelude::*;
 use data_encoding::BASE64URL;
 use std::collections::{HashMap, HashSet};
 
-use Result;
 use crypto;
 use error::Error;
 use metadata;
+use Result;
 
 fn parse_datetime(ts: &str) -> Result<DateTime<Utc>> {
-    Utc.datetime_from_str(ts, "%FT%TZ").map_err(|e| {
-        Error::Encoding(format!("Can't parse DateTime: {:?}", e))
-    })
+    Utc.datetime_from_str(ts, "%FT%TZ")
+        .map_err(|e| Error::Encoding(format!("Can't parse DateTime: {:?}", e)))
 }
 
 fn format_datetime(ts: &DateTime<Utc>) -> String {
@@ -114,9 +113,10 @@ impl RoleDefinition {
         let dupes = vec_len - key_ids.len();
 
         if dupes != 0 {
-            return Err(Error::Encoding(
-                format!("Found {} duplicate key IDs.", dupes),
-            ));
+            return Err(Error::Encoding(format!(
+                "Found {} duplicate key IDs.",
+                dupes
+            )));
         }
 
         Ok(metadata::RoleDefinition::new(self.threshold, key_ids)?)
@@ -188,7 +188,6 @@ impl SnapshotMetadata {
         metadata::SnapshotMetadata::new(self.version, parse_datetime(&self.expires)?, self.meta)
     }
 }
-
 
 #[derive(Serialize, Deserialize)]
 pub struct TargetsMetadata {
@@ -320,7 +319,6 @@ pub struct Delegations {
     keys: Vec<crypto::PublicKey>,
     roles: Vec<metadata::Delegation>,
 }
-
 
 impl Delegations {
     pub fn from(delegations: &metadata::Delegations) -> Delegations {
