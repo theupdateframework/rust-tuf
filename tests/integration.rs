@@ -56,7 +56,7 @@ fn simple_delegation() {
 
     let signed = SignedMetadata::<Json, RootMetadata>::new(&root, &root_key).unwrap();
 
-    let mut tuf = Tuf::<Json>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
+    let mut tuf = Tuf::<Json>::from_root_pinned(signed, vec![root_key.key_id().clone()]).unwrap();
 
     //// build the timestamp ////
     let snap = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
@@ -167,7 +167,7 @@ fn nested_delegation() {
 
     let signed = SignedMetadata::<Json, RootMetadata>::new(&root, &root_key).unwrap();
 
-    let mut tuf = Tuf::<Json>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
+    let mut tuf = Tuf::<Json>::from_root_pinned(signed, vec![root_key.key_id().clone()]).unwrap();
 
     //// build the timestamp ////
     let snap = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();

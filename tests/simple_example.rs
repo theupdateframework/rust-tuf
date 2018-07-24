@@ -1,10 +1,14 @@
+extern crate bytes;
 extern crate chrono;
+extern crate futures;
 #[macro_use]
 extern crate maplit;
 extern crate tuf;
 
+use bytes::Bytes;
 use chrono::offset::Utc;
 use chrono::prelude::*;
+use futures::{Future, stream};
 use tuf::client::{Client, Config, PathTranslator};
 use tuf::crypto::{HashAlgorithm, KeyId, PrivateKey, SignatureScheme};
 use tuf::interchange::{DataInterchange, Json};
@@ -40,7 +44,7 @@ fn with_translator() {
     let mut remote = EphemeralRepository::<Json>::new();
     let config = Config::default();
     let root_key_ids = init_server(&mut remote, &config).unwrap();
-    init_client(&root_key_ids, remote, config).unwrap();
+    init_client(root_key_ids, remote, config).unwrap();
 }
 
 #[test]
@@ -51,25 +55,25 @@ fn without_translator() {
         .finish()
         .unwrap();
     let root_key_ids = init_server(&mut remote, &config).unwrap();
-    init_client(&root_key_ids, remote, config).unwrap();
+    init_client(root_key_ids, remote, config).unwrap();
 }
 
 fn init_client<T>(
-    root_key_ids: &[KeyId],
+    root_key_ids: Vec<KeyId>,
     remote: EphemeralRepository<Json>,
     config: Config<T>,
 ) -> Result<()>
 where
-    T: PathTranslator,
+    T: PathTranslator + 'static,
 {
     let local = EphemeralRepository::<Json>::new();
-    let mut client = Client::with_root_pinned(root_key_ids, config, local, remote)?;
-    match client.update_local() {
+    let mut client = Client::with_root_pinned(root_key_ids, config, local, remote).wait()?;
+    match client.update_local().wait() {
         Ok(_) => (),
         Err(e) => println!("{:?}", e),
     }
-    let _ = client.update_remote()?;
-    client.fetch_target(&TargetPath::new("foo-bar".into())?)
+    let _ = client.update_remote().wait()?;
+    client.fetch_target(&TargetPath::new("foo-bar".into())?).wait()
 }
 
 fn init_server<T>(remote: &mut EphemeralRepository<Json>, config: &Config<T>) -> Result<Vec<KeyId>>
@@ -113,19 +117,22 @@ where
         &MetadataPath::new("root".into())?,
         &MetadataVersion::Number(1),
         &signed,
-    )?;
+    ).wait()?;
     remote.store_metadata(
         &MetadataPath::new("root".into())?,
         &MetadataVersion::None,
         &signed,
-    )?;
+    ).wait()?;
 
     //// build the targets ////
 
     let target_file: &[u8] = b"things fade, alternatives exclude";
     let target_path = TargetPath::new("foo-bar".into())?;
     let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])?;
-    let _ = remote.store_target(target_file, &target_path);
+    let _ = remote.store_target(
+        stream::once(Ok(Bytes::from_static(target_file))),
+        &target_path,
+    ).wait();
 
     let target_map =
         hashmap!(config.path_translator().real_to_virtual(&target_path)? => target_description);
@@ -137,12 +144,12 @@ where
         &MetadataPath::new("targets".into())?,
         &MetadataVersion::Number(1),
         &signed,
-    )?;
+    ).wait()?;
     remote.store_metadata(
         &MetadataPath::new("targets".into())?,
         &MetadataVersion::None,
         &signed,
-    )?;
+    ).wait()?;
 
     let targets_bytes = Json::canonicalize(&Json::serialize(&signed)?)?;
 
@@ -159,12 +166,12 @@ where
         &MetadataPath::new("snapshot".into())?,
         &MetadataVersion::Number(1),
         &signed,
-    )?;
+    ).wait()?;
     remote.store_metadata(
         &MetadataPath::new("snapshot".into())?,
         &MetadataVersion::None,
         &signed,
-    )?;
+    ).wait()?;
 
     let snapshot_bytes = Json::canonicalize(&Json::serialize(&signed)?)?;
 
@@ -178,12 +185,12 @@ where
         &MetadataPath::new("timestamp".into())?,
         &MetadataVersion::Number(1),
         &signed,
-    )?;
+    ).wait()?;
     remote.store_metadata(
         &MetadataPath::new("timestamp".into())?,
         &MetadataVersion::None,
         &signed,
-    )?;
+    ).wait()?;
 
     Ok(vec![root_key.key_id().clone()])
 }

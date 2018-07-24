@@ -2,6 +2,7 @@
 
 use data_encoding::DecodeError;
 use derp;
+use http;
 use hyper;
 use json;
 use std::fmt;
@@ -89,14 +90,14 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<hyper::error::Error> for Error {
-    fn from(err: hyper::error::Error) -> Error {
-        Error::Opaque(format!("Hyper: {:?}", err))
+impl From<http::Error> for Error {
+    fn from(err: http::Error) -> Error {
+        Error::Opaque(format!("Http: {:?}", err))
     }
 }
 
-impl From<hyper::error::ParseError> for Error {
-    fn from(err: hyper::error::ParseError) -> Error {
+impl From<hyper::Error> for Error {
+    fn from(err: hyper::Error) -> Error {
         Error::Opaque(format!("Hyper: {:?}", err))
     }
 }

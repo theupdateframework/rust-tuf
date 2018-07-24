@@ -107,9 +107,15 @@
     allow(collapsible_if, implicit_hasher, new_ret_no_self, op_ref, too_many_arguments)
 )]
 
+extern crate bytes;
 extern crate chrono;
 extern crate data_encoding;
 extern crate derp;
+#[macro_use]
+extern crate futures;
+extern crate futures_cpupool;
+extern crate futures_fs;
+extern crate http;
 extern crate hyper;
 extern crate itoa;
 #[cfg(test)]
@@ -134,12 +140,24 @@ extern crate serde_json as json;
 #[cfg(test)]
 extern crate tempdir;
 extern crate tempfile;
+extern crate tokio;
+extern crate tokio_serde;
 extern crate untrusted;
+extern crate url;
+
+#[macro_use]
+mod macros;
 
 pub mod error;
 
 /// Alias for `Result<T, Error>`.
 pub type Result<T> = ::std::result::Result<T, Error>;
+
+/// Alias for `Box<Future<T, Error>>`.
+pub type TufFuture<T> = Box<futures::Future<Item = T, Error = Error>>;
+
+/// Alias for `Box<Stream<T, Error>>`.
+pub type TufStream<T> = Box<futures::Stream<Item = T, Error = Error>>;
 
 pub mod client;
 pub mod crypto;

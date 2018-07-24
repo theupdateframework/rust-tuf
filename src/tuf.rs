@@ -3,6 +3,7 @@
 use chrono::offset::Utc;
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
+use std::sync::{Arc, Mutex};
 
 use crypto::KeyId;
 use error::Error;
@@ -16,25 +17,25 @@ use Result;
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
 pub struct Tuf<D: DataInterchange> {
-    root: RootMetadata,
-    snapshot: Option<SnapshotMetadata>,
-    targets: Option<TargetsMetadata>,
-    timestamp: Option<TimestampMetadata>,
-    delegations: HashMap<MetadataPath, TargetsMetadata>,
+    root: Arc<RootMetadata>,
+    snapshot: Option<Arc<SnapshotMetadata>>,
+    targets: Option<Arc<TargetsMetadata>>,
+    timestamp: Option<Arc<TimestampMetadata>>,
+    delegations: Arc<Mutex<HashMap<MetadataPath, Arc<TargetsMetadata>>>>,
     interchange: PhantomData<D>,
 }
 
 impl<D: DataInterchange> Tuf<D> {
     /// Create a new `TUF` struct from a known set of pinned root keys that are used to verify the
     /// signed metadata.
-    pub fn from_root_pinned<'a, I>(
+    pub fn from_root_pinned<I>(
         mut signed_root: SignedMetadata<D, RootMetadata>,
         root_key_ids: I,
     ) -> Result<Self>
     where
-        I: IntoIterator<Item = &'a KeyId>,
+        I: IntoIterator<Item = KeyId>,
     {
-        let root_key_ids = root_key_ids.into_iter().collect::<HashSet<&KeyId>>();
+        let root_key_ids = root_key_ids.into_iter().collect::<HashSet<KeyId>>();
 
         signed_root
             .signatures_mut()
@@ -59,11 +60,11 @@ impl<D: DataInterchange> Tuf<D> {
             }),
         )?;
         Ok(Tuf {
-            root,
+            root: Arc::new(root),
             snapshot: None,
             targets: None,
             timestamp: None,
-            delegations: HashMap::new(),
+            delegations: Arc::new(Mutex::new(HashMap::new())),
             interchange: PhantomData,
         })
     }
@@ -74,23 +75,24 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// An immutable reference to the optional snapshot metadata.
-    pub fn snapshot(&self) -> Option<&SnapshotMetadata> {
+    pub fn snapshot(&self) -> Option<&Arc<SnapshotMetadata>> {
         self.snapshot.as_ref()
     }
 
     /// An immutable reference to the optional targets metadata.
-    pub fn targets(&self) -> Option<&TargetsMetadata> {
+    pub fn targets(&self) -> Option<&Arc<TargetsMetadata>> {
         self.targets.as_ref()
     }
 
     /// An immutable reference to the optional timestamp metadata.
-    pub fn timestamp(&self) -> Option<&TimestampMetadata> {
+    pub fn timestamp(&self) -> Option<&Arc<TimestampMetadata>> {
         self.timestamp.as_ref()
     }
 
-    /// An immutable reference to the delegated metadata.
-    pub fn delegations(&self) -> &HashMap<MetadataPath, TargetsMetadata> {
-        &self.delegations
+    /// An immutable reference to the delegated metadata for a role.
+    pub fn get_delegation(&self, role: &MetadataPath) -> Option<Arc<TargetsMetadata>> {
+        let delegations = self.delegations.lock().unwrap();
+        delegations.get(role).map(|meta| meta.clone())
     }
 
     /// Verify and update the root metadata.
@@ -139,7 +141,7 @@ impl<D: DataInterchange> Tuf<D> {
 
         self.purge_metadata();
 
-        self.root = root;
+        self.root = Arc::new(root);
         Ok(true)
     }
 
@@ -181,7 +183,7 @@ impl<D: DataInterchange> Tuf<D> {
                 self.snapshot = None;
             }
 
-            self.timestamp = Some(timestamp);
+            self.timestamp = Some(Arc::new(timestamp));
 
             Ok(true)
         }
@@ -245,12 +247,14 @@ impl<D: DataInterchange> Tuf<D> {
             self.targets = None;
         }
 
-        self.snapshot = Some(snapshot);
+        self.snapshot = Some(Arc::new(snapshot));
         self.purge_delegations();
         Ok(true)
     }
 
     fn purge_delegations(&mut self) {
+        let mut delegations = self.delegations.lock().unwrap();
+
         let purge = {
             let snapshot = match self.snapshot() {
                 Some(s) => s,
@@ -258,7 +262,7 @@ impl<D: DataInterchange> Tuf<D> {
             };
             let mut purge = HashSet::new();
             for (role, definition) in snapshot.meta().iter() {
-                let delegation = match self.delegations.get(role) {
+                let delegation = match delegations.get(role) {
                     Some(d) => d,
                     None => continue,
                 };
@@ -273,7 +277,7 @@ impl<D: DataInterchange> Tuf<D> {
         };
 
         for role in &purge {
-            let _ = self.delegations.remove(role);
+            let _ = delegations.remove(role);
         }
     }
 
@@ -334,7 +338,7 @@ impl<D: DataInterchange> Tuf<D> {
             targets
         };
 
-        self.targets = Some(targets);
+        self.targets = Some(Arc::new(targets));
         Ok(true)
     }
 
@@ -344,6 +348,8 @@ impl<D: DataInterchange> Tuf<D> {
         role: &MetadataPath,
         signed: &SignedMetadata<D, TargetsMetadata>,
     ) -> Result<bool> {
+        let mut delegations = self.delegations.lock().unwrap();
+
         let delegation = {
             let _ = self.safe_root_ref()?;
             let snapshot = self.safe_snapshot_ref()?;
@@ -367,7 +373,7 @@ impl<D: DataInterchange> Tuf<D> {
                 }
             };
 
-            let current_version = self.delegations.get(role).map(|t| t.version()).unwrap_or(0);
+            let current_version = delegations.get(role).map(|t| t.version()).unwrap_or(0);
             if delegation_description.version() < current_version {
                 return Err(Error::VerificationFailure(format!(
                     "Snapshot metadata did listed delegation {:?} version as {} but current\
@@ -380,7 +386,7 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
-            for delegated_targets in self.delegations.values() {
+            for delegated_targets in delegations.values() {
                 let parent = match delegated_targets.delegations() {
                     Some(d) => d,
                     None => &targets_delegations,
@@ -422,7 +428,7 @@ impl<D: DataInterchange> Tuf<D> {
             delegation
         };
 
-        let _ = self.delegations.insert(role.clone(), delegation);
+        let _ = delegations.insert(role.clone(), Arc::new(delegation));
         Ok(true)
     }
 
@@ -461,7 +467,7 @@ impl<D: DataInterchange> Tuf<D> {
                     return (delegation.terminating(), None);
                 }
 
-                let targets = match tuf.delegations.get(delegation.role()) {
+                let targets = match tuf.get_delegation(delegation.role()) {
                     Some(t) => t,
                     None => return (delegation.terminating(), None),
                 };
@@ -511,17 +517,18 @@ impl<D: DataInterchange> Tuf<D> {
         self.snapshot = None;
         self.targets = None;
         self.timestamp = None;
-        self.delegations.clear();
+        let mut delegations = self.delegations.lock().unwrap();
+        delegations.clear();
     }
 
-    fn safe_root_ref(&self) -> Result<&RootMetadata> {
+    fn safe_root_ref(&self) -> Result<&Arc<RootMetadata>> {
         if self.root.expires() <= &Utc::now() {
             return Err(Error::ExpiredMetadata(Role::Root));
         }
         Ok(&self.root)
     }
 
-    fn safe_snapshot_ref(&self) -> Result<&SnapshotMetadata> {
+    fn safe_snapshot_ref(&self) -> Result<&Arc<SnapshotMetadata>> {
         match self.snapshot {
             Some(ref snapshot) => {
                 if snapshot.expires() <= &Utc::now() {
@@ -533,7 +540,7 @@ impl<D: DataInterchange> Tuf<D> {
         }
     }
 
-    fn safe_targets_ref(&self) -> Result<&TargetsMetadata> {
+    fn safe_targets_ref(&self) -> Result<&Arc<TargetsMetadata>> {
         match self.targets {
             Some(ref targets) => {
                 if targets.expires() <= &Utc::now() {
@@ -544,7 +551,7 @@ impl<D: DataInterchange> Tuf<D> {
             None => Err(Error::MissingMetadata(Role::Targets)),
         }
     }
-    fn safe_timestamp_ref(&self) -> Result<&TimestampMetadata> {
+    fn safe_timestamp_ref(&self) -> Result<&Arc<TimestampMetadata>> {
         match self.timestamp {
             Some(ref timestamp) => {
                 if timestamp.expires() <= &Utc::now() {
@@ -597,7 +604,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &root_key).unwrap();
 
-        assert!(Tuf::from_root_pinned(root, &[root_key.key_id().clone()]).is_ok());
+        assert!(Tuf::from_root_pinned(root, vec![root_key.key_id().clone()]).is_ok());
     }
 
     #[test]
@@ -615,7 +622,7 @@ mod test {
         let root: SignedMetadata<Json, RootMetadata> =
             SignedMetadata::new(&root, &KEYS[0]).unwrap();
 
-        assert!(Tuf::from_root_pinned(root, &[KEYS[1].key_id().clone()]).is_err());
+        assert!(Tuf::from_root_pinned(root, vec![KEYS[1].key_id().clone()]).is_err());
     }
 
     #[test]

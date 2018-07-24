@@ -54,7 +54,7 @@ static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &'static [&str] = &[
 ];
 
 static PATH_ILLEGAL_STRINGS: &'static [&str] = &[
-    ":", // for *nix compatibility
+    ":",  // for *nix compatibility
     "\\", // for windows compatibility
     "<",
     ">",

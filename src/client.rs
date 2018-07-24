@@ -3,11 +3,14 @@
 //! # Example
 //!
 //! ```no_run
+//! extern crate futures;
+//! extern crate futures_fs;
 //! extern crate hyper;
 //! extern crate tuf;
+//! extern crate url;
 //!
+//! use futures::Future;
 //! use hyper::client::Client as HttpClient;
-//! use hyper::Url;
 //! use std::path::PathBuf;
 //! use tuf::Tuf;
 //! use tuf::crypto::KeyId;
@@ -16,6 +19,7 @@
 //!     MetadataVersion};
 //! use tuf::interchange::Json;
 //! use tuf::repository::{Repository, FileSystemRepository, HttpRepository};
+//! use url::Url;
 //!
 //! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
 //!     "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
@@ -28,7 +32,8 @@
 //!         .map(|k| KeyId::from_string(k).unwrap())
 //!         .collect();
 //!
-//!     let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))
+//!     let pool = futures_fs::FsPool::new(1);
+//!     let local = FileSystemRepository::<Json>::new(pool, PathBuf::from("~/.rustup"))
 //!         .unwrap();
 //!
 //!     let remote = HttpRepository::new(
@@ -38,20 +43,25 @@
 //!         None);
 //!
 //!     let mut client = Client::with_root_pinned(
-//!         &key_ids,
+//!         key_ids,
 //!         Config::default(),
 //!         local,
 //!         remote,
-//!     ).unwrap();
-//!     let _ = client.update_local().unwrap();
-//!     let _ = client.update_remote().unwrap();
+//!     ).wait().unwrap();
+//!     let _ = client.update_local().wait().unwrap();
+//!     let _ = client.update_remote().wait().unwrap();
 //! }
 //! ```
 
-use std::io::{Read, Write};
+use std::io::Write;
+use std::iter::Iterator;
+use std::sync::{Arc, Mutex};
 
+use bytes::Bytes;
 use crypto::{self, KeyId};
 use error::Error;
+use futures::future::{Either, Loop, loop_fn};
+use futures::{future, Future, Stream};
 use interchange::DataInterchange;
 use metadata::{
     MetadataPath, MetadataVersion, Role, RootMetadata, SnapshotMetadata, TargetDescription,
@@ -59,8 +69,8 @@ use metadata::{
 };
 use repository::Repository;
 use tuf::Tuf;
-use util::SafeReader;
-use Result;
+use util::{future_ok, future_err};
+use {TufFuture, TufStream, Result};
 
 /// Translates real paths (where a file is stored) into virtual paths (how it is addressed in TUF)
 /// and back.
@@ -110,457 +120,678 @@ impl PathTranslator for DefaultTranslator {
 /// A client that interacts with TUF repositories.
 pub struct Client<D, L, R, T>
 where
-    D: DataInterchange,
-    L: Repository<D>,
-    R: Repository<D>,
-    T: PathTranslator,
+    D: DataInterchange + 'static,
+    L: Repository<D> + 'static,
+    R: Repository<D> + 'static,
+    T: PathTranslator + 'static,
 {
-    tuf: Tuf<D>,
-    config: Config<T>,
-    local: L,
-    remote: R,
+    tuf: Arc<Mutex<Tuf<D>>>,
+    config: Arc<Config<T>>,
+    local: Arc<L>,
+    remote: Arc<R>,
 }
 
 impl<D, L, R, T> Client<D, L, R, T>
 where
-    D: DataInterchange,
-    L: Repository<D>,
-    R: Repository<D>,
-    T: PathTranslator,
+    D: DataInterchange + 'static,
+    L: Repository<D>  + 'static,
+    R: Repository<D> + 'static,
+    T: PathTranslator + 'static,
 {
     /// Create a new TUF client. It will attempt to load initial root metadata from the local repo
     /// and return an error if it cannot do so.
     ///
     /// **WARNING**: This method offers weaker security guarantees than the related method
     /// `with_root_pinned`.
-    pub fn new(config: Config<T>, local: L, remote: R) -> Result<Self> {
-        let root = local
-            .fetch_metadata(
+    pub fn new(config: Config<T>, local: L, remote: R) -> TufFuture<Self> {
+        let local = Arc::new(local);
+        let remote = Arc::new(remote);
+
+        let max_root_size = config.max_root_size;
+        let min_bytes_per_second = config.min_bytes_per_second;
+
+        let client = local.fetch_metadata(
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(1),
-                &config.max_root_size,
-                config.min_bytes_per_second,
+                max_root_size,
+                min_bytes_per_second,
                 None,
-            )?;
+            )
+            .and_then(move |root| {
+                let tuf = Tuf::from_root(&root)?;
 
-        let tuf = Tuf::from_root(&root)?;
+                Ok(Client {
+                    tuf: Arc::new(Mutex::new(tuf)),
+                    config: Arc::new(config),
+                    local,
+                    remote,
+                })
+            });
 
-        Ok(Client {
-            tuf,
-            config,
-            local,
-            remote,
-        })
+        Box::new(client)
     }
 
     /// Create a new TUF client. It will attempt to load initial root metadata the local and remote
     /// repositories using the provided key IDs to pin the verification.
     ///
     /// This is the preferred method of creating a client.
-    pub fn with_root_pinned<'a, I>(
+    pub fn with_root_pinned<I>(
         trusted_root_keys: I,
         config: Config<T>,
         local: L,
         remote: R,
-    ) -> Result<Self>
+    ) -> TufFuture<Self>
     where
-        I: IntoIterator<Item = &'a KeyId>,
+        I: IntoIterator<Item = KeyId> + 'static,
         T: PathTranslator,
     {
-        let root = local
+        let local = Arc::new(local);
+        let remote = Arc::new(remote);
+
+        let remote_ = remote.clone();
+        let max_root_size = config.max_root_size;
+        let min_bytes_per_second = config.min_bytes_per_second;
+
+        let client = local
             .fetch_metadata(
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(1),
-                &config.max_root_size,
-                config.min_bytes_per_second,
+                max_root_size,
+                min_bytes_per_second,
                 None,
             )
-            .or_else(|_| {
-                remote.fetch_metadata(
+            .or_else(move |_| {
+                remote_.fetch_metadata(
                     &MetadataPath::from_role(&Role::Root),
                     &MetadataVersion::Number(1),
-                    &config.max_root_size,
-                    config.min_bytes_per_second,
+                    max_root_size,
+                    min_bytes_per_second,
                     None,
                 )
-            })?;
+            })
+            .and_then(move |root| {
+                let tuf = Tuf::from_root_pinned(root, trusted_root_keys)?;
 
-        let tuf = Tuf::from_root_pinned(root, trusted_root_keys)?;
+                Ok(Client {
+                    tuf: Arc::new(Mutex::new(tuf)),
+                    config: Arc::new(config),
+                    local,
+                    remote,
+                })
+            });
 
-        Ok(Client {
-            tuf,
-            config,
-            local,
-            remote,
-        })
+        Box::new(client)
     }
 
     /// Update TUF metadata from the local repository.
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
-    pub fn update_local(&mut self) -> Result<bool> {
-        let r = Self::update_root(&mut self.tuf, &mut self.local, &self.config)?;
-        let ts = match Self::update_timestamp(&mut self.tuf, &mut self.local, &self.config) {
-            Ok(b) => b,
-            Err(e) => {
-                warn!(
-                    "Error updating timestamp metadata from local sources: {:?}",
-                    e
-                );
-                false
-            }
-        };
-        let sn = match Self::update_snapshot(&mut self.tuf, &mut self.local, &self.config) {
-            Ok(b) => b,
-            Err(e) => {
-                warn!(
-                    "Error updating snapshot metadata from local sources: {:?}",
-                    e
-                );
-                false
-            }
-        };
-        let ta = match Self::update_targets(&mut self.tuf, &mut self.local, &self.config) {
-            Ok(b) => b,
-            Err(e) => {
-                warn!(
-                    "Error updating targets metadata from local sources: {:?}",
-                    e
-                );
-                false
-            }
-        };
+    pub fn update_local(&mut self) -> TufFuture<bool> {
+        let tuf1 = self.tuf.clone();
+        let tuf2 = self.tuf.clone();
+        let tuf3 = self.tuf.clone();
+        let tuf4 = self.tuf.clone();
 
-        Ok(r || ts || sn || ta)
+        let config1 = self.config.clone();
+        let config2 = self.config.clone();
+        let config3 = self.config.clone();
+        let config4 = self.config.clone();
+
+        let local1 = self.local.clone();
+        let local2 = self.local.clone();
+        let local3 = self.local.clone();
+        let local4 = self.local.clone();
+
+        Box::new(
+            Self::update_root(tuf1, local1, config1)
+                .and_then(move |r| {
+                    Self::update_timestamp(tuf2, local2, config2)
+                        .or_else(|e| {
+                            warn!(
+                                "Error updating root metadata from local sources: {:?}",
+                                e
+                            );
+                            Ok(false)
+                        })
+                        .and_then(move |ts| {
+                            Self::update_snapshot(tuf3, local3, config3)
+                                .or_else(|e| {
+                                    warn!(
+                                        "Error updating snapshot metadata from local sources: {:?}",
+                                        e
+                                    );
+                                    Ok(false)
+                                })
+                                .and_then(move |sn| {
+                                    Self::update_targets(tuf4, local4, config4)
+                                        .or_else(|e| {
+                                            warn!(
+                                                "Error updating targets metadata from local sources: {:?}",
+                                                e
+                                            );
+                                            Ok(false)
+                                        })
+                                        .and_then(move |ta| {
+                                            Ok(r || ts || sn || ta)
+                                        })
+                                })
+                        })
+                })
+        )
     }
 
     /// Update TUF metadata from the remote repository.
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
-    pub fn update_remote(&mut self) -> Result<bool> {
-        let r = Self::update_root(&mut self.tuf, &mut self.remote, &self.config)?;
-        let ts = Self::update_timestamp(&mut self.tuf, &mut self.remote, &self.config)?;
-        let sn = Self::update_snapshot(&mut self.tuf, &mut self.remote, &self.config)?;
-        let ta = Self::update_targets(&mut self.tuf, &mut self.remote, &self.config)?;
+    pub fn update_remote(&mut self) -> TufFuture<bool> {
+        let tuf1 = self.tuf.clone();
+        let tuf2 = self.tuf.clone();
+        let tuf3 = self.tuf.clone();
+        let tuf4 = self.tuf.clone();
 
-        Ok(r || ts || sn || ta)
-    }
+        let config1 = self.config.clone();
+        let config2 = self.config.clone();
+        let config3 = self.config.clone();
+        let config4 = self.config.clone();
 
-    /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_root<V, U>(tuf: &mut Tuf<D>, repo: &mut V, config: &Config<U>) -> Result<bool>
-    where
-        V: Repository<D>,
-        U: PathTranslator,
-    {
-        let latest_root = repo.fetch_metadata(
-            &MetadataPath::from_role(&Role::Root),
-            &MetadataVersion::None,
-            &config.max_root_size,
-            config.min_bytes_per_second,
-            None,
-        )?;
-        let latest_version = D::deserialize::<RootMetadata>(latest_root.signed())?.version();
+        let remote1 = self.remote.clone();
+        let remote2 = self.remote.clone();
+        let remote3 = self.remote.clone();
+        let remote4 = self.remote.clone();
 
-        if latest_version < tuf.root().version() {
-            return Err(Error::VerificationFailure(format!(
-                "Latest root version is lower than current root version: {} < {}",
-                latest_version,
-                tuf.root().version()
-            )));
-        } else if latest_version == tuf.root().version() {
-            return Ok(false);
-        }
-
-        let err_msg = "TUF claimed no update occurred when one should have. \
-                       This is a programming error. Please report this as a bug.";
-
-        for i in (tuf.root().version() + 1)..latest_version {
-            let signed = repo.fetch_metadata(
-                &MetadataPath::from_role(&Role::Root),
-                &MetadataVersion::Number(i),
-                &config.max_root_size,
-                config.min_bytes_per_second,
-                None,
-            )?;
-            if !tuf.update_root(&signed)? {
-                error!("{}", err_msg);
-                return Err(Error::Programming(err_msg.into()));
-            }
-        }
-
-        if !tuf.update_root(&latest_root)? {
-            error!("{}", err_msg);
-            return Err(Error::Programming(err_msg.into()));
-        }
-        Ok(true)
-    }
-
-    /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_timestamp<V, U>(tuf: &mut Tuf<D>, repo: &mut V, config: &Config<U>) -> Result<bool>
-    where
-        V: Repository<D>,
-        U: PathTranslator,
-    {
-        let ts = repo.fetch_metadata(
-            &MetadataPath::from_role(&Role::Timestamp),
-            &MetadataVersion::None,
-            &config.max_timestamp_size,
-            config.min_bytes_per_second,
-            None,
-        )?;
-        tuf.update_timestamp(&ts)
-    }
-
-    /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_snapshot<V, U>(tuf: &mut Tuf<D>, repo: &mut V, config: &Config<U>) -> Result<bool>
-    where
-        V: Repository<D>,
-        U: PathTranslator,
-    {
-        let snapshot_description = match tuf.timestamp() {
-            Some(ts) => Ok(ts.snapshot()),
-            None => Err(Error::MissingMetadata(Role::Timestamp)),
-        }?.clone();
-
-        if snapshot_description.version() <= tuf.snapshot().map(|s| s.version()).unwrap_or(0) {
-            return Ok(false);
-        }
-
-        let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
-
-        let version = if tuf.root().consistent_snapshot() {
-            MetadataVersion::Number(snapshot_description.version())
-        } else {
-            MetadataVersion::None
-        };
-
-        let snap = repo.fetch_metadata(
-            &MetadataPath::from_role(&Role::Snapshot),
-            &version,
-            &Some(snapshot_description.size()),
-            config.min_bytes_per_second,
-            Some((alg, value.clone())),
-        )?;
-        tuf.update_snapshot(&snap)
-    }
-
-    /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_targets<V, U>(tuf: &mut Tuf<D>, repo: &mut V, config: &Config<U>) -> Result<bool>
-    where
-        V: Repository<D>,
-        U: PathTranslator,
-    {
-        let targets_description = match tuf.snapshot() {
-            Some(sn) => match sn.meta().get(&MetadataPath::from_role(&Role::Targets)) {
-                Some(d) => Ok(d),
-                None => Err(Error::VerificationFailure(
-                    "Snapshot metadata did not contain a description of the \
-                     current targets metadata."
-                        .into(),
-                )),
-            },
-            None => Err(Error::MissingMetadata(Role::Snapshot)),
-        }?.clone();
-
-        if targets_description.version() <= tuf.targets().map(|t| t.version()).unwrap_or(0) {
-            return Ok(false);
-        }
-
-        let (alg, value) = crypto::hash_preference(targets_description.hashes())?;
-
-        let version = if tuf.root().consistent_snapshot() {
-            MetadataVersion::Hash(value.clone())
-        } else {
-            MetadataVersion::None
-        };
-
-        let targets = repo.fetch_metadata(
-            &MetadataPath::from_role(&Role::Targets),
-            &version,
-            &Some(targets_description.size()),
-            config.min_bytes_per_second,
-            Some((alg, value.clone())),
-        )?;
-        tuf.update_targets(&targets)
-    }
-
-    /// Fetch a target from the remote repo and write it to the local repo.
-    pub fn fetch_target(&mut self, target: &TargetPath) -> Result<()> {
-        let read = self._fetch_target(target)?;
-        self.local.store_target(read, target)
-    }
-
-    /// Fetch a target from the remote repo and write it to the provided writer.
-    pub fn fetch_target_to_writer<W: Write>(
-        &mut self,
-        target: &TargetPath,
-        mut write: W,
-    ) -> Result<()> {
-        let mut read = self._fetch_target(&target)?;
-        let mut buf = [0; 1024];
-        loop {
-            let bytes_read = read.read(&mut buf)?;
-            if bytes_read == 0 {
-                break;
-            }
-            write.write_all(&buf[..bytes_read])?
-        }
-        Ok(())
-    }
-
-    // TODO this should check the local repo first
-    fn _fetch_target(&mut self, target: &TargetPath) -> Result<SafeReader<R::TargetRead>> {
-        let virt = self.config.path_translator.real_to_virtual(target)?;
-
-        let snapshot = self.tuf
-            .snapshot()
-            .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
-            .clone();
-        let (_, target_description) =
-            self.lookup_target_description(false, 0, &virt, &snapshot, None);
-        let target_description = target_description?;
-
-        self.remote.fetch_target(
-            target,
-            &target_description,
-            self.config.min_bytes_per_second,
+        Box::new(
+            Self::update_root(tuf1, remote1, config1)
+                .and_then(move |r| {
+                    Self::update_timestamp(tuf2, remote2, config2)
+                        .and_then(move |ts| {
+                            Self::update_snapshot(tuf3, remote3, config3)
+                                .and_then(move |sn| {
+                                    Self::update_targets(tuf4, remote4, config4)
+                                        .and_then(move |ta| {
+                                            Ok(r || ts || sn || ta)
+                                        })
+                                })
+                        })
+                })
         )
     }
 
-    fn lookup_target_description(
-        &mut self,
-        default_terminate: bool,
-        current_depth: u32,
-        target: &VirtualTargetPath,
-        snapshot: &SnapshotMetadata,
-        targets: Option<&TargetsMetadata>,
-    ) -> (bool, Result<TargetDescription>) {
-        if current_depth > self.config.max_delegation_depth {
-            warn!(
-                "Walking the delegation graph would have exceeded the configured max depth: {}",
-                self.config.max_delegation_depth
-            );
-            return (default_terminate, Err(Error::NotFound));
-        }
+    /// Returns `true` if an update occurred and `false` otherwise.
+    fn update_root<V, U>(tuf: Arc<Mutex<Tuf<D>>>, repo: Arc<V>, config: Arc<Config<U>>) -> TufFuture<bool>
+    where
+        V: Repository<D> + 'static,
+        U: PathTranslator,
+    {
+        let err_msg = "TUF claimed no update occurred when one should have. \
+                       This is a programming error. Please report this as a bug.";
 
-        // these clones are dumb, but we need immutable values and not references for update
-        // tuf in the loop below
-        let targets = match targets {
-            Some(t) => t.clone(),
-            None => match self.tuf.targets() {
-                Some(t) => t.clone(),
+        //let tuf = self.tuf.clone();
+        let max_root_size = config.max_root_size;
+        let min_bytes_per_second = config.min_bytes_per_second;
+
+        let updated =
+            repo.fetch_metadata(
+                &MetadataPath::from_role(&Role::Root),
+                &MetadataVersion::None,
+                max_root_size,
+                min_bytes_per_second,
+                None,
+            )
+            .and_then(move |latest_root| {
+                let latest_version =
+                    D::deserialize::<RootMetadata>(latest_root.signed())?.version();
+
+                let root_version = {
+                    let tuf = tuf.lock().expect("poisoned lock");
+                    tuf.root().version()
+                };
+
+                if latest_version < root_version {
+                    return Err(Error::VerificationFailure(format!(
+                        "Latest root version is lower than current root version: {} < {}",
+                        latest_version, root_version,
+                    )));
+                } else if latest_version == root_version {
+                    return Ok(Either::A(future::ok(false)));
+                }
+
+                let mut updated_roots = Vec::new();
+                for i in (root_version + 1)..latest_version {
+                    let tuf = tuf.clone();
+
+                    updated_roots.push(
+                        repo
+                            .fetch_metadata(
+                                &MetadataPath::from_role(&Role::Root),
+                                &MetadataVersion::Number(i),
+                                max_root_size,
+                                min_bytes_per_second,
+                                None,
+                            )
+                            .map(move |signed| {
+                                let mut tuf = tuf.lock().expect("poisoned lock");
+
+                                if !tuf.update_root(&signed)? {
+                                    error!("{}", err_msg);
+                                    return Err(Error::Programming(err_msg.into()));
+                                }
+
+                                Ok(())
+                            }),
+                    );
+                }
+
+                Ok(Either::B(future::join_all(updated_roots).and_then(
+                    move |_| {
+                        let mut tuf = tuf.lock().expect("poisoned lock");
+
+                        if !tuf.update_root(&latest_root)? {
+                            error!("{}", err_msg);
+                            return Err(Error::Programming(err_msg.into()));
+                        }
+
+                        Ok(true)
+                    }
+                )))
+            })
+            .flatten();
+
+        Box::new(updated)
+    }
+
+    /// Returns `true` if an update occurred and `false` otherwise.
+    fn update_timestamp<V, U>(tuf: Arc<Mutex<Tuf<D>>>, repo: Arc<V>, config: Arc<Config<U>>) -> TufFuture<bool>
+    where
+        V: Repository<D>,
+        U: PathTranslator,
+    {
+        let ts = repo
+            .fetch_metadata(
+                &MetadataPath::from_role(&Role::Timestamp),
+                &MetadataVersion::None,
+                config.max_timestamp_size,
+                config.min_bytes_per_second,
+                None,
+            )
+            .and_then(move |ts| {
+                let mut tuf = tuf.lock().expect("poisoned lock");
+                tuf.update_timestamp(&ts)
+            });
+
+        Box::new(ts)
+    }
+
+    /// Returns `true` if an update occurred and `false` otherwise.
+    fn update_snapshot<V, U>(tuf: Arc<Mutex<Tuf<D>>>, repo: Arc<V>, config: Arc<Config<U>>) -> TufFuture<bool>
+    where
+        V: Repository<D>,
+        U: PathTranslator,
+    {
+        let snap = {
+            let tuf = tuf.lock().expect("poisoned lock");
+
+            let snapshot_description = match tuf.timestamp() {
+                Some(ts) => ts.snapshot().clone(),
                 None => {
-                    return (
-                        default_terminate,
-                        Err(Error::MissingMetadata(Role::Targets)),
-                    )
+                    return future_err(Error::MissingMetadata(Role::Timestamp));
                 }
-            },
-        };
+            };
 
-        if let Some(t) = targets.targets().get(target) {
-            return (default_terminate, Ok(t.clone()));
-        }
+            let (alg, value) = try_future!(
+                crypto::hash_preference(snapshot_description.hashes())
+            );
 
-        let delegations = match targets.delegations() {
-            Some(d) => d,
-            None => return (default_terminate, Err(Error::NotFound)),
-        };
-
-        for delegation in delegations.roles().iter() {
-            if !delegation.paths().iter().any(|p| target.is_child(p)) {
-                if delegation.terminating() {
-                    return (true, Err(Error::NotFound));
-                } else {
-                    continue;
-                }
+            if snapshot_description.version() <= tuf.snapshot().map(|s| s.version()).unwrap_or(0) {
+                return future_ok(false);
             }
 
-            let role_meta = match snapshot.meta().get(delegation.role()) {
-                Some(m) => m,
-                None if !delegation.terminating() => continue,
-                None => return (true, Err(Error::NotFound)),
+            let version = if tuf.root().consistent_snapshot() {
+                MetadataVersion::Number(snapshot_description.version())
+            } else {
+                MetadataVersion::None
             };
 
-            let (alg, value) = match crypto::hash_preference(role_meta.hashes()) {
-                Ok(h) => h,
-                Err(e) => return (delegation.terminating(), Err(e)),
+            repo.fetch_metadata(
+                &MetadataPath::from_role(&Role::Snapshot),
+                &version,
+                Some(snapshot_description.size()),
+                config.min_bytes_per_second,
+                Some((alg, value.clone())),
+            )
+        };
+
+        Box::new(
+            snap.and_then(move |snap| {
+                let mut tuf = tuf.lock().unwrap();
+                tuf.update_snapshot(&snap)
+            })
+        )
+    }
+
+    /// Returns `true` if an update occurred and `false` otherwise.
+    fn update_targets<V, U>(tuf: Arc<Mutex<Tuf<D>>>, repo: Arc<V>, config: Arc<Config<U>>) -> TufFuture<bool>
+    where
+        V: Repository<D>,
+        U: PathTranslator,
+    {
+        let targets = {
+            let tuf = tuf.lock().expect("poisoned lock");
+
+            let targets_description = match tuf.snapshot() {
+                Some(sn) => match sn.meta().get(&MetadataPath::from_role(&Role::Targets)) {
+                    Some(d) => d,
+                    None => {
+                        return Box::new(future::err(Error::VerificationFailure(
+                            "Snapshot metadata did not contain a description of the \
+                             current targets metadata."
+                                .into(),
+                        )));
+                    }
+                },
+                None => {
+                    return Box::new(future::err(Error::MissingMetadata(Role::Snapshot)));
+                }
             };
 
-            let version = if self.tuf.root().consistent_snapshot() {
+            if targets_description.version() <= tuf.targets().map(|t| t.version()).unwrap_or(0) {
+                return Box::new(future::ok(false));
+            }
+
+            let (alg, value) = try_future!(crypto::hash_preference(targets_description.hashes()));
+
+            let version = if tuf.root().consistent_snapshot() {
                 MetadataVersion::Hash(value.clone())
             } else {
                 MetadataVersion::None
             };
 
-            let signed_meta = match self.local
-                .fetch_metadata::<TargetsMetadata>(
-                    delegation.role(),
-                    &MetadataVersion::None,
-                    &Some(role_meta.size()),
-                    self.config.min_bytes_per_second(),
-                    Some((alg, value.clone())),
-                )
-                .or_else(|_| {
-                    self.remote.fetch_metadata::<TargetsMetadata>(
-                        delegation.role(),
-                        &version,
-                        &Some(role_meta.size()),
-                        self.config.min_bytes_per_second(),
-                        Some((alg, value.clone())),
+            repo.fetch_metadata(
+                &MetadataPath::from_role(&Role::Targets),
+                &version,
+                Some(targets_description.size()),
+                config.min_bytes_per_second,
+                Some((alg, value.clone())),
+            )
+        };
+
+        Box::new(
+            targets.and_then(move |targets| {
+                let mut tuf = tuf.lock().unwrap();
+                tuf.update_targets(&targets)
+            })
+        )
+    }
+
+    /// Fetch a target from the remote repo and write it to the local repo.
+    pub fn fetch_target(&mut self, target: &TargetPath) -> TufFuture<()> {
+        let stream = self.fetch_target_stream(target);
+        self.local.store_target(stream, target)
+    }
+
+    /// Fetch a target from the remote repo and write it to the provided writer.
+    pub fn fetch_target_to_writer<W: Write + 'static>(
+        &mut self,
+        target: &TargetPath,
+        mut write: W,
+    ) -> TufFuture<()> {
+        Box::new(
+            self.fetch_target_stream(&target)
+                .for_each(move |bytes| {
+                    write.write_all(&bytes)?;
+                    Ok(())
+                })
+        )
+    }
+
+    // TODO this should check the local repo first
+    fn fetch_target_stream(&mut self, target: &TargetPath) -> TufStream<Bytes> {
+        let virt = try_stream!(self.config.path_translator.real_to_virtual(target));
+
+        let snapshot = {
+            let tuf = self.tuf.lock().unwrap();
+            try_stream!(tuf.snapshot().ok_or_else(|| Error::MissingMetadata(Role::Snapshot)))
+                .clone()
+        };
+
+        let target = target.clone();
+        let remote = self.remote.clone();
+        let min_bytes_per_second = self.config.min_bytes_per_second;
+
+        Box::new(
+            Self::lookup_target_description(
+                self.tuf.clone(),
+                self.config.max_delegation_depth,
+                min_bytes_per_second,
+                false,
+                0,
+                Arc::new(virt),
+                snapshot,
+                None,
+                self.local.clone(),
+                self.remote.clone(),
+            )
+                .map(move |target_description| {
+                    remote.fetch_target(
+                        &target,
+                        &target_description,
+                        min_bytes_per_second,
                     )
-                }) {
-                Ok(m) => m,
-                Err(ref e) if !delegation.terminating() => {
-                    warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
-                    continue;
-                }
-                Err(e) => {
-                    warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
-                    return (true, Err(e));
-                }
-            };
+                })
+                .map_err(|(_, err)| err)
+                .flatten_stream()
+        )
+    }
 
-            match self.tuf.update_delegation(delegation.role(), &signed_meta) {
-                Ok(_) => {
-                    match self.local.store_metadata(
-                        delegation.role(),
-                        &MetadataVersion::None,
-                        &signed_meta,
-                    ) {
-                        Ok(_) => (),
-                        Err(e) => warn!(
-                            "Error storing metadata {:?} locally: {:?}",
-                            delegation.role(),
-                            e
-                        ),
-                    }
-
-                    let meta = self.tuf
-                        .delegations()
-                        .get(delegation.role())
-                        .unwrap()
-                        .clone();
-                    let (term, res) = self.lookup_target_description(
-                        delegation.terminating(),
-                        current_depth + 1,
-                        target,
-                        snapshot,
-                        Some(&meta),
-                    );
-
-                    if term && res.is_err() {
-                        return (true, res);
-                    }
-
-                    // TODO end recursion early
-                }
-                Err(_) if !delegation.terminating() => continue,
-                Err(e) => return (true, Err(e)),
-            };
+    fn lookup_target_description<D_, L_, R_>(
+        tuf: Arc<Mutex<Tuf<D_>>>,
+        max_delegation_depth: u32,
+        min_bytes_per_second: u32,
+        default_terminate: bool,
+        current_depth: u32,
+        target: Arc<VirtualTargetPath>,
+        snapshot: Arc<SnapshotMetadata>,
+        targets: Option<Arc<TargetsMetadata>>,
+        local: Arc<L_>,
+        remote: Arc<R_>,
+    ) -> Box<Future<Item=TargetDescription, Error=(bool, Error)>>
+    where
+        D_: DataInterchange + 'static,
+        L_: Repository<D_> + 'static,
+        R_: Repository<D_> + 'static,
+    {
+        if current_depth > max_delegation_depth {
+            warn!(
+                "Walking the delegation graph would have exceeded the configured max depth: {}",
+                max_delegation_depth
+            );
+            return future_err((default_terminate, Error::NotFound));
         }
 
-        (default_terminate, Err(Error::NotFound))
+        let delegations = {
+            let tuf = tuf.lock().expect("poisoned lock");
+
+            let targets = if let Some(targets) = targets {
+                targets.clone()
+            } else if let Some(targets) = tuf.targets() {
+                targets.clone()
+            } else {
+                return future_err((default_terminate, Error::MissingMetadata(Role::Targets)));
+            };
+
+            if let Some(target) = targets.targets().get(&target) {
+                return future_ok(target.clone());
+            }
+
+            if let Some(delegations) = targets.delegations() {
+                // this clone is dumb, but we need immutable values and not references for update
+                // tuf in the loop below
+                delegations.roles().clone().into_iter()
+            } else {
+                return future_err((default_terminate, Error::NotFound));
+            }
+        };
+
+        Box::new(
+            loop_fn(delegations, move |mut delegations| {
+                let snapshot = snapshot.clone();
+
+                let delegation = if let Some(delegation) = delegations.next() {
+                    delegation
+                } else {
+                    return future_err((default_terminate, Error::NotFound));
+                };
+
+                if !delegation.paths().iter().any(|p| target.is_child(p)) {
+                    if delegation.terminating() {
+                        return future_err((true, Error::NotFound));
+                    } else {
+                        return future_ok(Loop::Continue(delegations));
+                    }
+                }
+
+                let role_meta = if let Some(m) = snapshot.meta().get(delegation.role()) {
+                    m
+                } else {
+                    if delegation.terminating() {
+                        return future_err((true, Error::NotFound));
+                    } else {
+                        return future_ok(Loop::Continue(delegations));
+                    }
+                };
+
+                let (alg, value) = match crypto::hash_preference(role_meta.hashes()) {
+                    Ok((alg, value)) => (alg, value.clone()),
+                    Err(e) => {
+                        return future_err((delegation.terminating(), e));
+                    }
+                };
+
+                let version = {
+                    let tuf = tuf.lock().unwrap();
+
+                    if tuf.root().consistent_snapshot() {
+                        MetadataVersion::Hash(value.clone())
+                    } else {
+                        MetadataVersion::None
+                    }
+                };
+
+                let tuf = tuf.clone();
+                let target = target.clone();
+                let snapshot = snapshot.clone();
+                let local = local.clone();
+                let remote1 = remote.clone();
+                let remote2 = remote.clone();
+                let delegation = Arc::new(delegation);
+                let delegation1 = delegation.clone();
+                let role_meta_size = role_meta.size();
+                let value1 = value.clone();
+
+                Box::new(
+                    local
+                        .fetch_metadata(
+                            delegation.role(),
+                            &MetadataVersion::None,
+                            Some(role_meta_size),
+                            min_bytes_per_second,
+                            Some((alg, value)),
+                        )
+                        .or_else(move |_| {
+                            remote1.fetch_metadata(
+                                delegation.role(),
+                                &version,
+                                Some(role_meta_size),
+                                min_bytes_per_second,
+                                Some((alg, value1)),
+                            )
+                        })
+                        .then(move |result| {
+                            let signed_meta = match result {
+                                Ok(m) => m,
+                                Err(e) => {
+                                    warn!("Failed to fetch metadata {:?}: {:?}", delegation1.role(), e);
+                                    if delegation1.terminating() {
+                                        return future_err((true, e));
+                                    } else {
+                                        return future_ok(Loop::Continue(delegations));
+                                    }
+                                }
+                            };
+
+                            let result = {
+                                let mut tuf = tuf.lock().expect("poisoned lock");
+                                tuf.update_delegation(delegation1.role(), &signed_meta)
+                            };
+
+                            if let Err(err) = result {
+                                if delegation1.terminating() {
+                                    return future_err((true, err));
+                                } else {
+                                    return future_ok(Loop::Continue(delegations));
+                                }
+                            }
+
+                            Box::new(
+                                local
+                                    .store_metadata(
+                                        delegation1.role(),
+                                        &MetadataVersion::None,
+                                        &signed_meta,
+                                    )
+                                    .then(move |result| {
+                                        if let Err(err) = result {
+                                            warn!(
+                                                "Error storing metadata {:?} locally: {:?}",
+                                                delegation1.role(),
+                                                err
+                                            );
+                                        }
+
+                                        let meta = {
+                                            let tuf = tuf.lock().unwrap();
+                                            tuf.get_delegation(delegation1.role()).unwrap()
+                                        };
+
+                                        Self::lookup_target_description::<D_, L_, R_>(
+                                            tuf,
+                                            max_delegation_depth,
+                                            min_bytes_per_second,
+                                            delegation1.terminating(),
+                                            current_depth + 1,
+                                            target,
+                                            snapshot,
+                                            Some(meta),
+                                            local,
+                                            remote2,
+                                        ).then(|result| {
+                                            match result {
+                                                Err((true, err)) => {
+                                                    Err((true, err))
+                                                }
+                                                Err((false, err)) => {
+                                                    warn!(
+                                                        "Error looking up target description: {:?}",
+                                                        err
+                                                    );
+                                                    Ok(Loop::Continue(delegations))
+                                                }
+                                                _ => {
+                                                    Ok(Loop::Continue(delegations))
+                                                }
+                                            }
+                                        })
+                                    })
+                            )
+                        })
+                )
+            })
+                .and_then(move |loop_result: Loop<_, (bool, Error)>| {
+                    match loop_result {
+                        Loop::Break(result) => Ok(result),
+                        Loop::Continue(_) => Err((default_terminate, Error::NotFound)),
+                    }
+                })
+        )
     }
 }
 
@@ -767,7 +998,7 @@ mod test {
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::Number(1),
             &root,
-        ).unwrap();
+        ).wait().unwrap();
 
         let root = RootMetadata::new(
             2,
@@ -788,7 +1019,7 @@ mod test {
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::Number(2),
             &root,
-        ).unwrap();
+        ).wait().unwrap();
 
         let root = RootMetadata::new(
             3,
@@ -809,19 +1040,19 @@ mod test {
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::Number(3),
             &root,
-        ).unwrap();
+        ).wait().unwrap();
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::None,
             &root,
-        ).unwrap();
+        ).wait().unwrap();
 
         let mut client = Client::new(
             Config::build().finish().unwrap(),
             repo,
             EphemeralRepository::new(),
-        ).unwrap();
-        assert_eq!(client.update_local(), Ok(true));
-        assert_eq!(client.tuf.root().version(), 3);
+        ).wait().unwrap();
+        assert_eq!(client.update_local().wait(), Ok(true));
+        assert_eq!(client.tuf.lock().unwrap().root().version(), 3);
     }
 }
