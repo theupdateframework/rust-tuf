@@ -141,16 +141,7 @@ where
                 &config.max_root_size,
                 config.min_bytes_per_second,
                 None,
-            )
-            .or_else(|_| {
-                local.fetch_metadata(
-                    &MetadataPath::from_role(&Role::Root),
-                    &MetadataVersion::Number(1),
-                    &config.max_root_size,
-                    config.min_bytes_per_second,
-                    None,
-                )
-            })?;
+            )?;
 
         let tuf = Tuf::from_root(&root)?;
 
