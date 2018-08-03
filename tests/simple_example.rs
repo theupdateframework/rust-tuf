@@ -59,11 +59,7 @@ where
 {
     let local = EphemeralRepository::<Json>::new();
     let mut client = Client::with_root_pinned(root_key_ids, config, local, remote)?;
-    match client.update_local() {
-        Ok(_) => (),
-        Err(e) => println!("{:?}", e),
-    }
-    let _ = client.update_remote()?;
+    let _ = client.update()?;
     client.fetch_target(&TargetPath::new("foo-bar".into())?)
 }
 
