@@ -143,7 +143,7 @@ where
                 None,
             )?;
 
-        let tuf = Tuf::from_root(&root)?;
+        let tuf = Tuf::from_root(root)?;
 
         Ok(Client {
             tuf,
@@ -252,14 +252,14 @@ where
         V: Repository<D>,
         U: PathTranslator,
     {
-        let latest_root = repo.fetch_metadata(
+        let latest_root = repo.fetch_metadata::<RootMetadata>(
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::None,
             &config.max_root_size,
             config.min_bytes_per_second,
             None,
         )?;
-        let latest_version = D::deserialize::<RootMetadata>(latest_root.signed())?.version();
+        let latest_version = latest_root.signed().version();
 
         if latest_version < tuf.root().version() {
             return Err(Error::VerificationFailure(format!(
@@ -282,13 +282,13 @@ where
                 config.min_bytes_per_second,
                 None,
             )?;
-            if !tuf.update_root(&signed)? {
+            if !tuf.update_root(signed)? {
                 error!("{}", err_msg);
                 return Err(Error::Programming(err_msg.into()));
             }
         }
 
-        if !tuf.update_root(&latest_root)? {
+        if !tuf.update_root(latest_root)? {
             error!("{}", err_msg);
             return Err(Error::Programming(err_msg.into()));
         }
@@ -308,7 +308,7 @@ where
             config.min_bytes_per_second,
             None,
         )?;
-        tuf.update_timestamp(&ts)
+        tuf.update_timestamp(ts)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -341,7 +341,7 @@ where
             config.min_bytes_per_second,
             Some((alg, value.clone())),
         )?;
-        tuf.update_snapshot(&snap)
+        tuf.update_snapshot(snap)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -381,7 +381,7 @@ where
             config.min_bytes_per_second,
             Some((alg, value.clone())),
         )?;
-        tuf.update_targets(&targets)
+        tuf.update_targets(targets)
     }
 
     /// Fetch a target from the remote repo and write it to the local repo.
@@ -513,7 +513,7 @@ where
                     }
                 };
 
-                match tuf.update_delegation(delegation.role(), &signed_meta) {
+                match tuf.update_delegation(delegation.role(), signed_meta.clone()) {
                     Ok(_) => {
                         match local.store_metadata(
                             delegation.role(),
@@ -536,7 +536,7 @@ where
                             current_depth + 1,
                             target,
                             snapshot,
-                            Some(&meta),
+                            Some(meta.signed()),
                             local,
                             remote,
                         );
@@ -778,8 +778,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
         ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[0]).unwrap();
+        let root: SignedMetadata<Json, _> =
+            SignedMetadata::new(root, &KEYS[0]).unwrap();
 
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Root),
@@ -797,8 +797,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
         ).unwrap();
-        let mut root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[1]).unwrap();
+        let mut root: SignedMetadata<Json, _> =
+            SignedMetadata::new(root, &KEYS[1]).unwrap();
 
         root.add_signature(&KEYS[0]).unwrap();
 
@@ -818,8 +818,8 @@ mod test {
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
             RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
         ).unwrap();
-        let mut root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(&root, &KEYS[2]).unwrap();
+        let mut root: SignedMetadata<Json, _> =
+            SignedMetadata::new(root, &KEYS[2]).unwrap();
 
         root.add_signature(&KEYS[1]).unwrap();
 

@@ -230,17 +230,11 @@ pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {
 
 /// A piece of raw metadata with attached signatures.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SignedMetadata<D, M>
-where
-    D: DataInterchange,
-    M: Metadata,
-{
+pub struct SignedMetadata<D, M> {
     signatures: Vec<Signature>,
-    signed: D::RawData,
+    signed: M,
     #[serde(skip_serializing, skip_deserializing)]
     _interchage: PhantomData<D>,
-    #[serde(skip_serializing, skip_deserializing)]
-    metadata: PhantomData<M>,
 }
 
 impl<D, M> SignedMetadata<D, M>
@@ -271,18 +265,17 @@ where
     ///         &[HashAlgorithm::Sha256]).unwrap()
     /// ).unwrap();
     ///
-    /// SignedMetadata::<Json, TimestampMetadata>::new(&timestamp, &key).unwrap();
+    /// SignedMetadata::<Json, _>::new(timestamp, &key).unwrap();
     /// # }
     /// ```
-    pub fn new(metadata: &M, private_key: &PrivateKey) -> Result<SignedMetadata<D, M>> {
-        let raw = D::serialize(metadata)?;
+    pub fn new(metadata: M, private_key: &PrivateKey) -> Result<SignedMetadata<D, M>> {
+        let raw = D::serialize(&metadata)?;
         let bytes = D::canonicalize(&raw)?;
         let sig = private_key.sign(&bytes)?;
         Ok(SignedMetadata {
             signatures: vec![sig],
-            signed: raw,
+            signed: metadata,
             _interchage: PhantomData,
-            metadata: PhantomData,
         })
     }
 
@@ -318,8 +311,7 @@ where
     ///     MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
     ///         &[HashAlgorithm::Sha256]).unwrap()
     /// ).unwrap();
-    /// let mut timestamp = SignedMetadata::<Json, TimestampMetadata>::new(
-    ///     &timestamp, &key_1).unwrap();
+    /// let mut timestamp = SignedMetadata::<Json, _>::new(timestamp, &key_1).unwrap();
     ///
     /// timestamp.add_signature(&key_2).unwrap();
     /// assert_eq!(timestamp.signatures().len(), 2);
@@ -374,8 +366,8 @@ where
         &mut self.signatures
     }
 
-    /// An immutable reference to the raw data.
-    pub fn signed(&self) -> &D::RawData {
+    /// An immutable reference to the metadata.
+    pub fn signed(&self) -> &M {
         &self.signed
     }
 
@@ -405,8 +397,7 @@ where
     ///     MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
     ///         &[HashAlgorithm::Sha256]).unwrap()
     /// ).unwrap();
-    /// let timestamp = SignedMetadata::<Json, TimestampMetadata>::new(
-    ///     &timestamp, &key_1).unwrap();
+    /// let timestamp = SignedMetadata::<Json, _>::new(timestamp, &key_1).unwrap();
     ///
     /// assert!(timestamp.verify(
     ///     1,
@@ -452,7 +443,7 @@ where
             .map(|k| (k.key_id(), k))
             .collect::<HashMap<&KeyId, &PublicKey>>();
 
-        let canonical_bytes = D::canonicalize(&self.signed)?;
+        let canonical_bytes = D::canonicalize(&D::serialize(&self.signed)?)?;
 
         let mut signatures_needed = threshold;
         for sig in &self.signatures {
@@ -1848,7 +1839,7 @@ mod test {
 
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
 
-        let signed = SignedMetadata::<Json, SnapshotMetadata>::new(&snapshot, &key).unwrap();
+        let signed = SignedMetadata::<Json, _>::new(snapshot, &key).unwrap();
 
         let jsn = json!({
             "signatures": [

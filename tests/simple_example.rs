@@ -107,7 +107,7 @@ where
         timestamp_def,
     )?;
 
-    let signed = SignedMetadata::<Json, RootMetadata>::new(&root, &root_key)?;
+    let signed = SignedMetadata::<Json, _>::new(root, &root_key)?;
 
     remote.store_metadata(
         &MetadataPath::new("root".into())?,
@@ -131,7 +131,7 @@ where
         hashmap!(config.path_translator().real_to_virtual(&target_path)? => target_description);
     let targets = TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None)?;
 
-    let signed = SignedMetadata::<Json, TargetsMetadata>::new(&targets, &targets_key)?;
+    let signed = SignedMetadata::<Json, _>::new(targets, &targets_key)?;
 
     remote.store_metadata(
         &MetadataPath::new("targets".into())?,
@@ -153,7 +153,7 @@ where
     };
     let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)?;
 
-    let signed = SignedMetadata::<Json, SnapshotMetadata>::new(&snapshot, &snapshot_key)?;
+    let signed = SignedMetadata::<Json, _>::new(snapshot, &snapshot_key)?;
 
     remote.store_metadata(
         &MetadataPath::new("snapshot".into())?,
@@ -172,7 +172,7 @@ where
     let snap = MetadataDescription::from_reader(&*snapshot_bytes, 1, &[HashAlgorithm::Sha256])?;
     let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap)?;
 
-    let signed = SignedMetadata::<Json, TimestampMetadata>::new(&timestamp, &timestamp_key)?;
+    let signed = SignedMetadata::<Json, _>::new(timestamp, &timestamp_key)?;
 
     remote.store_metadata(
         &MetadataPath::new("timestamp".into())?,
