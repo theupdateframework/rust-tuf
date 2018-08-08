@@ -502,7 +502,7 @@ where
 mod test {
     use super::*;
     use interchange::Json;
-    use tempdir::TempDir;
+    use tempfile;
 
     #[test]
     fn ephemeral_repo_targets() {
@@ -527,7 +527,7 @@ mod test {
 
     #[test]
     fn file_system_repo_targets() {
-        let temp_dir = TempDir::new("rust-tuf").unwrap();
+        let temp_dir = tempfile::Builder::new().prefix("rust-tuf").tempdir().unwrap();
         let repo = FileSystemRepository::<Json>::new(temp_dir.path().to_path_buf()).unwrap();
 
         // test that init worked
