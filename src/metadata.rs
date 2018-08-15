@@ -220,6 +220,12 @@ impl MetadataVersion {
 pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {
     /// The role associated with the metadata.
     const ROLE: Role;
+
+    /// The version number.
+    fn version(&self) -> u32;
+
+    /// An immutable reference to the metadata's expiration `DateTime`.
+    fn expires(&self) -> &DateTime<Utc>;
 }
 
 /// A piece of raw metadata with attached signatures.
@@ -535,16 +541,6 @@ impl RootMetadata {
         })
     }
 
-    /// The version number.
-    pub fn version(&self) -> u32 {
-        self.version
-    }
-
-    /// An immutable reference to the metadata's expiration `DateTime`.
-    pub fn expires(&self) -> &DateTime<Utc> {
-        &self.expires
-    }
-
     /// Whether or not this repository is currently implementing that TUF consistent snapshot
     /// feature.
     pub fn consistent_snapshot(&self) -> bool {
@@ -579,6 +575,14 @@ impl RootMetadata {
 
 impl Metadata for RootMetadata {
     const ROLE: Role = Role::Root;
+
+    fn version(&self) -> u32 {
+        self.version
+    }
+
+    fn expires(&self) -> &DateTime<Utc> {
+        &self.expires
+    }
 }
 
 impl Serialize for RootMetadata {
@@ -786,16 +790,6 @@ impl TimestampMetadata {
         })
     }
 
-    /// The version number.
-    pub fn version(&self) -> u32 {
-        self.version
-    }
-
-    /// An immutable reference to the metadata's expiration `DateTime`.
-    pub fn expires(&self) -> &DateTime<Utc> {
-        &self.expires
-    }
-
     /// An immutable reference to the snapshot description.
     pub fn snapshot(&self) -> &MetadataDescription {
         &self.snapshot
@@ -804,6 +798,14 @@ impl TimestampMetadata {
 
 impl Metadata for TimestampMetadata {
     const ROLE: Role = Role::Timestamp;
+
+    fn version(&self) -> u32 {
+        self.version
+    }
+
+    fn expires(&self) -> &DateTime<Utc> {
+        &self.expires
+    }
 }
 
 impl Serialize for TimestampMetadata {
@@ -942,16 +944,6 @@ impl SnapshotMetadata {
         })
     }
 
-    /// The version number.
-    pub fn version(&self) -> u32 {
-        self.version
-    }
-
-    /// An immutable reference to the metadata's expiration `DateTime`.
-    pub fn expires(&self) -> &DateTime<Utc> {
-        &self.expires
-    }
-
     /// An immutable reference to the metadata paths and descriptions.
     pub fn meta(&self) -> &HashMap<MetadataPath, MetadataDescription> {
         &self.meta
@@ -960,6 +952,14 @@ impl SnapshotMetadata {
 
 impl Metadata for SnapshotMetadata {
     const ROLE: Role = Role::Snapshot;
+
+    fn version(&self) -> u32 {
+        self.version
+    }
+
+    fn expires(&self) -> &DateTime<Utc> {
+        &self.expires
+    }
 }
 
 impl Serialize for SnapshotMetadata {
@@ -1233,16 +1233,6 @@ impl TargetsMetadata {
         })
     }
 
-    /// The version number.
-    pub fn version(&self) -> u32 {
-        self.version
-    }
-
-    /// An immutable reference to the metadata's expiration `DateTime`.
-    pub fn expires(&self) -> &DateTime<Utc> {
-        &self.expires
-    }
-
     /// An immutable reference to the descriptions of targets.
     pub fn targets(&self) -> &HashMap<VirtualTargetPath, TargetDescription> {
         &self.targets
@@ -1256,6 +1246,14 @@ impl TargetsMetadata {
 
 impl Metadata for TargetsMetadata {
     const ROLE: Role = Role::Targets;
+
+    fn version(&self) -> u32 {
+        self.version
+    }
+
+    fn expires(&self) -> &DateTime<Utc> {
+        &self.expires
+    }
 }
 
 impl Serialize for TargetsMetadata {

@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use crypto;
 use error::Error;
-use metadata;
+use metadata::{self, Metadata};
 use Result;
 
 fn parse_datetime(ts: &str) -> Result<DateTime<Utc>> {

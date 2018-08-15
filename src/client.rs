@@ -54,8 +54,8 @@ use crypto::{self, KeyId};
 use error::Error;
 use interchange::DataInterchange;
 use metadata::{
-    MetadataPath, MetadataVersion, Role, RootMetadata, SnapshotMetadata, TargetDescription,
-    TargetPath, TargetsMetadata, VirtualTargetPath,
+    Metadata, MetadataPath, MetadataVersion, Role, RootMetadata, SnapshotMetadata,
+    TargetDescription, TargetPath, TargetsMetadata, VirtualTargetPath,
 };
 use repository::Repository;
 use tuf::Tuf;

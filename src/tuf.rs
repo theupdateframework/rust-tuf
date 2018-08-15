@@ -8,7 +8,7 @@ use crypto::KeyId;
 use error::Error;
 use interchange::DataInterchange;
 use metadata::{
-    Delegations, MetadataPath, Role, RootMetadata, SignedMetadata, SnapshotMetadata,
+    Delegations, Metadata, MetadataPath, Role, RootMetadata, SignedMetadata, SnapshotMetadata,
     TargetDescription, TargetsMetadata, TimestampMetadata, VirtualTargetPath,
 };
 use Result;
