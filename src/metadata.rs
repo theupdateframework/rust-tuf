@@ -481,6 +481,22 @@ where
     }
 }
 
+impl<D, M> Metadata for SignedMetadata<D, M>
+where
+    D: Debug + PartialEq,
+    M: Metadata,
+{
+    const ROLE: Role = M::ROLE;
+
+    fn version(&self) -> u32 {
+        self.signed.version()
+    }
+
+    fn expires(&self) -> &DateTime<Utc> {
+        self.signed.expires()
+    }
+}
+
 /// Metadata for the root role.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RootMetadata {
