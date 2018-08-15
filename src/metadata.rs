@@ -2036,21 +2036,23 @@ mod test {
                         NhZ1_7zzCKL8rKzsg==",
                 },
             ],
-            "root": {
-                "threshold": 1,
-                "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
-            },
-            "snapshot": {
-                "threshold": 1,
-                "key_ids": ["5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs="],
-            },
-            "targets": {
-                "threshold": 1,
-                "key_ids": ["4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o="],
-            },
-            "timestamp": {
-                "threshold": 1,
-                "key_ids": ["C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw="],
+            "roles": {
+                "root": {
+                    "threshold": 1,
+                    "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
+                },
+                "snapshot": {
+                    "threshold": 1,
+                    "key_ids": ["5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs="],
+                },
+                "targets": {
+                    "threshold": 1,
+                    "key_ids": ["4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o="],
+                },
+                "timestamp": {
+                    "threshold": 1,
+                    "key_ids": ["C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw="],
+                },
             },
         });
 
