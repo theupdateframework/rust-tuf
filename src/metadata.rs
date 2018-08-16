@@ -1,13 +1,12 @@
 //! TUF metadata.
 
 use chrono::offset::Utc;
-use chrono::DateTime;
+use chrono::{DateTime, Duration};
 use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
 use serde::ser::{Error as SerializeError, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display};
 use std::io::Read;
-use std::iter::FromIterator;
 use std::marker::PhantomData;
 
 use crypto::{self, HashAlgorithm, HashValue, KeyId, PrivateKey, PublicKey, Signature};
@@ -499,6 +498,173 @@ where
     }
 }
 
+/// Helper to construct `RootMetadata`.
+pub struct RootMetadataBuilder {
+    version: u32,
+    expires: DateTime<Utc>,
+    consistent_snapshot: bool,
+    keys: HashMap<KeyId, PublicKey>,
+    root_threshold: u32,
+    root_key_ids: HashSet<KeyId>,
+    snapshot_threshold: u32,
+    snapshot_key_ids: HashSet<KeyId>,
+    targets_threshold: u32,
+    targets_key_ids: HashSet<KeyId>,
+    timestamp_threshold: u32,
+    timestamp_key_ids: HashSet<KeyId>,
+}
+
+impl RootMetadataBuilder {
+    /// Create a new `RootMetadataBuilder`. It defaults to:
+    ///
+    /// * version: 1,
+    /// * expires: 365 days from the current time.
+    /// * consistent snapshot: false
+    /// * role thresholds: 1
+    pub fn new() -> Self {
+        RootMetadataBuilder {
+            version: 1,
+            expires: Utc::now() + Duration::days(365),
+            consistent_snapshot: false,
+            keys: HashMap::new(),
+            root_threshold: 1,
+            root_key_ids: HashSet::new(),
+            snapshot_threshold: 1,
+            snapshot_key_ids: HashSet::new(),
+            targets_threshold: 1,
+            targets_key_ids: HashSet::new(),
+            timestamp_threshold: 1,
+            timestamp_key_ids: HashSet::new(),
+        }
+    }
+
+    /// Set the version number for this metadata.
+    pub fn version(mut self, version: u32) -> Self {
+        self.version = version;
+        self
+    }
+
+    /// Set the time this metadata expires.
+    pub fn expires(mut self, expires: DateTime<Utc>) -> Self {
+        self.expires = expires;
+        self
+    }
+
+    /// Set this metadata to have a consistent snapshot.
+    pub fn consistent_snapshot(mut self, consistent_snapshot: bool) -> Self {
+        self.consistent_snapshot = consistent_snapshot;
+        self
+    }
+
+    /// Set the root threshold.
+    pub fn root_threshold(mut self, threshold: u32) -> Self {
+        self.root_threshold = threshold;
+        self
+    }
+
+    /// Add a root public key.
+    pub fn root_key(mut self, public_key: PublicKey) -> Self {
+        let key_id = public_key.key_id().clone();
+        self.keys.insert(key_id.clone(), public_key);
+        self.root_key_ids.insert(key_id);
+        self
+    }
+
+    /// Set the snapshot threshold.
+    pub fn snapshot_threshold(mut self, threshold: u32) -> Self {
+        self.snapshot_threshold = threshold;
+        self
+    }
+
+    /// Add a snapshot public key.
+    pub fn snapshot_key(mut self, public_key: PublicKey) -> Self {
+        let key_id = public_key.key_id().clone();
+        self.keys.insert(key_id.clone(), public_key);
+        self.snapshot_key_ids.insert(key_id);
+        self
+    }
+
+    /// Set the targets threshold.
+    pub fn targets_threshold(mut self, threshold: u32) -> Self {
+        self.targets_threshold = threshold;
+        self
+    }
+
+    /// Add a targets public key.
+    pub fn targets_key(mut self, public_key: PublicKey) -> Self {
+        let key_id = public_key.key_id().clone();
+        self.keys.insert(key_id.clone(), public_key);
+        self.targets_key_ids.insert(key_id);
+        self
+    }
+
+    /// Set the timestamp threshold.
+    pub fn timestamp_threshold(mut self, threshold: u32) -> Self {
+        self.timestamp_threshold = threshold;
+        self
+    }
+
+    /// Add a timestamp public key.
+    pub fn timestamp_key(mut self, public_key: PublicKey) -> Self {
+        let key_id = public_key.key_id().clone();
+        self.keys.insert(key_id.clone(), public_key);
+        self.timestamp_key_ids.insert(key_id);
+        self
+    }
+
+    /// Construct a new `RootMetadata`.
+    pub fn build(self) -> Result<RootMetadata> {
+        RootMetadata::new(
+            self.version,
+            self.expires,
+            self.consistent_snapshot,
+            self.keys,
+            RoleDefinition::new(
+                self.root_threshold,
+                self.root_key_ids,
+            )?,
+            RoleDefinition::new(
+                self.snapshot_threshold,
+                self.snapshot_key_ids,
+            )?,
+            RoleDefinition::new(
+                self.targets_threshold,
+                self.targets_key_ids,
+            )?,
+            RoleDefinition::new(
+                self.timestamp_threshold,
+                self.timestamp_key_ids,
+            )?,
+        )
+    }
+
+    /// Construct a new `SignedMetadata<D, RootMetadata>`.
+    pub fn signed<D>(self, private_key: &PrivateKey) -> Result<SignedMetadata<D, RootMetadata>>
+        where D: DataInterchange,
+    {
+        Ok(SignedMetadata::new(self.build()?, private_key)?)
+    }
+}
+
+impl From<RootMetadata> for RootMetadataBuilder {
+    fn from(metadata: RootMetadata) -> Self {
+        RootMetadataBuilder {
+            version: metadata.version,
+            expires: metadata.expires,
+            consistent_snapshot: metadata.consistent_snapshot,
+            keys: metadata.keys,
+            root_threshold: metadata.root.threshold,
+            root_key_ids: metadata.root.key_ids,
+            snapshot_threshold: metadata.snapshot.threshold,
+            snapshot_key_ids: metadata.snapshot.key_ids,
+            targets_threshold: metadata.targets.threshold,
+            targets_key_ids: metadata.targets.key_ids,
+            timestamp_threshold: metadata.timestamp.threshold,
+            timestamp_key_ids: metadata.timestamp.key_ids,
+        }
+    }
+}
+
 /// Metadata for the root role.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RootMetadata {
@@ -518,7 +684,7 @@ impl RootMetadata {
         version: u32,
         expires: DateTime<Utc>,
         consistent_snapshot: bool,
-        mut keys: Vec<PublicKey>,
+        keys: HashMap<KeyId, PublicKey>,
         root: RoleDefinition,
         snapshot: RoleDefinition,
         targets: RoleDefinition,
@@ -529,13 +695,6 @@ impl RootMetadata {
                 "Metadata version must be greater than zero. Found: {}",
                 version
             )));
-        }
-
-        let keys_len = keys.len();
-        let keys = HashMap::from_iter(keys.drain(..).map(|k| (k.key_id().clone(), k)));
-
-        if keys.len() != keys_len {
-            return Err(Error::IllegalArgument("Cannot have duplicate keys".into()));
         }
 
         Ok(RootMetadata {
@@ -1604,29 +1763,14 @@ mod test {
         let timestamp_key =
             PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519).unwrap();
 
-        let keys = vec![
-            root_key.public().clone(),
-            snapshot_key.public().clone(),
-            targets_key.public().clone(),
-            timestamp_key.public().clone(),
-        ];
-
-        let root_def = RoleDefinition::new(1, hashset!(root_key.key_id().clone())).unwrap();
-        let snapshot_def = RoleDefinition::new(1, hashset!(snapshot_key.key_id().clone())).unwrap();
-        let targets_def = RoleDefinition::new(1, hashset!(targets_key.key_id().clone())).unwrap();
-        let timestamp_def =
-            RoleDefinition::new(1, hashset!(timestamp_key.key_id().clone())).unwrap();
-
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-            false,
-            keys,
-            root_def,
-            snapshot_def,
-            targets_def,
-            timestamp_def,
-        ).unwrap();
+        let root = RootMetadataBuilder::new()
+            .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
+            .root_key(root_key.public().clone())
+            .snapshot_key(snapshot_key.public().clone())
+            .targets_key(targets_key.public().clone())
+            .timestamp_key(timestamp_key.public().clone())
+            .build()
+            .unwrap();
 
         let jsn = json!({
             "type": "root",
@@ -1884,7 +2028,7 @@ mod test {
         });
 
         let encoded = json::to_value(&signed).unwrap();
-        assert_eq!(encoded, jsn);
+        assert_eq!(encoded, jsn, "{:#?} != {:#?}", encoded, jsn);
         let decoded: SignedMetadata<Json, SnapshotMetadata> = json::from_value(encoded).unwrap();
         assert_eq!(decoded, signed);
     }
@@ -1913,73 +2057,25 @@ mod test {
     // TODO test for mismatched ed25519/rsa keys/schemes
 
     fn make_root() -> json::Value {
-        let root_def = RoleDefinition::new(
-            1,
-            hashset!(
-                PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
-                    .unwrap()
-                    .key_id()
-                    .clone()
-            ),
-        ).unwrap();
+        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+            .unwrap();
+        let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
+            .unwrap();
+        let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519)
+            .unwrap();
+        let timestamp_key = PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519)
+            .unwrap();
 
-        let snapshot_def = RoleDefinition::new(
-            1,
-            hashset!(
-                PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
-                    .unwrap()
-                    .key_id()
-                    .clone()
-            ),
-        ).unwrap();
-
-        let targets_def = RoleDefinition::new(
-            1,
-            hashset!(
-                PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519)
-                    .unwrap()
-                    .key_id()
-                    .clone()
-            ),
-        ).unwrap();
-
-        let timestamp_def = RoleDefinition::new(
-            1,
-            hashset!(
-                PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519)
-                    .unwrap()
-                    .key_id()
-                    .clone()
-            ),
-        ).unwrap();
-
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![
-                PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
-                    .unwrap()
-                    .public()
-                    .clone(),
-                PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
-                    .unwrap()
-                    .public()
-                    .clone(),
-                PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519)
-                    .unwrap()
-                    .public()
-                    .clone(),
-                PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519)
-                    .unwrap()
-                    .public()
-                    .clone(),
-            ],
-            root_def,
-            snapshot_def,
-            targets_def,
-            timestamp_def,
-        ).unwrap();
+        let root = RootMetadataBuilder::new()
+            .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+            .root_key(
+                root_key.public().clone()
+            )
+            .snapshot_key(snapshot_key.public().clone())
+            .targets_key(targets_key.public().clone())
+            .timestamp_key(timestamp_key.public().clone())
+            .build()
+            .unwrap();
 
         json::to_value(&root).unwrap()
     }

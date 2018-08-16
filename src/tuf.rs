@@ -616,7 +616,7 @@ mod test {
     use chrono::prelude::*;
     use crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
     use interchange::Json;
-    use metadata::{MetadataDescription, RoleDefinition};
+    use metadata::{MetadataDescription, RootMetadataBuilder};
 
     lazy_static! {
         static ref KEYS: Vec<PrivateKey> = {
@@ -637,69 +637,50 @@ mod test {
     #[test]
     fn root_pinned_success() {
         let root_key = &KEYS[0];
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![KEYS[0].public().clone()],
-            RoleDefinition::new(1, hashset!(root_key.key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &root_key).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[0].public().clone())
+            .targets_key(KEYS[0].public().clone())
+            .timestamp_key(KEYS[0].public().clone())
+            .signed::<Json>(&root_key)
+            .unwrap();
 
         assert!(Tuf::from_root_pinned(root, &[root_key.key_id().clone()]).is_ok());
     }
 
     #[test]
     fn root_pinned_failure() {
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![KEYS[0].public().clone()],
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &KEYS[0]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[0].public().clone())
+            .targets_key(KEYS[0].public().clone())
+            .timestamp_key(KEYS[0].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         assert!(Tuf::from_root_pinned(root, &[KEYS[1].key_id().clone()]).is_err());
     }
 
     #[test]
     fn good_root_rotation() {
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![KEYS[0].public().clone()],
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &KEYS[0]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[0].public().clone())
+            .targets_key(KEYS[0].public().clone())
+            .timestamp_key(KEYS[0].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let root = RootMetadata::new(
-            2,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![KEYS[1].public().clone()],
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-        ).unwrap();
-        let mut root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &KEYS[1]).unwrap();
+        let mut root = RootMetadataBuilder::new()
+            .version(2)
+            .root_key(KEYS[1].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[1].public().clone())
+            .timestamp_key(KEYS[1].public().clone())
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
 
         // add the original key's signature to make it cross signed
         root.add_signature(&KEYS[0]).unwrap();
@@ -712,52 +693,36 @@ mod test {
 
     #[test]
     fn no_cross_sign_root_rotation() {
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![KEYS[0].public().clone()],
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &KEYS[0]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[0].public().clone())
+            .targets_key(KEYS[0].public().clone())
+            .timestamp_key(KEYS[0].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let root = RootMetadata::new(
-            2,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            // include the old key to prevent short circuiting the verify logic
-            vec![KEYS[0].public().clone(), KEYS[1].public().clone()],
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &KEYS[1]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[1].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[1].public().clone())
+            .timestamp_key(KEYS[1].public().clone())
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
 
         assert!(tuf.update_root(root).is_err());
     }
 
     #[test]
     fn good_timestamp_update() {
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![KEYS[0].public().clone(), KEYS[1].public().clone()],
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &KEYS[0]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[1].public().clone())
+            .timestamp_key(KEYS[1].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -777,18 +742,13 @@ mod test {
 
     #[test]
     fn bad_timestamp_update_wrong_key() {
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![KEYS[0].public().clone(), KEYS[1].public().clone()],
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &KEYS[0]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[1].public().clone())
+            .timestamp_key(KEYS[1].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -807,22 +767,13 @@ mod test {
 
     #[test]
     fn good_snapshot_update() {
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![
-                KEYS[0].public().clone(),
-                KEYS[1].public().clone(),
-                KEYS[2].public().clone(),
-            ],
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &KEYS[0]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[2].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -849,22 +800,13 @@ mod test {
 
     #[test]
     fn bad_snapshot_update_wrong_key() {
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![
-                KEYS[0].public().clone(),
-                KEYS[1].public().clone(),
-                KEYS[2].public().clone(),
-            ],
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &KEYS[0]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[2].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -888,22 +830,13 @@ mod test {
 
     #[test]
     fn bad_snapshot_update_wrong_version() {
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![
-                KEYS[0].public().clone(),
-                KEYS[1].public().clone(),
-                KEYS[2].public().clone(),
-            ],
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &KEYS[0]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[2].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -927,23 +860,13 @@ mod test {
 
     #[test]
     fn good_targets_update() {
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![
-                KEYS[0].public().clone(),
-                KEYS[1].public().clone(),
-                KEYS[2].public().clone(),
-                KEYS[3].public().clone(),
-            ],
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[3].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, _> =
-            SignedMetadata::new(root, &KEYS[0]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[3].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -982,23 +905,13 @@ mod test {
 
     #[test]
     fn bad_targets_update_wrong_key() {
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![
-                KEYS[0].public().clone(),
-                KEYS[1].public().clone(),
-                KEYS[2].public().clone(),
-                KEYS[3].public().clone(),
-            ],
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[3].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &KEYS[0]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[3].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -1034,23 +947,13 @@ mod test {
 
     #[test]
     fn bad_targets_update_wrong_version() {
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![
-                KEYS[0].public().clone(),
-                KEYS[1].public().clone(),
-                KEYS[2].public().clone(),
-                KEYS[3].public().clone(),
-            ],
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[3].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, RootMetadata> =
-            SignedMetadata::new(root, &KEYS[0]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[3].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 

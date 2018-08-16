@@ -743,10 +743,9 @@ impl Default for ConfigBuilder<DefaultTranslator> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use chrono::prelude::*;
     use crypto::{PrivateKey, SignatureScheme};
     use interchange::Json;
-    use metadata::{MetadataPath, MetadataVersion, RoleDefinition, RootMetadata, SignedMetadata};
+    use metadata::{MetadataPath, MetadataVersion, RootMetadataBuilder};
     use repository::EphemeralRepository;
 
     lazy_static! {
@@ -768,18 +767,14 @@ mod test {
     #[test]
     fn root_chain_update() {
         let repo = EphemeralRepository::new();
-        let root = RootMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![KEYS[0].public().clone()],
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[0].key_id().clone())).unwrap(),
-        ).unwrap();
-        let root: SignedMetadata<Json, _> =
-            SignedMetadata::new(root, &KEYS[0]).unwrap();
+        let root = RootMetadataBuilder::new()
+            .version(1)
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[0].public().clone())
+            .targets_key(KEYS[0].public().clone())
+            .timestamp_key(KEYS[0].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Root),
@@ -787,18 +782,14 @@ mod test {
             &root,
         ).unwrap();
 
-        let root = RootMetadata::new(
-            2,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![KEYS[1].public().clone()],
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[1].key_id().clone())).unwrap(),
-        ).unwrap();
-        let mut root: SignedMetadata<Json, _> =
-            SignedMetadata::new(root, &KEYS[1]).unwrap();
+        let mut root = RootMetadataBuilder::new()
+            .version(2)
+            .root_key(KEYS[1].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[1].public().clone())
+            .timestamp_key(KEYS[1].public().clone())
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
 
         root.add_signature(&KEYS[0]).unwrap();
 
@@ -808,18 +799,14 @@ mod test {
             &root,
         ).unwrap();
 
-        let root = RootMetadata::new(
-            3,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            false,
-            vec![KEYS[2].public().clone()],
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-            RoleDefinition::new(1, hashset!(KEYS[2].key_id().clone())).unwrap(),
-        ).unwrap();
-        let mut root: SignedMetadata<Json, _> =
-            SignedMetadata::new(root, &KEYS[2]).unwrap();
+        let mut root = RootMetadataBuilder::new()
+            .version(3)
+            .root_key(KEYS[2].public().clone())
+            .snapshot_key(KEYS[2].public().clone())
+            .targets_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[2].public().clone())
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
 
         root.add_signature(&KEYS[1]).unwrap();
 

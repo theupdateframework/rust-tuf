@@ -9,9 +9,9 @@ use tuf::client::{Client, Config, PathTranslator};
 use tuf::crypto::{HashAlgorithm, KeyId, PrivateKey, SignatureScheme};
 use tuf::interchange::{DataInterchange, Json};
 use tuf::metadata::{
-    MetadataDescription, MetadataPath, MetadataVersion, RoleDefinition, RootMetadata,
-    SignedMetadata, SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata,
-    TimestampMetadata, VirtualTargetPath,
+    MetadataDescription, MetadataPath, MetadataVersion, RootMetadataBuilder, SignedMetadata,
+    SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata, TimestampMetadata,
+    VirtualTargetPath,
 };
 use tuf::repository::{EphemeralRepository, Repository};
 use tuf::Result;
@@ -84,30 +84,13 @@ where
 
     //// build the root ////
 
-    let keys = vec![
-        root_key.public().clone(),
-        snapshot_key.public().clone(),
-        targets_key.public().clone(),
-        timestamp_key.public().clone(),
-    ];
-
-    let root_def = RoleDefinition::new(1, hashset!(root_key.key_id().clone()))?;
-    let snapshot_def = RoleDefinition::new(1, hashset!(snapshot_key.key_id().clone()))?;
-    let targets_def = RoleDefinition::new(1, hashset!(targets_key.key_id().clone()))?;
-    let timestamp_def = RoleDefinition::new(1, hashset!(timestamp_key.key_id().clone()))?;
-
-    let root = RootMetadata::new(
-        1,
-        Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-        false,
-        keys,
-        root_def,
-        snapshot_def,
-        targets_def,
-        timestamp_def,
-    )?;
-
-    let signed = SignedMetadata::<Json, _>::new(root, &root_key)?;
+    let signed = RootMetadataBuilder::new()
+        .root_key(root_key.public().clone())
+        .snapshot_key(snapshot_key.public().clone())
+        .targets_key(targets_key.public().clone())
+        .timestamp_key(timestamp_key.public().clone())
+        .signed::<Json>(&root_key)
+        .unwrap();
 
     remote.store_metadata(
         &MetadataPath::new("root".into())?,

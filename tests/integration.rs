@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use tuf::crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
 use tuf::interchange::Json;
 use tuf::metadata::{
-    Delegation, Delegations, MetadataDescription, MetadataPath, RoleDefinition, RootMetadata,
+    Delegation, Delegations, MetadataDescription, MetadataPath, RootMetadataBuilder,
     SignedMetadata, SnapshotMetadata, TargetDescription, TargetsMetadata, TimestampMetadata,
     VirtualTargetPath,
 };
@@ -31,30 +31,14 @@ fn simple_delegation() {
     let delegation_key = PrivateKey::from_pkcs8(ED25519_5_PK8, SignatureScheme::Ed25519).unwrap();
 
     //// build the root ////
-    let keys = vec![
-        root_key.public().clone(),
-        snapshot_key.public().clone(),
-        targets_key.public().clone(),
-        timestamp_key.public().clone(),
-    ];
 
-    let root_def = RoleDefinition::new(1, hashset!(root_key.key_id().clone())).unwrap();
-    let snapshot_def = RoleDefinition::new(1, hashset!(snapshot_key.key_id().clone())).unwrap();
-    let targets_def = RoleDefinition::new(1, hashset!(targets_key.key_id().clone())).unwrap();
-    let timestamp_def = RoleDefinition::new(1, hashset!(timestamp_key.key_id().clone())).unwrap();
-
-    let root = RootMetadata::new(
-        1,
-        Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-        false,
-        keys,
-        root_def,
-        snapshot_def,
-        targets_def,
-        timestamp_def,
-    ).unwrap();
-
-    let signed = SignedMetadata::<Json, _>::new(root, &root_key).unwrap();
+    let signed = RootMetadataBuilder::new()
+        .root_key(root_key.public().clone())
+        .snapshot_key(snapshot_key.public().clone())
+        .targets_key(targets_key.public().clone())
+        .timestamp_key(timestamp_key.public().clone())
+        .signed::<Json>(&root_key)
+        .unwrap();
 
     let mut tuf = Tuf::<Json>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
 
@@ -142,30 +126,14 @@ fn nested_delegation() {
     let delegation_b_key = PrivateKey::from_pkcs8(ED25519_6_PK8, SignatureScheme::Ed25519).unwrap();
 
     //// build the root ////
-    let keys = vec![
-        root_key.public().clone(),
-        snapshot_key.public().clone(),
-        targets_key.public().clone(),
-        timestamp_key.public().clone(),
-    ];
 
-    let root_def = RoleDefinition::new(1, hashset!(root_key.key_id().clone())).unwrap();
-    let snapshot_def = RoleDefinition::new(1, hashset!(snapshot_key.key_id().clone())).unwrap();
-    let targets_def = RoleDefinition::new(1, hashset!(targets_key.key_id().clone())).unwrap();
-    let timestamp_def = RoleDefinition::new(1, hashset!(timestamp_key.key_id().clone())).unwrap();
-
-    let root = RootMetadata::new(
-        1,
-        Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-        false,
-        keys,
-        root_def,
-        snapshot_def,
-        targets_def,
-        timestamp_def,
-    ).unwrap();
-
-    let signed = SignedMetadata::<Json, _>::new(root, &root_key).unwrap();
+    let signed = RootMetadataBuilder::new()
+        .root_key(root_key.public().clone())
+        .snapshot_key(snapshot_key.public().clone())
+        .targets_key(targets_key.public().clone())
+        .timestamp_key(timestamp_key.public().clone())
+        .signed::<Json>(&root_key)
+        .unwrap();
 
     let mut tuf = Tuf::<Json>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
 

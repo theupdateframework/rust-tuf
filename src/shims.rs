@@ -2,6 +2,7 @@ use chrono::offset::Utc;
 use chrono::prelude::*;
 use data_encoding::BASE64URL;
 use std::collections::{HashMap, HashSet};
+use std::iter::FromIterator;
 
 use crypto;
 use error::Error;
@@ -60,7 +61,7 @@ impl RootMetadata {
         })
     }
 
-    pub fn try_into(self) -> Result<metadata::RootMetadata> {
+    pub fn try_into(mut self) -> Result<metadata::RootMetadata> {
         if self.typ != metadata::Role::Root {
             return Err(Error::Encoding(format!(
                 "Attempted to decode root metdata labeled as {:?}",
@@ -68,11 +69,18 @@ impl RootMetadata {
             )));
         }
 
+        let keys_len = self.keys.len();
+        let keys = HashMap::from_iter(self.keys.drain(..).map(|k| (k.key_id().clone(), k)));
+
+        if keys.len() != keys_len {
+            return Err(Error::IllegalArgument("Cannot have duplicate keys".into()));
+        }
+
         metadata::RootMetadata::new(
             self.version,
             parse_datetime(&self.expires)?,
             self.consistent_snapshot,
-            self.keys,
+            keys,
             self.root,
             self.snapshot,
             self.targets,
