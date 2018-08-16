@@ -48,7 +48,7 @@ impl<D: DataInterchange> Tuf<D> {
     /// the related method `from_root_pinned`.
     pub fn from_root(signed_root: SignedMetadata<D, RootMetadata>) -> Result<Self> {
         {
-            let root = signed_root.signed();
+            let root = signed_root.as_ref();
             signed_root.verify(
                 root.root().threshold(),
                 root.keys().iter().filter_map(|(k, v)| {
@@ -71,6 +71,31 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// An immutable reference to the root metadata.
+    pub fn root(&self) -> &RootMetadata {
+        self.root.as_ref()
+    }
+
+    /// An immutable reference to the optional snapshot metadata.
+    pub fn snapshot(&self) -> Option<&SnapshotMetadata> {
+        self.snapshot.as_ref().map(|t| t.as_ref())
+    }
+
+    /// An immutable reference to the optional targets metadata.
+    pub fn targets(&self) -> Option<&TargetsMetadata> {
+        self.targets.as_ref().map(|t| t.as_ref())
+    }
+
+    /// An immutable reference to the optional timestamp metadata.
+    pub fn timestamp(&self) -> Option<&TimestampMetadata> {
+        self.timestamp.as_ref().map(|t| t.as_ref())
+    }
+
+    /// An immutable reference to the delegated metadata.
+    pub fn delegations(&self) -> &HashMap<MetadataPath, SignedMetadata<D, TargetsMetadata>> {
+        &self.delegations
+    }
+
+    /// An immutable reference to the root metadata.
     pub fn signed_root(&self) -> &SignedMetadata<D, RootMetadata> {
         &self.root
     }
@@ -90,60 +115,35 @@ impl<D: DataInterchange> Tuf<D> {
         self.timestamp.as_ref()
     }
 
-    /// An immutable reference to the root metadata.
-    pub fn root(&self) -> &RootMetadata {
-        self.root.signed()
-    }
-
-    /// An immutable reference to the optional snapshot metadata.
-    pub fn snapshot(&self) -> Option<&SnapshotMetadata> {
-        self.snapshot.as_ref().map(|t| t.signed())
-    }
-
-    /// An immutable reference to the optional targets metadata.
-    pub fn targets(&self) -> Option<&TargetsMetadata> {
-        self.targets.as_ref().map(|t| t.signed())
-    }
-
-    /// An immutable reference to the optional timestamp metadata.
-    pub fn timestamp(&self) -> Option<&TimestampMetadata> {
-        self.timestamp.as_ref().map(|t| t.signed())
-    }
-
-    /// An immutable reference to the delegated metadata.
-    pub fn delegations(&self) -> &HashMap<MetadataPath, SignedMetadata<D, TargetsMetadata>> {
-        &self.delegations
-    }
-
     fn current_timestamp_version(&self) -> u32 {
         self.timestamp.as_ref()
-            .map(|t| t.signed().version())
+            .map(|t| t.as_ref().version())
             .unwrap_or(0)
     }
 
     fn current_snapshot_version(&self) -> u32 {
         self.snapshot.as_ref()
-            .map(|t| t.signed().version())
+            .map(|t| t.as_ref().version())
             .unwrap_or(0)
     }
 
     fn current_targets_version(&self) -> u32 {
         self.targets.as_ref()
-            .map(|t| t.signed().version())
+            .map(|t| t.as_ref().version())
             .unwrap_or(0)
     }
 
     fn current_delegation_version(&self, role: &MetadataPath) -> u32 {
         self.delegations.get(role)
-            .map(|t| t.signed().version())
+            .map(|t| t.as_ref().version())
             .unwrap_or(0)
     }
 
     /// Verify and update the root metadata.
     pub fn update_root(&mut self, signed_root: SignedMetadata<D, RootMetadata>) -> Result<bool> {
         {
-            let old_root = self.root.signed();
-            let new_root = signed_root.signed();
+            let old_root = self.root.as_ref();
+            let new_root = signed_root.as_ref();
 
             // First, check that the new root was signed by the old root.
             signed_root.verify(
@@ -197,8 +197,8 @@ impl<D: DataInterchange> Tuf<D> {
         signed_timestamp: SignedMetadata<D, TimestampMetadata>,
     ) -> Result<bool> {
         {
-            let root = self.root.signed();
-            let timestamp = signed_timestamp.signed();
+            let root = self.root.as_ref();
+            let timestamp = signed_timestamp.as_ref();
 
             // First, make sure the root signed the metadata.
             signed_timestamp.verify(
@@ -261,7 +261,7 @@ impl<D: DataInterchange> Tuf<D> {
 
             signed_snapshot.verify(
                 root.snapshot().threshold(),
-                self.root.signed().keys().iter().filter_map(|(k, v)| {
+                self.root.as_ref().keys().iter().filter_map(|(k, v)| {
                     if root.snapshot().key_ids().contains(k) {
                         Some(v)
                     } else {
@@ -270,7 +270,7 @@ impl<D: DataInterchange> Tuf<D> {
                 }),
             )?;
 
-            let snapshot = signed_snapshot.signed();
+            let snapshot = signed_snapshot.as_ref();
 
             if snapshot.version() != timestamp.snapshot().version() {
                 return Err(Error::VerificationFailure(format!(
@@ -285,8 +285,8 @@ impl<D: DataInterchange> Tuf<D> {
             // regardless so we can prevent rollback attacks againsts targets/delegations.
         };
 
-        if self.targets.as_ref().map(|s| s.signed().version()).unwrap_or(0)
-            != signed_snapshot.signed()
+        if self.targets.as_ref().map(|s| s.as_ref().version()).unwrap_or(0)
+            != signed_snapshot.as_ref()
                 .meta()
                 .get(&MetadataPath::from_role(&Role::Targets))
                 .map(|m| m.version())
@@ -313,7 +313,7 @@ impl<D: DataInterchange> Tuf<D> {
                     None => continue,
                 };
 
-                if delegation.signed().version() > definition.version() {
+                if delegation.as_ref().version() > definition.version() {
                     let _ = purge.insert(role.clone());
                     continue;
                 }
@@ -367,7 +367,7 @@ impl<D: DataInterchange> Tuf<D> {
                 }),
             )?;
 
-            let targets = signed_targets.signed();
+            let targets = signed_targets.as_ref();
 
             if targets.version() != targets_description.version() {
                 return Err(Error::VerificationFailure(format!(
@@ -431,7 +431,7 @@ impl<D: DataInterchange> Tuf<D> {
             }
 
             for delegated_targets in self.delegations.values() {
-                let parent = match delegated_targets.signed().delegations() {
+                let parent = match delegated_targets.as_ref().delegations() {
                     Some(d) => d,
                     None => &targets_delegations,
                 };
@@ -453,7 +453,7 @@ impl<D: DataInterchange> Tuf<D> {
                 )?;
             }
 
-            let delegation = signed_delegation.signed();
+            let delegation = signed_delegation.as_ref();
             if delegation.version() != delegation_description.version() {
                 return Err(Error::VerificationFailure(format!(
                     "The snapshot metadata reported that the delegation {:?} should be at \
@@ -511,7 +511,7 @@ impl<D: DataInterchange> Tuf<D> {
                 }
 
                 let targets = match tuf.delegations.get(delegation.role()) {
-                    Some(t) => t.signed(),
+                    Some(t) => t.as_ref(),
                     None => return (delegation.terminating(), None),
                 };
 
@@ -564,7 +564,7 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     fn safe_root_ref(&self) -> Result<&RootMetadata> {
-        let root = self.root.signed();
+        let root = self.root.as_ref();
         if root.expires() <= &Utc::now() {
             return Err(Error::ExpiredMetadata(Role::Root));
         }
@@ -574,7 +574,7 @@ impl<D: DataInterchange> Tuf<D> {
     fn safe_snapshot_ref(&self) -> Result<&SnapshotMetadata> {
         match self.snapshot {
             Some(ref snapshot) => {
-                let snapshot = snapshot.signed();
+                let snapshot = snapshot.as_ref();
                 if snapshot.expires() <= &Utc::now() {
                     return Err(Error::ExpiredMetadata(Role::Snapshot));
                 }
@@ -587,7 +587,7 @@ impl<D: DataInterchange> Tuf<D> {
     fn safe_targets_ref(&self) -> Result<&TargetsMetadata> {
         match self.targets {
             Some(ref targets) => {
-                let targets = targets.signed();
+                let targets = targets.as_ref();
                 if targets.expires() <= &Utc::now() {
                     return Err(Error::ExpiredMetadata(Role::Targets));
                 }
@@ -599,7 +599,7 @@ impl<D: DataInterchange> Tuf<D> {
     fn safe_timestamp_ref(&self) -> Result<&TimestampMetadata> {
         match self.timestamp {
             Some(ref timestamp) => {
-                let timestamp = timestamp.signed();
+                let timestamp = timestamp.as_ref();
                 if timestamp.expires() <= &Utc::now() {
                     return Err(Error::ExpiredMetadata(Role::Timestamp));
                 }

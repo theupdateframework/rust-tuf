@@ -232,7 +232,8 @@ pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SignedMetadata<D, M> {
     signatures: Vec<Signature>,
-    signed: M,
+    #[serde(rename="signed")]
+    metadata: M,
     #[serde(skip_serializing, skip_deserializing)]
     _interchage: PhantomData<D>,
 }
@@ -274,7 +275,7 @@ where
         let sig = private_key.sign(&bytes)?;
         Ok(SignedMetadata {
             signatures: vec![sig],
-            signed: metadata,
+            metadata,
             _interchage: PhantomData,
         })
     }
@@ -321,7 +322,7 @@ where
     /// # }
     /// ```
     pub fn add_signature(&mut self, private_key: &PrivateKey) -> Result<()> {
-        let raw = D::serialize(&self.signed)?;
+        let raw = D::serialize(&self.metadata)?;
         let bytes = D::canonicalize(&raw)?;
         let sig = private_key.sign(&bytes)?;
         self.signatures
@@ -331,10 +332,10 @@ where
     }
 
     /// Merge the singatures from `other` into `self` if and only if
-    /// `self.signed() == other.signed()`. If `self` and `other` contain signatures from the same
+    /// `self.as_ref() == other.as_ref()`. If `self` and `other` contain signatures from the same
     /// key ID, then the signatures from `self` will replace the signatures from `other`.
     pub fn merge_signatures(&mut self, other: &Self) -> Result<()> {
-        if self.signed() != other.signed() {
+        if self.metadata != other.metadata {
             return Err(Error::IllegalArgument(
                 "Attempted to merge unequal metadata".into(),
             ));
@@ -364,11 +365,6 @@ where
     /// A mutable reference to the signatures.
     pub fn signatures_mut(&mut self) -> &mut Vec<Signature> {
         &mut self.signatures
-    }
-
-    /// An immutable reference to the metadata.
-    pub fn signed(&self) -> &M {
-        &self.signed
     }
 
     /// Verify this metadata.
@@ -443,7 +439,7 @@ where
             .map(|k| (k.key_id(), k))
             .collect::<HashMap<&KeyId, &PublicKey>>();
 
-        let canonical_bytes = D::canonicalize(&D::serialize(&self.signed)?)?;
+        let canonical_bytes = D::canonicalize(&D::serialize(&self.metadata)?)?;
 
         let mut signatures_needed = threshold;
         for sig in &self.signatures {
@@ -481,6 +477,12 @@ where
     }
 }
 
+impl<D, M> AsRef<M> for SignedMetadata<D, M> {
+    fn as_ref(&self) -> &M {
+        &self.metadata
+    }
+}
+
 impl<D, M> Metadata for SignedMetadata<D, M>
 where
     D: Debug + PartialEq,
@@ -489,11 +491,11 @@ where
     const ROLE: Role = M::ROLE;
 
     fn version(&self) -> u32 {
-        self.signed.version()
+        self.metadata.version()
     }
 
     fn expires(&self) -> &DateTime<Utc> {
-        self.signed.expires()
+        self.metadata.expires()
     }
 }
 

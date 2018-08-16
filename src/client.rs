@@ -259,7 +259,7 @@ where
             config.min_bytes_per_second,
             None,
         )?;
-        let latest_version = latest_root.signed().version();
+        let latest_version = latest_root.as_ref().version();
 
         if latest_version < tuf.root().version() {
             return Err(Error::VerificationFailure(format!(
@@ -536,7 +536,7 @@ where
                             current_depth + 1,
                             target,
                             snapshot,
-                            Some(meta.signed()),
+                            Some(meta.as_ref()),
                             local,
                             remote,
                         );
