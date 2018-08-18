@@ -10,7 +10,7 @@ use tuf::crypto::{HashAlgorithm, KeyId, PrivateKey, SignatureScheme};
 use tuf::interchange::{DataInterchange, Json};
 use tuf::metadata::{
     MetadataDescription, MetadataPath, MetadataVersion, RootMetadataBuilder, SignedMetadata,
-    SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata, TimestampMetadata,
+    SnapshotMetadataBuilder, TargetDescription, TargetPath, TargetsMetadata, TimestampMetadata,
     VirtualTargetPath,
 };
 use tuf::repository::{EphemeralRepository, Repository};
@@ -89,8 +89,7 @@ where
         .snapshot_key(snapshot_key.public().clone())
         .targets_key(targets_key.public().clone())
         .timestamp_key(timestamp_key.public().clone())
-        .signed::<Json>(&root_key)
-        .unwrap();
+        .signed::<Json>(&root_key)?;
 
     remote.store_metadata(
         &MetadataPath::new("root".into())?,
@@ -127,16 +126,11 @@ where
         &signed,
     )?;
 
-    let targets_bytes = Json::canonicalize(&Json::serialize(&signed)?)?;
-
     //// build the snapshot ////
-    let meta_map = hashmap! {
-        MetadataPath::new("targets".into())? =>
-            MetadataDescription::from_reader(&*targets_bytes, 1, &[HashAlgorithm::Sha256])?,
-    };
-    let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)?;
 
-    let signed = SignedMetadata::<Json, _>::new(snapshot, &snapshot_key)?;
+    let signed = SnapshotMetadataBuilder::new()
+        .insert_metadata(&signed, &[HashAlgorithm::Sha256])?
+        .signed::<Json>(&snapshot_key)?;
 
     remote.store_metadata(
         &MetadataPath::new("snapshot".into())?,

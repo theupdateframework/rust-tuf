@@ -180,16 +180,21 @@ impl Role {
             _ => false,
         }
     }
+
+    /// Return the name of the role.
+    pub fn name(&self) -> &'static str {
+        match *self {
+            Role::Root => "root",
+            Role::Snapshot => "snapshot",
+            Role::Targets => "targets",
+            Role::Timestamp => "timestamp",
+        }
+    }
 }
 
 impl Display for Role {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Role::Root => write!(f, "root"),
-            Role::Snapshot => write!(f, "snapshot"),
-            Role::Targets => write!(f, "targets"),
-            Role::Timestamp => write!(f, "timestamp"),
-        }
+        f.write_str(self.name())
     }
 }
 
@@ -1083,6 +1088,114 @@ impl<'de> Deserialize<'de> for MetadataDescription {
     }
 }
 
+/// Helper to construct `SnapshotMetadata`.
+pub struct SnapshotMetadataBuilder {
+    version: u32,
+    expires: DateTime<Utc>,
+    meta: HashMap<MetadataPath, MetadataDescription>,
+}
+
+impl SnapshotMetadataBuilder {
+    /// Create a new `SnapshotMetadataBuilder`. It defaults to:
+    ///
+    /// * version: 1
+    /// * expires: 7 days from the current time.
+    pub fn new() -> Self {
+        SnapshotMetadataBuilder {
+            version: 1,
+            expires: Utc::now() + Duration::days(7),
+            meta: HashMap::new(),
+        }
+    }
+
+    /// Set the version number for this metadata.
+    pub fn version(mut self, version: u32) -> Self {
+        self.version = version;
+        self
+    }
+
+    /// Set the time this metadata expires.
+    pub fn expires(mut self, expires: DateTime<Utc>) -> Self {
+        self.expires = expires;
+        self
+    }
+
+    /// Add metadata to the snapshot using the default path.
+    pub fn insert_metadata<D, M>(
+        self,
+        metadata: &SignedMetadata<D, M>,
+        hash_algs: &[HashAlgorithm],
+    ) -> Result<Self>
+    where
+          M: Metadata,
+          D: DataInterchange,
+    {
+        self.insert_metadata_with_path(
+            M::ROLE.name(),
+            metadata,
+            hash_algs,
+        )
+    }
+
+    /// Add metadata to the snapshot using a custom path.
+    pub fn insert_metadata_with_path<P, D, M>(
+        self,
+        path: P,
+        metadata: &SignedMetadata<D, M>,
+        hash_algs: &[HashAlgorithm],
+    ) -> Result<Self>
+    where
+          P: Into<String>,
+          M: Metadata,
+          D: DataInterchange,
+    {
+        let bytes = D::canonicalize(&D::serialize(metadata)?)?;
+        let description = MetadataDescription::from_reader(
+            &*bytes,
+            metadata.version(),
+            hash_algs,
+        )?;
+        let path = MetadataPath::new(path.into())?;
+        Ok(self.insert_metadata_description(path, description))
+    }
+
+    /// Add `MetadataDescription` to the snapshot using a custom path.
+    pub fn insert_metadata_description(
+        mut self,
+        path: MetadataPath,
+        description: MetadataDescription,
+    ) -> Self {
+        self.meta.insert(path.into(), description);
+        self
+    }
+
+    /// Construct a new `SignedMetadata`.
+    pub fn build(self) -> Result<SnapshotMetadata> {
+        SnapshotMetadata::new(
+            self.version,
+            self.expires,
+            self.meta,
+        )
+    }
+
+    /// Construct a new `SignedMetadata<D, SnapshotMetadata>`.
+    pub fn signed<D>(self, private_key: &PrivateKey) -> Result<SignedMetadata<D, SnapshotMetadata>>
+        where D: DataInterchange,
+    {
+        Ok(SignedMetadata::new(self.build()?, private_key)?)
+    }
+}
+
+impl From<SnapshotMetadata> for SnapshotMetadataBuilder {
+    fn from(meta: SnapshotMetadata) -> Self {
+        SnapshotMetadataBuilder {
+            version: meta.version,
+            expires: meta.expires,
+            meta: meta.meta,
+        }
+    }
+}
+
 /// Metadata for the snapshot role.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SnapshotMetadata {
@@ -1860,18 +1973,18 @@ mod test {
 
     #[test]
     fn serde_snapshot_metadata() {
-        let snapshot = SnapshotMetadata::new(
-            1,
-            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-            hashmap! {
-                MetadataPath::new("foo".into()).unwrap() =>
-                    MetadataDescription::new(
-                        1,
-                        100,
-                        hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
-                    ).unwrap(),
-            },
-        ).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
+            .insert_metadata_description(
+                MetadataPath::new("foo".into()).unwrap(),
+                MetadataDescription::new(
+                    1,
+                    100,
+                    hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
+                ).unwrap(),
+            )
+            .build()
+            .unwrap();
 
         let jsn = json!({
             "type": "snapshot",
@@ -1986,18 +2099,18 @@ mod test {
 
     #[test]
     fn serde_signed_metadata() {
-        let snapshot = SnapshotMetadata::new(
-            1,
-            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-            hashmap! {
-                MetadataPath::new("foo".into()).unwrap() =>
-                    MetadataDescription::new(
-                        1,
-                        100,
-                        hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
-                    ).unwrap(),
-            },
-        ).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
+            .insert_metadata_description(
+                MetadataPath::new("foo".into()).unwrap(),
+                MetadataDescription::new(
+                    1,
+                    100,
+                    hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
+                ).unwrap(),
+            )
+            .build()
+            .unwrap();
 
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
 
@@ -2081,8 +2194,10 @@ mod test {
     }
 
     fn make_snapshot() -> json::Value {
-        let snapshot =
-            SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!()).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+            .build()
+            .unwrap();
 
         json::to_value(&snapshot).unwrap()
     }

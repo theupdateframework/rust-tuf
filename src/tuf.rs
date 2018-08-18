@@ -616,7 +616,7 @@ mod test {
     use chrono::prelude::*;
     use crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
     use interchange::Json;
-    use metadata::{MetadataDescription, RootMetadataBuilder};
+    use metadata::{MetadataDescription, RootMetadataBuilder, SnapshotMetadataBuilder};
 
     lazy_static! {
         static ref KEYS: Vec<PrivateKey> = {
@@ -787,10 +787,9 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let snapshot =
-            SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!()).unwrap();
-        let snapshot: SignedMetadata<Json, SnapshotMetadata> =
-            SignedMetadata::new(snapshot, &KEYS[1]).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .signed(&KEYS[1])
+            .unwrap();
 
         assert_eq!(tuf.update_snapshot(snapshot.clone()), Ok(true));
 
@@ -820,10 +819,9 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let snapshot =
-            SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!()).unwrap();
-        let snapshot: SignedMetadata<Json, SnapshotMetadata> =
-            SignedMetadata::new(snapshot, &KEYS[2]).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
 
         assert!(tuf.update_snapshot(snapshot).is_err());
     }
@@ -850,10 +848,9 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let snapshot =
-            SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!()).unwrap();
-        let snapshot: SignedMetadata<Json, SnapshotMetadata> =
-            SignedMetadata::new(snapshot, &KEYS[1]).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
 
         assert!(tuf.update_snapshot(snapshot).is_err());
     }
@@ -880,14 +877,13 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let meta_map = hashmap!(
-            MetadataPath::from_role(&Role::Targets) =>
+        let snapshot = SnapshotMetadataBuilder::new()
+            .insert_metadata_description(
+                MetadataPath::from_role(&Role::Targets),
                 MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        );
-        let snapshot =
-            SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map).unwrap();
-        let snapshot: SignedMetadata<Json, _> =
-            SignedMetadata::new(snapshot, &KEYS[1]).unwrap();
+            )
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
 
         tuf.update_snapshot(snapshot).unwrap();
 
@@ -925,14 +921,13 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let meta_map = hashmap!(
-            MetadataPath::from_role(&Role::Targets) =>
+        let snapshot = SnapshotMetadataBuilder::new()
+            .insert_metadata_description(
+                MetadataPath::from_role(&Role::Targets),
                 MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        );
-        let snapshot =
-            SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map).unwrap();
-        let snapshot: SignedMetadata<Json, SnapshotMetadata> =
-            SignedMetadata::new(snapshot, &KEYS[1]).unwrap();
+            )
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
 
         tuf.update_snapshot(snapshot).unwrap();
 
@@ -967,14 +962,13 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let meta_map = hashmap!(
-            MetadataPath::from_role(&Role::Targets) =>
+        let snapshot = SnapshotMetadataBuilder::new()
+            .insert_metadata_description(
+                MetadataPath::from_role(&Role::Targets),
                 MetadataDescription::from_reader(&*vec![], 2, &[HashAlgorithm::Sha256]).unwrap(),
-        );
-        let snapshot =
-            SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map).unwrap();
-        let snapshot: SignedMetadata<Json, SnapshotMetadata> =
-            SignedMetadata::new(snapshot, &KEYS[1]).unwrap();
+            )
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
 
         tuf.update_snapshot(snapshot).unwrap();
 
