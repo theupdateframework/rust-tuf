@@ -9,8 +9,9 @@ use std::collections::HashMap;
 use tuf::crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
 use tuf::interchange::Json;
 use tuf::metadata::{
-    Delegation, Delegations, MetadataDescription, MetadataPath, RootMetadataBuilder,
-    SignedMetadata, SnapshotMetadataBuilder, TargetDescription, TargetsMetadata, TimestampMetadata,
+    Delegation, Delegations, MetadataDescription, MetadataPath,
+    RootMetadataBuilder, SignedMetadata, SnapshotMetadataBuilder,
+    TargetDescription, TargetsMetadata, TimestampMetadataBuilder,
     VirtualTargetPath,
 };
 use tuf::Tuf;
@@ -32,7 +33,7 @@ fn simple_delegation() {
 
     //// build the root ////
 
-    let signed = RootMetadataBuilder::new()
+    let root = RootMetadataBuilder::new()
         .root_key(root_key.public().clone())
         .snapshot_key(snapshot_key.public().clone())
         .targets_key(targets_key.public().clone())
@@ -40,20 +41,11 @@ fn simple_delegation() {
         .signed::<Json>(&root_key)
         .unwrap();
 
-    let mut tuf = Tuf::<Json>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
+    let mut tuf = Tuf::<Json>::from_root_pinned(root, &[root_key.key_id().clone()]).unwrap();
 
-    //// build the timestamp ////
-    let snap = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
-    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap).unwrap();
+    //// build the snapshot and timestamp ////
 
-    let signed =
-        SignedMetadata::<Json, _>::new(timestamp, &timestamp_key).unwrap();
-
-    tuf.update_timestamp(signed).unwrap();
-
-    //// build the snapshot ////
-
-    let signed = SnapshotMetadataBuilder::new()
+    let snapshot = SnapshotMetadataBuilder::new()
         .insert_metadata_description(
             MetadataPath::new("targets".into()).unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
@@ -65,7 +57,13 @@ fn simple_delegation() {
         .signed::<Json>(&snapshot_key)
         .unwrap();
 
-    tuf.update_snapshot(signed).unwrap();
+    let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+        .unwrap()
+        .signed::<Json>(&timestamp_key)
+        .unwrap();
+
+    tuf.update_timestamp(timestamp).unwrap();
+    tuf.update_snapshot(snapshot).unwrap();
 
     //// build the targets ////
     let delegations = Delegations::new(
@@ -129,7 +127,7 @@ fn nested_delegation() {
 
     //// build the root ////
 
-    let signed = RootMetadataBuilder::new()
+    let root = RootMetadataBuilder::new()
         .root_key(root_key.public().clone())
         .snapshot_key(snapshot_key.public().clone())
         .targets_key(targets_key.public().clone())
@@ -137,20 +135,11 @@ fn nested_delegation() {
         .signed::<Json>(&root_key)
         .unwrap();
 
-    let mut tuf = Tuf::<Json>::from_root_pinned(signed, &[root_key.key_id().clone()]).unwrap();
+    let mut tuf = Tuf::<Json>::from_root_pinned(root, &[root_key.key_id().clone()]).unwrap();
 
-    //// build the timestamp ////
-    let snap = MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap();
-    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap).unwrap();
+    //// build the snapshot and timestamp ////
 
-    let signed =
-        SignedMetadata::<Json, _>::new(timestamp, &timestamp_key).unwrap();
-
-    tuf.update_timestamp(signed).unwrap();
-
-    //// build the snapshot ////
-
-    let signed = SnapshotMetadataBuilder::new()
+    let snapshot = SnapshotMetadataBuilder::new()
         .insert_metadata_description(
             MetadataPath::new("targets".into()).unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
@@ -166,9 +155,16 @@ fn nested_delegation() {
         .signed::<Json>(&snapshot_key)
         .unwrap();
 
-    tuf.update_snapshot(signed).unwrap();
+    let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+        .unwrap()
+        .signed::<Json>(&timestamp_key)
+        .unwrap();
+
+    tuf.update_timestamp(timestamp).unwrap();
+    tuf.update_snapshot(snapshot).unwrap();
 
     //// build the targets ////
+
     let delegations = Delegations::new(
         &hashset![delegation_a_key.public().clone()],
         vec![
@@ -199,6 +195,7 @@ fn nested_delegation() {
     tuf.update_targets(signed).unwrap();
 
     //// build delegation A ////
+
     let delegations = Delegations::new(
         &hashset![delegation_b_key.public().clone()],
         vec![
@@ -231,6 +228,7 @@ fn nested_delegation() {
         .unwrap();
 
     //// build delegation B ////
+
     let target_file: &[u8] = b"bar";
     let target_map = hashmap! {
         VirtualTargetPath::new("foo".into()).unwrap() =>

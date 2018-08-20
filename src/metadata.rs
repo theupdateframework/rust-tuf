@@ -257,20 +257,22 @@ where
     /// # use chrono::prelude::*;
     /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
     /// # use tuf::interchange::Json;
-    /// # use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    /// # use tuf::metadata::{MetadataDescription, TimestampMetadataBuilder};
     /// #
     /// # fn main() {
     /// # let key: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     /// let key = PrivateKey::from_pkcs8(&key, SignatureScheme::Ed25519).unwrap();
     ///
-    /// let timestamp = TimestampMetadata::new(
+    /// let description = MetadataDescription::from_reader(
+    ///     &[0x01, 0x02, 0x03][..],
     ///     1,
-    ///     Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-    ///     MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
-    ///         &[HashAlgorithm::Sha256]).unwrap()
+    ///     &[HashAlgorithm::Sha256]
     /// ).unwrap();
     ///
-    /// SignedMetadata::<Json, _>::new(timestamp, &key).unwrap();
+    /// let timestamp = TimestampMetadataBuilder::from_metadata_description(description)
+    ///     .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
+    ///     .signed::<Json>(&key)
+    ///     .unwrap();
     /// # }
     /// ```
     pub fn new(metadata: M, private_key: &PrivateKey) -> Result<SignedMetadata<D, M>> {
@@ -931,6 +933,78 @@ impl<'de> Deserialize<'de> for MetadataPath {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let s: String = Deserialize::deserialize(de)?;
         MetadataPath::new(s).map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+    }
+}
+
+/// Helper to construct `TimestampMetadata`.
+pub struct TimestampMetadataBuilder {
+    version: u32,
+    expires: DateTime<Utc>,
+    snapshot: MetadataDescription,
+}
+
+impl TimestampMetadataBuilder {
+    /// Create a new `TimestampMetadataBuilder` from a given snapshot. It defaults to:
+    ///
+    /// * version: 1
+    /// * expires: 1 day from the current time.
+    pub fn from_snapshot<D, M>(
+        snapshot: &SignedMetadata<D, M>,
+        hash_algs: &[HashAlgorithm],
+    ) -> Result<Self>
+    where
+        D: DataInterchange,
+        M: Metadata,
+    {
+        let bytes = D::canonicalize(&D::serialize(&snapshot)?)?;
+        let description = MetadataDescription::from_reader(
+            &*bytes,
+            snapshot.version(),
+            hash_algs,
+        )?;
+
+        Ok(Self::from_metadata_description(description))
+    }
+
+    /// Create a new `TimestampMetadataBuilder` from a given
+    /// `MetadataDescription`. It defaults to:
+    ///
+    /// * version: 1
+    /// * expires: 1 day from the current time.
+    pub fn from_metadata_description(description: MetadataDescription) -> Self {
+        TimestampMetadataBuilder {
+            version: 1,
+            expires: Utc::now() + Duration::days(1),
+            snapshot: description,
+        }
+    }
+
+    /// Set the version number for this metadata.
+    pub fn version(mut self, version: u32) -> Self {
+        self.version = version;
+        self
+    }
+
+    /// Set the time this metadata expires.
+    pub fn expires(mut self, expires: DateTime<Utc>) -> Self {
+        self.expires = expires;
+        self
+    }
+
+    /// Construct a new `TimestampMetadata`.
+    pub fn build(self) -> Result<TimestampMetadata> {
+        TimestampMetadata::new(
+            self.version,
+            self.expires,
+            self.snapshot,
+        )
+    }
+
+    /// Construct a new `SignedMetadata<D, TimestampMetadata>`.
+    pub fn signed<D>(self, private_key: &PrivateKey) -> Result<SignedMetadata<D, TimestampMetadata>>
+        where D: DataInterchange,
+    {
+        Ok(SignedMetadata::new(self.build()?, private_key)?)
     }
 }
 
@@ -1942,15 +2016,16 @@ mod test {
 
     #[test]
     fn serde_timestamp_metadata() {
-        let timestamp = TimestampMetadata::new(
+        let description = MetadataDescription::new(
             1,
-            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-            MetadataDescription::new(
-                1,
-                100,
-                hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
-            ).unwrap(),
+            100,
+            hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
         ).unwrap();
+
+        let timestamp = TimestampMetadataBuilder::from_metadata_description(description)
+            .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
+            .build()
+            .unwrap();
 
         let jsn = json!({
             "type": "timestamp",
@@ -2203,11 +2278,16 @@ mod test {
     }
 
     fn make_timestamp() -> json::Value {
-        let timestamp = TimestampMetadata::new(
+        let description = MetadataDescription::from_reader(
+            &[][..],
             1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            &[HashAlgorithm::Sha256],
         ).unwrap();
+
+        let timestamp = TimestampMetadataBuilder::from_metadata_description(description)
+            .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
+            .build()
+            .unwrap();
 
         json::to_value(&timestamp).unwrap()
     }

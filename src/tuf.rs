@@ -616,7 +616,12 @@ mod test {
     use chrono::prelude::*;
     use crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
     use interchange::Json;
-    use metadata::{MetadataDescription, RootMetadataBuilder, SnapshotMetadataBuilder};
+    use metadata::{
+        MetadataDescription,
+        RootMetadataBuilder,
+        SnapshotMetadataBuilder,
+        TimestampMetadataBuilder,
+    };
 
     lazy_static! {
         static ref KEYS: Vec<PrivateKey> = {
@@ -726,13 +731,14 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let timestamp = TimestampMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        ).unwrap();
-        let timestamp: SignedMetadata<Json, TimestampMetadata> =
-            SignedMetadata::new(timestamp, &KEYS[1]).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
+
+        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
 
         assert_eq!(tuf.update_timestamp(timestamp.clone()), Ok(true));
 
@@ -752,15 +758,15 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let timestamp = TimestampMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        ).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
 
-        // sign it with the root key
-        let timestamp: SignedMetadata<Json, TimestampMetadata> =
-            SignedMetadata::new(timestamp, &KEYS[0]).unwrap();
+        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+            .unwrap()
+            // sign it with the root key
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
 
         assert!(tuf.update_timestamp(timestamp).is_err())
     }
@@ -777,19 +783,16 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let timestamp = TimestampMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        ).unwrap();
-        let timestamp: SignedMetadata<Json, TimestampMetadata> =
-            SignedMetadata::new(timestamp, &KEYS[2]).unwrap();
-
-        tuf.update_timestamp(timestamp).unwrap();
-
         let snapshot = SnapshotMetadataBuilder::new()
             .signed(&KEYS[1])
             .unwrap();
+
+        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
+
+        tuf.update_timestamp(timestamp).unwrap();
 
         assert_eq!(tuf.update_snapshot(snapshot.clone()), Ok(true));
 
@@ -809,19 +812,16 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let timestamp = TimestampMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        ).unwrap();
-        let timestamp: SignedMetadata<Json, TimestampMetadata> =
-            SignedMetadata::new(timestamp, &KEYS[2]).unwrap();
-
-        tuf.update_timestamp(timestamp).unwrap();
-
         let snapshot = SnapshotMetadataBuilder::new()
             .signed::<Json>(&KEYS[2])
             .unwrap();
+
+        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
+
+        tuf.update_timestamp(timestamp).unwrap();
 
         assert!(tuf.update_snapshot(snapshot).is_err());
     }
@@ -838,13 +838,15 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let timestamp = TimestampMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            MetadataDescription::from_reader(&*vec![], 2, &[HashAlgorithm::Sha256]).unwrap(),
-        ).unwrap();
-        let timestamp: SignedMetadata<Json, TimestampMetadata> =
-            SignedMetadata::new(timestamp, &KEYS[2]).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .version(2)
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
+
+        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
 
@@ -865,18 +867,6 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
-
-        let timestamp = TimestampMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        ).unwrap();
-        let timestamp: SignedMetadata<Json, _> =
-            SignedMetadata::new(timestamp, &KEYS[3]).unwrap();
-
-        tuf.update_timestamp(timestamp).unwrap();
-
         let snapshot = SnapshotMetadataBuilder::new()
             .insert_metadata_description(
                 MetadataPath::from_role(&Role::Targets),
@@ -885,6 +875,14 @@ mod test {
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
+        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[3])
+            .unwrap();
+
+        let mut tuf = Tuf::from_root(root).unwrap();
+
+        tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
 
         let targets =
@@ -911,16 +909,6 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let timestamp = TimestampMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        ).unwrap();
-        let timestamp: SignedMetadata<Json, TimestampMetadata> =
-            SignedMetadata::new(timestamp, &KEYS[3]).unwrap();
-
-        tuf.update_timestamp(timestamp).unwrap();
-
         let snapshot = SnapshotMetadataBuilder::new()
             .insert_metadata_description(
                 MetadataPath::from_role(&Role::Targets),
@@ -929,6 +917,12 @@ mod test {
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
+        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[3])
+            .unwrap();
+
+        tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
 
         let targets =
@@ -952,16 +946,6 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let timestamp = TimestampMetadata::new(
-            1,
-            Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-            MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        ).unwrap();
-        let timestamp: SignedMetadata<Json, TimestampMetadata> =
-            SignedMetadata::new(timestamp, &KEYS[3]).unwrap();
-
-        tuf.update_timestamp(timestamp).unwrap();
-
         let snapshot = SnapshotMetadataBuilder::new()
             .insert_metadata_description(
                 MetadataPath::from_role(&Role::Targets),
@@ -970,6 +954,12 @@ mod test {
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
+        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[3])
+            .unwrap();
+
+        tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
 
         let targets =
