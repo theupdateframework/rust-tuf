@@ -613,14 +613,13 @@ impl<D: DataInterchange> Tuf<D> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use chrono::prelude::*;
     use crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
     use interchange::Json;
     use metadata::{
-        MetadataDescription,
         RootMetadataBuilder,
         SnapshotMetadataBuilder,
         TimestampMetadataBuilder,
+        TargetsMetadataBuilder,
     };
 
     lazy_static! {
@@ -818,6 +817,7 @@ mod test {
 
         let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
             .unwrap()
+            // sign it with the targets key
             .signed::<Json>(&KEYS[2])
             .unwrap();
 
@@ -851,6 +851,7 @@ mod test {
         tuf.update_timestamp(timestamp).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
+            .version(1)
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
@@ -867,11 +868,12 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
+        let targets = TargetsMetadataBuilder::new()
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
+
         let snapshot = SnapshotMetadataBuilder::new()
-            .insert_metadata_description(
-                MetadataPath::from_role(&Role::Targets),
-                MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
-            )
+            .insert_metadata(&targets, &[HashAlgorithm::Sha256]).unwrap()
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
@@ -884,12 +886,6 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
-
-        let targets =
-            TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
-                .unwrap();
-        let targets: SignedMetadata<Json, _> =
-            SignedMetadata::new(targets, &KEYS[2]).unwrap();
 
         assert_eq!(tuf.update_targets(targets.clone()), Ok(true));
 
@@ -909,11 +905,13 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
+        let targets = TargetsMetadataBuilder::new()
+            // sign it with the timestamp key
+            .signed::<Json>(&KEYS[3])
+            .unwrap();
+
         let snapshot = SnapshotMetadataBuilder::new()
-            .insert_metadata_description(
-                MetadataPath::from_role(&Role::Targets),
-                MetadataDescription::from_reader(&*vec![], 1, &[HashAlgorithm::Sha256]).unwrap(),
-            )
+            .insert_metadata(&targets, &[HashAlgorithm::Sha256]).unwrap()
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
@@ -924,12 +922,6 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
-
-        let targets =
-            TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
-                .unwrap();
-        let targets: SignedMetadata<Json, TargetsMetadata> =
-            SignedMetadata::new(targets, &KEYS[3]).unwrap();
 
         assert!(tuf.update_targets(targets).is_err());
     }
@@ -946,11 +938,13 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
+        let targets = TargetsMetadataBuilder::new()
+            .version(2)
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
+
         let snapshot = SnapshotMetadataBuilder::new()
-            .insert_metadata_description(
-                MetadataPath::from_role(&Role::Targets),
-                MetadataDescription::from_reader(&*vec![], 2, &[HashAlgorithm::Sha256]).unwrap(),
-            )
+            .insert_metadata(&targets, &[HashAlgorithm::Sha256]).unwrap()
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
@@ -962,11 +956,10 @@ mod test {
         tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
 
-        let targets =
-            TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
-                .unwrap();
-        let targets: SignedMetadata<Json, TargetsMetadata> =
-            SignedMetadata::new(targets, &KEYS[2]).unwrap();
+        let targets = TargetsMetadataBuilder::new()
+            .version(1)
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
 
         assert!(tuf.update_targets(targets).is_err());
     }

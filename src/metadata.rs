@@ -1613,6 +1613,88 @@ impl<'de> Deserialize<'de> for TargetsMetadata {
     }
 }
 
+/// Helper to construct `TargetsMetadata`.
+pub struct TargetsMetadataBuilder {
+    version: u32,
+    expires: DateTime<Utc>,
+    targets: HashMap<VirtualTargetPath, TargetDescription>,
+    delegations: Option<Delegations>,
+}
+
+impl TargetsMetadataBuilder {
+    /// Create a new `TargetsMetadata`. It defaults to:
+    ///
+    /// * version: 1
+    /// * expires: 90 days from the current time.
+    pub fn new() -> Self {
+        TargetsMetadataBuilder {
+            version: 1,
+            expires: Utc::now() + Duration::days(90),
+            targets: HashMap::new(),
+            delegations: None,
+        }
+    }
+
+    /// Set the version number for this metadata.
+    pub fn version(mut self, version: u32) -> Self {
+        self.version = version;
+        self
+    }
+
+    /// Set the time this metadata expires.
+    pub fn expires(mut self, expires: DateTime<Utc>) -> Self {
+        self.expires = expires;
+        self
+    }
+
+    /// Add target to the target metadata.
+    pub fn insert_target_from_reader<R>(
+        self,
+        path: VirtualTargetPath,
+        read: R,
+        hash_algs: &[HashAlgorithm],
+    ) -> Result<Self>
+    where
+          R: Read,
+    {
+        let description = TargetDescription::from_reader(read, hash_algs)?;
+        Ok(self.insert_target_description(path, description))
+    }
+
+    /// Add `TargetDescription` to this target metadata target description.
+    pub fn insert_target_description(
+        mut self,
+        path: VirtualTargetPath,
+        description: TargetDescription,
+    ) -> Self {
+        self.targets.insert(path, description);
+        self
+    }
+
+    /// Add `Delegatiuons` to this target metadata.
+    pub fn delegations(mut self, delegations: Delegations) -> Self {
+        self.delegations = Some(delegations);
+        self
+    }
+
+    /// Construct a new `TargetsMetadata`.
+    pub fn build(self) -> Result<TargetsMetadata> {
+        TargetsMetadata::new(
+            self.version,
+            self.expires,
+            self.targets,
+            self.delegations,
+        )
+    }
+
+    /// Construct a new `SignedMetadata<D, TargetsMetadata>`.
+    pub fn signed<D>(self, private_key: &PrivateKey) -> Result<SignedMetadata<D, TargetsMetadata>>
+        where D: DataInterchange,
+    {
+        Ok(SignedMetadata::new(self.build()?, private_key)?)
+    }
+}
+
 /// Wrapper to described a collections of delegations.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Delegations {
@@ -2066,18 +2148,17 @@ mod test {
 
     #[test]
     fn serde_targets_metadata() {
-        let targets = TargetsMetadata::new(
-            1,
-            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-            hashmap! {
-                VirtualTargetPath::new("foo".into()).unwrap() =>
-                    TargetDescription::from_reader(
-                        b"foo" as &[u8],
-                        &[HashAlgorithm::Sha256],
-                    ).unwrap(),
-            },
-            None,
-        ).unwrap();
+        let targets = TargetsMetadataBuilder::new()
+            .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
+            .insert_target_description(
+                VirtualTargetPath::new("foo".into()).unwrap(),
+                TargetDescription::from_reader(
+                    &b"foo"[..],
+                    &[HashAlgorithm::Sha256],
+                ).unwrap(),
+            )
+            .build()
+            .unwrap();
 
         let jsn = json!({
             "type": "targets",
@@ -2115,12 +2196,11 @@ mod test {
             ],
         ).unwrap();
 
-        let targets = TargetsMetadata::new(
-            1,
-            Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-            HashMap::new(),
-            Some(delegations),
-        ).unwrap();
+        let targets = TargetsMetadataBuilder::new()
+            .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
+            .delegations(delegations)
+            .build()
+            .unwrap();
 
         let jsn = json!({
             "type": "targets",

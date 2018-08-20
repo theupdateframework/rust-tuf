@@ -1,17 +1,13 @@
-extern crate chrono;
 #[macro_use]
 extern crate maplit;
 extern crate tuf;
 
-use chrono::offset::Utc;
-use chrono::prelude::*;
-use std::collections::HashMap;
 use tuf::crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
 use tuf::interchange::Json;
 use tuf::metadata::{
     Delegation, Delegations, MetadataDescription, MetadataPath,
-    RootMetadataBuilder, SignedMetadata, SnapshotMetadataBuilder,
-    TargetDescription, TargetsMetadata, TimestampMetadataBuilder,
+    RootMetadataBuilder, SnapshotMetadataBuilder,
+    TargetsMetadataBuilder, TimestampMetadataBuilder,
     VirtualTargetPath,
 };
 use tuf::Tuf;
@@ -84,30 +80,25 @@ fn simple_delegation() {
             ).unwrap(),
         ],
     ).unwrap();
-    let targets = TargetsMetadata::new(
-        1,
-        Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-        HashMap::new(),
-        Some(delegations),
-    ).unwrap();
+    let targets = TargetsMetadataBuilder::new()
+        .delegations(delegations)
+        .signed::<Json>(&targets_key)
+        .unwrap();
 
-    let signed = SignedMetadata::<Json, _>::new(targets, &targets_key).unwrap();
-
-    tuf.update_targets(signed).unwrap();
+    tuf.update_targets(targets).unwrap();
 
     //// build the delegation ////
     let target_file: &[u8] = b"bar";
-    let target_map = hashmap! {
-        VirtualTargetPath::new("foo".into()).unwrap() =>
-            TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256]).unwrap(),
-    };
-    let delegation =
-        TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None).unwrap();
+    let delegation = TargetsMetadataBuilder::new()
+        .insert_target_from_reader(
+            VirtualTargetPath::new("foo".into()).unwrap(),
+            target_file,
+            &[HashAlgorithm::Sha256],
+        ).unwrap()
+        .signed::<Json>(&delegation_key)
+        .unwrap();
 
-    let signed =
-        SignedMetadata::<Json, _>::new(delegation, &delegation_key).unwrap();
-
-    tuf.update_delegation(&MetadataPath::new("delegation".into()).unwrap(), signed)
+    tuf.update_delegation(&MetadataPath::new("delegation".into()).unwrap(), delegation)
         .unwrap();
 
     assert!(
@@ -183,16 +174,12 @@ fn nested_delegation() {
             ).unwrap(),
         ],
     ).unwrap();
-    let targets = TargetsMetadata::new(
-        1,
-        Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-        HashMap::new(),
-        Some(delegations),
-    ).unwrap();
+    let targets = TargetsMetadataBuilder::new()
+        .delegations(delegations)
+        .signed::<Json>(&targets_key)
+        .unwrap();
 
-    let signed = SignedMetadata::<Json, _>::new(targets, &targets_key).unwrap();
-
-    tuf.update_targets(signed).unwrap();
+    tuf.update_targets(targets).unwrap();
 
     //// build delegation A ////
 
@@ -214,34 +201,29 @@ fn nested_delegation() {
             ).unwrap(),
         ],
     ).unwrap();
-    let delegation = TargetsMetadata::new(
-        1,
-        Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-        HashMap::new(),
-        Some(delegations),
-    ).unwrap();
 
-    let signed =
-        SignedMetadata::<Json, _>::new(delegation, &delegation_a_key).unwrap();
+    let delegation = TargetsMetadataBuilder::new()
+        .delegations(delegations)
+        .signed::<Json>(&delegation_a_key)
+        .unwrap();
 
-    tuf.update_delegation(&MetadataPath::new("delegation-a".into()).unwrap(), signed)
+    tuf.update_delegation(&MetadataPath::new("delegation-a".into()).unwrap(), delegation)
         .unwrap();
 
     //// build delegation B ////
 
     let target_file: &[u8] = b"bar";
-    let target_map = hashmap! {
-        VirtualTargetPath::new("foo".into()).unwrap() =>
-            TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256]).unwrap(),
-    };
 
-    let delegation =
-        TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None).unwrap();
+    let delegation = TargetsMetadataBuilder::new()
+        .insert_target_from_reader(
+            VirtualTargetPath::new("foo".into()).unwrap(),
+            target_file,
+            &[HashAlgorithm::Sha256],
+        ).unwrap()
+        .signed::<Json>(&delegation_b_key)
+        .unwrap();
 
-    let signed =
-        SignedMetadata::<Json, _>::new(delegation, &delegation_b_key).unwrap();
-
-    tuf.update_delegation(&MetadataPath::new("delegation-b".into()).unwrap(), signed)
+    tuf.update_delegation(&MetadataPath::new("delegation-b".into()).unwrap(), delegation)
         .unwrap();
 
     assert!(

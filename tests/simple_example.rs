@@ -1,16 +1,12 @@
 extern crate chrono;
-#[macro_use]
-extern crate maplit;
 extern crate tuf;
 
-use chrono::offset::Utc;
-use chrono::prelude::*;
 use tuf::client::{Client, Config, PathTranslator};
 use tuf::crypto::{HashAlgorithm, KeyId, PrivateKey, SignatureScheme};
 use tuf::interchange::Json;
 use tuf::metadata::{
-    MetadataPath, MetadataVersion, RootMetadataBuilder, SignedMetadata,
-    SnapshotMetadataBuilder, TargetDescription, TargetPath, TargetsMetadata,
+    MetadataPath, MetadataVersion, RootMetadataBuilder,
+    SnapshotMetadataBuilder, TargetPath, TargetsMetadataBuilder,
     TimestampMetadataBuilder, VirtualTargetPath,
 };
 use tuf::repository::{EphemeralRepository, Repository};
@@ -105,31 +101,33 @@ where
     //// build the targets ////
 
     let target_file: &[u8] = b"things fade, alternatives exclude";
+
     let target_path = TargetPath::new("foo-bar".into())?;
-    let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])?;
     let _ = remote.store_target(target_file, &target_path);
 
-    let target_map =
-        hashmap!(config.path_translator().real_to_virtual(&target_path)? => target_description);
-    let targets = TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None)?;
-
-    let signed = SignedMetadata::<Json, _>::new(targets, &targets_key)?;
+    let targets = TargetsMetadataBuilder::new()
+        .insert_target_from_reader(
+            config.path_translator().real_to_virtual(&target_path)?,
+            target_file,
+            &[HashAlgorithm::Sha256],
+        )?
+        .signed::<Json>(&targets_key)?;
 
     remote.store_metadata(
         &MetadataPath::new("targets".into())?,
         &MetadataVersion::Number(1),
-        &signed,
+        &targets,
     )?;
     remote.store_metadata(
         &MetadataPath::new("targets".into())?,
         &MetadataVersion::None,
-        &signed,
+        &targets,
     )?;
 
     //// build the snapshot ////
 
     let snapshot = SnapshotMetadataBuilder::new()
-        .insert_metadata(&signed, &[HashAlgorithm::Sha256])?
+        .insert_metadata(&targets, &[HashAlgorithm::Sha256])?
         .signed::<Json>(&snapshot_key)?;
 
     remote.store_metadata(
