@@ -257,22 +257,14 @@ where
     /// # use chrono::prelude::*;
     /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
     /// # use tuf::interchange::Json;
-    /// # use tuf::metadata::{MetadataDescription, TimestampMetadataBuilder};
+    /// # use tuf::metadata::{SignedMetadata, SnapshotMetadataBuilder};
     /// #
     /// # fn main() {
     /// # let key: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     /// let key = PrivateKey::from_pkcs8(&key, SignatureScheme::Ed25519).unwrap();
     ///
-    /// let description = MetadataDescription::from_reader(
-    ///     &[0x01, 0x02, 0x03][..],
-    ///     1,
-    ///     &[HashAlgorithm::Sha256]
-    /// ).unwrap();
-    ///
-    /// let timestamp = TimestampMetadataBuilder::from_metadata_description(description)
-    ///     .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
-    ///     .signed::<Json>(&key)
-    ///     .unwrap();
+    /// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
+    /// SignedMetadata::<Json, _>::new(snapshot, &key).unwrap();
     /// # }
     /// ```
     pub fn new(metadata: M, private_key: &PrivateKey) -> Result<SignedMetadata<D, M>> {
@@ -301,7 +293,7 @@ where
     /// # use chrono::prelude::*;
     /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
     /// # use tuf::interchange::Json;
-    /// # use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    /// # use tuf::metadata::{SignedMetadata, SnapshotMetadataBuilder};
     /// #
     /// # fn main() {
     /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
@@ -312,19 +304,14 @@ where
     /// let key_2: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
     /// let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
     ///
-    /// let timestamp = TimestampMetadata::new(
-    ///     1,
-    ///     Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-    ///     MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
-    ///         &[HashAlgorithm::Sha256]).unwrap()
-    /// ).unwrap();
-    /// let mut timestamp = SignedMetadata::<Json, _>::new(timestamp, &key_1).unwrap();
+    /// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
+    /// let mut snapshot = SignedMetadata::<Json, _>::new(snapshot, &key_1).unwrap();
     ///
-    /// timestamp.add_signature(&key_2).unwrap();
-    /// assert_eq!(timestamp.signatures().len(), 2);
+    /// snapshot.add_signature(&key_2).unwrap();
+    /// assert_eq!(snapshot.signatures().len(), 2);
     ///
-    /// timestamp.add_signature(&key_2).unwrap();
-    /// assert_eq!(timestamp.signatures().len(), 2);
+    /// snapshot.add_signature(&key_2).unwrap();
+    /// assert_eq!(snapshot.signatures().len(), 2);
     /// # }
     /// ```
     pub fn add_signature(&mut self, private_key: &PrivateKey) -> Result<()> {
@@ -384,7 +371,7 @@ where
     /// # use chrono::prelude::*;
     /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
     /// # use tuf::interchange::Json;
-    /// # use tuf::metadata::{MetadataDescription, TimestampMetadata, SignedMetadata};
+    /// # use tuf::metadata::{SnapshotMetadataBuilder, SignedMetadata};
     ///
     /// # fn main() {
     /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
@@ -393,33 +380,28 @@ where
     /// let key_2: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
     /// let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
     ///
-    /// let timestamp = TimestampMetadata::new(
-    ///     1,
-    ///     Utc.ymd(2017, 1, 1).and_hms(0, 0, 0),
-    ///     MetadataDescription::from_reader(&*vec![0x01, 0x02, 0x03], 1,
-    ///         &[HashAlgorithm::Sha256]).unwrap()
-    /// ).unwrap();
-    /// let timestamp = SignedMetadata::<Json, _>::new(timestamp, &key_1).unwrap();
+    /// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
+    /// let snapshot = SignedMetadata::<Json, _>::new(snapshot, &key_1).unwrap();
     ///
-    /// assert!(timestamp.verify(
+    /// assert!(snapshot.verify(
     ///     1,
     ///     vec![key_1.public()],
     /// ).is_ok());
     ///
     /// // fail with increased threshold
-    /// assert!(timestamp.verify(
+    /// assert!(snapshot.verify(
     ///     2,
     ///     vec![key_1.public()],
     /// ).is_err());
     ///
     /// // fail when the keys aren't authorized
-    /// assert!(timestamp.verify(
+    /// assert!(snapshot.verify(
     ///     1,
     ///     vec![key_2.public()],
     /// ).is_err());
     ///
     /// // fail when the keys don't exist
-    /// assert!(timestamp.verify(
+    /// assert!(snapshot.verify(
     ///     1,
     ///     &[],
     /// ).is_err());
@@ -1194,7 +1176,7 @@ impl SnapshotMetadataBuilder {
         self
     }
 
-    /// Add metadata to the snapshot using the default path.
+    /// Add metadata to this snapshot metadata using the default path.
     pub fn insert_metadata<D, M>(
         self,
         metadata: &SignedMetadata<D, M>,
@@ -1211,7 +1193,7 @@ impl SnapshotMetadataBuilder {
         )
     }
 
-    /// Add metadata to the snapshot using a custom path.
+    /// Add metadata to this snapshot metadata using a custom path.
     pub fn insert_metadata_with_path<P, D, M>(
         self,
         path: P,
@@ -1233,7 +1215,7 @@ impl SnapshotMetadataBuilder {
         Ok(self.insert_metadata_description(path, description))
     }
 
-    /// Add `MetadataDescription` to the snapshot using a custom path.
+    /// Add `MetadataDescription` to this snapshot metadata using a custom path.
     pub fn insert_metadata_description(
         mut self,
         path: MetadataPath,
@@ -1243,7 +1225,7 @@ impl SnapshotMetadataBuilder {
         self
     }
 
-    /// Construct a new `SignedMetadata`.
+    /// Construct a new `SnapshotMetadata`.
     pub fn build(self) -> Result<SnapshotMetadata> {
         SnapshotMetadata::new(
             self.version,
