@@ -131,8 +131,6 @@ extern crate serde_json as json;
 #[macro_use]
 extern crate serde_json as json;
 
-#[cfg(test)]
-extern crate tempdir;
 extern crate tempfile;
 extern crate untrusted;
 

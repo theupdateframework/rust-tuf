@@ -37,4 +37,3 @@ untrusted = "0.5"
 [dev-dependencies]
 lazy_static = "1"
 maplit = "1"
-tempdir = "0.3"
