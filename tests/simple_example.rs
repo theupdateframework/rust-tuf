@@ -1,17 +1,13 @@
 extern crate chrono;
-#[macro_use]
-extern crate maplit;
 extern crate tuf;
 
-use chrono::offset::Utc;
-use chrono::prelude::*;
 use tuf::client::{Client, Config, PathTranslator};
 use tuf::crypto::{HashAlgorithm, KeyId, PrivateKey, SignatureScheme};
-use tuf::interchange::{DataInterchange, Json};
+use tuf::interchange::Json;
 use tuf::metadata::{
-    MetadataDescription, MetadataPath, MetadataVersion, RoleDefinition, RootMetadata,
-    SignedMetadata, SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata,
-    TimestampMetadata, VirtualTargetPath,
+    MetadataPath, MetadataVersion, RootMetadataBuilder,
+    SnapshotMetadataBuilder, TargetPath, TargetsMetadataBuilder,
+    TimestampMetadataBuilder, VirtualTargetPath,
 };
 use tuf::repository::{EphemeralRepository, Repository};
 use tuf::Result;
@@ -84,30 +80,12 @@ where
 
     //// build the root ////
 
-    let keys = vec![
-        root_key.public().clone(),
-        snapshot_key.public().clone(),
-        targets_key.public().clone(),
-        timestamp_key.public().clone(),
-    ];
-
-    let root_def = RoleDefinition::new(1, hashset!(root_key.key_id().clone()))?;
-    let snapshot_def = RoleDefinition::new(1, hashset!(snapshot_key.key_id().clone()))?;
-    let targets_def = RoleDefinition::new(1, hashset!(targets_key.key_id().clone()))?;
-    let timestamp_def = RoleDefinition::new(1, hashset!(timestamp_key.key_id().clone()))?;
-
-    let root = RootMetadata::new(
-        1,
-        Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
-        false,
-        keys,
-        root_def,
-        snapshot_def,
-        targets_def,
-        timestamp_def,
-    )?;
-
-    let signed = SignedMetadata::<Json, RootMetadata>::new(&root, &root_key)?;
+    let signed = RootMetadataBuilder::new()
+        .root_key(root_key.public().clone())
+        .snapshot_key(snapshot_key.public().clone())
+        .targets_key(targets_key.public().clone())
+        .timestamp_key(timestamp_key.public().clone())
+        .signed::<Json>(&root_key)?;
 
     remote.store_metadata(
         &MetadataPath::new("root".into())?,
@@ -123,66 +101,60 @@ where
     //// build the targets ////
 
     let target_file: &[u8] = b"things fade, alternatives exclude";
+
     let target_path = TargetPath::new("foo-bar".into())?;
-    let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])?;
     let _ = remote.store_target(target_file, &target_path);
 
-    let target_map =
-        hashmap!(config.path_translator().real_to_virtual(&target_path)? => target_description);
-    let targets = TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), target_map, None)?;
-
-    let signed = SignedMetadata::<Json, TargetsMetadata>::new(&targets, &targets_key)?;
+    let targets = TargetsMetadataBuilder::new()
+        .insert_target_from_reader(
+            config.path_translator().real_to_virtual(&target_path)?,
+            target_file,
+            &[HashAlgorithm::Sha256],
+        )?
+        .signed::<Json>(&targets_key)?;
 
     remote.store_metadata(
         &MetadataPath::new("targets".into())?,
         &MetadataVersion::Number(1),
-        &signed,
+        &targets,
     )?;
     remote.store_metadata(
         &MetadataPath::new("targets".into())?,
         &MetadataVersion::None,
-        &signed,
+        &targets,
     )?;
-
-    let targets_bytes = Json::canonicalize(&Json::serialize(&signed)?)?;
 
     //// build the snapshot ////
-    let meta_map = hashmap! {
-        MetadataPath::new("targets".into())? =>
-            MetadataDescription::from_reader(&*targets_bytes, 1, &[HashAlgorithm::Sha256])?,
-    };
-    let snapshot = SnapshotMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), meta_map)?;
 
-    let signed = SignedMetadata::<Json, SnapshotMetadata>::new(&snapshot, &snapshot_key)?;
+    let snapshot = SnapshotMetadataBuilder::new()
+        .insert_metadata(&targets, &[HashAlgorithm::Sha256])?
+        .signed::<Json>(&snapshot_key)?;
 
     remote.store_metadata(
         &MetadataPath::new("snapshot".into())?,
         &MetadataVersion::Number(1),
-        &signed,
+        &snapshot,
     )?;
     remote.store_metadata(
         &MetadataPath::new("snapshot".into())?,
         &MetadataVersion::None,
-        &signed,
+        &snapshot,
     )?;
-
-    let snapshot_bytes = Json::canonicalize(&Json::serialize(&signed)?)?;
 
     //// build the timestamp ////
-    let snap = MetadataDescription::from_reader(&*snapshot_bytes, 1, &[HashAlgorithm::Sha256])?;
-    let timestamp = TimestampMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), snap)?;
 
-    let signed = SignedMetadata::<Json, TimestampMetadata>::new(&timestamp, &timestamp_key)?;
+    let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])?
+        .signed::<Json>(&timestamp_key)?;
 
     remote.store_metadata(
         &MetadataPath::new("timestamp".into())?,
         &MetadataVersion::Number(1),
-        &signed,
+        &timestamp,
     )?;
     remote.store_metadata(
         &MetadataPath::new("timestamp".into())?,
         &MetadataVersion::None,
-        &signed,
+        &timestamp,
     )?;
 
     Ok(vec![root_key.key_id().clone()])
