@@ -5,10 +5,8 @@ extern crate tuf;
 use tuf::crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
 use tuf::interchange::Json;
 use tuf::metadata::{
-    Delegation, Delegations, MetadataDescription, MetadataPath,
-    RootMetadataBuilder, SnapshotMetadataBuilder,
-    TargetsMetadataBuilder, TimestampMetadataBuilder,
-    VirtualTargetPath,
+    Delegation, Delegations, MetadataDescription, MetadataPath, RootMetadataBuilder,
+    SnapshotMetadataBuilder, TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
 use tuf::Tuf;
 
@@ -94,7 +92,8 @@ fn simple_delegation() {
             VirtualTargetPath::new("foo".into()).unwrap(),
             target_file,
             &[HashAlgorithm::Sha256],
-        ).unwrap()
+        )
+        .unwrap()
         .signed::<Json>(&delegation_key)
         .unwrap();
 
@@ -207,8 +206,10 @@ fn nested_delegation() {
         .signed::<Json>(&delegation_a_key)
         .unwrap();
 
-    tuf.update_delegation(&MetadataPath::new("delegation-a".into()).unwrap(), delegation)
-        .unwrap();
+    tuf.update_delegation(
+        &MetadataPath::new("delegation-a".into()).unwrap(),
+        delegation,
+    ).unwrap();
 
     //// build delegation B ////
 
@@ -219,12 +220,15 @@ fn nested_delegation() {
             VirtualTargetPath::new("foo".into()).unwrap(),
             target_file,
             &[HashAlgorithm::Sha256],
-        ).unwrap()
+        )
+        .unwrap()
         .signed::<Json>(&delegation_b_key)
         .unwrap();
 
-    tuf.update_delegation(&MetadataPath::new("delegation-b".into()).unwrap(), delegation)
-        .unwrap();
+    tuf.update_delegation(
+        &MetadataPath::new("delegation-b".into()).unwrap(),
+        delegation,
+    ).unwrap();
 
     assert!(
         tuf.target_description(&VirtualTargetPath::new("foo".into()).unwrap())

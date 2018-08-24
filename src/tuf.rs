@@ -116,25 +116,29 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     fn current_timestamp_version(&self) -> u32 {
-        self.timestamp.as_ref()
+        self.timestamp
+            .as_ref()
             .map(|t| t.as_ref().version())
             .unwrap_or(0)
     }
 
     fn current_snapshot_version(&self) -> u32 {
-        self.snapshot.as_ref()
+        self.snapshot
+            .as_ref()
             .map(|t| t.as_ref().version())
             .unwrap_or(0)
     }
 
     fn current_targets_version(&self) -> u32 {
-        self.targets.as_ref()
+        self.targets
+            .as_ref()
             .map(|t| t.as_ref().version())
             .unwrap_or(0)
     }
 
     fn current_delegation_version(&self, role: &MetadataPath) -> u32 {
-        self.delegations.get(role)
+        self.delegations
+            .get(role)
             .map(|t| t.as_ref().version())
             .unwrap_or(0)
     }
@@ -161,7 +165,7 @@ impl<D: DataInterchange> Tuf<D> {
             if new_root.version() == old_root.version() {
                 info!(
                     "Attempted to update root to new metadata with the same version. \
-                    Refusing to update."
+                     Refusing to update."
                 );
                 return Ok(false);
             } else if new_root.version() < old_root.version() {
@@ -285,8 +289,13 @@ impl<D: DataInterchange> Tuf<D> {
             // regardless so we can prevent rollback attacks againsts targets/delegations.
         };
 
-        if self.targets.as_ref().map(|s| s.as_ref().version()).unwrap_or(0)
-            != signed_snapshot.as_ref()
+        if self
+            .targets
+            .as_ref()
+            .map(|s| s.as_ref().version())
+            .unwrap_or(0)
+            != signed_snapshot
+                .as_ref()
                 .meta()
                 .get(&MetadataPath::from_role(&Role::Targets))
                 .map(|m| m.version())
@@ -372,7 +381,7 @@ impl<D: DataInterchange> Tuf<D> {
             if targets.version() != targets_description.version() {
                 return Err(Error::VerificationFailure(format!(
                     "The timestamp metadata reported that the targets metadata should be at \
-                    version {} but version {} was found instead.",
+                     version {} but version {} was found instead.",
                     targets_description.version(),
                     targets.version()
                 )));
@@ -457,7 +466,7 @@ impl<D: DataInterchange> Tuf<D> {
             if delegation.version() != delegation_description.version() {
                 return Err(Error::VerificationFailure(format!(
                     "The snapshot metadata reported that the delegation {:?} should be at \
-                    version {} but version {} was found instead.",
+                     version {} but version {} was found instead.",
                     role,
                     delegation_description.version(),
                     delegation.version(),
@@ -616,10 +625,8 @@ mod test {
     use crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
     use interchange::Json;
     use metadata::{
-        RootMetadataBuilder,
-        SnapshotMetadataBuilder,
+        RootMetadataBuilder, SnapshotMetadataBuilder, TargetsMetadataBuilder,
         TimestampMetadataBuilder,
-        TargetsMetadataBuilder,
     };
 
     lazy_static! {
@@ -734,10 +741,11 @@ mod test {
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
-        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
-            .unwrap()
-            .signed::<Json>(&KEYS[1])
-            .unwrap();
+        let timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Json>(&KEYS[1])
+                .unwrap();
 
         assert_eq!(tuf.update_timestamp(timestamp.clone()), Ok(true));
 
@@ -782,14 +790,13 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let snapshot = SnapshotMetadataBuilder::new()
-            .signed(&KEYS[1])
-            .unwrap();
+        let snapshot = SnapshotMetadataBuilder::new().signed(&KEYS[1]).unwrap();
 
-        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
-            .unwrap()
-            .signed::<Json>(&KEYS[2])
-            .unwrap();
+        let timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Json>(&KEYS[2])
+                .unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
 
@@ -843,10 +850,11 @@ mod test {
             .signed::<Json>(&KEYS[2])
             .unwrap();
 
-        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
-            .unwrap()
-            .signed::<Json>(&KEYS[2])
-            .unwrap();
+        let timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Json>(&KEYS[2])
+                .unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
 
@@ -873,14 +881,16 @@ mod test {
             .unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
-            .insert_metadata(&targets, &[HashAlgorithm::Sha256]).unwrap()
+            .insert_metadata(&targets, &[HashAlgorithm::Sha256])
+            .unwrap()
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
-        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
-            .unwrap()
-            .signed::<Json>(&KEYS[3])
-            .unwrap();
+        let timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Json>(&KEYS[3])
+                .unwrap();
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
@@ -911,14 +921,16 @@ mod test {
             .unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
-            .insert_metadata(&targets, &[HashAlgorithm::Sha256]).unwrap()
+            .insert_metadata(&targets, &[HashAlgorithm::Sha256])
+            .unwrap()
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
-        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
-            .unwrap()
-            .signed::<Json>(&KEYS[3])
-            .unwrap();
+        let timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Json>(&KEYS[3])
+                .unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
@@ -944,14 +956,16 @@ mod test {
             .unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
-            .insert_metadata(&targets, &[HashAlgorithm::Sha256]).unwrap()
+            .insert_metadata(&targets, &[HashAlgorithm::Sha256])
+            .unwrap()
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
-        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
-            .unwrap()
-            .signed::<Json>(&KEYS[3])
-            .unwrap();
+        let timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Json>(&KEYS[3])
+                .unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
