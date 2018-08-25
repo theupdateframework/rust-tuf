@@ -92,7 +92,8 @@ fn convert(jsn: &json::Value) -> Result<Value, String> {
     match *jsn {
         json::Value::Null => Ok(Value::Null),
         json::Value::Bool(b) => Ok(Value::Bool(b)),
-        json::Value::Number(ref n) => n.as_i64()
+        json::Value::Number(ref n) => n
+            .as_i64()
             .map(Number::I64)
             .or_else(|| n.as_u64().map(Number::U64))
             .map(Value::Number)

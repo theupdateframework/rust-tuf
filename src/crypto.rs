@@ -671,7 +671,8 @@ impl Serialize for PublicKey {
     where
         S: Serializer,
     {
-        let bytes = self.as_spki()
+        let bytes = self
+            .as_spki()
             .map_err(|e| SerializeError::custom(format!("Couldn't write key as SPKI: {:?}", e)))?;
         shims::PublicKey::new(self.typ.clone(), self.scheme.clone(), &bytes).serialize(ser)
     }

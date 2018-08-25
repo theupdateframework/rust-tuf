@@ -15,12 +15,14 @@ use interchange::DataInterchange;
 use shims;
 use Result;
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static PATH_ILLEGAL_COMPONENTS: &'static [&str] = &[
     ".", // current dir
     "..", // parent dir
          // TODO ? "0", // may translate to nul in windows
 ];
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &'static [&str] = &[
     // DOS device files
     "CON",
@@ -52,6 +54,7 @@ static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &'static [&str] = &[
     "CONFIG$",
 ];
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static PATH_ILLEGAL_STRINGS: &'static [&str] = &[
     ":", // for *nix compatibility
     "\\", // for windows compatibility
@@ -236,7 +239,7 @@ pub trait Metadata: Debug + PartialEq + Serialize + DeserializeOwned {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SignedMetadata<D, M> {
     signatures: Vec<Signature>,
-    #[serde(rename="signed")]
+    #[serde(rename = "signed")]
     metadata: M,
     #[serde(skip_serializing, skip_deserializing)]
     _interchage: PhantomData<D>,
@@ -334,7 +337,8 @@ where
             ));
         }
 
-        let key_ids = self.signatures
+        let key_ids = self
+            .signatures
             .iter()
             .map(|s| s.key_id().clone())
             .collect::<HashSet<KeyId>>();
@@ -608,28 +612,17 @@ impl RootMetadataBuilder {
             self.expires,
             self.consistent_snapshot,
             self.keys,
-            RoleDefinition::new(
-                self.root_threshold,
-                self.root_key_ids,
-            )?,
-            RoleDefinition::new(
-                self.snapshot_threshold,
-                self.snapshot_key_ids,
-            )?,
-            RoleDefinition::new(
-                self.targets_threshold,
-                self.targets_key_ids,
-            )?,
-            RoleDefinition::new(
-                self.timestamp_threshold,
-                self.timestamp_key_ids,
-            )?,
+            RoleDefinition::new(self.root_threshold, self.root_key_ids)?,
+            RoleDefinition::new(self.snapshot_threshold, self.snapshot_key_ids)?,
+            RoleDefinition::new(self.targets_threshold, self.targets_key_ids)?,
+            RoleDefinition::new(self.timestamp_threshold, self.timestamp_key_ids)?,
         )
     }
 
     /// Construct a new `SignedMetadata<D, RootMetadata>`.
     pub fn signed<D>(self, private_key: &PrivateKey) -> Result<SignedMetadata<D, RootMetadata>>
-        where D: DataInterchange,
+    where
+        D: DataInterchange,
     {
         Ok(SignedMetadata::new(self.build()?, private_key)?)
     }
@@ -939,11 +932,7 @@ impl TimestampMetadataBuilder {
         M: Metadata,
     {
         let bytes = D::canonicalize(&D::serialize(&snapshot)?)?;
-        let description = MetadataDescription::from_reader(
-            &*bytes,
-            snapshot.version(),
-            hash_algs,
-        )?;
+        let description = MetadataDescription::from_reader(&*bytes, snapshot.version(), hash_algs)?;
 
         Ok(Self::from_metadata_description(description))
     }
@@ -975,16 +964,13 @@ impl TimestampMetadataBuilder {
 
     /// Construct a new `TimestampMetadata`.
     pub fn build(self) -> Result<TimestampMetadata> {
-        TimestampMetadata::new(
-            self.version,
-            self.expires,
-            self.snapshot,
-        )
+        TimestampMetadata::new(self.version, self.expires, self.snapshot)
     }
 
     /// Construct a new `SignedMetadata<D, TimestampMetadata>`.
     pub fn signed<D>(self, private_key: &PrivateKey) -> Result<SignedMetadata<D, TimestampMetadata>>
-        where D: DataInterchange,
+    where
+        D: DataInterchange,
     {
         Ok(SignedMetadata::new(self.build()?, private_key)?)
     }
@@ -1183,14 +1169,10 @@ impl SnapshotMetadataBuilder {
         hash_algs: &[HashAlgorithm],
     ) -> Result<Self>
     where
-          M: Metadata,
-          D: DataInterchange,
+        M: Metadata,
+        D: DataInterchange,
     {
-        self.insert_metadata_with_path(
-            M::ROLE.name(),
-            metadata,
-            hash_algs,
-        )
+        self.insert_metadata_with_path(M::ROLE.name(), metadata, hash_algs)
     }
 
     /// Add metadata to this snapshot metadata using a custom path.
@@ -1201,16 +1183,12 @@ impl SnapshotMetadataBuilder {
         hash_algs: &[HashAlgorithm],
     ) -> Result<Self>
     where
-          P: Into<String>,
-          M: Metadata,
-          D: DataInterchange,
+        P: Into<String>,
+        M: Metadata,
+        D: DataInterchange,
     {
         let bytes = D::canonicalize(&D::serialize(metadata)?)?;
-        let description = MetadataDescription::from_reader(
-            &*bytes,
-            metadata.version(),
-            hash_algs,
-        )?;
+        let description = MetadataDescription::from_reader(&*bytes, metadata.version(), hash_algs)?;
         let path = MetadataPath::new(path.into())?;
         Ok(self.insert_metadata_description(path, description))
     }
@@ -1227,16 +1205,13 @@ impl SnapshotMetadataBuilder {
 
     /// Construct a new `SnapshotMetadata`.
     pub fn build(self) -> Result<SnapshotMetadata> {
-        SnapshotMetadata::new(
-            self.version,
-            self.expires,
-            self.meta,
-        )
+        SnapshotMetadata::new(self.version, self.expires, self.meta)
     }
 
     /// Construct a new `SignedMetadata<D, SnapshotMetadata>`.
     pub fn signed<D>(self, private_key: &PrivateKey) -> Result<SignedMetadata<D, SnapshotMetadata>>
-        where D: DataInterchange,
+    where
+        D: DataInterchange,
     {
         Ok(SignedMetadata::new(self.build()?, private_key)?)
     }
@@ -1655,7 +1630,7 @@ impl TargetsMetadataBuilder {
         hash_algs: &[HashAlgorithm],
     ) -> Result<Self>
     where
-          R: Read,
+        R: Read,
     {
         let description = TargetDescription::from_reader(read, hash_algs)?;
         Ok(self.insert_target_description(path, description))
@@ -1679,17 +1654,13 @@ impl TargetsMetadataBuilder {
 
     /// Construct a new `TargetsMetadata`.
     pub fn build(self) -> Result<TargetsMetadata> {
-        TargetsMetadata::new(
-            self.version,
-            self.expires,
-            self.targets,
-            self.delegations,
-        )
+        TargetsMetadata::new(self.version, self.expires, self.targets, self.delegations)
     }
 
     /// Construct a new `SignedMetadata<D, TargetsMetadata>`.
     pub fn signed<D>(self, private_key: &PrivateKey) -> Result<SignedMetadata<D, TargetsMetadata>>
-        where D: DataInterchange,
+    where
+        D: DataInterchange,
     {
         Ok(SignedMetadata::new(self.build()?, private_key)?)
     }
@@ -1728,7 +1699,8 @@ impl Delegations {
         }
 
         Ok(Delegations {
-            keys: keys.iter()
+            keys: keys
+                .iter()
                 .cloned()
                 .map(|k| (k.key_id().clone(), k))
                 .collect(),
@@ -1918,7 +1890,8 @@ mod test {
         for case in test_cases {
             let expected = case.0;
             let target = VirtualTargetPath::new(case.1.into()).unwrap();
-            let parents = case.2
+            let parents = case
+                .2
                 .iter()
                 .map(|group| {
                     group
@@ -2152,10 +2125,7 @@ mod test {
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
             .insert_target_description(
                 VirtualTargetPath::new("foo".into()).unwrap(),
-                TargetDescription::from_reader(
-                    &b"foo"[..],
-                    &[HashAlgorithm::Sha256],
-                ).unwrap(),
+                TargetDescription::from_reader(&b"foo"[..], &[HashAlgorithm::Sha256]).unwrap(),
             )
             .build()
             .unwrap();
@@ -2307,20 +2277,15 @@ mod test {
     // TODO test for mismatched ed25519/rsa keys/schemes
 
     fn make_root() -> json::Value {
-        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
-            .unwrap();
-        let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
-            .unwrap();
-        let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519)
-            .unwrap();
-        let timestamp_key = PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519)
-            .unwrap();
+        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519).unwrap();
+        let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519).unwrap();
+        let timestamp_key =
+            PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519).unwrap();
 
         let root = RootMetadataBuilder::new()
             .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
-            .root_key(
-                root_key.public().clone()
-            )
+            .root_key(root_key.public().clone())
             .snapshot_key(snapshot_key.public().clone())
             .targets_key(targets_key.public().clone())
             .timestamp_key(timestamp_key.public().clone())
@@ -2340,11 +2305,8 @@ mod test {
     }
 
     fn make_timestamp() -> json::Value {
-        let description = MetadataDescription::from_reader(
-            &[][..],
-            1,
-            &[HashAlgorithm::Sha256],
-        ).unwrap();
+        let description =
+            MetadataDescription::from_reader(&[][..], 1, &[HashAlgorithm::Sha256]).unwrap();
 
         let timestamp = TimestampMetadataBuilder::from_metadata_description(description)
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
@@ -2496,7 +2458,8 @@ mod test {
     #[test]
     fn deserialize_json_root_bad_type() {
         let mut root = make_root();
-        let _ = root.as_object_mut()
+        let _ = root
+            .as_object_mut()
             .unwrap()
             .insert("type".into(), json!("snapshot"));
         assert!(json::from_value::<RootMetadata>(root).is_err());

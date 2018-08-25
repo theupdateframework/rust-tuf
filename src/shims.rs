@@ -42,7 +42,8 @@ pub struct RootMetadata {
 
 impl RootMetadata {
     pub fn from(meta: &metadata::RootMetadata) -> Result<Self> {
-        let mut keys = meta.keys()
+        let mut keys = meta
+            .keys()
             .iter()
             .map(|(_, v)| v.clone())
             .collect::<Vec<crypto::PublicKey>>();
@@ -97,7 +98,8 @@ pub struct RoleDefinition {
 
 impl RoleDefinition {
     pub fn from(role: &metadata::RoleDefinition) -> Result<Self> {
-        let mut key_ids = role.key_ids()
+        let mut key_ids = role
+            .key_ids()
             .iter()
             .cloned()
             .collect::<Vec<crypto::KeyId>>();
@@ -281,12 +283,14 @@ pub struct Delegation {
 
 impl Delegation {
     pub fn from(meta: &metadata::Delegation) -> Self {
-        let mut paths = meta.paths()
+        let mut paths = meta
+            .paths()
             .iter()
             .cloned()
             .collect::<Vec<metadata::VirtualTargetPath>>();
         paths.sort();
-        let mut key_ids = meta.key_ids()
+        let mut key_ids = meta
+            .key_ids()
             .iter()
             .cloned()
             .collect::<Vec<crypto::KeyId>>();
@@ -302,7 +306,8 @@ impl Delegation {
     }
 
     pub fn try_into(self) -> Result<metadata::Delegation> {
-        let paths = self.paths
+        let paths = self
+            .paths
             .iter()
             .cloned()
             .collect::<HashSet<metadata::VirtualTargetPath>>();
@@ -310,7 +315,8 @@ impl Delegation {
             return Err(Error::Encoding("Non-unique delegation paths.".into()));
         }
 
-        let key_ids = self.key_ids
+        let key_ids = self
+            .key_ids
             .iter()
             .cloned()
             .collect::<HashSet<crypto::KeyId>>();

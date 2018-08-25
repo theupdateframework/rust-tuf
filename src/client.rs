@@ -134,14 +134,13 @@ where
     /// **WARNING**: This method offers weaker security guarantees than the related method
     /// `with_root_pinned`.
     pub fn new(config: Config<T>, local: L, remote: R) -> Result<Self> {
-        let root = local
-            .fetch_metadata(
-                &MetadataPath::from_role(&Role::Root),
-                &MetadataVersion::Number(1),
-                &config.max_root_size,
-                config.min_bytes_per_second,
-                None,
-            )?;
+        let root = local.fetch_metadata(
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::Number(1),
+            &config.max_root_size,
+            config.min_bytes_per_second,
+            None,
+        )?;
 
         let tuf = Tuf::from_root(root)?;
 
@@ -557,7 +556,8 @@ where
 
         let virt = self.config.path_translator.real_to_virtual(target)?;
 
-        let snapshot = self.tuf
+        let snapshot = self
+            .tuf
             .snapshot()
             .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
             .clone();

@@ -5,9 +5,8 @@ use tuf::client::{Client, Config, PathTranslator};
 use tuf::crypto::{HashAlgorithm, KeyId, PrivateKey, SignatureScheme};
 use tuf::interchange::Json;
 use tuf::metadata::{
-    MetadataPath, MetadataVersion, RootMetadataBuilder,
-    SnapshotMetadataBuilder, TargetPath, TargetsMetadataBuilder,
-    TimestampMetadataBuilder, VirtualTargetPath,
+    MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder, TargetPath,
+    TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
 use tuf::repository::{EphemeralRepository, Repository};
 use tuf::Result;
