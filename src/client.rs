@@ -43,18 +43,18 @@
 //!         local,
 //!         remote,
 //!     ).unwrap();
-//!     let _ = client.update_local().unwrap();
-//!     let _ = client.update_remote().unwrap();
+//!     let _ = client.update().unwrap();
 //! }
 //! ```
 
 use std::io::{Read, Write};
 
+use chrono::offset::Utc;
 use crypto::{self, KeyId};
 use error::Error;
 use interchange::DataInterchange;
 use metadata::{
-    Metadata, MetadataPath, MetadataVersion, Role, RootMetadata, SnapshotMetadata,
+    Metadata, MetadataPath, MetadataVersion, Role, RootMetadata, SignedMetadata, SnapshotMetadata,
     TargetDescription, TargetPath, TargetsMetadata, VirtualTargetPath,
 };
 use repository::Repository;
@@ -166,22 +166,31 @@ where
         I: IntoIterator<Item = &'a KeyId>,
         T: PathTranslator,
     {
+        let root_path = MetadataPath::from_role(&Role::Root);
+
         let root = local
             .fetch_metadata(
-                &MetadataPath::from_role(&Role::Root),
+                &root_path,
                 &MetadataVersion::Number(1),
                 &config.max_root_size,
                 config.min_bytes_per_second,
                 None,
             )
-            .or_else(|_| {
-                remote.fetch_metadata(
-                    &MetadataPath::from_role(&Role::Root),
+            .or_else(|_| -> Result<SignedMetadata<_, RootMetadata>> {
+                // FIXME: should we be fetching the latest version instead of version 1?
+                let root = remote.fetch_metadata(
+                    &root_path,
                     &MetadataVersion::Number(1),
                     &config.max_root_size,
                     config.min_bytes_per_second,
                     None,
-                )
+                )?;
+
+                local.store_metadata(&root_path, &MetadataVersion::Number(1), &root)?;
+
+                // FIXME: should we also the root as `MetadataVersion::None`?
+
+                Ok(root)
             })?;
 
         let tuf = Tuf::from_root_pinned(root, trusted_root_keys)?;
@@ -194,162 +203,175 @@ where
         })
     }
 
-    /// Update TUF metadata from the local repository.
-    ///
-    /// Returns `true` if an update occurred and `false` otherwise.
-    pub fn update_local(&mut self) -> Result<bool> {
-        let r = Self::update_root(&mut self.tuf, &mut self.local, &self.config)?;
-        let ts = match Self::update_timestamp(&mut self.tuf, &mut self.local, &self.config) {
-            Ok(b) => b,
-            Err(e) => {
-                warn!(
-                    "Error updating timestamp metadata from local sources: {:?}",
-                    e
-                );
-                false
-            }
-        };
-        let sn = match Self::update_snapshot(&mut self.tuf, &mut self.local, &self.config) {
-            Ok(b) => b,
-            Err(e) => {
-                warn!(
-                    "Error updating snapshot metadata from local sources: {:?}",
-                    e
-                );
-                false
-            }
-        };
-        let ta = match Self::update_targets(&mut self.tuf, &mut self.local, &self.config) {
-            Ok(b) => b,
-            Err(e) => {
-                warn!(
-                    "Error updating targets metadata from local sources: {:?}",
-                    e
-                );
-                false
-            }
-        };
-
-        Ok(r || ts || sn || ta)
-    }
-
     /// Update TUF metadata from the remote repository.
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
-    pub fn update_remote(&mut self) -> Result<bool> {
-        let r = Self::update_root(&mut self.tuf, &mut self.remote, &self.config)?;
-        let ts = Self::update_timestamp(&mut self.tuf, &mut self.remote, &self.config)?;
-        let sn = Self::update_snapshot(&mut self.tuf, &mut self.remote, &self.config)?;
-        let ta = Self::update_targets(&mut self.tuf, &mut self.remote, &self.config)?;
+    pub fn update(&mut self) -> Result<bool> {
+        let r = self.update_root()?;
+        let ts = self.update_timestamp()?;
+        let sn = self.update_snapshot()?;
+        let ta = self.update_targets()?;
 
         Ok(r || ts || sn || ta)
     }
 
-    /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_root<V, U>(tuf: &mut Tuf<D>, repo: &mut V, config: &Config<U>) -> Result<bool>
+    /// Store the metadata in the local repository. This is juts a local cache, so we ignore if it
+    /// experiences any errors.
+    fn store_metadata<M>(
+        &mut self,
+        path: &MetadataPath,
+        version: &MetadataVersion,
+        metadata: &SignedMetadata<D, M>,
+    )
     where
-        V: Repository<D>,
-        U: PathTranslator,
+        M: Metadata
     {
-        let latest_root = repo.fetch_metadata::<RootMetadata>(
-            &MetadataPath::from_role(&Role::Root),
+        match self.local.store_metadata(path, version, metadata) {
+            Ok(()) => {}
+            Err(err) => {
+                warn!(
+                    "failed to store {} metadata version {:?} to {}: {}",
+                    M::ROLE.name(),
+                    version,
+                    path.to_string(),
+                    err,
+                );
+            }
+        }
+    }
+
+    /// Returns `true` if an update occurred and `false` otherwise.
+    fn update_root(&mut self) -> Result<bool> {
+        let root_path = MetadataPath::from_role(&Role::Root);
+
+        let latest_root = self.remote.fetch_metadata(
+            &root_path,
             &MetadataVersion::None,
-            &config.max_root_size,
-            config.min_bytes_per_second,
+            &self.config.max_root_size,
+            self.config.min_bytes_per_second,
             None,
         )?;
-        let latest_version = latest_root.as_ref().version();
+        let latest_version = latest_root.version();
 
-        if latest_version < tuf.root().version() {
+        if latest_version < self.tuf.root().version() {
             return Err(Error::VerificationFailure(format!(
                 "Latest root version is lower than current root version: {} < {}",
                 latest_version,
-                tuf.root().version()
+                self.tuf.root().version()
             )));
-        } else if latest_version == tuf.root().version() {
+        } else if latest_version == self.tuf.root().version() {
             return Ok(false);
         }
 
         let err_msg = "TUF claimed no update occurred when one should have. \
                        This is a programming error. Please report this as a bug.";
 
-        for i in (tuf.root().version() + 1)..latest_version {
-            let signed = repo.fetch_metadata(
-                &MetadataPath::from_role(&Role::Root),
-                &MetadataVersion::Number(i),
-                &config.max_root_size,
-                config.min_bytes_per_second,
+        for i in (self.tuf.root().version() + 1)..latest_version {
+            let version = MetadataVersion::Number(i);
+
+            let signed_root = self.remote.fetch_metadata(
+                &root_path,
+                &version,
+                &self.config.max_root_size,
+                self.config.min_bytes_per_second,
                 None,
             )?;
-            if !tuf.update_root(signed)? {
+
+            if !self.tuf.update_root(signed_root.clone())? {
                 error!("{}", err_msg);
                 return Err(Error::Programming(err_msg.into()));
             }
+
+            self.store_metadata(&root_path, &version, &signed_root);
         }
 
-        if !tuf.update_root(latest_root)? {
+        if !self.tuf.update_root(latest_root.clone())? {
             error!("{}", err_msg);
             return Err(Error::Programming(err_msg.into()));
         }
+
+        self.store_metadata(&root_path, &MetadataVersion::Number(latest_version), &latest_root);
+        self.store_metadata(&root_path, &MetadataVersion::None, &latest_root);
+
+        if self.tuf.root().expires() <= &Utc::now() {
+            error!("Root metadata expired, potential freeze attack");
+            return Err(Error::ExpiredMetadata(Role::Root));
+        }
+
         Ok(true)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_timestamp<V, U>(tuf: &mut Tuf<D>, repo: &mut V, config: &Config<U>) -> Result<bool>
-    where
-        V: Repository<D>,
-        U: PathTranslator,
-    {
-        let ts = repo.fetch_metadata(
-            &MetadataPath::from_role(&Role::Timestamp),
+    fn update_timestamp(&mut self) -> Result<bool> {
+        let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
+
+        let signed_timestamp = self.remote.fetch_metadata(
+            &timestamp_path,
             &MetadataVersion::None,
-            &config.max_timestamp_size,
-            config.min_bytes_per_second,
+            &self.config.max_timestamp_size,
+            self.config.min_bytes_per_second,
             None,
         )?;
-        tuf.update_timestamp(ts)
+
+        if self.tuf.update_timestamp(signed_timestamp.clone())? {
+            let latest_version = signed_timestamp.version();
+
+            self.store_metadata(
+                &timestamp_path,
+                &MetadataVersion::Number(latest_version),
+                &signed_timestamp,
+            );
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_snapshot<V, U>(tuf: &mut Tuf<D>, repo: &mut V, config: &Config<U>) -> Result<bool>
-    where
-        V: Repository<D>,
-        U: PathTranslator,
-    {
-        let snapshot_description = match tuf.timestamp() {
+    fn update_snapshot(&mut self) -> Result<bool> {
+        // 5.3.1 Check against timestamp metadata. The hashes and version number listed in the
+        // timestamp metadata. If hashes and version do not match, discard the new snapshot
+        // metadata, abort the update cycle, and report the failure.
+        let snapshot_description = match self.tuf.timestamp() {
             Some(ts) => Ok(ts.snapshot()),
             None => Err(Error::MissingMetadata(Role::Timestamp)),
         }?.clone();
 
-        if snapshot_description.version() <= tuf.snapshot().map(|s| s.version()).unwrap_or(0) {
+        if snapshot_description.version() <= self.tuf.snapshot().map(|s| s.version()).unwrap_or(0) {
             return Ok(false);
         }
 
         let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
 
-        let version = if tuf.root().consistent_snapshot() {
+        let version = if self.tuf.root().consistent_snapshot() {
             MetadataVersion::Number(snapshot_description.version())
         } else {
             MetadataVersion::None
         };
 
-        let snap = repo.fetch_metadata(
-            &MetadataPath::from_role(&Role::Snapshot),
+        let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
+
+        let signed_snapshot = self.remote.fetch_metadata(
+            &snapshot_path,
             &version,
             &Some(snapshot_description.size()),
-            config.min_bytes_per_second,
+            self.config.min_bytes_per_second,
             Some((alg, value.clone())),
         )?;
-        tuf.update_snapshot(snap)
+
+        if self.tuf.update_snapshot(signed_snapshot.clone())? {
+            self.store_metadata(&snapshot_path, &version, &signed_snapshot);
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_targets<V, U>(tuf: &mut Tuf<D>, repo: &mut V, config: &Config<U>) -> Result<bool>
-    where
-        V: Repository<D>,
-        U: PathTranslator,
-    {
-        let targets_description = match tuf.snapshot() {
+    fn update_targets(&mut self) -> Result<bool> {
+        let targets_description = match self.tuf.snapshot() {
             Some(sn) => match sn.meta().get(&MetadataPath::from_role(&Role::Targets)) {
                 Some(d) => Ok(d),
                 None => Err(Error::VerificationFailure(
@@ -361,26 +383,35 @@ where
             None => Err(Error::MissingMetadata(Role::Snapshot)),
         }?.clone();
 
-        if targets_description.version() <= tuf.targets().map(|t| t.version()).unwrap_or(0) {
+        if targets_description.version() <= self.tuf.targets().map(|t| t.version()).unwrap_or(0) {
             return Ok(false);
         }
 
         let (alg, value) = crypto::hash_preference(targets_description.hashes())?;
 
-        let version = if tuf.root().consistent_snapshot() {
+        let version = if self.tuf.root().consistent_snapshot() {
             MetadataVersion::Hash(value.clone())
         } else {
             MetadataVersion::None
         };
 
-        let targets = repo.fetch_metadata(
-            &MetadataPath::from_role(&Role::Targets),
+        let targets_path = MetadataPath::from_role(&Role::Targets);
+
+        let signed_targets = self.remote.fetch_metadata(
+            &targets_path,
             &version,
             &Some(targets_description.size()),
-            config.min_bytes_per_second,
+            self.config.min_bytes_per_second,
             Some((alg, value.clone())),
         )?;
-        tuf.update_targets(targets)
+
+        if self.tuf.update_targets(signed_targets.clone())? {
+            self.store_metadata(&targets_path, &version, &signed_targets);
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     /// Fetch a target from the remote repo and write it to the local repo.
@@ -743,10 +774,15 @@ impl Default for ConfigBuilder<DefaultTranslator> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crypto::{PrivateKey, SignatureScheme};
+    use chrono::prelude::*;
+    use crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
     use interchange::Json;
-    use metadata::{MetadataPath, MetadataVersion, RootMetadataBuilder};
+    use metadata::{
+        MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder,
+        TargetsMetadataBuilder, TimestampMetadataBuilder,
+    };
     use repository::EphemeralRepository;
+    use std::u32;
 
     lazy_static! {
         static ref KEYS: Vec<PrivateKey> = {
@@ -767,8 +803,11 @@ mod test {
     #[test]
     fn root_chain_update() {
         let repo = EphemeralRepository::new();
-        let root = RootMetadataBuilder::new()
+
+        //// First, create the root metadata.
+        let root1 = RootMetadataBuilder::new()
             .version(1)
+            .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
@@ -776,14 +815,9 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        repo.store_metadata(
-            &MetadataPath::from_role(&Role::Root),
-            &MetadataVersion::Number(1),
-            &root,
-        ).unwrap();
-
-        let mut root = RootMetadataBuilder::new()
+        let mut root2 = RootMetadataBuilder::new()
             .version(2)
+            .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
             .root_key(KEYS[1].public().clone())
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[1].public().clone())
@@ -791,16 +825,14 @@ mod test {
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
-        root.add_signature(&KEYS[0]).unwrap();
+        root2.add_signature(&KEYS[0]).unwrap();
 
-        repo.store_metadata(
-            &MetadataPath::from_role(&Role::Root),
-            &MetadataVersion::Number(2),
-            &root,
-        ).unwrap();
+        // Make sure the version 2 is signed by version 1's keys.
+        root2.add_signature(&KEYS[0]).unwrap();
 
-        let mut root = RootMetadataBuilder::new()
+        let mut root3 = RootMetadataBuilder::new()
             .version(3)
+            .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
             .root_key(KEYS[2].public().clone())
             .snapshot_key(KEYS[2].public().clone())
             .targets_key(KEYS[2].public().clone())
@@ -808,25 +840,168 @@ mod test {
             .signed::<Json>(&KEYS[2])
             .unwrap();
 
-        root.add_signature(&KEYS[1]).unwrap();
+        // Make sure the version 3 is signed by version 2's keys.
+        root3.add_signature(&KEYS[1]).unwrap();
+
+        let mut targets = TargetsMetadataBuilder::new()
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
+
+        targets.add_signature(&KEYS[1]).unwrap();
+        targets.add_signature(&KEYS[2]).unwrap();
+
+        let mut snapshot = SnapshotMetadataBuilder::new()
+            .insert_metadata(&targets, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
+
+        snapshot.add_signature(&KEYS[1]).unwrap();
+        snapshot.add_signature(&KEYS[2]).unwrap();
+
+        let mut timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
+
+        timestamp.add_signature(&KEYS[1]).unwrap();
+        timestamp.add_signature(&KEYS[2]).unwrap();
+
+        ////
+        // Now register the metadata.
 
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Root),
-            &MetadataVersion::Number(3),
-            &root,
+            &MetadataVersion::Number(1),
+            &root1,
         ).unwrap();
+
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::None,
-            &root,
+            &root1,
         ).unwrap();
 
-        let mut client = Client::new(
-            Config::build().finish().unwrap(),
-            repo,
-            EphemeralRepository::new(),
+        repo.store_metadata(
+            &MetadataPath::from_role(&Role::Targets),
+            &MetadataVersion::Number(1),
+            &targets,
         ).unwrap();
-        assert_eq!(client.update_local(), Ok(true));
+
+        repo.store_metadata(
+            &MetadataPath::from_role(&Role::Targets),
+            &MetadataVersion::None,
+            &targets,
+        ).unwrap();
+
+        repo.store_metadata(
+            &MetadataPath::from_role(&Role::Snapshot),
+            &MetadataVersion::Number(1),
+            &snapshot,
+        ).unwrap();
+
+        repo.store_metadata(
+            &MetadataPath::from_role(&Role::Snapshot),
+            &MetadataVersion::None,
+            &snapshot,
+        ).unwrap();
+
+        repo.store_metadata(
+            &MetadataPath::from_role(&Role::Timestamp),
+            &MetadataVersion::Number(1),
+            &timestamp,
+        ).unwrap();
+
+        repo.store_metadata(
+            &MetadataPath::from_role(&Role::Timestamp),
+            &MetadataVersion::None,
+            &timestamp,
+        ).unwrap();
+
+        ////
+        // Now, make sure that the local metadata got version 1.
+
+        let mut client = Client::with_root_pinned(
+            vec![KEYS[0].public().key_id()],
+            Config::build().finish().unwrap(),
+            EphemeralRepository::new(),
+            repo,
+        ).unwrap();
+
+        assert_eq!(client.update(), Ok(true));
+        assert_eq!(client.tuf.root().version(), 1);
+
+        assert_eq!(
+            root1,
+            client
+                .local
+                .fetch_metadata::<RootMetadata>(
+                    &MetadataPath::from_role(&Role::Root),
+                    &MetadataVersion::Number(1),
+                    &None,
+                    u32::MAX,
+                    None
+                )
+                .unwrap(),
+        );
+
+        ////
+        // Now bump the root to version 3
+
+        client
+            .remote
+            .store_metadata(
+                &MetadataPath::from_role(&Role::Root),
+                &MetadataVersion::Number(2),
+                &root2,
+            )
+            .unwrap();
+
+        client
+            .remote
+            .store_metadata(
+                &MetadataPath::from_role(&Role::Root),
+                &MetadataVersion::None,
+                &root2,
+            )
+            .unwrap();
+
+        client
+            .remote
+            .store_metadata(
+                &MetadataPath::from_role(&Role::Root),
+                &MetadataVersion::Number(3),
+                &root3,
+            )
+            .unwrap();
+
+        client
+            .remote
+            .store_metadata(
+                &MetadataPath::from_role(&Role::Root),
+                &MetadataVersion::None,
+                &root3,
+            )
+            .unwrap();
+
+        ////
+        // Finally, check that the update brings us to version 3.
+
+        assert_eq!(client.update(), Ok(true));
         assert_eq!(client.tuf.root().version(), 3);
+
+        assert_eq!(
+            root3,
+            client
+                .local
+                .fetch_metadata::<RootMetadata>(
+                    &MetadataPath::from_role(&Role::Root),
+                    &MetadataVersion::Number(3),
+                    &None,
+                    u32::MAX,
+                    None
+                )
+                .unwrap(),
+        );
     }
 }
