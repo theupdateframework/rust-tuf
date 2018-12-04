@@ -130,12 +130,7 @@ extern crate ring;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-
-#[cfg(not(test))]
-extern crate serde_json as json;
-#[cfg(test)]
-#[macro_use]
-extern crate serde_json as json;
+extern crate serde_json;
 
 extern crate tempfile;
 extern crate untrusted;
@@ -154,6 +149,6 @@ mod shims;
 pub mod tuf;
 mod util;
 
-pub use error::*;
-pub use tuf::*;
-pub use util::*;
+pub use crate::error::*;
+pub use crate::tuf::*;
+pub use crate::util::*;

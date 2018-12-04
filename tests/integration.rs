@@ -43,10 +43,12 @@ fn simple_delegation() {
         .insert_metadata_description(
             MetadataPath::new("targets".into()).unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        ).insert_metadata_description(
+        )
+        .insert_metadata_description(
             MetadataPath::new("delegation".into()).unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        ).signed::<Json>(&snapshot_key)
+        )
+        .signed::<Json>(&snapshot_key)
         .unwrap();
 
     let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
@@ -60,22 +62,22 @@ fn simple_delegation() {
     //// build the targets ////
     let delegations = Delegations::new(
         &hashset![delegation_key.public().clone()],
-        vec![
-            Delegation::new(
-                MetadataPath::new("delegation".into()).unwrap(),
-                false,
-                1,
-                vec![delegation_key.key_id().clone()]
-                    .iter()
-                    .cloned()
-                    .collect(),
-                vec![VirtualTargetPath::new("foo".into()).unwrap()]
-                    .iter()
-                    .cloned()
-                    .collect(),
-            ).unwrap(),
-        ],
-    ).unwrap();
+        vec![Delegation::new(
+            MetadataPath::new("delegation".into()).unwrap(),
+            false,
+            1,
+            vec![delegation_key.key_id().clone()]
+                .iter()
+                .cloned()
+                .collect(),
+            vec![VirtualTargetPath::new("foo".into()).unwrap()]
+                .iter()
+                .cloned()
+                .collect(),
+        )
+        .unwrap()],
+    )
+    .unwrap();
     let targets = TargetsMetadataBuilder::new()
         .delegations(delegations)
         .signed::<Json>(&targets_key)
@@ -90,17 +92,17 @@ fn simple_delegation() {
             VirtualTargetPath::new("foo".into()).unwrap(),
             target_file,
             &[HashAlgorithm::Sha256],
-        ).unwrap()
+        )
+        .unwrap()
         .signed::<Json>(&delegation_key)
         .unwrap();
 
     tuf.update_delegation(&MetadataPath::new("delegation".into()).unwrap(), delegation)
         .unwrap();
 
-    assert!(
-        tuf.target_description(&VirtualTargetPath::new("foo".into()).unwrap())
-            .is_ok()
-    );
+    assert!(tuf
+        .target_description(&VirtualTargetPath::new("foo".into()).unwrap())
+        .is_ok());
 }
 
 #[test]
@@ -130,13 +132,16 @@ fn nested_delegation() {
         .insert_metadata_description(
             MetadataPath::new("targets".into()).unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        ).insert_metadata_description(
+        )
+        .insert_metadata_description(
             MetadataPath::new("delegation-a".into()).unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        ).insert_metadata_description(
+        )
+        .insert_metadata_description(
             MetadataPath::new("delegation-b".into()).unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        ).signed::<Json>(&snapshot_key)
+        )
+        .signed::<Json>(&snapshot_key)
         .unwrap();
 
     let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
@@ -151,22 +156,22 @@ fn nested_delegation() {
 
     let delegations = Delegations::new(
         &hashset![delegation_a_key.public().clone()],
-        vec![
-            Delegation::new(
-                MetadataPath::new("delegation-a".into()).unwrap(),
-                false,
-                1,
-                vec![delegation_a_key.key_id().clone()]
-                    .iter()
-                    .cloned()
-                    .collect(),
-                vec![VirtualTargetPath::new("foo".into()).unwrap()]
-                    .iter()
-                    .cloned()
-                    .collect(),
-            ).unwrap(),
-        ],
-    ).unwrap();
+        vec![Delegation::new(
+            MetadataPath::new("delegation-a".into()).unwrap(),
+            false,
+            1,
+            vec![delegation_a_key.key_id().clone()]
+                .iter()
+                .cloned()
+                .collect(),
+            vec![VirtualTargetPath::new("foo".into()).unwrap()]
+                .iter()
+                .cloned()
+                .collect(),
+        )
+        .unwrap()],
+    )
+    .unwrap();
     let targets = TargetsMetadataBuilder::new()
         .delegations(delegations)
         .signed::<Json>(&targets_key)
@@ -178,22 +183,22 @@ fn nested_delegation() {
 
     let delegations = Delegations::new(
         &hashset![delegation_b_key.public().clone()],
-        vec![
-            Delegation::new(
-                MetadataPath::new("delegation-b".into()).unwrap(),
-                false,
-                1,
-                vec![delegation_b_key.key_id().clone()]
-                    .iter()
-                    .cloned()
-                    .collect(),
-                vec![VirtualTargetPath::new("foo".into()).unwrap()]
-                    .iter()
-                    .cloned()
-                    .collect(),
-            ).unwrap(),
-        ],
-    ).unwrap();
+        vec![Delegation::new(
+            MetadataPath::new("delegation-b".into()).unwrap(),
+            false,
+            1,
+            vec![delegation_b_key.key_id().clone()]
+                .iter()
+                .cloned()
+                .collect(),
+            vec![VirtualTargetPath::new("foo".into()).unwrap()]
+                .iter()
+                .cloned()
+                .collect(),
+        )
+        .unwrap()],
+    )
+    .unwrap();
 
     let delegation = TargetsMetadataBuilder::new()
         .delegations(delegations)
@@ -203,7 +208,8 @@ fn nested_delegation() {
     tuf.update_delegation(
         &MetadataPath::new("delegation-a".into()).unwrap(),
         delegation,
-    ).unwrap();
+    )
+    .unwrap();
 
     //// build delegation B ////
 
@@ -214,17 +220,18 @@ fn nested_delegation() {
             VirtualTargetPath::new("foo".into()).unwrap(),
             target_file,
             &[HashAlgorithm::Sha256],
-        ).unwrap()
+        )
+        .unwrap()
         .signed::<Json>(&delegation_b_key)
         .unwrap();
 
     tuf.update_delegation(
         &MetadataPath::new("delegation-b".into()).unwrap(),
         delegation,
-    ).unwrap();
+    )
+    .unwrap();
 
-    assert!(
-        tuf.target_description(&VirtualTargetPath::new("foo".into()).unwrap())
-            .is_ok()
-    );
+    assert!(tuf
+        .target_description(&VirtualTargetPath::new("foo".into()).unwrap())
+        .is_ok());
 }

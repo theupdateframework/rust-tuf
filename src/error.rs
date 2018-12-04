@@ -3,13 +3,13 @@
 use data_encoding::DecodeError;
 use derp;
 use hyper;
-use json;
+use serde_json;
 use std::fmt;
 use std::io;
 use std::path::Path;
 use tempfile;
 
-use metadata::Role;
+use crate::metadata::Role;
 
 /// Error type for all TUF related errors.
 #[derive(Debug, PartialEq, Eq)]
@@ -70,8 +70,8 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<json::error::Error> for Error {
-    fn from(err: json::error::Error) -> Error {
+impl From<serde_json::error::Error> for Error {
+    fn from(err: serde_json::error::Error) -> Error {
         Error::Encoding(format!("JSON: {:?}", err))
     }
 }

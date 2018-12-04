@@ -9,11 +9,11 @@ use std::fmt::{self, Debug, Display};
 use std::io::Read;
 use std::marker::PhantomData;
 
-use crypto::{self, HashAlgorithm, HashValue, KeyId, PrivateKey, PublicKey, Signature};
-use error::Error;
-use interchange::DataInterchange;
-use shims;
-use Result;
+use crate::crypto::{self, HashAlgorithm, HashValue, KeyId, PrivateKey, PublicKey, Signature};
+use crate::error::Error;
+use crate::interchange::DataInterchange;
+use crate::shims;
+use crate::Result;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static PATH_ILLEGAL_COMPONENTS: &'static [&str] = &[
@@ -1377,9 +1377,11 @@ impl VirtualTargetPath {
                         parents[0]
                             .iter()
                             .any(|p| parent.is_child(p) || parent == &p)
-                    }).cloned()
+                    })
+                    .cloned()
                     .collect::<HashSet<_>>()
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
         self.matches_chain(&*new)
     }
 
@@ -1684,11 +1686,12 @@ impl Delegations {
             return Err(Error::IllegalArgument("Roles cannot be empty.".into()));
         }
 
-        if roles.len() != roles
-            .iter()
-            .map(|r| &r.role)
-            .collect::<HashSet<&MetadataPath>>()
-            .len()
+        if roles.len()
+            != roles
+                .iter()
+                .map(|r| &r.role)
+                .collect::<HashSet<&MetadataPath>>()
+                .len()
         {
             return Err(Error::IllegalArgument(
                 "Cannot have duplicated roles in delegations.".into(),
@@ -1827,10 +1830,10 @@ impl<'de> Deserialize<'de> for Delegation {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::crypto::SignatureScheme;
+    use crate::interchange::Json;
     use chrono::prelude::*;
-    use crypto::SignatureScheme;
-    use interchange::Json;
-    use json;
+    use serde_json::json;
 
     const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
@@ -1895,7 +1898,8 @@ mod test {
                         .iter()
                         .map(|p| VirtualTargetPath::new(p.to_string()).unwrap())
                         .collect::<HashSet<_>>()
-                }).collect::<Vec<_>>();
+                })
+                .collect::<Vec<_>>();
             println!(
                 "CASE: expect: {} path: {:?} parents: {:?}",
                 expected, target, parents
@@ -1907,32 +1911,32 @@ mod test {
     #[test]
     fn serde_target_path() {
         let s = "foo/bar";
-        let t = json::from_str::<VirtualTargetPath>(&format!("\"{}\"", s)).unwrap();
+        let t = serde_json::from_str::<VirtualTargetPath>(&format!("\"{}\"", s)).unwrap();
         assert_eq!(t.to_string().as_str(), s);
-        assert_eq!(json::to_value(t).unwrap(), json!("foo/bar"));
+        assert_eq!(serde_json::to_value(t).unwrap(), json!("foo/bar"));
     }
 
     #[test]
     fn serde_metadata_path() {
         let s = "foo/bar";
-        let m = json::from_str::<MetadataPath>(&format!("\"{}\"", s)).unwrap();
+        let m = serde_json::from_str::<MetadataPath>(&format!("\"{}\"", s)).unwrap();
         assert_eq!(m.to_string().as_str(), s);
-        assert_eq!(json::to_value(m).unwrap(), json!("foo/bar"));
+        assert_eq!(serde_json::to_value(m).unwrap(), json!("foo/bar"));
     }
 
     #[test]
     fn serde_target_description() {
         let s: &[u8] = b"from water does all life begin";
         let description = TargetDescription::from_reader(s, &[HashAlgorithm::Sha256]).unwrap();
-        let jsn_str = json::to_string(&description).unwrap();
+        let jsn_str = serde_json::to_string(&description).unwrap();
         let jsn = json!({
             "size": 30,
             "hashes": {
                 "sha256": "_F10XHEryG6poxJk2sDJVu61OFf2d-7QWCm7cQE8rhg=",
             },
         });
-        let parsed_str: TargetDescription = json::from_str(&jsn_str).unwrap();
-        let parsed_jsn: TargetDescription = json::from_value(jsn).unwrap();
+        let parsed_str: TargetDescription = serde_json::from_str(&jsn_str).unwrap();
+        let parsed_jsn: TargetDescription = serde_json::from_value(jsn).unwrap();
         assert_eq!(parsed_str, parsed_jsn);
     }
 
@@ -1941,7 +1945,8 @@ mod test {
         let hashes = hashset!(
             "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
             "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
-        ).iter()
+        )
+        .iter()
         .map(|k| KeyId::from_string(*k).unwrap())
         .collect();
         let role_def = RoleDefinition::new(2, hashes).unwrap();
@@ -1953,9 +1958,9 @@ mod test {
                 "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
             ],
         });
-        let encoded = json::to_value(&role_def).unwrap();
+        let encoded = serde_json::to_value(&role_def).unwrap();
         assert_eq!(encoded, jsn);
-        let decoded: RoleDefinition = json::from_value(encoded).unwrap();
+        let decoded: RoleDefinition = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, role_def);
 
         let jsn = json!({
@@ -1964,7 +1969,7 @@ mod test {
                 "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
             ],
         });
-        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+        assert!(serde_json::from_value::<RoleDefinition>(jsn).is_err());
 
         let jsn = json!({
             "threshold": -1,
@@ -1972,7 +1977,7 @@ mod test {
                 "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
             ],
         });
-        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+        assert!(serde_json::from_value::<RoleDefinition>(jsn).is_err());
     }
 
     #[test]
@@ -2041,9 +2046,9 @@ mod test {
             },
         });
 
-        let encoded = json::to_value(&root).unwrap();
+        let encoded = serde_json::to_value(&root).unwrap();
         assert_eq!(encoded, jsn);
-        let decoded: RootMetadata = json::from_value(encoded).unwrap();
+        let decoded: RootMetadata = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, root);
     }
 
@@ -2053,7 +2058,8 @@ mod test {
             1,
             100,
             hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
-        ).unwrap();
+        )
+        .unwrap();
 
         let timestamp = TimestampMetadataBuilder::from_metadata_description(description)
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
@@ -2073,9 +2079,9 @@ mod test {
             },
         });
 
-        let encoded = json::to_value(&timestamp).unwrap();
+        let encoded = serde_json::to_value(&timestamp).unwrap();
         assert_eq!(encoded, jsn);
-        let decoded: TimestampMetadata = json::from_value(encoded).unwrap();
+        let decoded: TimestampMetadata = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, timestamp);
     }
 
@@ -2089,8 +2095,10 @@ mod test {
                     1,
                     100,
                     hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
-                ).unwrap(),
-            ).build()
+                )
+                .unwrap(),
+            )
+            .build()
             .unwrap();
 
         let jsn = json!({
@@ -2108,9 +2116,9 @@ mod test {
             },
         });
 
-        let encoded = json::to_value(&snapshot).unwrap();
+        let encoded = serde_json::to_value(&snapshot).unwrap();
         assert_eq!(encoded, jsn);
-        let decoded: SnapshotMetadata = json::from_value(encoded).unwrap();
+        let decoded: SnapshotMetadata = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, snapshot);
     }
 
@@ -2121,7 +2129,8 @@ mod test {
             .insert_target_description(
                 VirtualTargetPath::new("foo".into()).unwrap(),
                 TargetDescription::from_reader(&b"foo"[..], &[HashAlgorithm::Sha256]).unwrap(),
-            ).build()
+            )
+            .build()
             .unwrap();
 
         let jsn = json!({
@@ -2138,9 +2147,9 @@ mod test {
             },
         });
 
-        let encoded = json::to_value(&targets).unwrap();
+        let encoded = serde_json::to_value(&targets).unwrap();
         assert_eq!(encoded, jsn);
-        let decoded: TargetsMetadata = json::from_value(encoded).unwrap();
+        let decoded: TargetsMetadata = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, targets);
     }
 
@@ -2149,16 +2158,16 @@ mod test {
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let delegations = Delegations::new(
             &hashset![key.public().clone()],
-            vec![
-                Delegation::new(
-                    MetadataPath::new("foo/bar".into()).unwrap(),
-                    false,
-                    1,
-                    hashset!(key.key_id().clone()),
-                    hashset!(VirtualTargetPath::new("baz/quux".into()).unwrap()),
-                ).unwrap(),
-            ],
-        ).unwrap();
+            vec![Delegation::new(
+                MetadataPath::new("foo/bar".into()).unwrap(),
+                false,
+                1,
+                hashset!(key.key_id().clone()),
+                hashset!(VirtualTargetPath::new("baz/quux".into()).unwrap()),
+            )
+            .unwrap()],
+        )
+        .unwrap();
 
         let targets = TargetsMetadataBuilder::new()
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
@@ -2192,9 +2201,9 @@ mod test {
             }
         });
 
-        let encoded = json::to_value(&targets).unwrap();
+        let encoded = serde_json::to_value(&targets).unwrap();
         assert_eq!(encoded, jsn);
-        let decoded: TargetsMetadata = json::from_value(encoded).unwrap();
+        let decoded: TargetsMetadata = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, targets);
     }
 
@@ -2208,8 +2217,10 @@ mod test {
                     1,
                     100,
                     hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
-                ).unwrap(),
-            ).build()
+                )
+                .unwrap(),
+            )
+            .build()
             .unwrap();
 
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
@@ -2240,9 +2251,10 @@ mod test {
             },
         });
 
-        let encoded = json::to_value(&signed).unwrap();
+        let encoded = serde_json::to_value(&signed).unwrap();
         assert_eq!(encoded, jsn, "{:#?} != {:#?}", encoded, jsn);
-        let decoded: SignedMetadata<Json, SnapshotMetadata> = json::from_value(encoded).unwrap();
+        let decoded: SignedMetadata<Json, SnapshotMetadata> =
+            serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, signed);
     }
 
@@ -2269,7 +2281,7 @@ mod test {
 
     // TODO test for mismatched ed25519/rsa keys/schemes
 
-    fn make_root() -> json::Value {
+    fn make_root() -> serde_json::Value {
         let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519).unwrap();
         let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519).unwrap();
@@ -2285,19 +2297,19 @@ mod test {
             .build()
             .unwrap();
 
-        json::to_value(&root).unwrap()
+        serde_json::to_value(&root).unwrap()
     }
 
-    fn make_snapshot() -> json::Value {
+    fn make_snapshot() -> serde_json::Value {
         let snapshot = SnapshotMetadataBuilder::new()
             .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
             .build()
             .unwrap();
 
-        json::to_value(&snapshot).unwrap()
+        serde_json::to_value(&snapshot).unwrap()
     }
 
-    fn make_timestamp() -> json::Value {
+    fn make_timestamp() -> serde_json::Value {
         let description =
             MetadataDescription::from_reader(&[][..], 1, &[HashAlgorithm::Sha256]).unwrap();
 
@@ -2306,39 +2318,39 @@ mod test {
             .build()
             .unwrap();
 
-        json::to_value(&timestamp).unwrap()
+        serde_json::to_value(&timestamp).unwrap()
     }
 
-    fn make_targets() -> json::Value {
+    fn make_targets() -> serde_json::Value {
         let targets =
             TargetsMetadata::new(1, Utc.ymd(2038, 1, 1).and_hms(0, 0, 0), hashmap!(), None)
                 .unwrap();
 
-        json::to_value(&targets).unwrap()
+        serde_json::to_value(&targets).unwrap()
     }
 
-    fn make_delegations() -> json::Value {
+    fn make_delegations() -> serde_json::Value {
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
             .unwrap()
             .public()
             .clone();
         let delegations = Delegations::new(
             &hashset![key.clone()],
-            vec![
-                Delegation::new(
-                    MetadataPath::new("foo".into()).unwrap(),
-                    false,
-                    1,
-                    hashset!(key.key_id().clone()),
-                    hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
-                ).unwrap(),
-            ],
-        ).unwrap();
+            vec![Delegation::new(
+                MetadataPath::new("foo".into()).unwrap(),
+                false,
+                1,
+                hashset!(key.key_id().clone()),
+                hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
+            )
+            .unwrap()],
+        )
+        .unwrap();
 
-        json::to_value(&delegations).unwrap()
+        serde_json::to_value(&delegations).unwrap()
     }
 
-    fn make_delegation() -> json::Value {
+    fn make_delegation() -> serde_json::Value {
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
             .unwrap()
             .public()
@@ -2349,12 +2361,13 @@ mod test {
             1,
             hashset!(key.key_id().clone()),
             hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
-        ).unwrap();
+        )
+        .unwrap();
 
-        json::to_value(&delegation).unwrap()
+        serde_json::to_value(&delegation).unwrap()
     }
 
-    fn set_version(value: &mut json::Value, version: i64) {
+    fn set_version(value: &mut serde_json::Value, version: i64) {
         match value.as_object_mut() {
             Some(obj) => {
                 let _ = obj.insert("version".into(), json!(version));
@@ -2368,11 +2381,11 @@ mod test {
     fn deserialize_json_root_illegal_version() {
         let mut root_json = make_root();
         set_version(&mut root_json, 0);
-        assert!(json::from_value::<RootMetadata>(root_json.clone()).is_err());
+        assert!(serde_json::from_value::<RootMetadata>(root_json.clone()).is_err());
 
         let mut root_json = make_root();
         set_version(&mut root_json, -1);
-        assert!(json::from_value::<RootMetadata>(root_json).is_err());
+        assert!(serde_json::from_value::<RootMetadata>(root_json).is_err());
     }
 
     // Refuse to deserialize root metadata if it contains duplicate keys
@@ -2395,10 +2408,10 @@ mod test {
             .as_array_mut()
             .unwrap()
             .push(dupe);
-        assert!(json::from_value::<RootMetadata>(root_json).is_err());
+        assert!(serde_json::from_value::<RootMetadata>(root_json).is_err());
     }
 
-    fn set_threshold(value: &mut json::Value, threshold: i32) {
+    fn set_threshold(value: &mut serde_json::Value, threshold: i32) {
         match value.as_object_mut() {
             Some(obj) => {
                 let _ = obj.insert("threshold".into(), json!(threshold));
@@ -2418,15 +2431,16 @@ mod test {
                     .key_id()
                     .clone()
             ),
-        ).unwrap();
+        )
+        .unwrap();
 
-        let mut jsn = json::to_value(&role_def).unwrap();
+        let mut jsn = serde_json::to_value(&role_def).unwrap();
         set_threshold(&mut jsn, 0);
-        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+        assert!(serde_json::from_value::<RoleDefinition>(jsn).is_err());
 
-        let mut jsn = json::to_value(&role_def).unwrap();
+        let mut jsn = serde_json::to_value(&role_def).unwrap();
         set_threshold(&mut jsn, -1);
-        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+        assert!(serde_json::from_value::<RoleDefinition>(jsn).is_err());
 
         let role_def = RoleDefinition::new(
             2,
@@ -2440,11 +2454,12 @@ mod test {
                     .key_id()
                     .clone(),
             ),
-        ).unwrap();
+        )
+        .unwrap();
 
-        let mut jsn = json::to_value(&role_def).unwrap();
+        let mut jsn = serde_json::to_value(&role_def).unwrap();
         set_threshold(&mut jsn, 3);
-        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+        assert!(serde_json::from_value::<RoleDefinition>(jsn).is_err());
     }
 
     // Refuse to deserialilze root metadata with wrong type field
@@ -2455,7 +2470,7 @@ mod test {
             .as_object_mut()
             .unwrap()
             .insert("type".into(), json!("snapshot"));
-        assert!(json::from_value::<RootMetadata>(root).is_err());
+        assert!(serde_json::from_value::<RootMetadata>(root).is_err());
     }
 
     // Refuse to deserialize role definitions with duplicated key ids
@@ -2466,7 +2481,7 @@ mod test {
             .key_id()
             .clone();
         let role_def = RoleDefinition::new(1, hashset!(key_id.clone())).unwrap();
-        let mut jsn = json::to_value(&role_def).unwrap();
+        let mut jsn = serde_json::to_value(&role_def).unwrap();
 
         match jsn.as_object_mut() {
             Some(obj) => match obj.get_mut("key_ids").unwrap().as_array_mut() {
@@ -2476,7 +2491,7 @@ mod test {
             None => panic!(),
         }
 
-        assert!(json::from_value::<RoleDefinition>(jsn).is_err());
+        assert!(serde_json::from_value::<RoleDefinition>(jsn).is_err());
     }
 
     // Refuse to deserialize snapshot metadata with illegal versions
@@ -2484,11 +2499,11 @@ mod test {
     fn deserialize_json_snapshot_illegal_version() {
         let mut snapshot = make_snapshot();
         set_version(&mut snapshot, 0);
-        assert!(json::from_value::<SnapshotMetadata>(snapshot).is_err());
+        assert!(serde_json::from_value::<SnapshotMetadata>(snapshot).is_err());
 
         let mut snapshot = make_snapshot();
         set_version(&mut snapshot, -1);
-        assert!(json::from_value::<SnapshotMetadata>(snapshot).is_err());
+        assert!(serde_json::from_value::<SnapshotMetadata>(snapshot).is_err());
     }
 
     // Refuse to deserialilze snapshot metadata with wrong type field
@@ -2499,7 +2514,7 @@ mod test {
             .as_object_mut()
             .unwrap()
             .insert("type".into(), json!("root"));
-        assert!(json::from_value::<SnapshotMetadata>(snapshot).is_err());
+        assert!(serde_json::from_value::<SnapshotMetadata>(snapshot).is_err());
     }
 
     // Refuse to deserialize timestamp metadata with illegal versions
@@ -2507,11 +2522,11 @@ mod test {
     fn deserialize_json_timestamp_illegal_version() {
         let mut timestamp = make_timestamp();
         set_version(&mut timestamp, 0);
-        assert!(json::from_value::<TimestampMetadata>(timestamp).is_err());
+        assert!(serde_json::from_value::<TimestampMetadata>(timestamp).is_err());
 
         let mut timestamp = make_timestamp();
         set_version(&mut timestamp, -1);
-        assert!(json::from_value::<TimestampMetadata>(timestamp).is_err());
+        assert!(serde_json::from_value::<TimestampMetadata>(timestamp).is_err());
     }
 
     // Refuse to deserialilze timestamp metadata with wrong type field
@@ -2522,7 +2537,7 @@ mod test {
             .as_object_mut()
             .unwrap()
             .insert("type".into(), json!("root"));
-        assert!(json::from_value::<TimestampMetadata>(timestamp).is_err());
+        assert!(serde_json::from_value::<TimestampMetadata>(timestamp).is_err());
     }
 
     // Refuse to deserialize targets metadata with illegal versions
@@ -2530,11 +2545,11 @@ mod test {
     fn deserialize_json_targets_illegal_version() {
         let mut targets = make_targets();
         set_version(&mut targets, 0);
-        assert!(json::from_value::<TargetsMetadata>(targets).is_err());
+        assert!(serde_json::from_value::<TargetsMetadata>(targets).is_err());
 
         let mut targets = make_targets();
         set_version(&mut targets, -1);
-        assert!(json::from_value::<TargetsMetadata>(targets).is_err());
+        assert!(serde_json::from_value::<TargetsMetadata>(targets).is_err());
     }
 
     // Refuse to deserialilze targets metadata with wrong type field
@@ -2545,7 +2560,7 @@ mod test {
             .as_object_mut()
             .unwrap()
             .insert("type".into(), json!("root"));
-        assert!(json::from_value::<TargetsMetadata>(targets).is_err());
+        assert!(serde_json::from_value::<TargetsMetadata>(targets).is_err());
     }
 
     // Refuse to deserialize delegations with no keys
@@ -2560,7 +2575,7 @@ mod test {
             .as_array_mut()
             .unwrap()
             .clear();
-        assert!(json::from_value::<Delegations>(delegations).is_err());
+        assert!(serde_json::from_value::<Delegations>(delegations).is_err());
     }
 
     // Refuse to deserialize delegations with no roles
@@ -2575,7 +2590,7 @@ mod test {
             .as_array_mut()
             .unwrap()
             .clear();
-        assert!(json::from_value::<Delegations>(delegations).is_err());
+        assert!(serde_json::from_value::<Delegations>(delegations).is_err());
     }
 
     // Refuse to deserialize delegations with duplicated roles
@@ -2598,7 +2613,7 @@ mod test {
             .as_array_mut()
             .unwrap()
             .push(dupe);
-        assert!(json::from_value::<Delegations>(delegations).is_err());
+        assert!(serde_json::from_value::<Delegations>(delegations).is_err());
     }
 
     // Refuse to deserialize a delegation with insufficient threshold
@@ -2606,11 +2621,11 @@ mod test {
     fn deserialize_json_delegation_bad_threshold() {
         let mut delegation = make_delegation();
         set_threshold(&mut delegation, 0);
-        assert!(json::from_value::<Delegation>(delegation).is_err());
+        assert!(serde_json::from_value::<Delegation>(delegation).is_err());
 
         let mut delegation = make_delegation();
         set_threshold(&mut delegation, 2);
-        assert!(json::from_value::<Delegation>(delegation).is_err());
+        assert!(serde_json::from_value::<Delegation>(delegation).is_err());
     }
 
     // Refuse to deserialize a delegation with duplicate key IDs
@@ -2633,7 +2648,7 @@ mod test {
             .as_array_mut()
             .unwrap()
             .push(dupe);
-        assert!(json::from_value::<Delegation>(delegation).is_err());
+        assert!(serde_json::from_value::<Delegation>(delegation).is_err());
     }
 
     // Refuse to deserialize a delegation with duplicate paths
@@ -2656,7 +2671,7 @@ mod test {
             .as_array_mut()
             .unwrap()
             .push(dupe);
-        assert!(json::from_value::<Delegation>(delegation).is_err());
+        assert!(serde_json::from_value::<Delegation>(delegation).is_err());
     }
 
     // Refuse to deserialize a Delegations struct with duplicate keys
@@ -2668,17 +2683,17 @@ mod test {
             .clone();
         let delegations = Delegations::new(
             &hashset!(key.clone()),
-            vec![
-                Delegation::new(
-                    MetadataPath::new("foo".into()).unwrap(),
-                    false,
-                    1,
-                    hashset!(key.key_id().clone()),
-                    hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
-                ).unwrap(),
-            ],
-        ).unwrap();
-        let mut delegations = json::to_value(delegations).unwrap();
+            vec![Delegation::new(
+                MetadataPath::new("foo".into()).unwrap(),
+                false,
+                1,
+                hashset!(key.key_id().clone()),
+                hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
+            )
+            .unwrap()],
+        )
+        .unwrap();
+        let mut delegations = serde_json::to_value(delegations).unwrap();
 
         let dupe = delegations
             .as_object()
@@ -2696,6 +2711,6 @@ mod test {
             .as_array_mut()
             .unwrap()
             .push(dupe);
-        assert!(json::from_value::<Delegations>(delegations).is_err());
+        assert!(serde_json::from_value::<Delegations>(delegations).is_err());
     }
 }

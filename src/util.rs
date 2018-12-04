@@ -3,9 +3,9 @@ use chrono::DateTime;
 use ring::digest::{self, SHA256, SHA512};
 use std::io::{self, ErrorKind, Read};
 
-use crypto::{HashAlgorithm, HashValue};
-use error::Error;
-use Result;
+use crate::crypto::{HashAlgorithm, HashValue};
+use crate::error::Error;
+use crate::Result;
 
 /// Wrapper to verify a byte stream as it is read.
 ///
@@ -48,7 +48,7 @@ impl<R: Read> SafeReader<R> {
                         return Err(Error::IllegalArgument(format!(
                             "Unknown hash algorithm: {}",
                             s
-                        )))
+                        )));
                     }
                 };
                 Some((ctx, value))
@@ -181,7 +181,8 @@ mod test {
             bytes.len() as u64,
             0,
             Some((&HashAlgorithm::Sha256, hash_value)),
-        ).unwrap();
+        )
+        .unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_ok());
         assert_eq!(buf, bytes);
@@ -199,7 +200,8 @@ mod test {
             bytes.len() as u64,
             0,
             Some((&HashAlgorithm::Sha256, hash_value)),
-        ).unwrap();
+        )
+        .unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_err());
     }
@@ -215,7 +217,8 @@ mod test {
             bytes.len() as u64,
             0,
             Some((&HashAlgorithm::Sha256, hash_value)),
-        ).unwrap();
+        )
+        .unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_ok());
         assert_eq!(buf, bytes);
@@ -233,7 +236,8 @@ mod test {
             bytes.len() as u64,
             0,
             Some((&HashAlgorithm::Sha256, hash_value)),
-        ).unwrap();
+        )
+        .unwrap();
         let mut buf = Vec::new();
         assert!(reader.read_to_end(&mut buf).is_err());
     }

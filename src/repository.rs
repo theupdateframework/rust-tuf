@@ -12,14 +12,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use tempfile::NamedTempFile;
 
-use crypto::{self, HashAlgorithm, HashValue};
-use error::Error;
-use interchange::DataInterchange;
-use metadata::{
+use crate::crypto::{self, HashAlgorithm, HashValue};
+use crate::error::Error;
+use crate::interchange::DataInterchange;
+use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, SignedMetadata, TargetDescription, TargetPath,
 };
-use util::SafeReader;
-use Result;
+use crate::util::SafeReader;
+use crate::Result;
 
 /// Top-level trait that represents a TUF repository and contains all the ways it can be interacted
 /// with.
@@ -504,7 +504,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use interchange::Json;
+    use crate::interchange::Json;
     use tempfile;
 
     #[test]
@@ -546,15 +546,13 @@ mod test {
             TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
         let path = TargetPath::new("foo/bar/baz".into()).unwrap();
         repo.store_target(data, &path).unwrap();
-        assert!(
-            temp_dir
-                .path()
-                .join("targets")
-                .join("foo")
-                .join("bar")
-                .join("baz")
-                .exists()
-        );
+        assert!(temp_dir
+            .path()
+            .join("targets")
+            .join("foo")
+            .join("bar")
+            .join("baz")
+            .exists());
 
         let mut buf = Vec::new();
 
