@@ -175,8 +175,7 @@ where
                 &config.max_root_size,
                 config.min_bytes_per_second,
                 None,
-            )
-            .or_else(|_| -> Result<SignedMetadata<_, RootMetadata>> {
+            ).or_else(|_| -> Result<SignedMetadata<_, RootMetadata>> {
                 // FIXME: should we be fetching the latest version instead of version 1?
                 let root = remote.fetch_metadata(
                     &root_path,
@@ -222,9 +221,8 @@ where
         path: &MetadataPath,
         version: &MetadataVersion,
         metadata: &SignedMetadata<D, M>,
-    )
-    where
-        M: Metadata
+    ) where
+        M: Metadata,
     {
         match self.local.store_metadata(path, version, metadata) {
             Ok(()) => {}
@@ -290,7 +288,11 @@ where
             return Err(Error::Programming(err_msg.into()));
         }
 
-        self.store_metadata(&root_path, &MetadataVersion::Number(latest_version), &latest_root);
+        self.store_metadata(
+            &root_path,
+            &MetadataVersion::Number(latest_version),
+            &latest_root,
+        );
         self.store_metadata(&root_path, &MetadataVersion::None, &latest_root);
 
         if self.tuf.root().expires() <= &Utc::now() {
@@ -442,7 +444,8 @@ where
     fn _fetch_target(&mut self, target: &TargetPath) -> Result<SafeReader<R::TargetRead>> {
         let virt = self.config.path_translator.real_to_virtual(target)?;
 
-        let snapshot = self.tuf
+        let snapshot = self
+            .tuf
             .snapshot()
             .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
             .clone();
@@ -523,15 +526,15 @@ where
                 MetadataVersion::None
             };
 
-            let signed_meta = match self.local
+            let signed_meta = match self
+                .local
                 .fetch_metadata::<TargetsMetadata>(
                     delegation.role(),
                     &MetadataVersion::None,
                     &Some(role_meta.size()),
                     self.config.min_bytes_per_second(),
                     Some((alg, value.clone())),
-                )
-                .or_else(|_| {
+                ).or_else(|_| {
                     self.remote.fetch_metadata::<TargetsMetadata>(
                         delegation.role(),
                         &version,
@@ -551,7 +554,10 @@ where
                 }
             };
 
-            match self.tuf.update_delegation(delegation.role(), signed_meta.clone()) {
+            match self
+                .tuf
+                .update_delegation(delegation.role(), signed_meta.clone())
+            {
                 Ok(_) => {
                     match self.local.store_metadata(
                         delegation.role(),
@@ -566,7 +572,8 @@ where
                         ),
                     }
 
-                    let meta = self.tuf
+                    let meta = self
+                        .tuf
                         .delegations()
                         .get(delegation.role())
                         .unwrap()
@@ -840,10 +847,11 @@ mod test {
         snapshot.add_signature(&KEYS[1]).unwrap();
         snapshot.add_signature(&KEYS[2]).unwrap();
 
-        let mut timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
-            .unwrap()
-            .signed::<Json>(&KEYS[0])
-            .unwrap();
+        let mut timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Json>(&KEYS[0])
+                .unwrap();
 
         timestamp.add_signature(&KEYS[1]).unwrap();
         timestamp.add_signature(&KEYS[2]).unwrap();
@@ -922,8 +930,7 @@ mod test {
                     &None,
                     u32::MAX,
                     None
-                )
-                .unwrap(),
+                ).unwrap(),
         );
 
         ////
@@ -935,8 +942,7 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(2),
                 &root2,
-            )
-            .unwrap();
+            ).unwrap();
 
         client
             .remote
@@ -944,8 +950,7 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::None,
                 &root2,
-            )
-            .unwrap();
+            ).unwrap();
 
         client
             .remote
@@ -953,8 +958,7 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(3),
                 &root3,
-            )
-            .unwrap();
+            ).unwrap();
 
         client
             .remote
@@ -962,8 +966,7 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::None,
                 &root3,
-            )
-            .unwrap();
+            ).unwrap();
 
         ////
         // Finally, check that the update brings us to version 3.
@@ -981,8 +984,7 @@ mod test {
                     &None,
                     u32::MAX,
                     None
-                )
-                .unwrap(),
+                ).unwrap(),
         );
     }
 }

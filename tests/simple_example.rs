@@ -105,8 +105,7 @@ where
             config.path_translator().real_to_virtual(&target_path)?,
             target_file,
             &[HashAlgorithm::Sha256],
-        )?
-        .signed::<Json>(&targets_key)?;
+        )?.signed::<Json>(&targets_key)?;
 
     remote.store_metadata(
         &MetadataPath::new("targets".into())?,
