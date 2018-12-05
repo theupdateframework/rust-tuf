@@ -6,7 +6,7 @@ use ring;
 use ring::digest::{self, SHA256, SHA512};
 use ring::rand::SystemRandom;
 use ring::signature::{
-    ED25519, Ed25519KeyPair, RSAKeyPair, RSASigningState, RSA_PSS_2048_8192_SHA256,
+    Ed25519KeyPair, RSAKeyPair, RSASigningState, ED25519, RSA_PSS_2048_8192_SHA256,
     RSA_PSS_2048_8192_SHA512, RSA_PSS_SHA256, RSA_PSS_SHA512,
 };
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
@@ -521,14 +521,12 @@ impl PrivateKey {
                 "rsa_keygen_pubexp:65537",
                 "-outform",
                 "der",
-            ])
-            .output()?;
+            ]).output()?;
 
         let mut pk8 = Command::new("openssl")
             .args(&[
                 "pkcs8", "-inform", "der", "-topk8", "-nocrypt", "-outform", "der",
-            ])
-            .stdin(Stdio::piped())
+            ]).stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()?;
 
@@ -685,8 +683,9 @@ impl<'de> Deserialize<'de> for PublicKey {
             .decode(intermediate.public_key().as_bytes())
             .map_err(|e| DeserializeError::custom(format!("{:?}", e)))?;
 
-        let key = PublicKey::from_spki(&bytes, intermediate.scheme().clone())
-            .map_err(|e| DeserializeError::custom(format!("Couldn't parse key as SPKI: {:?}", e)))?;
+        let key = PublicKey::from_spki(&bytes, intermediate.scheme().clone()).map_err(|e| {
+            DeserializeError::custom(format!("Couldn't parse key as SPKI: {:?}", e))
+        })?;
 
         if intermediate.typ() != &key.typ {
             return Err(DeserializeError::custom(format!(

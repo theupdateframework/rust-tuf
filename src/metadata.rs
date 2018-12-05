@@ -1377,11 +1377,9 @@ impl VirtualTargetPath {
                         parents[0]
                             .iter()
                             .any(|p| parent.is_child(p) || parent == &p)
-                    })
-                    .cloned()
+                    }).cloned()
                     .collect::<HashSet<_>>()
-            })
-            .collect::<Vec<_>>();
+            }).collect::<Vec<_>>();
         self.matches_chain(&*new)
     }
 
@@ -1686,12 +1684,11 @@ impl Delegations {
             return Err(Error::IllegalArgument("Roles cannot be empty.".into()));
         }
 
-        if roles.len()
-            != roles
-                .iter()
-                .map(|r| &r.role)
-                .collect::<HashSet<&MetadataPath>>()
-                .len()
+        if roles.len() != roles
+            .iter()
+            .map(|r| &r.role)
+            .collect::<HashSet<&MetadataPath>>()
+            .len()
         {
             return Err(Error::IllegalArgument(
                 "Cannot have duplicated roles in delegations.".into(),
@@ -1898,8 +1895,7 @@ mod test {
                         .iter()
                         .map(|p| VirtualTargetPath::new(p.to_string()).unwrap())
                         .collect::<HashSet<_>>()
-                })
-                .collect::<Vec<_>>();
+                }).collect::<Vec<_>>();
             println!(
                 "CASE: expect: {} path: {:?} parents: {:?}",
                 expected, target, parents
@@ -1946,8 +1942,8 @@ mod test {
             "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
             "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
         ).iter()
-            .map(|k| KeyId::from_string(*k).unwrap())
-            .collect();
+        .map(|k| KeyId::from_string(*k).unwrap())
+        .collect();
         let role_def = RoleDefinition::new(2, hashes).unwrap();
         let jsn = json!({
             "threshold": 2,
@@ -2094,8 +2090,7 @@ mod test {
                     100,
                     hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
                 ).unwrap(),
-            )
-            .build()
+            ).build()
             .unwrap();
 
         let jsn = json!({
@@ -2126,8 +2121,7 @@ mod test {
             .insert_target_description(
                 VirtualTargetPath::new("foo".into()).unwrap(),
                 TargetDescription::from_reader(&b"foo"[..], &[HashAlgorithm::Sha256]).unwrap(),
-            )
-            .build()
+            ).build()
             .unwrap();
 
         let jsn = json!({
@@ -2215,8 +2209,7 @@ mod test {
                     100,
                     hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
                 ).unwrap(),
-            )
-            .build()
+            ).build()
             .unwrap();
 
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();

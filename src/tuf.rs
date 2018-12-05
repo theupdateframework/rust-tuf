@@ -769,11 +769,12 @@ mod test {
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
-        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
-            .unwrap()
-            // sign it with the root key
-            .signed::<Json>(&KEYS[0])
-            .unwrap();
+        let timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                // sign it with the root key
+                .signed::<Json>(&KEYS[0])
+                .unwrap();
 
         assert!(tuf.update_timestamp(timestamp).is_err())
     }
@@ -822,11 +823,12 @@ mod test {
             .signed::<Json>(&KEYS[2])
             .unwrap();
 
-        let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
-            .unwrap()
-            // sign it with the targets key
-            .signed::<Json>(&KEYS[2])
-            .unwrap();
+        let timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                // sign it with the targets key
+                .signed::<Json>(&KEYS[2])
+                .unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
 

@@ -175,8 +175,7 @@ where
                 &config.max_root_size,
                 config.min_bytes_per_second,
                 None,
-            )
-            .or_else(|_| -> Result<SignedMetadata<_, RootMetadata>> {
+            ).or_else(|_| -> Result<SignedMetadata<_, RootMetadata>> {
                 // FIXME: should we be fetching the latest version instead of version 1?
                 let root = remote.fetch_metadata(
                     &root_path,
@@ -222,9 +221,8 @@ where
         path: &MetadataPath,
         version: &MetadataVersion,
         metadata: &SignedMetadata<D, M>,
-    )
-    where
-        M: Metadata
+    ) where
+        M: Metadata,
     {
         match self.local.store_metadata(path, version, metadata) {
             Ok(()) => {}
@@ -290,7 +288,11 @@ where
             return Err(Error::Programming(err_msg.into()));
         }
 
-        self.store_metadata(&root_path, &MetadataVersion::Number(latest_version), &latest_root);
+        self.store_metadata(
+            &root_path,
+            &MetadataVersion::Number(latest_version),
+            &latest_root,
+        );
         self.store_metadata(&root_path, &MetadataVersion::None, &latest_root);
 
         if self.tuf.root().expires() <= &Utc::now() {
@@ -440,151 +442,6 @@ where
 
     // TODO this should check the local repo first
     fn _fetch_target(&mut self, target: &TargetPath) -> Result<SafeReader<R::TargetRead>> {
-        fn lookup<D_, L_, R_, T_>(
-            tuf: &mut Tuf<D_>,
-            config: &Config<T_>,
-            default_terminate: bool,
-            current_depth: u32,
-            target: &VirtualTargetPath,
-            snapshot: &SnapshotMetadata,
-            targets: Option<&TargetsMetadata>,
-            local: &mut L_,
-            remote: &mut R_,
-        ) -> (bool, Result<TargetDescription>)
-        where
-            D_: DataInterchange,
-            L_: Repository<D_>,
-            R_: Repository<D_>,
-            T_: PathTranslator,
-        {
-            if current_depth > config.max_delegation_depth {
-                warn!(
-                    "Walking the delegation graph would have exceeded the configured max depth: {}",
-                    config.max_delegation_depth
-                );
-                return (default_terminate, Err(Error::NotFound));
-            }
-
-            // these clones are dumb, but we need immutable values and not references for update
-            // tuf in the loop below
-            let targets = match targets {
-                Some(t) => t.clone(),
-                None => match tuf.targets() {
-                    Some(t) => t.clone(),
-                    None => {
-                        return (
-                            default_terminate,
-                            Err(Error::MissingMetadata(Role::Targets)),
-                        )
-                    }
-                },
-            };
-
-            if let Some(t) = targets.targets().get(target) {
-                return (default_terminate, Ok(t.clone()));
-            }
-
-            let delegations = match targets.delegations() {
-                Some(d) => d,
-                None => return (default_terminate, Err(Error::NotFound)),
-            };
-
-            for delegation in delegations.roles().iter() {
-                if !delegation.paths().iter().any(|p| target.is_child(p)) {
-                    if delegation.terminating() {
-                        return (true, Err(Error::NotFound));
-                    } else {
-                        continue;
-                    }
-                }
-
-                let role_meta = match snapshot.meta().get(delegation.role()) {
-                    Some(m) => m,
-                    None if !delegation.terminating() => continue,
-                    None => return (true, Err(Error::NotFound)),
-                };
-
-                let (alg, value) = match crypto::hash_preference(role_meta.hashes()) {
-                    Ok(h) => h,
-                    Err(e) => return (delegation.terminating(), Err(e)),
-                };
-
-                let version = if tuf.root().consistent_snapshot() {
-                    MetadataVersion::Hash(value.clone())
-                } else {
-                    MetadataVersion::None
-                };
-
-                let signed_meta = match local
-                    .fetch_metadata::<TargetsMetadata>(
-                        delegation.role(),
-                        &MetadataVersion::None,
-                        &Some(role_meta.size()),
-                        config.min_bytes_per_second(),
-                        Some((alg, value.clone())),
-                    )
-                    .or_else(|_| {
-                        remote.fetch_metadata::<TargetsMetadata>(
-                            delegation.role(),
-                            &version,
-                            &Some(role_meta.size()),
-                            config.min_bytes_per_second(),
-                            Some((alg, value.clone())),
-                        )
-                    }) {
-                    Ok(m) => m,
-                    Err(ref e) if !delegation.terminating() => {
-                        warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
-                        continue;
-                    }
-                    Err(e) => {
-                        warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
-                        return (true, Err(e));
-                    }
-                };
-
-                match tuf.update_delegation(delegation.role(), signed_meta.clone()) {
-                    Ok(_) => {
-                        match local.store_metadata(
-                            delegation.role(),
-                            &MetadataVersion::None,
-                            &signed_meta,
-                        ) {
-                            Ok(_) => (),
-                            Err(e) => warn!(
-                                "Error storing metadata {:?} locally: {:?}",
-                                delegation.role(),
-                                e
-                            ),
-                        }
-
-                        let meta = tuf.delegations().get(delegation.role()).unwrap().clone();
-                        let (term, res) = lookup(
-                            tuf,
-                            config,
-                            delegation.terminating(),
-                            current_depth + 1,
-                            target,
-                            snapshot,
-                            Some(meta.as_ref()),
-                            local,
-                            remote,
-                        );
-
-                        if term && res.is_err() {
-                            return (true, res);
-                        }
-
-                        // TODO end recursion early
-                    }
-                    Err(_) if !delegation.terminating() => continue,
-                    Err(e) => return (true, Err(e)),
-                };
-            }
-
-            (default_terminate, Err(Error::NotFound))
-        }
-
         let virt = self.config.path_translator.real_to_virtual(target)?;
 
         let snapshot = self
@@ -592,17 +449,8 @@ where
             .snapshot()
             .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
             .clone();
-        let (_, target_description) = lookup(
-            &mut self.tuf,
-            &self.config,
-            false,
-            0,
-            &virt,
-            &snapshot,
-            None,
-            &mut self.local,
-            &mut self.remote,
-        );
+        let (_, target_description) =
+            self.lookup_target_description(false, 0, &virt, &snapshot, None);
         let target_description = target_description?;
 
         self.remote.fetch_target(
@@ -610,6 +458,146 @@ where
             &target_description,
             self.config.min_bytes_per_second,
         )
+    }
+
+    fn lookup_target_description(
+        &mut self,
+        default_terminate: bool,
+        current_depth: u32,
+        target: &VirtualTargetPath,
+        snapshot: &SnapshotMetadata,
+        targets: Option<&TargetsMetadata>,
+    ) -> (bool, Result<TargetDescription>) {
+        if current_depth > self.config.max_delegation_depth {
+            warn!(
+                "Walking the delegation graph would have exceeded the configured max depth: {}",
+                self.config.max_delegation_depth
+            );
+            return (default_terminate, Err(Error::NotFound));
+        }
+
+        // these clones are dumb, but we need immutable values and not references for update
+        // tuf in the loop below
+        let targets = match targets {
+            Some(t) => t.clone(),
+            None => match self.tuf.targets() {
+                Some(t) => t.clone(),
+                None => {
+                    return (
+                        default_terminate,
+                        Err(Error::MissingMetadata(Role::Targets)),
+                    )
+                }
+            },
+        };
+
+        if let Some(t) = targets.targets().get(target) {
+            return (default_terminate, Ok(t.clone()));
+        }
+
+        let delegations = match targets.delegations() {
+            Some(d) => d,
+            None => return (default_terminate, Err(Error::NotFound)),
+        };
+
+        for delegation in delegations.roles().iter() {
+            if !delegation.paths().iter().any(|p| target.is_child(p)) {
+                if delegation.terminating() {
+                    return (true, Err(Error::NotFound));
+                } else {
+                    continue;
+                }
+            }
+
+            let role_meta = match snapshot.meta().get(delegation.role()) {
+                Some(m) => m,
+                None if !delegation.terminating() => continue,
+                None => return (true, Err(Error::NotFound)),
+            };
+
+            let (alg, value) = match crypto::hash_preference(role_meta.hashes()) {
+                Ok(h) => h,
+                Err(e) => return (delegation.terminating(), Err(e)),
+            };
+
+            let version = if self.tuf.root().consistent_snapshot() {
+                MetadataVersion::Hash(value.clone())
+            } else {
+                MetadataVersion::None
+            };
+
+            let signed_meta = match self
+                .local
+                .fetch_metadata::<TargetsMetadata>(
+                    delegation.role(),
+                    &MetadataVersion::None,
+                    &Some(role_meta.size()),
+                    self.config.min_bytes_per_second(),
+                    Some((alg, value.clone())),
+                ).or_else(|_| {
+                    self.remote.fetch_metadata::<TargetsMetadata>(
+                        delegation.role(),
+                        &version,
+                        &Some(role_meta.size()),
+                        self.config.min_bytes_per_second(),
+                        Some((alg, value.clone())),
+                    )
+                }) {
+                Ok(m) => m,
+                Err(ref e) if !delegation.terminating() => {
+                    warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
+                    continue;
+                }
+                Err(e) => {
+                    warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
+                    return (true, Err(e));
+                }
+            };
+
+            match self
+                .tuf
+                .update_delegation(delegation.role(), signed_meta.clone())
+            {
+                Ok(_) => {
+                    match self.local.store_metadata(
+                        delegation.role(),
+                        &MetadataVersion::None,
+                        &signed_meta,
+                    ) {
+                        Ok(_) => (),
+                        Err(e) => warn!(
+                            "Error storing metadata {:?} locally: {:?}",
+                            delegation.role(),
+                            e
+                        ),
+                    }
+
+                    let meta = self
+                        .tuf
+                        .delegations()
+                        .get(delegation.role())
+                        .unwrap()
+                        .clone();
+                    let (term, res) = self.lookup_target_description(
+                        delegation.terminating(),
+                        current_depth + 1,
+                        target,
+                        snapshot,
+                        Some(meta.as_ref()),
+                    );
+
+                    if term && res.is_err() {
+                        return (true, res);
+                    }
+
+                    // TODO end recursion early
+                }
+                Err(_) if !delegation.terminating() => continue,
+                Err(e) => return (true, Err(e)),
+            };
+        }
+
+        (default_terminate, Err(Error::NotFound))
     }
 }
 
@@ -859,10 +847,11 @@ mod test {
         snapshot.add_signature(&KEYS[1]).unwrap();
         snapshot.add_signature(&KEYS[2]).unwrap();
 
-        let mut timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
-            .unwrap()
-            .signed::<Json>(&KEYS[0])
-            .unwrap();
+        let mut timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Json>(&KEYS[0])
+                .unwrap();
 
         timestamp.add_signature(&KEYS[1]).unwrap();
         timestamp.add_signature(&KEYS[2]).unwrap();
@@ -941,8 +930,7 @@ mod test {
                     &None,
                     u32::MAX,
                     None
-                )
-                .unwrap(),
+                ).unwrap(),
         );
 
         ////
@@ -954,8 +942,7 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(2),
                 &root2,
-            )
-            .unwrap();
+            ).unwrap();
 
         client
             .remote
@@ -963,8 +950,7 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::None,
                 &root2,
-            )
-            .unwrap();
+            ).unwrap();
 
         client
             .remote
@@ -972,8 +958,7 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(3),
                 &root3,
-            )
-            .unwrap();
+            ).unwrap();
 
         client
             .remote
@@ -981,8 +966,7 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::None,
                 &root3,
-            )
-            .unwrap();
+            ).unwrap();
 
         ////
         // Finally, check that the update brings us to version 3.
@@ -1000,8 +984,7 @@ mod test {
                     &None,
                     u32::MAX,
                     None
-                )
-                .unwrap(),
+                ).unwrap(),
         );
     }
 }

@@ -43,12 +43,10 @@ fn simple_delegation() {
         .insert_metadata_description(
             MetadataPath::new("targets".into()).unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        )
-        .insert_metadata_description(
+        ).insert_metadata_description(
             MetadataPath::new("delegation".into()).unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        )
-        .signed::<Json>(&snapshot_key)
+        ).signed::<Json>(&snapshot_key)
         .unwrap();
 
     let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
@@ -92,8 +90,7 @@ fn simple_delegation() {
             VirtualTargetPath::new("foo".into()).unwrap(),
             target_file,
             &[HashAlgorithm::Sha256],
-        )
-        .unwrap()
+        ).unwrap()
         .signed::<Json>(&delegation_key)
         .unwrap();
 
@@ -133,16 +130,13 @@ fn nested_delegation() {
         .insert_metadata_description(
             MetadataPath::new("targets".into()).unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        )
-        .insert_metadata_description(
+        ).insert_metadata_description(
             MetadataPath::new("delegation-a".into()).unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        )
-        .insert_metadata_description(
+        ).insert_metadata_description(
             MetadataPath::new("delegation-b".into()).unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
-        )
-        .signed::<Json>(&snapshot_key)
+        ).signed::<Json>(&snapshot_key)
         .unwrap();
 
     let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
@@ -220,8 +214,7 @@ fn nested_delegation() {
             VirtualTargetPath::new("foo".into()).unwrap(),
             target_file,
             &[HashAlgorithm::Sha256],
-        )
-        .unwrap()
+        ).unwrap()
         .signed::<Json>(&delegation_b_key)
         .unwrap();
 
