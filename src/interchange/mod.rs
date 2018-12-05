@@ -46,6 +46,11 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
     where
         R: Read,
         T: DeserializeOwned;
+
+    /// Read a struct from a stream.
+    fn from_slice<T>(slice: &[u8]) -> Result<T>
+    where
+        T: DeserializeOwned;
 }
 
 /// JSON data interchange.
@@ -322,5 +327,18 @@ impl DataInterchange for Json {
         T: DeserializeOwned,
     {
         Ok(serde_json::from_reader(rdr)?)
+    }
+
+    /// ```
+    /// # use tuf::interchange::{DataInterchange, Json};
+    /// # use std::collections::HashMap;
+    /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
+    /// let _: HashMap<String, String> = Json::from_slice(&jsn).unwrap();
+    /// ```
+    fn from_slice<T>(slice: &[u8]) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        Ok(serde_json::from_slice(slice)?)
     }
 }

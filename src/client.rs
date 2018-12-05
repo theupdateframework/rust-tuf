@@ -3,10 +3,12 @@
 //! # Example
 //!
 //! ```no_run
+//! #![feature(async_await, await_macro, futures_api, pin)]
+//! # use futures::executor::block_on;
 //! # use hyper::client::Client as HttpClient;
 //! # use hyper::Url;
 //! # use std::path::PathBuf;
-//! # use tuf::Tuf;
+//! # use tuf::{Result, Tuf};
 //! # use tuf::crypto::KeyId;
 //! # use tuf::client::{Client, Config};
 //! # use tuf::metadata::{RootMetadata, SignedMetadata, Role, MetadataPath,
@@ -19,13 +21,13 @@
 //!     "T5vfRrM1iHpgzGwAHe7MbJH_7r4chkOAphV3OPCCv0I=",
 //! ];
 //!
-//! # fn main() {
+//! # fn main() -> Result<()> {
+//! # block_on(async {
 //! let key_ids: Vec<KeyId> = TRUSTED_ROOT_KEY_IDS.iter()
 //!     .map(|k| KeyId::from_string(k).unwrap())
 //!     .collect();
 //!
-//! let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))
-//!     .unwrap();
+//! let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))?;
 //!
 //! let remote = HttpRepository::new(
 //!     Url::parse("https://static.rust-lang.org/").unwrap(),
@@ -33,30 +35,32 @@
 //!     Some("rustup/1.4.0".into()),
 //!     None);
 //!
-//! let mut client = Client::with_root_pinned(
+//! let mut client = await!(Client::with_root_pinned(
 //!     &key_ids,
 //!     Config::default(),
 //!     local,
 //!     remote,
-//! ).unwrap();
-//! let _ = client.update().unwrap();
+//! ))?;
+//!
+//! let _ = await!(client.update())?;
+//! # Ok(())
+//! # })
 //! # }
 //! ```
 
 use chrono::offset::Utc;
+use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use log::{error, warn};
-use std::io::{Read, Write};
 
 use crate::crypto::{self, KeyId};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
-    Metadata, MetadataPath, MetadataVersion, Role, RootMetadata, SignedMetadata, SnapshotMetadata,
+    Metadata, MetadataPath, MetadataVersion, Role, SignedMetadata, SnapshotMetadata,
     TargetDescription, TargetPath, TargetsMetadata, VirtualTargetPath,
 };
 use crate::repository::Repository;
 use crate::tuf::Tuf;
-use crate::util::SafeReader;
 use crate::Result;
 
 /// Translates real paths (where a file is stored) into virtual paths (how it is addressed in TUF)
@@ -67,9 +71,9 @@ use crate::Result;
 /// ```
 /// # use tuf::client::{PathTranslator, DefaultTranslator};
 /// # use tuf::metadata::{VirtualTargetPath, TargetPath};
-/// # let path = TargetPath::new("foo".into()).unwrap();
-/// # let virt = VirtualTargetPath::new("foo".into()).unwrap();
-/// # let translator = DefaultTranslator::new();
+/// let path = TargetPath::new("foo".into()).unwrap();
+/// let virt = VirtualTargetPath::new("foo".into()).unwrap();
+/// let translator = DefaultTranslator::new();
 /// assert_eq!(path,
 ///            translator.virtual_to_real(&translator.real_to_virtual(&path).unwrap()).unwrap());
 /// assert_eq!(virt,
@@ -121,23 +125,26 @@ where
 impl<D, L, R, T> Client<D, L, R, T>
 where
     D: DataInterchange,
-    L: Repository<D>,
-    R: Repository<D>,
-    T: PathTranslator,
+    L: Repository<D> + 'static,
+    R: Repository<D> + 'static,
+    T: PathTranslator + 'static,
 {
     /// Create a new TUF client. It will attempt to load initial root metadata from the local repo
     /// and return an error if it cannot do so.
     ///
     /// **WARNING**: This method offers weaker security guarantees than the related method
     /// `with_root_pinned`.
-    pub fn new(config: Config<T>, local: L, remote: R) -> Result<Self> {
-        let root = local.fetch_metadata(
-            &MetadataPath::from_role(&Role::Root),
-            &MetadataVersion::Number(1),
+    pub async fn new(config: Config<T>, local: L, remote: R) -> Result<Self> {
+        let root_path = MetadataPath::from_role(&Role::Root);
+        let root_version = MetadataVersion::Number(1);
+
+        let root = await!(local.fetch_metadata(
+            &root_path,
+            &root_version,
             &config.max_root_size,
             config.min_bytes_per_second,
             None,
-        )?;
+        ))?;
 
         let tuf = Tuf::from_root(root)?;
 
@@ -153,42 +160,40 @@ where
     /// repositories using the provided key IDs to pin the verification.
     ///
     /// This is the preferred method of creating a client.
-    pub fn with_root_pinned<'a, I>(
-        trusted_root_keys: I,
+    pub async fn with_root_pinned(
+        trusted_root_keys: &[KeyId],
         config: Config<T>,
         local: L,
         remote: R,
-    ) -> Result<Self>
-    where
-        I: IntoIterator<Item = &'a KeyId>,
-        T: PathTranslator,
-    {
+    ) -> Result<Self> {
         let root_path = MetadataPath::from_role(&Role::Root);
+        let root_version = MetadataVersion::Number(1);
 
-        let root = local
-            .fetch_metadata(
-                &root_path,
-                &MetadataVersion::Number(1),
-                &config.max_root_size,
-                config.min_bytes_per_second,
-                None,
-            )
-            .or_else(|_| -> Result<SignedMetadata<_, RootMetadata>> {
+        let root = match await!(local.fetch_metadata(
+            &root_path,
+            &root_version,
+            &config.max_root_size,
+            config.min_bytes_per_second,
+            None,
+        )) {
+            Ok(root) => root,
+            Err(_) => {
                 // FIXME: should we be fetching the latest version instead of version 1?
-                let root = remote.fetch_metadata(
+                let root = await!(remote.fetch_metadata(
                     &root_path,
-                    &MetadataVersion::Number(1),
+                    &root_version,
                     &config.max_root_size,
                     config.min_bytes_per_second,
                     None,
-                )?;
+                ))?;
 
-                local.store_metadata(&root_path, &MetadataVersion::Number(1), &root)?;
+                await!(local.store_metadata(&root_path, &MetadataVersion::Number(1), &root))?;
 
                 // FIXME: should we also the root as `MetadataVersion::None`?
 
-                Ok(root)
-            })?;
+                root
+            }
+        };
 
         let tuf = Tuf::from_root_pinned(root, trusted_root_keys)?;
 
@@ -203,26 +208,26 @@ where
     /// Update TUF metadata from the remote repository.
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
-    pub fn update(&mut self) -> Result<bool> {
-        let r = self.update_root()?;
-        let ts = self.update_timestamp()?;
-        let sn = self.update_snapshot()?;
-        let ta = self.update_targets()?;
+    pub async fn update(&mut self) -> Result<bool> {
+        let r = await!(self.update_root())?;
+        let ts = await!(self.update_timestamp())?;
+        let sn = await!(self.update_snapshot())?;
+        let ta = await!(self.update_targets())?;
 
         Ok(r || ts || sn || ta)
     }
 
     /// Store the metadata in the local repository. This is juts a local cache, so we ignore if it
     /// experiences any errors.
-    fn store_metadata<M>(
-        &mut self,
-        path: &MetadataPath,
-        version: &MetadataVersion,
-        metadata: &SignedMetadata<D, M>,
+    async fn store_metadata<'a, M>(
+        &'a mut self,
+        path: &'a MetadataPath,
+        version: &'a MetadataVersion,
+        metadata: &'a SignedMetadata<D, M>,
     ) where
-        M: Metadata,
+        M: Metadata + 'static,
     {
-        match self.local.store_metadata(path, version, metadata) {
+        match await!(self.local.store_metadata(path, version, metadata)) {
             Ok(()) => {}
             Err(err) => {
                 warn!(
@@ -237,16 +242,16 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_root(&mut self) -> Result<bool> {
+    async fn update_root(&mut self) -> Result<bool> {
         let root_path = MetadataPath::from_role(&Role::Root);
 
-        let latest_root = self.remote.fetch_metadata(
+        let latest_root = await!(self.remote.fetch_metadata(
             &root_path,
             &MetadataVersion::None,
             &self.config.max_root_size,
             self.config.min_bytes_per_second,
             None,
-        )?;
+        ))?;
         let latest_version = latest_root.version();
 
         if latest_version < self.tuf.root().version() {
@@ -265,20 +270,20 @@ where
         for i in (self.tuf.root().version() + 1)..latest_version {
             let version = MetadataVersion::Number(i);
 
-            let signed_root = self.remote.fetch_metadata(
+            let signed_root = await!(self.remote.fetch_metadata(
                 &root_path,
                 &version,
                 &self.config.max_root_size,
                 self.config.min_bytes_per_second,
                 None,
-            )?;
+            ))?;
 
             if !self.tuf.update_root(signed_root.clone())? {
                 error!("{}", err_msg);
                 return Err(Error::Programming(err_msg.into()));
             }
 
-            self.store_metadata(&root_path, &version, &signed_root);
+            await!(self.store_metadata(&root_path, &version, &signed_root));
         }
 
         if !self.tuf.update_root(latest_root.clone())? {
@@ -286,12 +291,10 @@ where
             return Err(Error::Programming(err_msg.into()));
         }
 
-        self.store_metadata(
-            &root_path,
-            &MetadataVersion::Number(latest_version),
-            &latest_root,
-        );
-        self.store_metadata(&root_path, &MetadataVersion::None, &latest_root);
+        let latest_version = MetadataVersion::Number(latest_version);
+
+        await!(self.store_metadata(&root_path, &latest_version, &latest_root,));
+        await!(self.store_metadata(&root_path, &MetadataVersion::None, &latest_root));
 
         if self.tuf.root().expires() <= &Utc::now() {
             error!("Root metadata expired, potential freeze attack");
@@ -302,25 +305,22 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_timestamp(&mut self) -> Result<bool> {
+    async fn update_timestamp(&mut self) -> Result<bool> {
         let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
 
-        let signed_timestamp = self.remote.fetch_metadata(
+        let signed_timestamp = await!(self.remote.fetch_metadata(
             &timestamp_path,
             &MetadataVersion::None,
             &self.config.max_timestamp_size,
             self.config.min_bytes_per_second,
             None,
-        )?;
+        ))?;
 
         if self.tuf.update_timestamp(signed_timestamp.clone())? {
             let latest_version = signed_timestamp.version();
+            let latest_version = MetadataVersion::Number(latest_version);
 
-            self.store_metadata(
-                &timestamp_path,
-                &MetadataVersion::Number(latest_version),
-                &signed_timestamp,
-            );
+            await!(self.store_metadata(&timestamp_path, &latest_version, &signed_timestamp,));
 
             Ok(true)
         } else {
@@ -329,7 +329,7 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_snapshot(&mut self) -> Result<bool> {
+    async fn update_snapshot(&mut self) -> Result<bool> {
         // 5.3.1 Check against timestamp metadata. The hashes and version number listed in the
         // timestamp metadata. If hashes and version do not match, discard the new snapshot
         // metadata, abort the update cycle, and report the failure.
@@ -352,17 +352,18 @@ where
         };
 
         let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
+        let snapshot_size = Some(snapshot_description.size());
 
-        let signed_snapshot = self.remote.fetch_metadata(
+        let signed_snapshot = await!(self.remote.fetch_metadata(
             &snapshot_path,
             &version,
-            &Some(snapshot_description.size()),
+            &snapshot_size,
             self.config.min_bytes_per_second,
             Some((alg, value.clone())),
-        )?;
+        ))?;
 
         if self.tuf.update_snapshot(signed_snapshot.clone())? {
-            self.store_metadata(&snapshot_path, &version, &signed_snapshot);
+            await!(self.store_metadata(&snapshot_path, &version, &signed_snapshot));
 
             Ok(true)
         } else {
@@ -371,7 +372,7 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    fn update_targets(&mut self) -> Result<bool> {
+    async fn update_targets(&mut self) -> Result<bool> {
         let targets_description = match self.tuf.snapshot() {
             Some(sn) => match sn.meta().get(&MetadataPath::from_role(&Role::Targets)) {
                 Some(d) => Ok(d),
@@ -398,17 +399,18 @@ where
         };
 
         let targets_path = MetadataPath::from_role(&Role::Targets);
+        let targets_size = Some(targets_description.size());
 
-        let signed_targets = self.remote.fetch_metadata(
+        let signed_targets = await!(self.remote.fetch_metadata(
             &targets_path,
             &version,
-            &Some(targets_description.size()),
+            &targets_size,
             self.config.min_bytes_per_second,
             Some((alg, value.clone())),
-        )?;
+        ))?;
 
         if self.tuf.update_targets(signed_targets.clone())? {
-            self.store_metadata(&targets_path, &version, &signed_targets);
+            await!(self.store_metadata(&targets_path, &version, &signed_targets));
 
             Ok(true)
         } else {
@@ -417,31 +419,24 @@ where
     }
 
     /// Fetch a target from the remote repo and write it to the local repo.
-    pub fn fetch_target(&mut self, target: &TargetPath) -> Result<()> {
-        let read = self._fetch_target(target)?;
-        self.local.store_target(read, target)
+    pub async fn fetch_target<'a>(&'a mut self, target: &'a TargetPath) -> Result<()> {
+        let read = await!(self._fetch_target(target))?;
+        await!(self.local.store_target(read, target))
     }
 
     /// Fetch a target from the remote repo and write it to the provided writer.
-    pub fn fetch_target_to_writer<W: Write>(
-        &mut self,
-        target: &TargetPath,
+    pub async fn fetch_target_to_writer<'a, W: AsyncWrite + 'a>(
+        &'a mut self,
+        target: &'a TargetPath,
         mut write: W,
     ) -> Result<()> {
-        let mut read = self._fetch_target(&target)?;
-        let mut buf = [0; 1024];
-        loop {
-            let bytes_read = read.read(&mut buf)?;
-            if bytes_read == 0 {
-                break;
-            }
-            write.write_all(&buf[..bytes_read])?
-        }
+        let mut read = await!(self._fetch_target(&target))?;
+        await!(read.copy_into(&mut write))?;
         Ok(())
     }
 
     // TODO this should check the local repo first
-    fn _fetch_target(&mut self, target: &TargetPath) -> Result<SafeReader<R::TargetRead>> {
+    async fn _fetch_target<'a>(&'a mut self, target: &'a TargetPath) -> Result<Box<dyn AsyncRead>> {
         let virt = self.config.path_translator.real_to_virtual(target)?;
 
         let snapshot = self
@@ -450,23 +445,23 @@ where
             .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
             .clone();
         let (_, target_description) =
-            self.lookup_target_description(false, 0, &virt, &snapshot, None);
+            await!(self.lookup_target_description(false, 0, &virt, &snapshot, None));
         let target_description = target_description?;
 
-        self.remote.fetch_target(
+        await!(self.remote.fetch_target(
             target,
             &target_description,
             self.config.min_bytes_per_second,
-        )
+        ))
     }
 
-    fn lookup_target_description(
-        &mut self,
+    async fn lookup_target_description<'a>(
+        &'a mut self,
         default_terminate: bool,
         current_depth: u32,
-        target: &VirtualTargetPath,
-        snapshot: &SnapshotMetadata,
-        targets: Option<&TargetsMetadata>,
+        target: &'a VirtualTargetPath,
+        snapshot: &'a SnapshotMetadata,
+        targets: Option<&'a TargetsMetadata>,
     ) -> (bool, Result<TargetDescription>) {
         if current_depth > self.config.max_delegation_depth {
             warn!(
@@ -526,32 +521,35 @@ where
                 MetadataVersion::None
             };
 
-            let signed_meta = match self
-                .local
-                .fetch_metadata::<TargetsMetadata>(
-                    delegation.role(),
-                    &MetadataVersion::None,
-                    &Some(role_meta.size()),
-                    self.config.min_bytes_per_second(),
-                    Some((alg, value.clone())),
-                )
-                .or_else(|_| {
-                    self.remote.fetch_metadata::<TargetsMetadata>(
+            let role_size = Some(role_meta.size());
+            let signed_meta = await!(self.local.fetch_metadata::<TargetsMetadata>(
+                delegation.role(),
+                &MetadataVersion::None,
+                &role_size,
+                self.config.min_bytes_per_second(),
+                Some((alg, value.clone())),
+            ));
+
+            let signed_meta = match signed_meta {
+                Ok(signed_meta) => signed_meta,
+                Err(_) => {
+                    match await!(self.remote.fetch_metadata::<TargetsMetadata>(
                         delegation.role(),
                         &version,
-                        &Some(role_meta.size()),
+                        &role_size,
                         self.config.min_bytes_per_second(),
                         Some((alg, value.clone())),
-                    )
-                }) {
-                Ok(m) => m,
-                Err(ref e) if !delegation.terminating() => {
-                    warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
-                    continue;
-                }
-                Err(e) => {
-                    warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
-                    return (true, Err(e));
+                    )) {
+                        Ok(m) => m,
+                        Err(ref e) if !delegation.terminating() => {
+                            warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
+                            continue;
+                        }
+                        Err(e) => {
+                            warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
+                            return (true, Err(e));
+                        }
+                    }
                 }
             };
 
@@ -560,11 +558,11 @@ where
                 .update_delegation(delegation.role(), signed_meta.clone())
             {
                 Ok(_) => {
-                    match self.local.store_metadata(
+                    match await!(self.local.store_metadata(
                         delegation.role(),
                         &MetadataVersion::None,
                         &signed_meta,
-                    ) {
+                    )) {
                         Ok(_) => (),
                         Err(e) => warn!(
                             "Error storing metadata {:?} locally: {:?}",
@@ -579,13 +577,13 @@ where
                         .get(delegation.role())
                         .unwrap()
                         .clone();
-                    let (term, res) = self.lookup_target_description(
+                    let (term, res) = await!(Box::pinned(self.lookup_target_description(
                         delegation.terminating(),
                         current_depth + 1,
                         target,
                         snapshot,
                         Some(meta.as_ref()),
-                    );
+                    )));
 
                     if term && res.is_err() {
                         return (true, res);
@@ -766,11 +764,12 @@ mod test {
     use crate::crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
     use crate::interchange::Json;
     use crate::metadata::{
-        MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder,
+        MetadataPath, MetadataVersion, RootMetadata, RootMetadataBuilder, SnapshotMetadataBuilder,
         TargetsMetadataBuilder, TimestampMetadataBuilder,
     };
     use crate::repository::EphemeralRepository;
     use chrono::prelude::*;
+    use futures::executor::block_on;
     use lazy_static::lazy_static;
     use std::u32;
 
@@ -861,147 +860,136 @@ mod test {
         ////
         // Now register the metadata.
 
-        repo.store_metadata(
+        block_on(repo.store_metadata(
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::Number(1),
             &root1,
-        )
+        ))
         .unwrap();
 
-        repo.store_metadata(
+        block_on(repo.store_metadata(
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::None,
             &root1,
-        )
+        ))
         .unwrap();
 
-        repo.store_metadata(
+        block_on(repo.store_metadata(
             &MetadataPath::from_role(&Role::Targets),
             &MetadataVersion::Number(1),
             &targets,
-        )
+        ))
         .unwrap();
 
-        repo.store_metadata(
+        block_on(repo.store_metadata(
             &MetadataPath::from_role(&Role::Targets),
             &MetadataVersion::None,
             &targets,
-        )
+        ))
         .unwrap();
 
-        repo.store_metadata(
+        block_on(repo.store_metadata(
             &MetadataPath::from_role(&Role::Snapshot),
             &MetadataVersion::Number(1),
             &snapshot,
-        )
+        ))
         .unwrap();
 
-        repo.store_metadata(
+        block_on(repo.store_metadata(
             &MetadataPath::from_role(&Role::Snapshot),
             &MetadataVersion::None,
             &snapshot,
-        )
+        ))
         .unwrap();
 
-        repo.store_metadata(
+        block_on(repo.store_metadata(
             &MetadataPath::from_role(&Role::Timestamp),
             &MetadataVersion::Number(1),
             &timestamp,
-        )
+        ))
         .unwrap();
 
-        repo.store_metadata(
+        block_on(repo.store_metadata(
             &MetadataPath::from_role(&Role::Timestamp),
             &MetadataVersion::None,
             &timestamp,
-        )
+        ))
         .unwrap();
 
         ////
         // Now, make sure that the local metadata got version 1.
 
-        let mut client = Client::with_root_pinned(
-            vec![KEYS[0].public().key_id()],
+        let key_ids = [KEYS[0].public().key_id().clone()];
+        let mut client = block_on(Client::with_root_pinned(
+            &key_ids,
             Config::build().finish().unwrap(),
             EphemeralRepository::new(),
             repo,
-        )
+        ))
         .unwrap();
 
-        assert_eq!(client.update(), Ok(true));
+        assert_eq!(block_on(client.update()), Ok(true));
         assert_eq!(client.tuf.root().version(), 1);
 
         assert_eq!(
             root1,
-            client
-                .local
-                .fetch_metadata::<RootMetadata>(
-                    &MetadataPath::from_role(&Role::Root),
-                    &MetadataVersion::Number(1),
-                    &None,
-                    u32::MAX,
-                    None
-                )
-                .unwrap(),
+            block_on(client.local.fetch_metadata::<RootMetadata>(
+                &MetadataPath::from_role(&Role::Root),
+                &MetadataVersion::Number(1),
+                &None,
+                u32::MAX,
+                None
+            ))
+            .unwrap(),
         );
 
         ////
         // Now bump the root to version 3
 
-        client
-            .remote
-            .store_metadata(
-                &MetadataPath::from_role(&Role::Root),
-                &MetadataVersion::Number(2),
-                &root2,
-            )
-            .unwrap();
+        block_on(client.remote.store_metadata(
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::Number(2),
+            &root2,
+        ))
+        .unwrap();
 
-        client
-            .remote
-            .store_metadata(
-                &MetadataPath::from_role(&Role::Root),
-                &MetadataVersion::None,
-                &root2,
-            )
-            .unwrap();
+        block_on(client.remote.store_metadata(
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::None,
+            &root2,
+        ))
+        .unwrap();
 
-        client
-            .remote
-            .store_metadata(
-                &MetadataPath::from_role(&Role::Root),
-                &MetadataVersion::Number(3),
-                &root3,
-            )
-            .unwrap();
+        block_on(client.remote.store_metadata(
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::Number(3),
+            &root3,
+        ))
+        .unwrap();
 
-        client
-            .remote
-            .store_metadata(
-                &MetadataPath::from_role(&Role::Root),
-                &MetadataVersion::None,
-                &root3,
-            )
-            .unwrap();
+        block_on(client.remote.store_metadata(
+            &MetadataPath::from_role(&Role::Root),
+            &MetadataVersion::None,
+            &root3,
+        ))
+        .unwrap();
 
         ////
         // Finally, check that the update brings us to version 3.
 
-        assert_eq!(client.update(), Ok(true));
+        assert_eq!(block_on(client.update()), Ok(true));
         assert_eq!(client.tuf.root().version(), 3);
 
         assert_eq!(
             root3,
-            client
-                .local
-                .fetch_metadata::<RootMetadata>(
-                    &MetadataPath::from_role(&Role::Root),
-                    &MetadataVersion::Number(3),
-                    &None,
-                    u32::MAX,
-                    None
-                )
-                .unwrap(),
+            block_on(client.local.fetch_metadata::<RootMetadata>(
+                &MetadataPath::from_role(&Role::Root),
+                &MetadataVersion::Number(3),
+                &None,
+                u32::MAX,
+                None
+            ))
+            .unwrap(),
         );
     }
 }

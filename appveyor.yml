@@ -10,24 +10,6 @@ matrix:
 
 environment:
   matrix:
-    # Rust - Stable
-    - TARGET: i686-pc-windows-gnu
-      RUST_VERSION: stable
-      BITS: 32
-      MSYS2: 1
-    - TARGET: x86_64-pc-windows-msvc
-      RUST_VERSION: stable
-      BITS: 64
-
-    # Rust - Beta
-    - TARGET: i686-pc-windows-gnu
-      RUST_VERSION: beta
-      BITS: 32
-      MSYS2: 1
-    - TARGET: x86_64-pc-windows-msvc
-      RUST_VERSION: beta
-      BITS: 64
-
     # Rust - Nightly
     - TARGET: i686-pc-windows-gnu
       RUST_VERSION: nightly
