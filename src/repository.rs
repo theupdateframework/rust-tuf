@@ -53,7 +53,6 @@ where
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
         max_size: &'a Option<usize>,
-        min_bytes_per_second: u32,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> TufFuture<'a, Result<SignedMetadata<D, M>>>
     where
@@ -73,7 +72,6 @@ where
         &'a self,
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
-        min_bytes_per_second: u32,
     ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>>;
 
     /// Perform a sanity check that `M`, `Role`, and `MetadataPath` all desrcribe the same entity.
@@ -160,7 +158,6 @@ where
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
         max_size: &'a Option<usize>,
-        min_bytes_per_second: u32,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> TufFuture<'a, Result<SignedMetadata<D, M>>>
     where
@@ -176,7 +173,7 @@ where
                 let mut reader = SafeReader::new(
                     AllowStdIo::new(File::open(&path)?),
                     max_size.unwrap_or(::std::usize::MAX) as u64,
-                    min_bytes_per_second,
+                    0,
                     hash_data,
                 )?;
 
@@ -218,7 +215,6 @@ where
         &'a self,
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
-        min_bytes_per_second: u32,
     ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
         Box::pinned(
             async move {
@@ -234,7 +230,7 @@ where
                 let reader: Box<dyn AsyncRead> = Box::new(SafeReader::new(
                     AllowStdIo::new(File::open(&path)?),
                     target_description.size(),
-                    min_bytes_per_second,
+                    0,
                     Some((alg, value.clone())),
                 )?);
 
@@ -258,16 +254,92 @@ fn create_temp_file(path: &Path) -> Result<NamedTempFile> {
     }
 }
 
+/// A builder to create a repository accessible over HTTP.
+pub struct HttpRepositoryBuilder<C, D>
+where
+    C: Connect + Sync + 'static,
+    D: DataInterchange,
+{
+    url: Url,
+    client: Client<C>,
+    interchange: PhantomData<D>,
+    user_agent_prefix: Option<String>,
+    metadata_prefix: Option<Vec<String>>,
+    min_bytes_per_second: u32,
+}
+
+impl<C, D> HttpRepositoryBuilder<C, D>
+where
+    C: Connect + Sync + 'static,
+    D: DataInterchange,
+{
+    /// Create a new repository with the given `Url` and `Client`.
+    pub fn new(url: Url, client: Client<C>) -> Self {
+        HttpRepositoryBuilder {
+            url: url,
+            client: client,
+            interchange: PhantomData,
+            user_agent_prefix: None,
+            metadata_prefix: None,
+            min_bytes_per_second: 4096,
+        }
+    }
+
+    /// Set the User-Agent prefix.
+    ///
+    /// Callers *should* include a custom User-Agent prefix to help maintainers of TUF repositories
+    /// keep track of which client versions exist in the field.
+    ///
+    pub fn user_agent_prefix<T: Into<String>>(mut self, user_agent_prefix: T) -> Self {
+        self.user_agent_prefix = Some(user_agent_prefix.into());
+        self
+    }
+
+    /// The argument `metadata_prefix` is used provide an alternate path where metadata is stored on
+    /// the repository. If `None`, this defaults to `/`. For example, if there is a TUF repository
+    /// at `https://tuf.example.com/`, but all metadata is stored at `/meta/`, then passing the
+    /// arg `Some("meta".into())` would cause `root.json` to be fetched from
+    /// `https://tuf.example.com/meta/root.json`.
+    pub fn metadata_prefix(mut self, metadata_prefix: Vec<String>) -> Self {
+        self.metadata_prefix = Some(metadata_prefix);
+        self
+    }
+
+    /// Set the minimum bytes per second for a read to be considered good.
+    pub fn min_bytes_per_second(mut self, min: u32) -> Self {
+        self.min_bytes_per_second = min;
+        self
+    }
+
+    /// Build a `HttpRepository`.
+    pub fn build(self) -> HttpRepository<C, D> {
+        let user_agent = match self.user_agent_prefix {
+            Some(ua) => format!("{} (rust-tuf/{})", ua, env!("CARGO_PKG_VERSION")),
+            None => format!("rust-tuf/{}", env!("CARGO_PKG_VERSION")),
+        };
+
+        HttpRepository {
+            url: self.url,
+            client: self.client,
+            interchange: self.interchange,
+            user_agent: user_agent,
+            metadata_prefix: self.metadata_prefix,
+            min_bytes_per_second: self.min_bytes_per_second,
+        }
+    }
+}
+
 /// A repository accessible over HTTP.
 pub struct HttpRepository<C, D>
 where
-    C: Connect + Sync,
+    C: Connect + Sync + 'static,
     D: DataInterchange,
 {
     url: Url,
     client: Client<C>,
     user_agent: String,
     metadata_prefix: Option<Vec<String>>,
+    min_bytes_per_second: u32,
     interchange: PhantomData<D>,
 }
 
@@ -276,36 +348,6 @@ where
     C: Connect + Sync + 'static,
     D: DataInterchange,
 {
-    /// Create a new repository with the given `Url` and `Client`.
-    ///
-    /// Callers *should* include a custom User-Agent prefix to help maintainers of TUF repositories
-    /// keep track of which client versions exist in the field.
-    ///
-    /// The argument `metadata_prefix` is used provide an alternate path where metadata is stored on
-    /// the repository. If `None`, this defaults to `/`. For example, if there is a TUF repository
-    /// at `https://tuf.example.com/`, but all metadata is stored at `/meta/`, then passing the
-    /// arg `Some("meta".into())` would cause `root.json` to be fetched from
-    /// `https://tuf.example.com/meta/root.json`.
-    pub fn new(
-        url: Url,
-        client: Client<C>,
-        user_agent_prefix: Option<String>,
-        metadata_prefix: Option<Vec<String>>,
-    ) -> Self {
-        let user_agent = match user_agent_prefix {
-            Some(ua) => format!("{} (rust-tuf/{})", ua, env!("CARGO_PKG_VERSION")),
-            None => format!("rust-tuf/{}", env!("CARGO_PKG_VERSION")),
-        };
-
-        HttpRepository {
-            url,
-            client,
-            user_agent,
-            metadata_prefix,
-            interchange: PhantomData,
-        }
-    }
-
     async fn get<'a>(
         &'a self,
         prefix: &'a Option<Vec<String>>,
@@ -378,7 +420,6 @@ where
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
         max_size: &'a Option<usize>,
-        min_bytes_per_second: u32,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> TufFuture<'a, Result<SignedMetadata<D, M>>>
     where
@@ -399,7 +440,7 @@ where
                 let mut reader = SafeReader::new(
                     IntoAsyncRead::new(stream),
                     max_size.unwrap_or(::std::usize::MAX) as u64,
-                    min_bytes_per_second,
+                    self.min_bytes_per_second,
                     hash_data,
                 )?;
 
@@ -423,7 +464,6 @@ where
         &'a self,
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
-        min_bytes_per_second: u32,
     ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
         Box::pinned(
             async move {
@@ -439,7 +479,7 @@ where
                 let reader = SafeReader::new(
                     IntoAsyncRead::new(stream),
                     target_description.size(),
-                    min_bytes_per_second,
+                    self.min_bytes_per_second,
                     Some((alg, value.clone())),
                 )?;
 
@@ -514,7 +554,6 @@ where
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
         max_size: &'a Option<usize>,
-        min_bytes_per_second: u32,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> TufFuture<'a, Result<SignedMetadata<D, M>>>
     where
@@ -530,7 +569,7 @@ where
                         let mut reader = SafeReader::new(
                             &**bytes,
                             max_size.unwrap_or(::std::usize::MAX) as u64,
-                            min_bytes_per_second,
+                            0,
                             hash_data,
                         )?;
 
@@ -569,7 +608,6 @@ where
         &'a self,
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
-        min_bytes_per_second: u32,
     ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
         Box::pinned(
             async move {
@@ -582,7 +620,7 @@ where
                         let reader: Box<dyn AsyncRead> = Box::new(SafeReader::new(
                             cur,
                             target_description.size(),
-                            min_bytes_per_second,
+                            0,
                             Some((alg, value.clone())),
                         )?);
 
@@ -615,14 +653,14 @@ mod test {
                 let path = TargetPath::new("batty".into()).unwrap();
                 await!(repo.store_target(data, &path)).unwrap();
 
-                let mut read = await!(repo.fetch_target(&path, &target_description, 0)).unwrap();
+                let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
                 let mut buf = Vec::new();
                 await!(read.read_to_end(&mut buf)).unwrap();
                 assert_eq!(buf.as_slice(), data);
 
                 let bad_data: &[u8] = b"you're in a desert";
                 await!(repo.store_target(bad_data, &path)).unwrap();
-                let mut read = await!(repo.fetch_target(&path, &target_description, 0)).unwrap();
+                let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
                 assert!(await!(read.read_to_end(&mut buf)).is_err());
             },
         )
@@ -664,14 +702,14 @@ mod test {
                 // files in a mode that allows the file to be opened multiple times.
                 {
                     let mut read =
-                        await!(repo.fetch_target(&path, &target_description, 0)).unwrap();
+                        await!(repo.fetch_target(&path, &target_description)).unwrap();
                     await!(read.read_to_end(&mut buf)).unwrap();
                     assert_eq!(buf.as_slice(), data);
                 }
 
                 let bad_data: &[u8] = b"you're in a desert";
                 await!(repo.store_target(bad_data, &path)).unwrap();
-                let mut read = await!(repo.fetch_target(&path, &target_description, 0)).unwrap();
+                let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
                 assert!(await!(read.read_to_end(&mut buf)).is_err());
             },
         )

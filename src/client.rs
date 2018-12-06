@@ -13,7 +13,7 @@
 //! # use tuf::metadata::{RootMetadata, SignedMetadata, Role, MetadataPath,
 //! #     MetadataVersion};
 //! # use tuf::interchange::Json;
-//! # use tuf::repository::{Repository, FileSystemRepository, HttpRepository};
+//! # use tuf::repository::{Repository, FileSystemRepository, HttpRepositoryBuilder};
 //!
 //! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
 //!     "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
@@ -29,11 +29,12 @@
 //!
 //! let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))?;
 //!
-//! let remote = HttpRepository::new(
+//! let remote = HttpRepositoryBuilder::new(
 //!     url::Url::parse("https://static.rust-lang.org/").unwrap(),
 //!     HttpClient::new(),
-//!     Some("rustup/1.4.0".into()),
-//!     None);
+//! )
+//! .user_agent_prefix("rustup/1.4.0")
+//! .build();
 //!
 //! let mut client = await!(Client::with_root_pinned(
 //!     &key_ids,
@@ -142,7 +143,6 @@ where
             &root_path,
             &root_version,
             &config.max_root_size,
-            config.min_bytes_per_second,
             None,
         ))?;
 
@@ -173,7 +173,6 @@ where
             &root_path,
             &root_version,
             &config.max_root_size,
-            config.min_bytes_per_second,
             None,
         )) {
             Ok(root) => root,
@@ -183,7 +182,6 @@ where
                     &root_path,
                     &root_version,
                     &config.max_root_size,
-                    config.min_bytes_per_second,
                     None,
                 ))?;
 
@@ -249,7 +247,6 @@ where
             &root_path,
             &MetadataVersion::None,
             &self.config.max_root_size,
-            self.config.min_bytes_per_second,
             None,
         ))?;
         let latest_version = latest_root.version();
@@ -274,7 +271,6 @@ where
                 &root_path,
                 &version,
                 &self.config.max_root_size,
-                self.config.min_bytes_per_second,
                 None,
             ))?;
 
@@ -312,7 +308,6 @@ where
             &timestamp_path,
             &MetadataVersion::None,
             &self.config.max_timestamp_size,
-            self.config.min_bytes_per_second,
             None,
         ))?;
 
@@ -358,7 +353,6 @@ where
             &snapshot_path,
             &version,
             &snapshot_size,
-            self.config.min_bytes_per_second,
             Some((alg, value.clone())),
         ))?;
 
@@ -405,7 +399,6 @@ where
             &targets_path,
             &version,
             &targets_size,
-            self.config.min_bytes_per_second,
             Some((alg, value.clone())),
         ))?;
 
@@ -451,7 +444,6 @@ where
         await!(self.remote.fetch_target(
             target,
             &target_description,
-            self.config.min_bytes_per_second,
         ))
     }
 
@@ -526,7 +518,6 @@ where
                 delegation.role(),
                 &MetadataVersion::None,
                 &role_size,
-                self.config.min_bytes_per_second(),
                 Some((alg, value.clone())),
             ));
 
@@ -537,7 +528,6 @@ where
                         delegation.role(),
                         &version,
                         &role_size,
-                        self.config.min_bytes_per_second(),
                         Some((alg, value.clone())),
                     )) {
                         Ok(m) => m,
@@ -613,7 +603,6 @@ where
 /// let config = Config::default();
 /// assert_eq!(config.max_root_size(), &Some(1024 * 1024));
 /// assert_eq!(config.max_timestamp_size(), &Some(32 * 1024));
-/// assert_eq!(config.min_bytes_per_second(), 4096);
 /// assert_eq!(config.max_delegation_depth(), 8);
 /// let _: &DefaultTranslator = config.path_translator();
 /// ```
@@ -624,7 +613,6 @@ where
 {
     max_root_size: Option<usize>,
     max_timestamp_size: Option<usize>,
-    min_bytes_per_second: u32,
     max_delegation_depth: u32,
     path_translator: T,
 }
@@ -650,11 +638,6 @@ where
         &self.max_timestamp_size
     }
 
-    /// The minimum bytes per second for a read to be considered good.
-    pub fn min_bytes_per_second(&self) -> u32 {
-        self.min_bytes_per_second
-    }
-
     /// The maximum number of steps used when walking the delegation graph.
     pub fn max_delegation_depth(&self) -> u32 {
         self.max_delegation_depth
@@ -671,7 +654,6 @@ impl Default for Config<DefaultTranslator> {
         Config {
             max_root_size: Some(1024 * 1024),
             max_timestamp_size: Some(32 * 1024),
-            min_bytes_per_second: 4096,
             max_delegation_depth: 8,
             path_translator: DefaultTranslator::new(),
         }
@@ -686,7 +668,6 @@ where
 {
     max_root_size: Option<usize>,
     max_timestamp_size: Option<usize>,
-    min_bytes_per_second: u32,
     max_delegation_depth: u32,
     path_translator: T,
 }
@@ -700,7 +681,6 @@ where
         Ok(Config {
             max_root_size: self.max_root_size,
             max_timestamp_size: self.max_timestamp_size,
-            min_bytes_per_second: self.min_bytes_per_second,
             max_delegation_depth: self.max_delegation_depth,
             path_translator: self.path_translator,
         })
@@ -718,12 +698,6 @@ where
         self
     }
 
-    /// Set the minimum bytes per second for a read to be considered good.
-    pub fn min_bytes_per_second(mut self, min: u32) -> Self {
-        self.min_bytes_per_second = min;
-        self
-    }
-
     /// Set the maximum number of steps used when walking the delegation graph.
     pub fn max_delegation_depth(mut self, max: u32) -> Self {
         self.max_delegation_depth = max;
@@ -738,7 +712,6 @@ where
         ConfigBuilder {
             max_root_size: self.max_root_size,
             max_timestamp_size: self.max_timestamp_size,
-            min_bytes_per_second: self.min_bytes_per_second,
             max_delegation_depth: self.max_delegation_depth,
             path_translator,
         }
@@ -751,7 +724,6 @@ impl Default for ConfigBuilder<DefaultTranslator> {
         ConfigBuilder {
             max_root_size: cfg.max_root_size,
             max_timestamp_size: cfg.max_timestamp_size,
-            min_bytes_per_second: cfg.min_bytes_per_second,
             max_delegation_depth: cfg.max_delegation_depth,
             path_translator: cfg.path_translator,
         }
@@ -771,7 +743,6 @@ mod test {
     use chrono::prelude::*;
     use futures::executor::block_on;
     use lazy_static::lazy_static;
-    use std::u32;
 
     lazy_static! {
         static ref KEYS: Vec<PrivateKey> = {
@@ -937,7 +908,6 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(1),
                 &None,
-                u32::MAX,
                 None
             ))
             .unwrap(),
@@ -986,7 +956,6 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(3),
                 &None,
-                u32::MAX,
                 None
             ))
             .unwrap(),
