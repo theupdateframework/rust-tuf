@@ -21,9 +21,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 use untrusted::Input;
 
-use error::Error;
-use shims;
-use Result;
+use crate::error::Error;
+use crate::shims;
+use crate::Result;
 
 const HASH_ALG_PREFS: &[HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
 
@@ -82,7 +82,7 @@ pub fn calculate_hashes<R: Read>(
                 return Err(Error::IllegalArgument(format!(
                     "Unknown hash algorithm: {}",
                     s
-                )))
+                )));
             }
         };
 
@@ -409,7 +409,7 @@ impl PrivateKey {
                         return Err(Error::IllegalArgument(format!(
                             "Cannot use signature scheme {:?} with Ed25519 keys",
                             s
-                        )))
+                        )));
                     }
                 };
                 Ok(k)
@@ -499,7 +499,7 @@ impl PrivateKey {
                 return Err(Error::IllegalArgument(format!(
                     "Key {:?} can't be used with scheme {:?}",
                     k, s
-                )))
+                )));
             }
         };
 
@@ -521,12 +521,14 @@ impl PrivateKey {
                 "rsa_keygen_pubexp:65537",
                 "-outform",
                 "der",
-            ]).output()?;
+            ])
+            .output()?;
 
         let mut pk8 = Command::new("openssl")
             .args(&[
                 "pkcs8", "-inform", "der", "-topk8", "-nocrypt", "-outform", "der",
-            ]).stdin(Stdio::piped())
+            ])
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()?;
 
@@ -623,7 +625,7 @@ impl PublicKey {
                 return Err(Error::IllegalArgument(format!(
                     "Unknown signature scheme: {}",
                     s
-                )))
+                )));
             }
         };
 
@@ -632,7 +634,8 @@ impl PublicKey {
             Input::from(&self.value.0),
             Input::from(msg),
             Input::from(&sig.value.0),
-        ).map_err(|_| Error::BadSignature)
+        )
+        .map_err(|_| Error::BadSignature)
     }
 }
 
@@ -856,7 +859,7 @@ fn write_pkcs1(n: &[u8], e: &[u8]) -> ::std::result::Result<Vec<u8>, derp::Error
 #[cfg(test)]
 mod test {
     use super::*;
-    use json;
+    use serde_json::{self, json};
 
     const RSA_2048_PK8: &'static [u8] = include_bytes!("../tests/rsa/rsa-2048.pk8.der");
     const RSA_2048_SPKI: &'static [u8] = include_bytes!("../tests/rsa/rsa-2048.spki.der");
@@ -935,9 +938,9 @@ mod test {
     fn serde_key_id() {
         let s = "T5vfRrM1iHpgzGwAHe7MbJH_7r4chkOAphV3OPCCv0I=";
         let jsn = json!(s);
-        let parsed: KeyId = json::from_str(&format!("\"{}\"", s)).unwrap();
+        let parsed: KeyId = serde_json::from_str(&format!("\"{}\"", s)).unwrap();
         assert_eq!(parsed, KeyId::from_string(s).unwrap());
-        let encoded = json::to_value(&parsed).unwrap();
+        let encoded = serde_json::to_value(&parsed).unwrap();
         assert_eq!(encoded, jsn);
     }
 
@@ -945,9 +948,9 @@ mod test {
     fn serde_signature_value() {
         let s = "T5vfRrM1iHpgzGwAHe7MbJH_7r4chkOAphV3OPCCv0I=";
         let jsn = json!(s);
-        let parsed: SignatureValue = json::from_str(&format!("\"{}\"", s)).unwrap();
+        let parsed: SignatureValue = serde_json::from_str(&format!("\"{}\"", s)).unwrap();
         assert_eq!(parsed, SignatureValue::from_string(s).unwrap());
-        let encoded = json::to_value(&parsed).unwrap();
+        let encoded = serde_json::to_value(&parsed).unwrap();
         assert_eq!(encoded, jsn);
     }
 
@@ -955,14 +958,14 @@ mod test {
     fn serde_rsa_public_key() {
         let der = RSA_2048_SPKI;
         let pub_key = PublicKey::from_spki(der, SignatureScheme::RsaSsaPssSha256).unwrap();
-        let encoded = json::to_value(&pub_key).unwrap();
+        let encoded = serde_json::to_value(&pub_key).unwrap();
         let jsn = json!({
             "type": "rsa",
             "scheme": "rsassa-pss-sha256",
             "public_key": BASE64URL.encode(der),
         });
         assert_eq!(encoded, jsn);
-        let decoded: PublicKey = json::from_value(encoded).unwrap();
+        let decoded: PublicKey = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, pub_key);
     }
 
@@ -970,14 +973,14 @@ mod test {
     fn serde_ed25519_public_key() {
         let der = ED25519_SPKI;
         let pub_key = PublicKey::from_spki(der, SignatureScheme::Ed25519).unwrap();
-        let encoded = json::to_value(&pub_key).unwrap();
+        let encoded = serde_json::to_value(&pub_key).unwrap();
         let jsn = json!({
             "type": "ed25519",
             "scheme": "ed25519",
             "public_key": BASE64URL.encode(der),
         });
         assert_eq!(encoded, jsn);
-        let decoded: PublicKey = json::from_value(encoded).unwrap();
+        let decoded: PublicKey = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, pub_key);
     }
 
@@ -986,15 +989,15 @@ mod test {
         let key = PrivateKey::from_pkcs8(ED25519_PK8, SignatureScheme::Ed25519).unwrap();
         let msg = b"test";
         let sig = key.sign(msg).unwrap();
-        let encoded = json::to_value(&sig).unwrap();
+        let encoded = serde_json::to_value(&sig).unwrap();
         let jsn = json!({
-            "key_id": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-            "value": "_k0Tsqc8Azod5_UQeyBfx7oOFWbLlbkjScrmqkU4lWATv-D3v5d8sHK7Z\
-                eh4K18zoFc_54gWKZoBfKW6VZ45DA==",
+        "key_id": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
+        "value": "_k0Tsqc8Azod5_UQeyBfx7oOFWbLlbkjScrmqkU4lWATv-D3v5d8sHK7Z\
+            eh4K18zoFc_54gWKZoBfKW6VZ45DA==",
         });
         assert_eq!(encoded, jsn);
 
-        let decoded: Signature = json::from_value(encoded).unwrap();
+        let decoded: Signature = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, sig);
     }
 

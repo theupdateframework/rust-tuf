@@ -4,10 +4,10 @@ use data_encoding::BASE64URL;
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 
-use crypto;
-use error::Error;
-use metadata::{self, Metadata};
-use Result;
+use crate::crypto;
+use crate::error::Error;
+use crate::metadata::{self, Metadata};
+use crate::Result;
 
 fn parse_datetime(ts: &str) -> Result<DateTime<Utc>> {
     Utc.datetime_from_str(ts, "%FT%TZ")

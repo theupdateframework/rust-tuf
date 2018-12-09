@@ -47,20 +47,20 @@
 //! }
 //! ```
 
+use chrono::offset::Utc;
 use std::io::{Read, Write};
 
-use chrono::offset::Utc;
-use crypto::{self, KeyId};
-use error::Error;
-use interchange::DataInterchange;
-use metadata::{
+use crate::crypto::{self, KeyId};
+use crate::error::Error;
+use crate::interchange::DataInterchange;
+use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, Role, RootMetadata, SignedMetadata, SnapshotMetadata,
     TargetDescription, TargetPath, TargetsMetadata, VirtualTargetPath,
 };
-use repository::Repository;
-use tuf::Tuf;
-use util::SafeReader;
-use Result;
+use crate::repository::Repository;
+use crate::tuf::Tuf;
+use crate::util::SafeReader;
+use crate::Result;
 
 /// Translates real paths (where a file is stored) into virtual paths (how it is addressed in TUF)
 /// and back.
@@ -175,7 +175,8 @@ where
                 &config.max_root_size,
                 config.min_bytes_per_second,
                 None,
-            ).or_else(|_| -> Result<SignedMetadata<_, RootMetadata>> {
+            )
+            .or_else(|_| -> Result<SignedMetadata<_, RootMetadata>> {
                 // FIXME: should we be fetching the latest version instead of version 1?
                 let root = remote.fetch_metadata(
                     &root_path,
@@ -338,7 +339,8 @@ where
         let snapshot_description = match self.tuf.timestamp() {
             Some(ts) => Ok(ts.snapshot()),
             None => Err(Error::MissingMetadata(Role::Timestamp)),
-        }?.clone();
+        }?
+        .clone();
 
         if snapshot_description.version() <= self.tuf.snapshot().map(|s| s.version()).unwrap_or(0) {
             return Ok(false);
@@ -383,7 +385,8 @@ where
                 )),
             },
             None => Err(Error::MissingMetadata(Role::Snapshot)),
-        }?.clone();
+        }?
+        .clone();
 
         if targets_description.version() <= self.tuf.targets().map(|t| t.version()).unwrap_or(0) {
             return Ok(false);
@@ -486,7 +489,7 @@ where
                     return (
                         default_terminate,
                         Err(Error::MissingMetadata(Role::Targets)),
-                    )
+                    );
                 }
             },
         };
@@ -534,7 +537,8 @@ where
                     &Some(role_meta.size()),
                     self.config.min_bytes_per_second(),
                     Some((alg, value.clone())),
-                ).or_else(|_| {
+                )
+                .or_else(|_| {
                     self.remote.fetch_metadata::<TargetsMetadata>(
                         delegation.role(),
                         &version,
@@ -762,14 +766,14 @@ impl Default for ConfigBuilder<DefaultTranslator> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use chrono::prelude::*;
-    use crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
-    use interchange::Json;
-    use metadata::{
+    use crate::crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
+    use crate::interchange::Json;
+    use crate::metadata::{
         MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder,
         TargetsMetadataBuilder, TimestampMetadataBuilder,
     };
-    use repository::EphemeralRepository;
+    use crate::repository::EphemeralRepository;
+    use chrono::prelude::*;
     use std::u32;
 
     lazy_static! {
@@ -863,49 +867,57 @@ mod test {
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::Number(1),
             &root1,
-        ).unwrap();
+        )
+        .unwrap();
 
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Root),
             &MetadataVersion::None,
             &root1,
-        ).unwrap();
+        )
+        .unwrap();
 
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Targets),
             &MetadataVersion::Number(1),
             &targets,
-        ).unwrap();
+        )
+        .unwrap();
 
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Targets),
             &MetadataVersion::None,
             &targets,
-        ).unwrap();
+        )
+        .unwrap();
 
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Snapshot),
             &MetadataVersion::Number(1),
             &snapshot,
-        ).unwrap();
+        )
+        .unwrap();
 
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Snapshot),
             &MetadataVersion::None,
             &snapshot,
-        ).unwrap();
+        )
+        .unwrap();
 
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Timestamp),
             &MetadataVersion::Number(1),
             &timestamp,
-        ).unwrap();
+        )
+        .unwrap();
 
         repo.store_metadata(
             &MetadataPath::from_role(&Role::Timestamp),
             &MetadataVersion::None,
             &timestamp,
-        ).unwrap();
+        )
+        .unwrap();
 
         ////
         // Now, make sure that the local metadata got version 1.
@@ -915,7 +927,8 @@ mod test {
             Config::build().finish().unwrap(),
             EphemeralRepository::new(),
             repo,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(client.update(), Ok(true));
         assert_eq!(client.tuf.root().version(), 1);
@@ -930,7 +943,8 @@ mod test {
                     &None,
                     u32::MAX,
                     None
-                ).unwrap(),
+                )
+                .unwrap(),
         );
 
         ////
@@ -942,7 +956,8 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(2),
                 &root2,
-            ).unwrap();
+            )
+            .unwrap();
 
         client
             .remote
@@ -950,7 +965,8 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::None,
                 &root2,
-            ).unwrap();
+            )
+            .unwrap();
 
         client
             .remote
@@ -958,7 +974,8 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(3),
                 &root3,
-            ).unwrap();
+            )
+            .unwrap();
 
         client
             .remote
@@ -966,7 +983,8 @@ mod test {
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::None,
                 &root3,
-            ).unwrap();
+            )
+            .unwrap();
 
         ////
         // Finally, check that the update brings us to version 3.
@@ -984,7 +1002,8 @@ mod test {
                     &None,
                     u32::MAX,
                     None
-                ).unwrap(),
+                )
+                .unwrap(),
         );
     }
 }

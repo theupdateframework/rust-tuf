@@ -4,14 +4,14 @@ use chrono::offset::Utc;
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
-use crypto::KeyId;
-use error::Error;
-use interchange::DataInterchange;
-use metadata::{
+use crate::crypto::KeyId;
+use crate::error::Error;
+use crate::interchange::DataInterchange;
+use crate::metadata::{
     Delegations, Metadata, MetadataPath, Role, RootMetadata, SignedMetadata, SnapshotMetadata,
     TargetDescription, TargetsMetadata, TimestampMetadata, VirtualTargetPath,
 };
-use Result;
+use crate::Result;
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
@@ -411,7 +411,7 @@ impl<D: DataInterchange> Tuf<D> {
                 None => {
                     return Err(Error::VerificationFailure(
                         "Delegations not authorized".into(),
-                    ))
+                    ));
                 }
             };
 
@@ -421,7 +421,7 @@ impl<D: DataInterchange> Tuf<D> {
                     return Err(Error::VerificationFailure(format!(
                         "The degated role {:?} was not present in the snapshot metadata.",
                         role
-                    )))
+                    )));
                 }
             };
 
@@ -622,9 +622,9 @@ impl<D: DataInterchange> Tuf<D> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
-    use interchange::Json;
-    use metadata::{
+    use crate::crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
+    use crate::interchange::Json;
+    use crate::metadata::{
         RootMetadataBuilder, SnapshotMetadataBuilder, TargetsMetadataBuilder,
         TimestampMetadataBuilder,
     };

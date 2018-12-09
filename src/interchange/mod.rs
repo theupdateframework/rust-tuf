@@ -2,14 +2,14 @@
 
 mod cjson;
 
-use json;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
+use serde_json;
 use std::fmt::Debug;
 use std::io::{Read, Write};
 
-use error::Error;
-use Result;
+use crate::error::Error;
+use crate::Result;
 
 /// The format used for data interchange, serialization, and deserialization.
 pub trait DataInterchange: Debug + PartialEq + Clone {
@@ -219,7 +219,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Json {}
 impl DataInterchange for Json {
-    type RawData = json::Value;
+    type RawData = serde_json::Value;
 
     /// ```
     /// # use tuf::interchange::{DataInterchange, Json};
@@ -267,7 +267,7 @@ impl DataInterchange for Json {
     where
         T: DeserializeOwned,
     {
-        Ok(json::from_value(raw_data.clone())?)
+        Ok(serde_json::from_value(raw_data.clone())?)
     }
 
     /// ```
@@ -296,7 +296,7 @@ impl DataInterchange for Json {
     where
         T: Serialize,
     {
-        Ok(json::to_value(data)?)
+        Ok(serde_json::to_value(data)?)
     }
 
     /// ```
@@ -327,6 +327,6 @@ impl DataInterchange for Json {
         R: Read,
         T: DeserializeOwned,
     {
-        Ok(json::from_reader(rdr)?)
+        Ok(serde_json::from_reader(rdr)?)
     }
 }
