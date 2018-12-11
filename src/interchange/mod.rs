@@ -242,13 +242,10 @@ impl DataInterchange for Json {
     }
 
     /// ```
-    /// # #[macro_use]
-    /// # extern crate serde_derive;
-    /// # #[macro_use]
-    /// # extern crate serde_json;
-    /// # extern crate tuf;
-    /// # use tuf::interchange::{DataInterchange, Json};
+    /// # use serde_derive::Deserialize;
+    /// # use serde_json::json;
     /// # use std::collections::HashMap;
+    /// # use tuf::interchange::{DataInterchange, Json};
     /// #
     /// #[derive(Deserialize, Debug, PartialEq)]
     /// struct Thing {
@@ -271,13 +268,10 @@ impl DataInterchange for Json {
     }
 
     /// ```
-    /// # #[macro_use]
-    /// # extern crate serde_derive;
-    /// # #[macro_use]
-    /// # extern crate serde_json;
-    /// # extern crate tuf;
-    /// # use tuf::interchange::{DataInterchange, Json};
+    /// # use serde_derive::Serialize;
+    /// # use serde_json::json;
     /// # use std::collections::HashMap;
+    /// # use tuf::interchange::{DataInterchange, Json};
     /// #
     /// #[derive(Serialize)]
     /// struct Thing {

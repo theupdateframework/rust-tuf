@@ -1,6 +1,7 @@
 //! Components needed to verify TUF metadata and targets.
 
 use chrono::offset::Utc;
+use log::info;
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
@@ -628,6 +629,7 @@ mod test {
         RootMetadataBuilder, SnapshotMetadataBuilder, TargetsMetadataBuilder,
         TimestampMetadataBuilder,
     };
+    use lazy_static::lazy_static;
 
     lazy_static! {
         static ref KEYS: Vec<PrivateKey> = {

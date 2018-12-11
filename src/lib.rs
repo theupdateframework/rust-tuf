@@ -102,53 +102,28 @@
 //! metadata on every update.
 
 #![deny(missing_docs)]
-#![cfg_attr(
-    feature = "cargo-clippy",
-    allow(
-        collapsible_if,
-        implicit_hasher,
-        new_ret_no_self,
-        op_ref,
-        too_many_arguments
-    )
+#![allow(
+    clippy::collapsible_if,
+    clippy::implicit_hasher,
+    clippy::new_ret_no_self,
+    clippy::op_ref,
+    clippy::too_many_arguments
 )]
-
-extern crate chrono;
-extern crate data_encoding;
-extern crate derp;
-extern crate hyper;
-extern crate itoa;
-#[cfg(test)]
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate log;
-#[cfg(test)]
-#[macro_use]
-extern crate maplit;
-extern crate ring;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate serde_json;
-
-extern crate tempfile;
-extern crate untrusted;
-
-pub mod error;
-
-/// Alias for `Result<T, Error>`.
-pub type Result<T> = ::std::result::Result<T, Error>;
 
 pub mod client;
 pub mod crypto;
+pub mod error;
 pub mod interchange;
 pub mod metadata;
 pub mod repository;
-mod shims;
 pub mod tuf;
+
+mod shims;
 mod util;
 
 pub use crate::error::*;
 pub use crate::tuf::*;
 pub use crate::util::*;
+
+/// Alias for `Result<T, Error>`.
+pub type Result<T> = std::result::Result<T, Error>;
