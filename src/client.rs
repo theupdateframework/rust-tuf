@@ -6,7 +6,6 @@
 //! #![feature(async_await, await_macro, futures_api, pin)]
 //! # use futures::executor::block_on;
 //! # use hyper::client::Client as HttpClient;
-//! # use hyper::Url;
 //! # use std::path::PathBuf;
 //! # use tuf::{Result, Tuf};
 //! # use tuf::crypto::KeyId;
@@ -15,6 +14,7 @@
 //! #     MetadataVersion};
 //! # use tuf::interchange::Json;
 //! # use tuf::repository::{Repository, FileSystemRepository, HttpRepository};
+//!
 //! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
 //!     "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
 //!     "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
@@ -30,7 +30,7 @@
 //! let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))?;
 //!
 //! let remote = HttpRepository::new(
-//!     Url::parse("https://static.rust-lang.org/").unwrap(),
+//!     url::Url::parse("https://static.rust-lang.org/").unwrap(),
 //!     HttpClient::new(),
 //!     Some("rustup/1.4.0".into()),
 //!     None);

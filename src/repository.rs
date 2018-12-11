@@ -1,27 +1,32 @@
 //! Interfaces for interacting with different types of TUF repositories.
 
-use futures::io::{AllowStdIo, AsyncRead, AsyncReadExt};
-use hyper::client::response::Response;
-use hyper::header::{Headers, UserAgent};
-use hyper::status::StatusCode;
-use hyper::{Client, Url};
+use futures::compat::{Future01CompatExt, Stream01CompatExt};
+use futures::io::{AllowStdIo, AsyncRead};
+use futures::prelude::*;
+use http::{Response, StatusCode, Uri};
+use hyper::body::Body;
+use hyper::client::connect::Connect;
+use hyper::Client;
+use hyper::Request;
 use log::debug;
 use std::collections::HashMap;
 use std::fs::{DirBuilder, File};
-use std::io::Cursor;
+use std::io::{self, Cursor};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use tempfile::NamedTempFile;
+use tempfile::{self, NamedTempFile};
 
 use crate::crypto::{self, HashAlgorithm, HashValue};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
+use crate::into_async_read::IntoAsyncRead;
 use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, SignedMetadata, TargetDescription, TargetPath,
 };
 use crate::util::SafeReader;
 use crate::{Result, TufFuture};
+use url::Url;
 
 /// Top-level trait that represents a TUF repository and contains all the ways it can be interacted
 /// with.
@@ -254,19 +259,21 @@ fn create_temp_file(path: &Path) -> Result<NamedTempFile> {
 }
 
 /// A repository accessible over HTTP.
-pub struct HttpRepository<D>
+pub struct HttpRepository<C, D>
 where
+    C: Connect + Sync,
     D: DataInterchange,
 {
     url: Url,
-    client: Client,
+    client: Client<C>,
     user_agent: String,
     metadata_prefix: Option<Vec<String>>,
     interchange: PhantomData<D>,
 }
 
-impl<D> HttpRepository<D>
+impl<C, D> HttpRepository<C, D>
 where
+    C: Connect + Sync + 'static,
     D: DataInterchange,
 {
     /// Create a new repository with the given `Url` and `Client`.
@@ -281,7 +288,7 @@ where
     /// `https://tuf.example.com/meta/root.json`.
     pub fn new(
         url: Url,
-        client: Client,
+        client: Client<C>,
         user_agent_prefix: Option<String>,
         metadata_prefix: Option<Vec<String>>,
     ) -> Self {
@@ -299,10 +306,11 @@ where
         }
     }
 
-    fn get(&self, prefix: &Option<Vec<String>>, components: &[String]) -> Result<Response> {
-        let mut headers = Headers::new();
-        headers.set(UserAgent(self.user_agent.clone()));
-
+    async fn get<'a>(
+        &'a self,
+        prefix: &'a Option<Vec<String>>,
+        components: &'a [String],
+    ) -> Result<Response<Body>> {
         let mut url = self.url.clone();
         {
             let mut segments = url.path_segments_mut().map_err(|_| {
@@ -314,16 +322,25 @@ where
             segments.extend(components);
         }
 
-        let req = self.client.get(url.clone()).headers(headers);
-        let resp = req.send()?;
+        let uri: Uri = url.into_string().parse().map_err(|_| {
+            Error::IllegalArgument(format!("URL was 'cannot-be-a-base': {:?}", self.url))
+        })?;
 
-        if !resp.status.is_success() {
-            if resp.status == StatusCode::NotFound {
+        let req = Request::builder()
+            .uri(uri)
+            .header("User-Agent", &*self.user_agent)
+            .body(Body::default())?;
+
+        let resp = await!(self.client.request(req).compat())?;
+        let status = resp.status();
+
+        if !status.is_success() {
+            if status == StatusCode::NOT_FOUND {
                 Err(Error::NotFound)
             } else {
                 Err(Error::Opaque(format!(
                     "Error getting {:?}: {:?}",
-                    url, resp
+                    self.url, resp
                 )))
             }
         } else {
@@ -332,8 +349,9 @@ where
     }
 }
 
-impl<D> Repository<D> for HttpRepository<D>
+impl<C, D> Repository<D> for HttpRepository<C, D>
 where
+    C: Connect + Sync + 'static,
     D: DataInterchange,
 {
     /// This always returns `Err` as storing over HTTP is not yet supported.
@@ -370,10 +388,16 @@ where
             async move {
                 Self::check::<M>(meta_path)?;
 
-                let resp = self.get(&self.metadata_prefix, &meta_path.components::<D>(&version))?;
+                let components = meta_path.components::<D>(&version);
+                let resp = await!(self.get(&self.metadata_prefix, &components))?;
+
+                let stream = resp
+                    .into_body()
+                    .compat()
+                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
 
                 let mut reader = SafeReader::new(
-                    AllowStdIo::new(resp),
+                    IntoAsyncRead::new(stream),
                     max_size.unwrap_or(::std::usize::MAX) as u64,
                     min_bytes_per_second,
                     hash_data,
@@ -403,10 +427,17 @@ where
     ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
         Box::pinned(
             async move {
-                let resp = self.get(&None, &target_path.components())?;
                 let (alg, value) = crypto::hash_preference(target_description.hashes())?;
+                let components = target_path.components();
+                let resp = await!(self.get(&None, &components))?;
+
+                let stream = resp
+                    .into_body()
+                    .compat()
+                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
+
                 let reader = SafeReader::new(
-                    AllowStdIo::new(resp),
+                    IntoAsyncRead::new(stream),
                     target_description.size(),
                     min_bytes_per_second,
                     Some((alg, value.clone())),

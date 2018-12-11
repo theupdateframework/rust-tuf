@@ -119,6 +119,7 @@ pub mod metadata;
 pub mod repository;
 pub mod tuf;
 
+mod into_async_read;
 mod shims;
 mod util;
 
