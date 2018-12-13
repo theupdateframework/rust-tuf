@@ -1,6 +1,7 @@
 use chrono::offset::Utc;
 use chrono::prelude::*;
 use data_encoding::BASE64URL;
+use serde_derive::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 

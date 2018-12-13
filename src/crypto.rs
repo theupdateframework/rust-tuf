@@ -11,6 +11,7 @@ use ring::signature::{
 };
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use serde::ser::{Error as SerializeError, Serialize, Serializer};
+use serde_derive::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Display};
@@ -378,17 +379,15 @@ impl PrivateKey {
     /// ```
     ///
     /// ```no_run
-    /// extern crate ring;
-    /// use ring::rand::SystemRandom;
-    /// use ring::signature::Ed25519KeyPair;
-    /// use std::fs::File;
-    /// use std::io::Write;
-    ///
-    /// fn main() {
-    ///     let mut file = File::open("ed25519-private-key.pk8").unwrap();
-    ///     let key = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
-    ///     file.write_all(&key).unwrap()
-    /// }
+    /// # use ring::rand::SystemRandom;
+    /// # use ring::signature::Ed25519KeyPair;
+    /// # use std::fs::File;
+    /// # use std::io::Write;
+    /// # fn main() {
+    /// let mut file = File::open("ed25519-private-key.pk8").unwrap();
+    /// let key = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
+    /// file.write_all(&key).unwrap()
+    /// # }
     /// ```
     ///
     /// ## RSA

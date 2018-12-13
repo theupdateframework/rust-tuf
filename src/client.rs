@@ -3,51 +3,48 @@
 //! # Example
 //!
 //! ```no_run
-//! extern crate hyper;
-//! extern crate tuf;
-//!
-//! use hyper::client::Client as HttpClient;
-//! use hyper::Url;
-//! use std::path::PathBuf;
-//! use tuf::Tuf;
-//! use tuf::crypto::KeyId;
-//! use tuf::client::{Client, Config};
-//! use tuf::metadata::{RootMetadata, SignedMetadata, Role, MetadataPath,
-//!     MetadataVersion};
-//! use tuf::interchange::Json;
-//! use tuf::repository::{Repository, FileSystemRepository, HttpRepository};
-//!
+//! # use hyper::client::Client as HttpClient;
+//! # use hyper::Url;
+//! # use std::path::PathBuf;
+//! # use tuf::Tuf;
+//! # use tuf::crypto::KeyId;
+//! # use tuf::client::{Client, Config};
+//! # use tuf::metadata::{RootMetadata, SignedMetadata, Role, MetadataPath,
+//! #     MetadataVersion};
+//! # use tuf::interchange::Json;
+//! # use tuf::repository::{Repository, FileSystemRepository, HttpRepository};
 //! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
 //!     "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
 //!     "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
 //!     "T5vfRrM1iHpgzGwAHe7MbJH_7r4chkOAphV3OPCCv0I=",
 //! ];
 //!
-//! fn main() {
-//!     let key_ids: Vec<KeyId> = TRUSTED_ROOT_KEY_IDS.iter()
-//!         .map(|k| KeyId::from_string(k).unwrap())
-//!         .collect();
+//! # fn main() {
+//! let key_ids: Vec<KeyId> = TRUSTED_ROOT_KEY_IDS.iter()
+//!     .map(|k| KeyId::from_string(k).unwrap())
+//!     .collect();
 //!
-//!     let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))
-//!         .unwrap();
+//! let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))
+//!     .unwrap();
 //!
-//!     let remote = HttpRepository::new(
-//!         Url::parse("https://static.rust-lang.org/").unwrap(),
-//!         HttpClient::new(),
-//!         Some("rustup/1.4.0".into()),
-//!         None);
+//! let remote = HttpRepository::new(
+//!     Url::parse("https://static.rust-lang.org/").unwrap(),
+//!     HttpClient::new(),
+//!     Some("rustup/1.4.0".into()),
+//!     None);
 //!
-//!     let mut client = Client::with_root_pinned(
-//!         &key_ids,
-//!         Config::default(),
-//!         local,
-//!         remote,
-//!     ).unwrap();
-//!     let _ = client.update().unwrap();
-//! }
+//! let mut client = Client::with_root_pinned(
+//!     &key_ids,
+//!     Config::default(),
+//!     local,
+//!     remote,
+//! ).unwrap();
+//! let _ = client.update().unwrap();
+//! # }
 //! ```
 
 use chrono::offset::Utc;
+use log::{error, warn};
 use std::io::{Read, Write};
 
 use crate::crypto::{self, KeyId};
@@ -774,6 +771,7 @@ mod test {
     };
     use crate::repository::EphemeralRepository;
     use chrono::prelude::*;
+    use lazy_static::lazy_static;
     use std::u32;
 
     lazy_static! {

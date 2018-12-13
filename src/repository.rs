@@ -4,6 +4,7 @@ use hyper::client::response::Response;
 use hyper::header::{Headers, UserAgent};
 use hyper::status::StatusCode;
 use hyper::{Client, Url};
+use log::debug;
 use std::collections::HashMap;
 use std::fs::{DirBuilder, File};
 use std::io::{self, Cursor, Read, Write};
@@ -382,13 +383,15 @@ where
     }
 }
 
+type ArcHashMap<K, V> = Arc<RwLock<HashMap<K, V>>>;
+
 /// An ephemeral repository contained solely in memory.
 pub struct EphemeralRepository<D>
 where
     D: DataInterchange,
 {
-    metadata: Arc<RwLock<HashMap<(MetadataPath, MetadataVersion), Vec<u8>>>>,
-    targets: Arc<RwLock<HashMap<TargetPath, Vec<u8>>>>,
+    metadata: ArcHashMap<(MetadataPath, MetadataVersion), Vec<u8>>,
+    targets: ArcHashMap<TargetPath, Vec<u8>>,
     interchange: PhantomData<D>,
 }
 

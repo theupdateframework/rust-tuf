@@ -2,8 +2,10 @@
 
 use chrono::offset::Utc;
 use chrono::{DateTime, Duration};
+use log::{debug, warn};
 use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
 use serde::ser::{Error as SerializeError, Serialize, Serializer};
+use serde_derive::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display};
 use std::io::Read;
@@ -15,14 +17,14 @@ use crate::interchange::DataInterchange;
 use crate::shims;
 use crate::Result;
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 static PATH_ILLEGAL_COMPONENTS: &'static [&str] = &[
     ".", // current dir
     "..", // parent dir
          // TODO ? "0", // may translate to nul in windows
 ];
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &'static [&str] = &[
     // DOS device files
     "CON",
@@ -54,7 +56,7 @@ static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &'static [&str] = &[
     "CONFIG$",
 ];
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 static PATH_ILLEGAL_STRINGS: &'static [&str] = &[
     ":", // for *nix compatibility
     "\\", // for windows compatibility
@@ -254,9 +256,6 @@ where
     /// bytes of the provided metadata with the provided scheme.
     ///
     /// ```
-    /// # extern crate chrono;
-    /// # extern crate tuf;
-    /// #
     /// # use chrono::prelude::*;
     /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
     /// # use tuf::interchange::Json;
@@ -290,9 +289,6 @@ where
     /// to perform the "append" operations.
     ///
     /// ```
-    /// # extern crate chrono;
-    /// # extern crate tuf;
-    /// #
     /// # use chrono::prelude::*;
     /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
     /// # use tuf::interchange::Json;
@@ -367,11 +363,6 @@ where
     /// Verify this metadata.
     ///
     /// ```
-    /// # extern crate chrono;
-    /// # #[macro_use]
-    /// # extern crate maplit;
-    /// # extern crate tuf;
-    ///
     /// # use chrono::prelude::*;
     /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
     /// # use tuf::interchange::Json;
@@ -625,6 +616,12 @@ impl RootMetadataBuilder {
         D: DataInterchange,
     {
         Ok(SignedMetadata::new(self.build()?, private_key)?)
+    }
+}
+
+impl Default for RootMetadataBuilder {
+    fn default() -> Self {
+        RootMetadataBuilder::new()
     }
 }
 
@@ -1199,7 +1196,7 @@ impl SnapshotMetadataBuilder {
         path: MetadataPath,
         description: MetadataDescription,
     ) -> Self {
-        self.meta.insert(path.into(), description);
+        self.meta.insert(path, description);
         self
     }
 
@@ -1214,6 +1211,12 @@ impl SnapshotMetadataBuilder {
         D: DataInterchange,
     {
         Ok(SignedMetadata::new(self.build()?, private_key)?)
+    }
+}
+
+impl Default for SnapshotMetadataBuilder {
+    fn default() -> Self {
+        SnapshotMetadataBuilder::new()
     }
 }
 
@@ -1458,8 +1461,6 @@ impl TargetDescription {
     /// Read the from the given reader and calculate the size and hash values.
     ///
     /// ```
-    /// extern crate data_encoding;
-    /// extern crate tuf;
     /// use data_encoding::BASE64URL;
     /// use tuf::crypto::{HashAlgorithm,HashValue};
     /// use tuf::metadata::TargetDescription;
@@ -1666,6 +1667,12 @@ impl TargetsMetadataBuilder {
     }
 }
 
+impl Default for TargetsMetadataBuilder {
+    fn default() -> Self {
+        TargetsMetadataBuilder::new()
+    }
+}
+
 /// Wrapper to described a collections of delegations.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Delegations {
@@ -1833,6 +1840,7 @@ mod test {
     use crate::crypto::SignatureScheme;
     use crate::interchange::Json;
     use chrono::prelude::*;
+    use maplit::{hashmap, hashset};
     use serde_json::json;
 
     const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
