@@ -28,7 +28,7 @@ derp = "0.0.11"
 futures_01 = { version = "0.1", package = "futures" }
 futures-preview = { version = "0.3.0-alpha.10", features = [ "compat" ] }
 http = "0.1"
-hyper = "0.12"
+hyper = { version = "0.12", default-features = false }
 itoa = "0.4"
 log = "0.4"
 ring = { version = "0.13", features = [ "rsa_signing" ] }
@@ -42,3 +42,6 @@ url = "1"
 [dev-dependencies]
 lazy_static = "1"
 maplit = "1"
+
+[features]
+default = ["hyper/default"]
