@@ -701,8 +701,7 @@ mod test {
                 // This is needed for `tempfile` on Windows, which doesn't open the
                 // files in a mode that allows the file to be opened multiple times.
                 {
-                    let mut read =
-                        await!(repo.fetch_target(&path, &target_description)).unwrap();
+                    let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
                     await!(read.read_to_end(&mut buf)).unwrap();
                     assert_eq!(buf.as_slice(), data);
                 }

@@ -139,12 +139,8 @@ where
         let root_path = MetadataPath::from_role(&Role::Root);
         let root_version = MetadataVersion::Number(1);
 
-        let root = await!(local.fetch_metadata(
-            &root_path,
-            &root_version,
-            &config.max_root_size,
-            None,
-        ))?;
+        let root =
+            await!(local.fetch_metadata(&root_path, &root_version, &config.max_root_size, None))?;
 
         let tuf = Tuf::from_root(root)?;
 
@@ -441,10 +437,7 @@ where
             await!(self.lookup_target_description(false, 0, &virt, &snapshot, None));
         let target_description = target_description?;
 
-        await!(self.remote.fetch_target(
-            target,
-            &target_description,
-        ))
+        await!(self.remote.fetch_target(target, &target_description))
     }
 
     async fn lookup_target_description<'a>(
@@ -573,7 +566,8 @@ where
                         target,
                         snapshot,
                         Some(meta.as_ref()),
-                    )) as TufFuture<(bool, Result<TargetDescription>)>);
+                    ))
+                        as TufFuture<(bool, Result<TargetDescription>)>);
 
                     if term && res.is_err() {
                         return (true, res);
