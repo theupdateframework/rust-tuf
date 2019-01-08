@@ -109,7 +109,7 @@
     clippy::op_ref,
     clippy::too_many_arguments
 )]
-#![feature(async_await, await_macro, futures_api, pin)]
+#![feature(async_await, await_macro, futures_api)]
 
 pub mod client;
 pub mod crypto;

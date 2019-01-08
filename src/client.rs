@@ -3,7 +3,7 @@
 //! # Example
 //!
 //! ```no_run
-//! #![feature(async_await, await_macro, futures_api, pin)]
+//! #![feature(async_await, await_macro, futures_api)]
 //! # use futures::executor::block_on;
 //! # use hyper::client::Client as HttpClient;
 //! # use std::path::PathBuf;
@@ -62,7 +62,7 @@ use crate::metadata::{
 };
 use crate::repository::Repository;
 use crate::tuf::Tuf;
-use crate::Result;
+use crate::{Result, TufFuture};
 
 /// Translates real paths (where a file is stored) into virtual paths (how it is addressed in TUF)
 /// and back.
@@ -567,13 +567,13 @@ where
                         .get(delegation.role())
                         .unwrap()
                         .clone();
-                    let (term, res) = await!(Box::pinned(self.lookup_target_description(
+                    let (term, res) = await!(Box::pin(self.lookup_target_description(
                         delegation.terminating(),
                         current_depth + 1,
                         target,
                         snapshot,
                         Some(meta.as_ref()),
-                    )));
+                    )) as TufFuture<(bool, Result<TargetDescription>)>);
 
                     if term && res.is_err() {
                         return (true, res);
