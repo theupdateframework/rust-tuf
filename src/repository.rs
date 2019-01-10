@@ -132,7 +132,7 @@ where
     where
         M: Metadata + 'static,
     {
-        Box::pinned(
+        Box::pin(
             async move {
                 Self::check::<M>(meta_path)?;
 
@@ -163,7 +163,7 @@ where
     where
         M: Metadata + 'static,
     {
-        Box::pinned(
+        Box::pin(
             async move {
                 Self::check::<M>(&meta_path)?;
 
@@ -193,7 +193,7 @@ where
     where
         R: AsyncRead + 'a,
     {
-        Box::pinned(
+        Box::pin(
             async move {
                 let mut path = self.local_path.join("targets");
                 path.extend(target_path.components());
@@ -216,7 +216,7 @@ where
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
     ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
-        Box::pinned(
+        Box::pin(
             async move {
                 let mut path = self.local_path.join("targets");
                 path.extend(target_path.components());
@@ -406,7 +406,7 @@ where
     where
         M: Metadata + 'static,
     {
-        Box::pinned(
+        Box::pin(
             async {
                 Err(Error::Opaque(
                     "Http repo store metadata not implemented".to_string(),
@@ -425,7 +425,7 @@ where
     where
         M: Metadata + 'static,
     {
-        Box::pinned(
+        Box::pin(
             async move {
                 Self::check::<M>(meta_path)?;
 
@@ -457,7 +457,7 @@ where
     where
         R: AsyncRead + 'a,
     {
-        Box::pinned(async { Err(Error::Opaque("Http repo store not implemented".to_string())) })
+        Box::pin(async { Err(Error::Opaque("Http repo store not implemented".to_string())) })
     }
 
     fn fetch_target<'a>(
@@ -465,7 +465,7 @@ where
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
     ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
-        Box::pinned(
+        Box::pin(
             async move {
                 let (alg, value) = crypto::hash_preference(target_description.hashes())?;
                 let components = target_path.components();
@@ -537,7 +537,7 @@ where
     where
         M: Metadata + 'static,
     {
-        Box::pinned(
+        Box::pin(
             async move {
                 Self::check::<M>(meta_path)?;
                 let mut buf = Vec::new();
@@ -559,7 +559,7 @@ where
     where
         M: Metadata + 'static,
     {
-        Box::pinned(
+        Box::pin(
             async move {
                 Self::check::<M>(meta_path)?;
 
@@ -592,7 +592,7 @@ where
     where
         R: AsyncRead + 'a,
     {
-        Box::pinned(
+        Box::pin(
             async move {
                 println!("EphemeralRepository.store_target: {:?}", target_path);
                 let mut buf = Vec::new();
@@ -609,7 +609,7 @@ where
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
     ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
-        Box::pinned(
+        Box::pin(
             async move {
                 let targets = self.targets.read().unwrap();
                 match targets.get(target_path) {
@@ -701,8 +701,7 @@ mod test {
                 // This is needed for `tempfile` on Windows, which doesn't open the
                 // files in a mode that allows the file to be opened multiple times.
                 {
-                    let mut read =
-                        await!(repo.fetch_target(&path, &target_description)).unwrap();
+                    let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
                     await!(read.read_to_end(&mut buf)).unwrap();
                     assert_eq!(buf.as_slice(), data);
                 }
