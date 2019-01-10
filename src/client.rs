@@ -33,7 +33,7 @@
 //!     url::Url::parse("https://static.rust-lang.org/").unwrap(),
 //!     HttpClient::new(),
 //! )
-//! .user_agent_prefix("rustup/1.4.0")
+//! .user_agent("rustup/1.4.0")
 //! .build();
 //!
 //! let mut client = await!(Client::with_root_pinned(

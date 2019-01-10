@@ -12,11 +12,11 @@ environment:
   matrix:
     # Rust - Nightly
     - TARGET: i686-pc-windows-gnu
-      RUST_VERSION: nightly
+      RUST_VERSION: nightly-2019-01-09
       BITS: 32
       MSYS2: 1
     - TARGET: x86_64-pc-windows-msvc
-      RUST_VERSION: nightly
+      RUST_VERSION: nightly-2019-01-09
       BITS: 64
 
 install:

@@ -263,7 +263,7 @@ where
     url: Url,
     client: Client<C>,
     interchange: PhantomData<D>,
-    user_agent_prefix: Option<String>,
+    user_agent: Option<String>,
     metadata_prefix: Option<Vec<String>>,
     min_bytes_per_second: u32,
 }
@@ -279,7 +279,7 @@ where
             url: url,
             client: client,
             interchange: PhantomData,
-            user_agent_prefix: None,
+            user_agent: None,
             metadata_prefix: None,
             min_bytes_per_second: 4096,
         }
@@ -290,8 +290,8 @@ where
     /// Callers *should* include a custom User-Agent prefix to help maintainers of TUF repositories
     /// keep track of which client versions exist in the field.
     ///
-    pub fn user_agent_prefix<T: Into<String>>(mut self, user_agent_prefix: T) -> Self {
-        self.user_agent_prefix = Some(user_agent_prefix.into());
+    pub fn user_agent<T: Into<String>>(mut self, user_agent: T) -> Self {
+        self.user_agent = Some(user_agent.into());
         self
     }
 
@@ -313,9 +313,9 @@ where
 
     /// Build a `HttpRepository`.
     pub fn build(self) -> HttpRepository<C, D> {
-        let user_agent = match self.user_agent_prefix {
-            Some(ua) => format!("{} (rust-tuf/{})", ua, env!("CARGO_PKG_VERSION")),
-            None => format!("rust-tuf/{}", env!("CARGO_PKG_VERSION")),
+        let user_agent = match self.user_agent {
+            Some(user_agent) => user_agent,
+            None => "rust-tuf".into(),
         };
 
         HttpRepository {
