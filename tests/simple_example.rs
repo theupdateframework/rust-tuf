@@ -1,9 +1,5 @@
 #![feature(async_await, await_macro, futures_api)]
 
-extern crate chrono;
-extern crate futures;
-extern crate tuf;
-
 use futures::executor::block_on;
 use tuf::client::{Client, Config, PathTranslator};
 use tuf::crypto::{HashAlgorithm, KeyId, PrivateKey, SignatureScheme};

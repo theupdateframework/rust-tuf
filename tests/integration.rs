@@ -1,7 +1,4 @@
-#[macro_use]
-extern crate maplit;
-extern crate tuf;
-
+use maplit::hashset;
 use tuf::crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
 use tuf::interchange::Json;
 use tuf::metadata::{
