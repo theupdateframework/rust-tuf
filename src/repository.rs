@@ -20,7 +20,6 @@ use tempfile::{self, NamedTempFile};
 use crate::crypto::{self, HashAlgorithm, HashValue};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
-use crate::into_async_read::IntoAsyncRead;
 use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, SignedMetadata, TargetDescription, TargetPath,
 };
@@ -438,7 +437,7 @@ where
                     .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
 
                 let mut reader = SafeReader::new(
-                    IntoAsyncRead::new(stream),
+                    stream.into_async_read(),
                     max_size.unwrap_or(::std::usize::MAX) as u64,
                     self.min_bytes_per_second,
                     hash_data,
@@ -477,7 +476,7 @@ where
                     .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
 
                 let reader = SafeReader::new(
-                    IntoAsyncRead::new(stream),
+                    stream.into_async_read(),
                     target_description.size(),
                     self.min_bytes_per_second,
                     Some((alg, value.clone())),
