@@ -6,7 +6,7 @@ use ring;
 use ring::digest::{self, SHA256, SHA512};
 use ring::rand::SystemRandom;
 use ring::signature::{
-    Ed25519KeyPair, RSAKeyPair, RSASigningState, ED25519, RSA_PSS_2048_8192_SHA256,
+    Ed25519KeyPair, RsaKeyPair, KeyPair, ED25519, RSA_PSS_2048_8192_SHA256,
     RSA_PSS_2048_8192_SHA512, RSA_PSS_SHA256, RSA_PSS_SHA512,
 };
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
@@ -331,7 +331,7 @@ impl<'de> Deserialize<'de> for KeyType {
 
 enum PrivateKeyType {
     Ed25519(Ed25519KeyPair),
-    Rsa(Arc<RSAKeyPair>),
+    Rsa(Arc<RsaKeyPair>),
 }
 
 impl Debug for PrivateKeyType {
@@ -357,7 +357,7 @@ impl PrivateKey {
     pub fn new(key_type: KeyType) -> Result<Vec<u8>> {
         match key_type {
             KeyType::Ed25519 => Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
-                .map(|bytes| bytes.to_vec())
+                .map(|bytes| bytes.as_ref().to_vec())
                 .map_err(|_| Error::Opaque("Failed to generate Ed25519 key".into())),
             KeyType::Rsa => Self::rsa_gen(),
             KeyType::Unknown(s) => Err(Error::IllegalArgument(format!("Unknown key type: {}", s))),
@@ -386,7 +386,7 @@ impl PrivateKey {
     /// # fn main() {
     /// let mut file = File::open("ed25519-private-key.pk8").unwrap();
     /// let key = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
-    /// file.write_all(&key).unwrap()
+    /// file.write_all(key.as_ref()).unwrap()
     /// # }
     /// ```
     ///
@@ -430,8 +430,8 @@ impl PrivateKey {
         let public = PublicKey {
             typ: KeyType::Ed25519,
             scheme: SignatureScheme::Ed25519,
-            key_id: calculate_key_id(&write_spki(key.public_key_bytes(), &KeyType::Ed25519)?),
-            value: PublicKeyValue(key.public_key_bytes().to_vec()),
+            key_id: calculate_key_id(&write_spki(key.public_key().as_ref(), &KeyType::Ed25519)?),
+            value: PublicKeyValue(key.public_key().as_ref().to_vec()),
         };
         let private = PrivateKeyType::Ed25519(key);
 
@@ -445,7 +445,7 @@ impl PrivateKey {
             ));
         }
 
-        let key = RSAKeyPair::from_pkcs8(Input::from(der_key))
+        let key = RsaKeyPair::from_pkcs8(Input::from(der_key))
             .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
 
         if key.public_modulus_len() < 256 {
@@ -472,21 +472,17 @@ impl PrivateKey {
     pub fn sign(&self, msg: &[u8]) -> Result<Signature> {
         let value = match (&self.private, &self.public.scheme) {
             (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha256) => {
-                let mut signing_state = RSASigningState::new(rsa.clone())
-                    .map_err(|_| Error::Opaque("Could not initialize RSA signing state.".into()))?;
                 let rng = SystemRandom::new();
-                let mut buf = vec![0; signing_state.key_pair().public_modulus_len()];
-                signing_state
+                let mut buf = vec![0; rsa.public_modulus_len()];
+                rsa
                     .sign(&RSA_PSS_SHA256, &rng, msg, &mut buf)
                     .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
                 SignatureValue(buf)
             }
             (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha512) => {
-                let mut signing_state = RSASigningState::new(rsa.clone())
-                    .map_err(|_| Error::Opaque("Could not initialize RSA signing state.".into()))?;
                 let rng = SystemRandom::new();
-                let mut buf = vec![0; signing_state.key_pair().public_modulus_len()];
-                signing_state
+                let mut buf = vec![0; rsa.public_modulus_len()];
+                rsa
                     .sign(&RSA_PSS_SHA512, &rng, msg, &mut buf)
                     .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
                 SignatureValue(buf)
