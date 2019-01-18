@@ -1001,7 +1001,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(not(windows))]
+    #[cfg(not(any(target_os = "fuchsia", windows)))]
     fn new_rsa_key() {
         let bytes = PrivateKey::new(KeyType::Rsa).unwrap();
         let _ = PrivateKey::from_pkcs8(&bytes, SignatureScheme::RsaSsaPssSha256).unwrap();
