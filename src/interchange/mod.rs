@@ -136,10 +136,12 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///   "version": NATURAL_NUMBER,
 ///   "expires": EXPIRES,
 ///   "keys": [PUB_KEY, ...]
-///   "root": ROLE_DESCRIPTION,
-///   "snapshot": ROLE_DESCRIPTION,
-///   "targets": ROLE_DESCRIPTION,
-///   "timestamp": ROLE_DESCRIPTION
+///   "roles": {
+///     "root": ROLE_DESCRIPTION,
+///     "snapshot": ROLE_DESCRIPTION,
+///     "targets": ROLE_DESCRIPTION,
+///     "timestamp": ROLE_DESCRIPTION
+///   }
 /// }
 /// ```
 ///

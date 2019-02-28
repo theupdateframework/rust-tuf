@@ -35,10 +35,7 @@ pub struct RootMetadata {
     consistent_snapshot: bool,
     expires: String,
     keys: Vec<crypto::PublicKey>,
-    root: metadata::RoleDefinition,
-    snapshot: metadata::RoleDefinition,
-    targets: metadata::RoleDefinition,
-    timestamp: metadata::RoleDefinition,
+    roles: RoleDefinitions,
 }
 
 impl RootMetadata {
@@ -56,10 +53,12 @@ impl RootMetadata {
             expires: format_datetime(&meta.expires()),
             consistent_snapshot: meta.consistent_snapshot(),
             keys,
-            root: meta.root().clone(),
-            snapshot: meta.snapshot().clone(),
-            targets: meta.targets().clone(),
-            timestamp: meta.timestamp().clone(),
+            roles: RoleDefinitions {
+                root: meta.root().clone(),
+                snapshot: meta.snapshot().clone(),
+                targets: meta.targets().clone(),
+                timestamp: meta.timestamp().clone(),
+            },
         })
     }
 
@@ -83,12 +82,20 @@ impl RootMetadata {
             parse_datetime(&self.expires)?,
             self.consistent_snapshot,
             keys,
-            self.root,
-            self.snapshot,
-            self.targets,
-            self.timestamp,
+            self.roles.root,
+            self.roles.snapshot,
+            self.roles.targets,
+            self.roles.timestamp,
         )
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RoleDefinitions {
+    root: metadata::RoleDefinition,
+    snapshot: metadata::RoleDefinition,
+    targets: metadata::RoleDefinition,
+    timestamp: metadata::RoleDefinition,
 }
 
 #[derive(Serialize, Deserialize)]
