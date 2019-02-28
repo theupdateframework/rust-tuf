@@ -140,7 +140,7 @@ where
         let root_version = MetadataVersion::Number(1);
 
         let root =
-            await!(local.fetch_metadata(&root_path, &root_version, &config.max_root_size, None))?;
+            await!(local.fetch_metadata(&root_path, &root_version, &config.max_root_length, None))?;
 
         let tuf = Tuf::from_root(root)?;
 
@@ -168,7 +168,7 @@ where
         let root = match await!(local.fetch_metadata(
             &root_path,
             &root_version,
-            &config.max_root_size,
+            &config.max_root_length,
             None,
         )) {
             Ok(root) => root,
@@ -177,7 +177,7 @@ where
                 let root = await!(remote.fetch_metadata(
                     &root_path,
                     &root_version,
-                    &config.max_root_size,
+                    &config.max_root_length,
                     None,
                 ))?;
 
@@ -242,7 +242,7 @@ where
         let latest_root = await!(self.remote.fetch_metadata(
             &root_path,
             &MetadataVersion::None,
-            &self.config.max_root_size,
+            &self.config.max_root_length,
             None,
         ))?;
         let latest_version = latest_root.version();
@@ -266,7 +266,7 @@ where
             let signed_root = await!(self.remote.fetch_metadata(
                 &root_path,
                 &version,
-                &self.config.max_root_size,
+                &self.config.max_root_length,
                 None,
             ))?;
 
@@ -303,7 +303,7 @@ where
         let signed_timestamp = await!(self.remote.fetch_metadata(
             &timestamp_path,
             &MetadataVersion::None,
-            &self.config.max_timestamp_size,
+            &self.config.max_timestamp_length,
             None,
         ))?;
 
@@ -343,12 +343,12 @@ where
         };
 
         let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
-        let snapshot_size = Some(snapshot_description.size());
+        let snapshot_length = Some(snapshot_description.length());
 
         let signed_snapshot = await!(self.remote.fetch_metadata(
             &snapshot_path,
             &version,
-            &snapshot_size,
+            &snapshot_length,
             Some((alg, value.clone())),
         ))?;
 
@@ -389,12 +389,12 @@ where
         };
 
         let targets_path = MetadataPath::from_role(&Role::Targets);
-        let targets_size = Some(targets_description.size());
+        let targets_length = Some(targets_description.length());
 
         let signed_targets = await!(self.remote.fetch_metadata(
             &targets_path,
             &version,
-            &targets_size,
+            &targets_length,
             Some((alg, value.clone())),
         ))?;
 
@@ -506,11 +506,11 @@ where
                 MetadataVersion::None
             };
 
-            let role_size = Some(role_meta.size());
+            let role_length = Some(role_meta.length());
             let signed_meta = await!(self.local.fetch_metadata::<TargetsMetadata>(
                 delegation.role(),
                 &MetadataVersion::None,
-                &role_size,
+                &role_length,
                 Some((alg, value.clone())),
             ));
 
@@ -520,7 +520,7 @@ where
                     match await!(self.remote.fetch_metadata::<TargetsMetadata>(
                         delegation.role(),
                         &version,
-                        &role_size,
+                        &role_length,
                         Some((alg, value.clone())),
                     )) {
                         Ok(m) => m,
@@ -595,8 +595,8 @@ where
 /// ```
 /// # use tuf::client::{Config, DefaultTranslator};
 /// let config = Config::default();
-/// assert_eq!(config.max_root_size(), &Some(1024 * 1024));
-/// assert_eq!(config.max_timestamp_size(), &Some(32 * 1024));
+/// assert_eq!(config.max_root_length(), &Some(1024 * 1024));
+/// assert_eq!(config.max_timestamp_length(), &Some(32 * 1024));
 /// assert_eq!(config.max_delegation_depth(), 8);
 /// let _: &DefaultTranslator = config.path_translator();
 /// ```
@@ -605,8 +605,8 @@ pub struct Config<T>
 where
     T: PathTranslator,
 {
-    max_root_size: Option<usize>,
-    max_timestamp_size: Option<usize>,
+    max_root_length: Option<usize>,
+    max_timestamp_length: Option<usize>,
     max_delegation_depth: u32,
     path_translator: T,
 }
@@ -622,14 +622,14 @@ impl<T> Config<T>
 where
     T: PathTranslator,
 {
-    /// Return the optional maximum root metadata size.
-    pub fn max_root_size(&self) -> &Option<usize> {
-        &self.max_root_size
+    /// Return the optional maximum root metadata length.
+    pub fn max_root_length(&self) -> &Option<usize> {
+        &self.max_root_length
     }
 
     /// Return the optional maximum timestamp metadata size.
-    pub fn max_timestamp_size(&self) -> &Option<usize> {
-        &self.max_timestamp_size
+    pub fn max_timestamp_length(&self) -> &Option<usize> {
+        &self.max_timestamp_length
     }
 
     /// The maximum number of steps used when walking the delegation graph.
@@ -646,8 +646,8 @@ where
 impl Default for Config<DefaultTranslator> {
     fn default() -> Self {
         Config {
-            max_root_size: Some(1024 * 1024),
-            max_timestamp_size: Some(32 * 1024),
+            max_root_length: Some(1024 * 1024),
+            max_timestamp_length: Some(32 * 1024),
             max_delegation_depth: 8,
             path_translator: DefaultTranslator::new(),
         }
@@ -660,8 +660,8 @@ pub struct ConfigBuilder<T>
 where
     T: PathTranslator,
 {
-    max_root_size: Option<usize>,
-    max_timestamp_size: Option<usize>,
+    max_root_length: Option<usize>,
+    max_timestamp_length: Option<usize>,
     max_delegation_depth: u32,
     path_translator: T,
 }
@@ -673,22 +673,22 @@ where
     /// Validate this builder return a `Config` if validation succeeds.
     pub fn finish(self) -> Result<Config<T>> {
         Ok(Config {
-            max_root_size: self.max_root_size,
-            max_timestamp_size: self.max_timestamp_size,
+            max_root_length: self.max_root_length,
+            max_timestamp_length: self.max_timestamp_length,
             max_delegation_depth: self.max_delegation_depth,
             path_translator: self.path_translator,
         })
     }
 
-    /// Set the optional maximum download size for root metadata.
-    pub fn max_root_size(mut self, max: Option<usize>) -> Self {
-        self.max_root_size = max;
+    /// Set the optional maximum download length for root metadata.
+    pub fn max_root_length(mut self, max: Option<usize>) -> Self {
+        self.max_root_length = max;
         self
     }
 
-    /// Set the optional maximum download size for timestamp metadata.
-    pub fn max_timestamp_size(mut self, max: Option<usize>) -> Self {
-        self.max_timestamp_size = max;
+    /// Set the optional maximum download length for timestamp metadata.
+    pub fn max_timestamp_length(mut self, max: Option<usize>) -> Self {
+        self.max_timestamp_length = max;
         self
     }
 
@@ -704,8 +704,8 @@ where
         TT: PathTranslator,
     {
         ConfigBuilder {
-            max_root_size: self.max_root_size,
-            max_timestamp_size: self.max_timestamp_size,
+            max_root_length: self.max_root_length,
+            max_timestamp_length: self.max_timestamp_length,
             max_delegation_depth: self.max_delegation_depth,
             path_translator,
         }
@@ -716,8 +716,8 @@ impl Default for ConfigBuilder<DefaultTranslator> {
     fn default() -> ConfigBuilder<DefaultTranslator> {
         let cfg = Config::default();
         ConfigBuilder {
-            max_root_size: cfg.max_root_size,
-            max_timestamp_size: cfg.max_timestamp_size,
+            max_root_length: cfg.max_root_length,
+            max_timestamp_length: cfg.max_timestamp_length,
             max_delegation_depth: cfg.max_delegation_depth,
             path_translator: cfg.path_translator,
         }

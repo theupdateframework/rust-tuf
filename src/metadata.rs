@@ -1044,7 +1044,7 @@ impl<'de> Deserialize<'de> for TimestampMetadata {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MetadataDescription {
     version: u32,
-    size: usize,
+    length: usize,
     hashes: HashMap<HashAlgorithm, HashValue>,
 }
 
@@ -1061,17 +1061,17 @@ impl MetadataDescription {
             ));
         }
 
-        let (size, hashes) = crypto::calculate_hashes(read, hash_algs)?;
+        let (length, hashes) = crypto::calculate_hashes(read, hash_algs)?;
 
-        if size > ::std::usize::MAX as u64 {
+        if length > ::std::usize::MAX as u64 {
             return Err(Error::IllegalArgument(
-                "Calculated size exceeded usize".into(),
+                "Calculated length exceeded usize".into(),
             ));
         }
 
         Ok(MetadataDescription {
             version,
-            size: size as usize,
+            length: length as usize,
             hashes,
         })
     }
@@ -1079,7 +1079,7 @@ impl MetadataDescription {
     /// Create a new `MetadataDescription`.
     pub fn new(
         version: u32,
-        size: usize,
+        length: usize,
         hashes: HashMap<HashAlgorithm, HashValue>,
     ) -> Result<Self> {
         if version < 1 {
@@ -1097,7 +1097,7 @@ impl MetadataDescription {
 
         Ok(MetadataDescription {
             version,
-            size,
+            length,
             hashes,
         })
     }
@@ -1107,9 +1107,9 @@ impl MetadataDescription {
         self.version
     }
 
-    /// The size of the described metadata.
-    pub fn size(&self) -> usize {
-        self.size
+    /// The length of the described metadata.
+    pub fn length(&self) -> usize {
+        self.length
     }
 
     /// An immutable reference to the hashes of the described metadata.
@@ -1439,7 +1439,7 @@ impl TargetPath {
 /// Description of a target, used in verification.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TargetDescription {
-    size: u64,
+    length: u64,
     hashes: HashMap<HashAlgorithm, HashValue>,
 }
 
@@ -1448,17 +1448,17 @@ impl TargetDescription {
     ///
     /// Note: Creating this manually could lead to errors, and the `from_reader` method is
     /// preferred.
-    pub fn new(size: u64, hashes: HashMap<HashAlgorithm, HashValue>) -> Result<Self> {
+    pub fn new(length: u64, hashes: HashMap<HashAlgorithm, HashValue>) -> Result<Self> {
         if hashes.is_empty() {
             return Err(Error::IllegalArgument(
                 "Cannot have empty set of hashes".into(),
             ));
         }
 
-        Ok(TargetDescription { size, hashes })
+        Ok(TargetDescription { length, hashes })
     }
 
-    /// Read the from the given reader and calculate the size and hash values.
+    /// Read the from the given reader and calculate the length and hash values.
     ///
     /// ```
     /// use data_encoding::BASE64URL;
@@ -1473,7 +1473,7 @@ impl TargetDescription {
     ///
     ///     let target_description =
     ///         TargetDescription::from_reader(bytes, &[HashAlgorithm::Sha256]).unwrap();
-    ///     assert_eq!(target_description.size(), bytes.len() as u64);
+    ///     assert_eq!(target_description.length(), bytes.len() as u64);
     ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
     ///
     ///     let s ="tuIxwKybYdvJpWuUj6dubvpwhkAozWB6hMJIRzqn2jOUdtDTBg381brV4K\
@@ -1482,7 +1482,7 @@ impl TargetDescription {
     ///
     ///     let target_description =
     ///         TargetDescription::from_reader(bytes, &[HashAlgorithm::Sha512]).unwrap();
-    ///     assert_eq!(target_description.size(), bytes.len() as u64);
+    ///     assert_eq!(target_description.length(), bytes.len() as u64);
     ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
     /// }
     /// ```
@@ -1490,13 +1490,13 @@ impl TargetDescription {
     where
         R: Read,
     {
-        let (size, hashes) = crypto::calculate_hashes(read, hash_algs)?;
-        Ok(TargetDescription { size, hashes })
+        let (length, hashes) = crypto::calculate_hashes(read, hash_algs)?;
+        Ok(TargetDescription { length, hashes })
     }
 
-    /// The maximum size of the target.
-    pub fn size(&self) -> u64 {
-        self.size
+    /// The maximum length of the target.
+    pub fn length(&self) -> u64 {
+        self.length
     }
 
     /// An immutable reference to the list of calculated hashes.
@@ -1938,7 +1938,7 @@ mod test {
         let description = TargetDescription::from_reader(s, &[HashAlgorithm::Sha256]).unwrap();
         let jsn_str = serde_json::to_string(&description).unwrap();
         let jsn = json!({
-            "size": 30,
+            "length": 30,
             "hashes": {
                 "sha256": "_F10XHEryG6poxJk2sDJVu61OFf2d-7QWCm7cQE8rhg=",
             },
@@ -2080,7 +2080,7 @@ mod test {
             "expires": "2017-01-01T00:00:00Z",
             "snapshot": {
                 "version": 1,
-                "size": 100,
+                "length": 100,
                 "hashes": {
                     "sha256": "",
                 },
@@ -2116,7 +2116,7 @@ mod test {
             "meta": {
                 "foo": {
                     "version": 1,
-                    "size": 100,
+                    "length": 100,
                     "hashes": {
                         "sha256": "",
                     },
@@ -2147,7 +2147,7 @@ mod test {
             "expires": "2017-01-01T00:00:00Z",
             "targets": {
                 "foo": {
-                    "size": 3,
+                    "length": 3,
                     "hashes": {
                         "sha256": "LCa0a2j_xo_5m0U8HTBBNBNCLXBkg7-g-YpeiGJm564=",
                     },
@@ -2239,8 +2239,8 @@ mod test {
             "signatures": [
                 {
                     "key_id": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-                    "value": "9QXO-Av15zaWEsheO9JbWdo8iAF9vEbUKVePJpGRX5s6b1G8eqH4kvAE2jZV349JvZ\
-                        -2yPGLE20V_7JwhMLYCQ==",
+                    "value": "5zv0RA1_apWwMHNRgcuhkNwnz1iNj8aPkZrA3bruehf5ncKiPekLHGVJWWodPEIESj\
+                        9k9FBLI4TK422Y7RR2AQ==",
                 }
             ],
             "signed": {
@@ -2250,7 +2250,7 @@ mod test {
                 "meta": {
                     "foo": {
                         "version": 1,
-                        "size": 100,
+                        "length": 100,
                         "hashes": {
                             "sha256": "",
                         },
