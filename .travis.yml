@@ -5,7 +5,7 @@ dist: trusty
 language: rust
 cache: cargo
 rust:
-  - nightly
+  - nightly-2019-02-13 # pin until we update to futures-preview 0.3.0-alpha.13
 
 env:
   global:
