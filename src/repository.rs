@@ -51,7 +51,7 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        max_size: &'a Option<usize>,
+        max_length: &'a Option<usize>,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> TufFuture<'a, Result<SignedMetadata<D, M>>>
     where
@@ -156,7 +156,7 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        max_size: &'a Option<usize>,
+        max_length: &'a Option<usize>,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> TufFuture<'a, Result<SignedMetadata<D, M>>>
     where
@@ -171,12 +171,12 @@ where
 
                 let mut reader = SafeReader::new(
                     AllowStdIo::new(File::open(&path)?),
-                    max_size.unwrap_or(::std::usize::MAX) as u64,
+                    max_length.unwrap_or(::std::usize::MAX) as u64,
                     0,
                     hash_data,
                 )?;
 
-                let mut buf = Vec::with_capacity(max_size.unwrap_or(0));
+                let mut buf = Vec::with_capacity(max_length.unwrap_or(0));
                 await!(reader.read_to_end(&mut buf))?;
 
                 Ok(D::from_slice(&buf)?)
@@ -228,7 +228,7 @@ where
 
                 let reader: Box<dyn AsyncRead> = Box::new(SafeReader::new(
                     AllowStdIo::new(File::open(&path)?),
-                    target_description.size(),
+                    target_description.length(),
                     0,
                     Some((alg, value.clone())),
                 )?);
@@ -418,7 +418,7 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        max_size: &'a Option<usize>,
+        max_length: &'a Option<usize>,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> TufFuture<'a, Result<SignedMetadata<D, M>>>
     where
@@ -438,7 +438,7 @@ where
 
                 let mut reader = SafeReader::new(
                     stream.into_async_read(),
-                    max_size.unwrap_or(::std::usize::MAX) as u64,
+                    max_length.unwrap_or(::std::usize::MAX) as u64,
                     self.min_bytes_per_second,
                     hash_data,
                 )?;
@@ -477,7 +477,7 @@ where
 
                 let reader = SafeReader::new(
                     stream.into_async_read(),
-                    target_description.size(),
+                    target_description.length(),
                     self.min_bytes_per_second,
                     Some((alg, value.clone())),
                 )?;
@@ -552,7 +552,7 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        max_size: &'a Option<usize>,
+        max_length: &'a Option<usize>,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> TufFuture<'a, Result<SignedMetadata<D, M>>>
     where
@@ -567,12 +567,12 @@ where
                     Some(bytes) => {
                         let mut reader = SafeReader::new(
                             &**bytes,
-                            max_size.unwrap_or(::std::usize::MAX) as u64,
+                            max_length.unwrap_or(::std::usize::MAX) as u64,
                             0,
                             hash_data,
                         )?;
 
-                        let mut buf = Vec::with_capacity(max_size.unwrap_or(0));
+                        let mut buf = Vec::with_capacity(max_length.unwrap_or(0));
                         await!(reader.read_to_end(&mut buf))?;
 
                         D::from_slice(&buf)
@@ -618,7 +618,7 @@ where
 
                         let reader: Box<dyn AsyncRead> = Box::new(SafeReader::new(
                             cur,
-                            target_description.size(),
+                            target_description.length(),
                             0,
                             Some((alg, value.clone())),
                         )?);

@@ -362,25 +362,25 @@ impl Delegations {
 
 #[derive(Deserialize)]
 pub struct TargetDescription {
-    size: u64,
+    length: u64,
     hashes: HashMap<crypto::HashAlgorithm, crypto::HashValue>,
 }
 
 impl TargetDescription {
     pub fn try_into(self) -> Result<metadata::TargetDescription> {
-        metadata::TargetDescription::new(self.size, self.hashes)
+        metadata::TargetDescription::new(self.length, self.hashes)
     }
 }
 
 #[derive(Deserialize)]
 pub struct MetadataDescription {
     version: u32,
-    size: usize,
+    length: usize,
     hashes: HashMap<crypto::HashAlgorithm, crypto::HashValue>,
 }
 
 impl MetadataDescription {
     pub fn try_into(self) -> Result<metadata::MetadataDescription> {
-        metadata::MetadataDescription::new(self.version, self.size, self.hashes)
+        metadata::MetadataDescription::new(self.version, self.length, self.hashes)
     }
 }

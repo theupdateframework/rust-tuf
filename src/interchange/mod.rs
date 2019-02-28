@@ -93,7 +93,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 /// ```bash
 /// {
 ///   "version": NATURAL_NUMBER,
-///   "size": NATURAL_NUMBER,
+///   "length": NATURAL_NUMBER,
 ///   "hashes": {
 ///     HASH_ALGORITHM: HASH_VALUE
 ///     ...
