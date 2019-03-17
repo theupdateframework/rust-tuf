@@ -12,11 +12,11 @@ environment:
   matrix:
     # Rust - Nightly
     - TARGET: i686-pc-windows-gnu
-      RUST_VERSION: nightly-2019-02-13 # pin until we update to futures-preview 0.3.0-alpha.13
+      RUST_VERSION: nightly
       BITS: 32
       MSYS2: 1
     - TARGET: x86_64-pc-windows-msvc
-      RUST_VERSION: nightly-2019-02-13 # pin until we update to futures-preview 0.3.0-alpha.13
+      RUST_VERSION: nightly
       BITS: 64
 
 install:
