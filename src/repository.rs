@@ -106,15 +106,10 @@ where
     /// Create a new repository on the local file system.
     pub fn new(local_path: PathBuf) -> Result<Self> {
         for p in &["metadata", "targets", "temp"] {
-            DirBuilder::new()
-                .recursive(true)
-                .create(local_path.join(p))?
+            DirBuilder::new().recursive(true).create(local_path.join(p))?
         }
 
-        Ok(FileSystemRepository {
-            local_path,
-            interchange: PhantomData,
-        })
+        Ok(FileSystemRepository { local_path, interchange: PhantomData })
     }
 }
 
@@ -131,24 +126,22 @@ where
     where
         M: Metadata + 'static,
     {
-        Box::pin(
-            async move {
-                Self::check::<M>(meta_path)?;
+        Box::pin(async move {
+            Self::check::<M>(meta_path)?;
 
-                let mut path = self.local_path.join("metadata");
-                path.extend(meta_path.components::<D>(version));
+            let mut path = self.local_path.join("metadata");
+            path.extend(meta_path.components::<D>(version));
 
-                if path.exists() {
-                    debug!("Metadata path exists. Overwriting: {:?}", path);
-                }
+            if path.exists() {
+                debug!("Metadata path exists. Overwriting: {:?}", path);
+            }
 
-                let mut temp_file = create_temp_file(&path)?;
-                D::to_writer(&mut temp_file, metadata)?;
-                temp_file.persist(&path)?;
+            let mut temp_file = create_temp_file(&path)?;
+            D::to_writer(&mut temp_file, metadata)?;
+            temp_file.persist(&path)?;
 
-                Ok(())
-            },
-        )
+            Ok(())
+        })
     }
 
     /// Fetch signed metadata.
@@ -162,26 +155,24 @@ where
     where
         M: Metadata + 'static,
     {
-        Box::pin(
-            async move {
-                Self::check::<M>(&meta_path)?;
+        Box::pin(async move {
+            Self::check::<M>(&meta_path)?;
 
-                let mut path = self.local_path.join("metadata");
-                path.extend(meta_path.components::<D>(&version));
+            let mut path = self.local_path.join("metadata");
+            path.extend(meta_path.components::<D>(&version));
 
-                let mut reader = SafeReader::new(
-                    AllowStdIo::new(File::open(&path)?),
-                    max_length.unwrap_or(::std::usize::MAX) as u64,
-                    0,
-                    hash_data,
-                )?;
+            let mut reader = SafeReader::new(
+                AllowStdIo::new(File::open(&path)?),
+                max_length.unwrap_or(::std::usize::MAX) as u64,
+                0,
+                hash_data,
+            )?;
 
-                let mut buf = Vec::with_capacity(max_length.unwrap_or(0));
-                await!(reader.read_to_end(&mut buf))?;
+            let mut buf = Vec::with_capacity(max_length.unwrap_or(0));
+            await!(reader.read_to_end(&mut buf))?;
 
-                Ok(D::from_slice(&buf)?)
-            },
-        )
+            Ok(D::from_slice(&buf)?)
+        })
     }
 
     fn store_target<'a, R>(
@@ -192,22 +183,20 @@ where
     where
         R: AsyncRead + 'a,
     {
-        Box::pin(
-            async move {
-                let mut path = self.local_path.join("targets");
-                path.extend(target_path.components());
+        Box::pin(async move {
+            let mut path = self.local_path.join("targets");
+            path.extend(target_path.components());
 
-                if path.exists() {
-                    debug!("Target path exists. Overwriting: {:?}", path);
-                }
+            if path.exists() {
+                debug!("Target path exists. Overwriting: {:?}", path);
+            }
 
-                let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
-                await!(read.copy_into(&mut temp_file))?;
-                temp_file.into_inner().persist(&path)?;
+            let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
+            await!(read.copy_into(&mut temp_file))?;
+            temp_file.into_inner().persist(&path)?;
 
-                Ok(())
-            },
-        )
+            Ok(())
+        })
     }
 
     fn fetch_target<'a>(
@@ -215,27 +204,25 @@ where
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
     ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
-        Box::pin(
-            async move {
-                let mut path = self.local_path.join("targets");
-                path.extend(target_path.components());
+        Box::pin(async move {
+            let mut path = self.local_path.join("targets");
+            path.extend(target_path.components());
 
-                if !path.exists() {
-                    return Err(Error::NotFound);
-                }
+            if !path.exists() {
+                return Err(Error::NotFound);
+            }
 
-                let (alg, value) = crypto::hash_preference(target_description.hashes())?;
+            let (alg, value) = crypto::hash_preference(target_description.hashes())?;
 
-                let reader: Box<dyn AsyncRead> = Box::new(SafeReader::new(
-                    AllowStdIo::new(File::open(&path)?),
-                    target_description.length(),
-                    0,
-                    Some((alg, value.clone())),
-                )?);
+            let reader: Box<dyn AsyncRead> = Box::new(SafeReader::new(
+                AllowStdIo::new(File::open(&path)?),
+                target_description.length(),
+                0,
+                Some((alg, value.clone())),
+            )?);
 
-                Ok(reader)
-            },
-        )
+            Ok(reader)
+        })
     }
 }
 
@@ -379,10 +366,7 @@ where
             if status == StatusCode::NOT_FOUND {
                 Err(Error::NotFound)
             } else {
-                Err(Error::Opaque(format!(
-                    "Error getting {:?}: {:?}",
-                    self.url, resp
-                )))
+                Err(Error::Opaque(format!("Error getting {:?}: {:?}", self.url, resp)))
             }
         } else {
             Ok(resp)
@@ -405,13 +389,9 @@ where
     where
         M: Metadata + 'static,
     {
-        Box::pin(
-            async {
-                Err(Error::Opaque(
-                    "Http repo store metadata not implemented".to_string(),
-                ))
-            },
-        )
+        Box::pin(async {
+            Err(Error::Opaque("Http repo store metadata not implemented".to_string()))
+        })
     }
 
     fn fetch_metadata<'a, M>(
@@ -424,31 +404,27 @@ where
     where
         M: Metadata + 'static,
     {
-        Box::pin(
-            async move {
-                Self::check::<M>(meta_path)?;
+        Box::pin(async move {
+            Self::check::<M>(meta_path)?;
 
-                let components = meta_path.components::<D>(&version);
-                let resp = await!(self.get(&self.metadata_prefix, &components))?;
+            let components = meta_path.components::<D>(&version);
+            let resp = await!(self.get(&self.metadata_prefix, &components))?;
 
-                let stream = resp
-                    .into_body()
-                    .compat()
-                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
+            let stream =
+                resp.into_body().compat().map_err(|err| io::Error::new(io::ErrorKind::Other, err));
 
-                let mut reader = SafeReader::new(
-                    stream.into_async_read(),
-                    max_length.unwrap_or(::std::usize::MAX) as u64,
-                    self.min_bytes_per_second,
-                    hash_data,
-                )?;
+            let mut reader = SafeReader::new(
+                stream.into_async_read(),
+                max_length.unwrap_or(::std::usize::MAX) as u64,
+                self.min_bytes_per_second,
+                hash_data,
+            )?;
 
-                let mut buf = Vec::new();
-                await!(reader.read_to_end(&mut buf))?;
+            let mut buf = Vec::new();
+            await!(reader.read_to_end(&mut buf))?;
 
-                Ok(D::from_slice(&buf)?)
-            },
-        )
+            Ok(D::from_slice(&buf)?)
+        })
     }
 
     /// This always returns `Err` as storing over HTTP is not yet supported.
@@ -464,27 +440,23 @@ where
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
     ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
-        Box::pin(
-            async move {
-                let (alg, value) = crypto::hash_preference(target_description.hashes())?;
-                let components = target_path.components();
-                let resp = await!(self.get(&None, &components))?;
+        Box::pin(async move {
+            let (alg, value) = crypto::hash_preference(target_description.hashes())?;
+            let components = target_path.components();
+            let resp = await!(self.get(&None, &components))?;
 
-                let stream = resp
-                    .into_body()
-                    .compat()
-                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
+            let stream =
+                resp.into_body().compat().map_err(|err| io::Error::new(io::ErrorKind::Other, err));
 
-                let reader = SafeReader::new(
-                    stream.into_async_read(),
-                    target_description.length(),
-                    self.min_bytes_per_second,
-                    Some((alg, value.clone())),
-                )?;
+            let reader = SafeReader::new(
+                stream.into_async_read(),
+                target_description.length(),
+                self.min_bytes_per_second,
+                Some((alg, value.clone())),
+            )?;
 
-                Ok(Box::new(reader) as Box<dyn AsyncRead>)
-            },
-        )
+            Ok(Box::new(reader) as Box<dyn AsyncRead>)
+        })
     }
 }
 
@@ -536,16 +508,14 @@ where
     where
         M: Metadata + 'static,
     {
-        Box::pin(
-            async move {
-                Self::check::<M>(meta_path)?;
-                let mut buf = Vec::new();
-                D::to_writer(&mut buf, metadata)?;
-                let mut metadata = self.metadata.write().unwrap();
-                let _ = metadata.insert((meta_path.clone(), version.clone()), buf);
-                Ok(())
-            },
-        )
+        Box::pin(async move {
+            Self::check::<M>(meta_path)?;
+            let mut buf = Vec::new();
+            D::to_writer(&mut buf, metadata)?;
+            let mut metadata = self.metadata.write().unwrap();
+            let _ = metadata.insert((meta_path.clone(), version.clone()), buf);
+            Ok(())
+        })
     }
 
     fn fetch_metadata<'a, M>(
@@ -558,29 +528,27 @@ where
     where
         M: Metadata + 'static,
     {
-        Box::pin(
-            async move {
-                Self::check::<M>(meta_path)?;
+        Box::pin(async move {
+            Self::check::<M>(meta_path)?;
 
-                let metadata = self.metadata.read().unwrap();
-                match metadata.get(&(meta_path.clone(), version.clone())) {
-                    Some(bytes) => {
-                        let mut reader = SafeReader::new(
-                            &**bytes,
-                            max_length.unwrap_or(::std::usize::MAX) as u64,
-                            0,
-                            hash_data,
-                        )?;
+            let metadata = self.metadata.read().unwrap();
+            match metadata.get(&(meta_path.clone(), version.clone())) {
+                Some(bytes) => {
+                    let mut reader = SafeReader::new(
+                        &**bytes,
+                        max_length.unwrap_or(::std::usize::MAX) as u64,
+                        0,
+                        hash_data,
+                    )?;
 
-                        let mut buf = Vec::with_capacity(max_length.unwrap_or(0));
-                        await!(reader.read_to_end(&mut buf))?;
+                    let mut buf = Vec::with_capacity(max_length.unwrap_or(0));
+                    await!(reader.read_to_end(&mut buf))?;
 
-                        D::from_slice(&buf)
-                    }
-                    None => Err(Error::NotFound),
+                    D::from_slice(&buf)
                 }
-            },
-        )
+                None => Err(Error::NotFound),
+            }
+        })
     }
 
     fn store_target<'a, R>(
@@ -591,16 +559,14 @@ where
     where
         R: AsyncRead + 'a,
     {
-        Box::pin(
-            async move {
-                println!("EphemeralRepository.store_target: {:?}", target_path);
-                let mut buf = Vec::new();
-                await!(read.read_to_end(&mut buf))?;
-                let mut targets = self.targets.write().unwrap();
-                let _ = targets.insert(target_path.clone(), buf);
-                Ok(())
-            },
-        )
+        Box::pin(async move {
+            println!("EphemeralRepository.store_target: {:?}", target_path);
+            let mut buf = Vec::new();
+            await!(read.read_to_end(&mut buf))?;
+            let mut targets = self.targets.write().unwrap();
+            let _ = targets.insert(target_path.clone(), buf);
+            Ok(())
+        })
     }
 
     fn fetch_target<'a>(
@@ -608,27 +574,25 @@ where
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
     ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
-        Box::pin(
-            async move {
-                let targets = self.targets.read().unwrap();
-                match targets.get(target_path) {
-                    Some(bytes) => {
-                        let cur = Cursor::new(bytes.clone());
-                        let (alg, value) = crypto::hash_preference(target_description.hashes())?;
+        Box::pin(async move {
+            let targets = self.targets.read().unwrap();
+            match targets.get(target_path) {
+                Some(bytes) => {
+                    let cur = Cursor::new(bytes.clone());
+                    let (alg, value) = crypto::hash_preference(target_description.hashes())?;
 
-                        let reader: Box<dyn AsyncRead> = Box::new(SafeReader::new(
-                            cur,
-                            target_description.length(),
-                            0,
-                            Some((alg, value.clone())),
-                        )?);
+                    let reader: Box<dyn AsyncRead> = Box::new(SafeReader::new(
+                        cur,
+                        target_description.length(),
+                        0,
+                        Some((alg, value.clone())),
+                    )?);
 
-                        Ok(reader)
-                    }
-                    None => Err(Error::NotFound),
+                    Ok(reader)
                 }
-            },
-        )
+                None => Err(Error::NotFound),
+            }
+        })
     }
 }
 
@@ -642,74 +606,60 @@ mod test {
 
     #[test]
     fn ephemeral_repo_targets() {
-        block_on(
-            async {
-                let repo = EphemeralRepository::<Json>::new();
+        block_on(async {
+            let repo = EphemeralRepository::<Json>::new();
 
-                let data: &[u8] = b"like tears in the rain";
-                let target_description =
-                    TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
-                let path = TargetPath::new("batty".into()).unwrap();
-                await!(repo.store_target(data, &path)).unwrap();
+            let data: &[u8] = b"like tears in the rain";
+            let target_description =
+                TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
+            let path = TargetPath::new("batty".into()).unwrap();
+            await!(repo.store_target(data, &path)).unwrap();
 
-                let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
-                let mut buf = Vec::new();
-                await!(read.read_to_end(&mut buf)).unwrap();
-                assert_eq!(buf.as_slice(), data);
+            let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
+            let mut buf = Vec::new();
+            await!(read.read_to_end(&mut buf)).unwrap();
+            assert_eq!(buf.as_slice(), data);
 
-                let bad_data: &[u8] = b"you're in a desert";
-                await!(repo.store_target(bad_data, &path)).unwrap();
-                let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
-                assert!(await!(read.read_to_end(&mut buf)).is_err());
-            },
-        )
+            let bad_data: &[u8] = b"you're in a desert";
+            await!(repo.store_target(bad_data, &path)).unwrap();
+            let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
+            assert!(await!(read.read_to_end(&mut buf)).is_err());
+        })
     }
 
     #[test]
     fn file_system_repo_targets() {
-        block_on(
-            async {
-                let temp_dir = tempfile::Builder::new()
-                    .prefix("rust-tuf")
-                    .tempdir()
-                    .unwrap();
-                let repo =
-                    FileSystemRepository::<Json>::new(temp_dir.path().to_path_buf()).unwrap();
+        block_on(async {
+            let temp_dir = tempfile::Builder::new().prefix("rust-tuf").tempdir().unwrap();
+            let repo = FileSystemRepository::<Json>::new(temp_dir.path().to_path_buf()).unwrap();
 
-                // test that init worked
-                assert!(temp_dir.path().join("metadata").exists());
-                assert!(temp_dir.path().join("targets").exists());
-                assert!(temp_dir.path().join("temp").exists());
+            // test that init worked
+            assert!(temp_dir.path().join("metadata").exists());
+            assert!(temp_dir.path().join("targets").exists());
+            assert!(temp_dir.path().join("temp").exists());
 
-                let data: &[u8] = b"like tears in the rain";
-                let target_description =
-                    TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
-                let path = TargetPath::new("foo/bar/baz".into()).unwrap();
-                await!(repo.store_target(data, &path)).unwrap();
-                assert!(temp_dir
-                    .path()
-                    .join("targets")
-                    .join("foo")
-                    .join("bar")
-                    .join("baz")
-                    .exists());
+            let data: &[u8] = b"like tears in the rain";
+            let target_description =
+                TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
+            let path = TargetPath::new("foo/bar/baz".into()).unwrap();
+            await!(repo.store_target(data, &path)).unwrap();
+            assert!(temp_dir.path().join("targets").join("foo").join("bar").join("baz").exists());
 
-                let mut buf = Vec::new();
+            let mut buf = Vec::new();
 
-                // Enclose `fetch_target` in a scope to make sure the file is closed.
-                // This is needed for `tempfile` on Windows, which doesn't open the
-                // files in a mode that allows the file to be opened multiple times.
-                {
-                    let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
-                    await!(read.read_to_end(&mut buf)).unwrap();
-                    assert_eq!(buf.as_slice(), data);
-                }
-
-                let bad_data: &[u8] = b"you're in a desert";
-                await!(repo.store_target(bad_data, &path)).unwrap();
+            // Enclose `fetch_target` in a scope to make sure the file is closed.
+            // This is needed for `tempfile` on Windows, which doesn't open the
+            // files in a mode that allows the file to be opened multiple times.
+            {
                 let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
-                assert!(await!(read.read_to_end(&mut buf)).is_err());
-            },
-        )
+                await!(read.read_to_end(&mut buf)).unwrap();
+                assert_eq!(buf.as_slice(), data);
+            }
+
+            let bad_data: &[u8] = b"you're in a desert";
+            await!(repo.store_target(bad_data, &path)).unwrap();
+            let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
+            assert!(await!(read.read_to_end(&mut buf)).is_err());
+        })
     }
 }

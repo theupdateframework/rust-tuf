@@ -40,11 +40,8 @@ pub struct RootMetadata {
 
 impl RootMetadata {
     pub fn from(meta: &metadata::RootMetadata) -> Result<Self> {
-        let mut keys = meta
-            .keys()
-            .iter()
-            .map(|(_, v)| v.clone())
-            .collect::<Vec<crypto::PublicKey>>();
+        let mut keys =
+            meta.keys().iter().map(|(_, v)| v.clone()).collect::<Vec<crypto::PublicKey>>();
         keys.sort_by_key(|k| k.key_id().clone());
 
         Ok(RootMetadata {
@@ -106,35 +103,23 @@ pub struct RoleDefinition {
 
 impl RoleDefinition {
     pub fn from(role: &metadata::RoleDefinition) -> Result<Self> {
-        let mut key_ids = role
-            .key_ids()
-            .iter()
-            .cloned()
-            .collect::<Vec<crypto::KeyId>>();
+        let mut key_ids = role.key_ids().iter().cloned().collect::<Vec<crypto::KeyId>>();
         key_ids.sort();
 
-        Ok(RoleDefinition {
-            threshold: role.threshold(),
-            key_ids,
-        })
+        Ok(RoleDefinition { threshold: role.threshold(), key_ids })
     }
 
     pub fn try_into(mut self) -> Result<metadata::RoleDefinition> {
         let vec_len = self.key_ids.len();
         if vec_len < 1 {
-            return Err(Error::Encoding(
-                "Role defined with no assoiciated key IDs.".into(),
-            ));
+            return Err(Error::Encoding("Role defined with no assoiciated key IDs.".into()));
         }
 
         let key_ids = self.key_ids.drain(0..).collect::<HashSet<crypto::KeyId>>();
         let dupes = vec_len - key_ids.len();
 
         if dupes != 0 {
-            return Err(Error::Encoding(format!(
-                "Found {} duplicate key IDs.",
-                dupes
-            )));
+            return Err(Error::Encoding(format!("Found {} duplicate key IDs.", dupes)));
         }
 
         Ok(metadata::RoleDefinition::new(self.threshold, key_ids)?)
@@ -260,11 +245,7 @@ impl PublicKey {
         scheme: crypto::SignatureScheme,
         public_key_bytes: &[u8],
     ) -> Self {
-        PublicKey {
-            typ,
-            scheme,
-            public_key: BASE64URL.encode(public_key_bytes),
-        }
+        PublicKey { typ, scheme, public_key: BASE64URL.encode(public_key_bytes) }
     }
 
     pub fn public_key(&self) -> &String {
@@ -291,17 +272,9 @@ pub struct Delegation {
 
 impl Delegation {
     pub fn from(meta: &metadata::Delegation) -> Self {
-        let mut paths = meta
-            .paths()
-            .iter()
-            .cloned()
-            .collect::<Vec<metadata::VirtualTargetPath>>();
+        let mut paths = meta.paths().iter().cloned().collect::<Vec<metadata::VirtualTargetPath>>();
         paths.sort();
-        let mut key_ids = meta
-            .key_ids()
-            .iter()
-            .cloned()
-            .collect::<Vec<crypto::KeyId>>();
+        let mut key_ids = meta.key_ids().iter().cloned().collect::<Vec<crypto::KeyId>>();
         key_ids.sort();
 
         Delegation {
@@ -314,20 +287,12 @@ impl Delegation {
     }
 
     pub fn try_into(self) -> Result<metadata::Delegation> {
-        let paths = self
-            .paths
-            .iter()
-            .cloned()
-            .collect::<HashSet<metadata::VirtualTargetPath>>();
+        let paths = self.paths.iter().cloned().collect::<HashSet<metadata::VirtualTargetPath>>();
         if paths.len() != self.paths.len() {
             return Err(Error::Encoding("Non-unique delegation paths.".into()));
         }
 
-        let key_ids = self
-            .key_ids
-            .iter()
-            .cloned()
-            .collect::<HashSet<crypto::KeyId>>();
+        let key_ids = self.key_ids.iter().cloned().collect::<HashSet<crypto::KeyId>>();
         if key_ids.len() != self.key_ids.len() {
             return Err(Error::Encoding("Non-unique delegation key IDs.".into()));
         }
@@ -344,17 +309,11 @@ pub struct Delegations {
 
 impl Delegations {
     pub fn from(delegations: &metadata::Delegations) -> Delegations {
-        let mut keys = delegations
-            .keys()
-            .iter()
-            .map(|(_, k)| k.clone())
-            .collect::<Vec<crypto::PublicKey>>();
+        let mut keys =
+            delegations.keys().iter().map(|(_, k)| k.clone()).collect::<Vec<crypto::PublicKey>>();
         keys.sort();
 
-        Delegations {
-            keys,
-            roles: delegations.roles().clone(),
-        }
+        Delegations { keys, roles: delegations.roles().clone() }
     }
 
     pub fn try_into(mut self) -> Result<metadata::Delegations> {

@@ -131,152 +131,134 @@ mod test {
 
     #[test]
     fn valid_read() {
-        block_on(
-            async {
-                let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
-                let mut reader = SafeReader::new(bytes, bytes.len() as u64, 0, None).unwrap();
-                let mut buf = Vec::new();
-                assert!(await!(reader.read_to_end(&mut buf)).is_ok());
-                assert_eq!(buf, bytes);
-            },
-        )
+        block_on(async {
+            let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
+            let mut reader = SafeReader::new(bytes, bytes.len() as u64, 0, None).unwrap();
+            let mut buf = Vec::new();
+            assert!(await!(reader.read_to_end(&mut buf)).is_ok());
+            assert_eq!(buf, bytes);
+        })
     }
 
     #[test]
     fn valid_read_large_data() {
-        block_on(
-            async {
-                let bytes: &[u8] = &[0x00; 64 * 1024];
-                let mut reader = SafeReader::new(bytes, bytes.len() as u64, 0, None).unwrap();
-                let mut buf = Vec::new();
-                assert!(await!(reader.read_to_end(&mut buf)).is_ok());
-                assert_eq!(buf, bytes);
-            },
-        )
+        block_on(async {
+            let bytes: &[u8] = &[0x00; 64 * 1024];
+            let mut reader = SafeReader::new(bytes, bytes.len() as u64, 0, None).unwrap();
+            let mut buf = Vec::new();
+            assert!(await!(reader.read_to_end(&mut buf)).is_ok());
+            assert_eq!(buf, bytes);
+        })
     }
 
     #[test]
     fn valid_read_below_max_size() {
-        block_on(
-            async {
-                let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
-                let mut reader = SafeReader::new(bytes, (bytes.len() as u64) + 1, 0, None).unwrap();
-                let mut buf = Vec::new();
-                assert!(await!(reader.read_to_end(&mut buf)).is_ok());
-                assert_eq!(buf, bytes);
-            },
-        )
+        block_on(async {
+            let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
+            let mut reader = SafeReader::new(bytes, (bytes.len() as u64) + 1, 0, None).unwrap();
+            let mut buf = Vec::new();
+            assert!(await!(reader.read_to_end(&mut buf)).is_ok());
+            assert_eq!(buf, bytes);
+        })
     }
 
     #[test]
     fn invalid_read_above_max_size() {
-        block_on(
-            async {
-                let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
-                let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, 0, None).unwrap();
-                let mut buf = Vec::new();
-                assert!(await!(reader.read_to_end(&mut buf)).is_err());
-            },
-        )
+        block_on(async {
+            let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
+            let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, 0, None).unwrap();
+            let mut buf = Vec::new();
+            assert!(await!(reader.read_to_end(&mut buf)).is_err());
+        })
     }
 
     #[test]
     fn invalid_read_above_max_size_large_data() {
-        block_on(
-            async {
-                let bytes: &[u8] = &[0x00; 64 * 1024];
-                let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, 0, None).unwrap();
-                let mut buf = Vec::new();
-                assert!(await!(reader.read_to_end(&mut buf)).is_err());
-            },
-        )
+        block_on(async {
+            let bytes: &[u8] = &[0x00; 64 * 1024];
+            let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, 0, None).unwrap();
+            let mut buf = Vec::new();
+            assert!(await!(reader.read_to_end(&mut buf)).is_err());
+        })
     }
 
     #[test]
     fn valid_read_good_hash() {
-        block_on(
-            async {
-                let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
-                let mut context = digest::Context::new(&SHA256);
-                context.update(&bytes);
-                let hash_value = HashValue::new(context.finish().as_ref().to_vec());
-                let mut reader = SafeReader::new(
-                    bytes,
-                    bytes.len() as u64,
-                    0,
-                    Some((&HashAlgorithm::Sha256, hash_value)),
-                )
-                .unwrap();
-                let mut buf = Vec::new();
-                assert!(await!(reader.read_to_end(&mut buf)).is_ok());
-                assert_eq!(buf, bytes);
-            },
-        )
+        block_on(async {
+            let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
+            let mut context = digest::Context::new(&SHA256);
+            context.update(&bytes);
+            let hash_value = HashValue::new(context.finish().as_ref().to_vec());
+            let mut reader = SafeReader::new(
+                bytes,
+                bytes.len() as u64,
+                0,
+                Some((&HashAlgorithm::Sha256, hash_value)),
+            )
+            .unwrap();
+            let mut buf = Vec::new();
+            assert!(await!(reader.read_to_end(&mut buf)).is_ok());
+            assert_eq!(buf, bytes);
+        })
     }
 
     #[test]
     fn invalid_read_bad_hash() {
-        block_on(
-            async {
-                let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
-                let mut context = digest::Context::new(&SHA256);
-                context.update(&bytes);
-                context.update(&[0xFF]); // evil bytes
-                let hash_value = HashValue::new(context.finish().as_ref().to_vec());
-                let mut reader = SafeReader::new(
-                    bytes,
-                    bytes.len() as u64,
-                    0,
-                    Some((&HashAlgorithm::Sha256, hash_value)),
-                )
-                .unwrap();
-                let mut buf = Vec::new();
-                assert!(await!(reader.read_to_end(&mut buf)).is_err());
-            },
-        )
+        block_on(async {
+            let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
+            let mut context = digest::Context::new(&SHA256);
+            context.update(&bytes);
+            context.update(&[0xFF]); // evil bytes
+            let hash_value = HashValue::new(context.finish().as_ref().to_vec());
+            let mut reader = SafeReader::new(
+                bytes,
+                bytes.len() as u64,
+                0,
+                Some((&HashAlgorithm::Sha256, hash_value)),
+            )
+            .unwrap();
+            let mut buf = Vec::new();
+            assert!(await!(reader.read_to_end(&mut buf)).is_err());
+        })
     }
 
     #[test]
     fn valid_read_good_hash_large_data() {
-        block_on(
-            async {
-                let bytes: &[u8] = &[0x00; 64 * 1024];
-                let mut context = digest::Context::new(&SHA256);
-                context.update(&bytes);
-                let hash_value = HashValue::new(context.finish().as_ref().to_vec());
-                let mut reader = SafeReader::new(
-                    bytes,
-                    bytes.len() as u64,
-                    0,
-                    Some((&HashAlgorithm::Sha256, hash_value)),
-                )
-                .unwrap();
-                let mut buf = Vec::new();
-                assert!(await!(reader.read_to_end(&mut buf)).is_ok());
-                assert_eq!(buf, bytes);
-            },
-        )
+        block_on(async {
+            let bytes: &[u8] = &[0x00; 64 * 1024];
+            let mut context = digest::Context::new(&SHA256);
+            context.update(&bytes);
+            let hash_value = HashValue::new(context.finish().as_ref().to_vec());
+            let mut reader = SafeReader::new(
+                bytes,
+                bytes.len() as u64,
+                0,
+                Some((&HashAlgorithm::Sha256, hash_value)),
+            )
+            .unwrap();
+            let mut buf = Vec::new();
+            assert!(await!(reader.read_to_end(&mut buf)).is_ok());
+            assert_eq!(buf, bytes);
+        })
     }
 
     #[test]
     fn invalid_read_bad_hash_large_data() {
-        block_on(
-            async {
-                let bytes: &[u8] = &[0x00; 64 * 1024];
-                let mut context = digest::Context::new(&SHA256);
-                context.update(&bytes);
-                context.update(&[0xFF]); // evil bytes
-                let hash_value = HashValue::new(context.finish().as_ref().to_vec());
-                let mut reader = SafeReader::new(
-                    bytes,
-                    bytes.len() as u64,
-                    0,
-                    Some((&HashAlgorithm::Sha256, hash_value)),
-                )
-                .unwrap();
-                let mut buf = Vec::new();
-                assert!(await!(reader.read_to_end(&mut buf)).is_err());
-            },
-        )
+        block_on(async {
+            let bytes: &[u8] = &[0x00; 64 * 1024];
+            let mut context = digest::Context::new(&SHA256);
+            context.update(&bytes);
+            context.update(&[0xFF]); // evil bytes
+            let hash_value = HashValue::new(context.finish().as_ref().to_vec());
+            let mut reader = SafeReader::new(
+                bytes,
+                bytes.len() as u64,
+                0,
+                Some((&HashAlgorithm::Sha256, hash_value)),
+            )
+            .unwrap();
+            let mut buf = Vec::new();
+            assert!(await!(reader.read_to_end(&mut buf)).is_err());
+        })
     }
 }

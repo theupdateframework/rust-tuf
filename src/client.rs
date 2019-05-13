@@ -144,12 +144,7 @@ where
 
         let tuf = Tuf::from_root(root)?;
 
-        Ok(Client {
-            tuf,
-            config,
-            local,
-            remote,
-        })
+        Ok(Client { tuf, config, local, remote })
     }
 
     /// Create a new TUF client. It will attempt to load initial root metadata the local and remote
@@ -191,12 +186,7 @@ where
 
         let tuf = Tuf::from_root_pinned(root, trusted_root_keys)?;
 
-        Ok(Client {
-            tuf,
-            config,
-            local,
-            remote,
-        })
+        Ok(Client { tuf, config, local, remote })
     }
 
     /// Update TUF metadata from the remote repository.
@@ -428,11 +418,8 @@ where
     async fn _fetch_target<'a>(&'a mut self, target: &'a TargetPath) -> Result<Box<dyn AsyncRead>> {
         let virt = self.config.path_translator.real_to_virtual(target)?;
 
-        let snapshot = self
-            .tuf
-            .snapshot()
-            .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
-            .clone();
+        let snapshot =
+            self.tuf.snapshot().ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?.clone();
         let (_, target_description) =
             await!(self.lookup_target_description(false, 0, &virt, &snapshot, None));
         let target_description = target_description?;
@@ -463,10 +450,7 @@ where
             None => match self.tuf.targets() {
                 Some(t) => t.clone(),
                 None => {
-                    return (
-                        default_terminate,
-                        Err(Error::MissingMetadata(Role::Targets)),
-                    );
+                    return (default_terminate, Err(Error::MissingMetadata(Role::Targets)));
                 }
             },
         };
@@ -536,10 +520,7 @@ where
                 }
             };
 
-            match self
-                .tuf
-                .update_delegation(delegation.role(), signed_meta.clone())
-            {
+            match self.tuf.update_delegation(delegation.role(), signed_meta.clone()) {
                 Ok(_) => {
                     match await!(self.local.store_metadata(
                         delegation.role(),
@@ -547,19 +528,12 @@ where
                         &signed_meta,
                     )) {
                         Ok(_) => (),
-                        Err(e) => warn!(
-                            "Error storing metadata {:?} locally: {:?}",
-                            delegation.role(),
-                            e
-                        ),
+                        Err(e) => {
+                            warn!("Error storing metadata {:?} locally: {:?}", delegation.role(), e)
+                        }
                     }
 
-                    let meta = self
-                        .tuf
-                        .delegations()
-                        .get(delegation.role())
-                        .unwrap()
-                        .clone();
+                    let meta = self.tuf.delegations().get(delegation.role()).unwrap().clone();
                     let (term, res) = await!(Box::pin(self.lookup_target_description(
                         delegation.terminating(),
                         current_depth + 1,
@@ -797,9 +771,7 @@ mod test {
         // Make sure the version 3 is signed by version 2's keys.
         root3.add_signature(&KEYS[1]).unwrap();
 
-        let mut targets = TargetsMetadataBuilder::new()
-            .signed::<Json>(&KEYS[0])
-            .unwrap();
+        let mut targets = TargetsMetadataBuilder::new().signed::<Json>(&KEYS[0]).unwrap();
 
         targets.add_signature(&KEYS[1]).unwrap();
         targets.add_signature(&KEYS[2]).unwrap();

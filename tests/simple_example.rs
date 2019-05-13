@@ -34,28 +34,21 @@ impl PathTranslator for MyPathTranslator {
 fn with_translator() {
     let mut remote = EphemeralRepository::<Json>::new();
     let config = Config::default();
-    block_on(
-        async {
-            let root_key_ids = await!(init_server(&mut remote, &config)).unwrap();
-            await!(init_client(&root_key_ids, remote, config)).unwrap();
-        },
-    )
+    block_on(async {
+        let root_key_ids = await!(init_server(&mut remote, &config)).unwrap();
+        await!(init_client(&root_key_ids, remote, config)).unwrap();
+    })
 }
 
 #[test]
 fn without_translator() {
     let mut remote = EphemeralRepository::<Json>::new();
-    let config = Config::build()
-        .path_translator(MyPathTranslator {})
-        .finish()
-        .unwrap();
+    let config = Config::build().path_translator(MyPathTranslator {}).finish().unwrap();
 
-    block_on(
-        async {
-            let root_key_ids = await!(init_server(&mut remote, &config)).unwrap();
-            await!(init_client(&root_key_ids, remote, config)).unwrap();
-        },
-    )
+    block_on(async {
+        let root_key_ids = await!(init_server(&mut remote, &config)).unwrap();
+        await!(init_client(&root_key_ids, remote, config)).unwrap();
+    })
 }
 
 async fn init_client<T: 'static>(
@@ -67,12 +60,7 @@ where
     T: PathTranslator,
 {
     let local = EphemeralRepository::<Json>::new();
-    let mut client = await!(Client::with_root_pinned(
-        &root_key_ids,
-        config,
-        local,
-        remote
-    ))?;
+    let mut client = await!(Client::with_root_pinned(&root_key_ids, config, local, remote))?;
     let _ = await!(client.update())?;
     let target_path = TargetPath::new("foo-bar".into())?;
     await!(client.fetch_target(&target_path))

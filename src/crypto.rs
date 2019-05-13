@@ -6,7 +6,7 @@ use ring;
 use ring::digest::{self, SHA256, SHA512};
 use ring::rand::SystemRandom;
 use ring::signature::{
-    Ed25519KeyPair, RsaKeyPair, KeyPair, ED25519, RSA_PSS_2048_8192_SHA256,
+    Ed25519KeyPair, KeyPair, RsaKeyPair, ED25519, RSA_PSS_2048_8192_SHA256,
     RSA_PSS_2048_8192_SHA512, RSA_PSS_SHA256, RSA_PSS_SHA512,
 };
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
@@ -68,9 +68,7 @@ pub fn calculate_hashes<R: Read>(
     hash_algs: &[HashAlgorithm],
 ) -> Result<(u64, HashMap<HashAlgorithm, HashValue>)> {
     if hash_algs.is_empty() {
-        return Err(Error::IllegalArgument(
-            "Cannot provide empty set of hash algorithms".into(),
-        ));
+        return Err(Error::IllegalArgument("Cannot provide empty set of hash algorithms".into()));
     }
 
     let mut size = 0;
@@ -80,10 +78,7 @@ pub fn calculate_hashes<R: Read>(
             HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
             HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
             HashAlgorithm::Unknown(ref s) => {
-                return Err(Error::IllegalArgument(format!(
-                    "Unknown hash algorithm: {}",
-                    s
-                )));
+                return Err(Error::IllegalArgument(format!("Unknown hash algorithm: {}", s)));
             }
         };
 
@@ -167,9 +162,7 @@ impl KeyId {
     /// Parse a key ID from a base64url string.
     pub fn from_string(string: &str) -> Result<Self> {
         if string.len() != 44 {
-            return Err(Error::IllegalArgument(
-                "Base64 key ID must be 44 characters long".into(),
-            ));
+            return Err(Error::IllegalArgument("Base64 key ID must be 44 characters long".into()));
         }
         Ok(KeyId(BASE64URL.decode(string.as_bytes())?))
     }
@@ -323,9 +316,7 @@ impl Serialize for KeyType {
 impl<'de> Deserialize<'de> for KeyType {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let string: String = Deserialize::deserialize(de)?;
-        string
-            .parse()
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        string.parse().map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -474,16 +465,14 @@ impl PrivateKey {
             (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha256) => {
                 let rng = SystemRandom::new();
                 let mut buf = vec![0; rsa.public_modulus_len()];
-                rsa
-                    .sign(&RSA_PSS_SHA256, &rng, msg, &mut buf)
+                rsa.sign(&RSA_PSS_SHA256, &rng, msg, &mut buf)
                     .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
                 SignatureValue(buf)
             }
             (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha512) => {
                 let rng = SystemRandom::new();
                 let mut buf = vec![0; rsa.public_modulus_len()];
-                rsa
-                    .sign(&RSA_PSS_SHA512, &rng, msg, &mut buf)
+                rsa.sign(&RSA_PSS_SHA512, &rng, msg, &mut buf)
                     .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
                 SignatureValue(buf)
             }
@@ -498,10 +487,7 @@ impl PrivateKey {
             }
         };
 
-        Ok(Signature {
-            key_id: self.key_id().clone(),
-            value,
-        })
+        Ok(Signature { key_id: self.key_id().clone(), value })
     }
 
     fn rsa_gen() -> Result<Vec<u8>> {
@@ -520,9 +506,7 @@ impl PrivateKey {
             .output()?;
 
         let mut pk8 = Command::new("openssl")
-            .args(&[
-                "pkcs8", "-inform", "der", "-topk8", "-nocrypt", "-outform", "der",
-            ])
+            .args(&["pkcs8", "-inform", "der", "-topk8", "-nocrypt", "-outform", "der"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()?;
@@ -580,12 +564,7 @@ impl PublicKey {
         })?;
 
         let key_id = calculate_key_id(der_bytes);
-        Ok(PublicKey {
-            typ,
-            key_id,
-            scheme,
-            value: PublicKeyValue(value),
-        })
+        Ok(PublicKey { typ, key_id, scheme, value: PublicKeyValue(value) })
     }
 
     /// Write the public key as SPKI DER bytes.
@@ -617,10 +596,7 @@ impl PublicKey {
             SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
             SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
             SignatureScheme::Unknown(ref s) => {
-                return Err(Error::IllegalArgument(format!(
-                    "Unknown signature scheme: {}",
-                    s
-                )));
+                return Err(Error::IllegalArgument(format!("Unknown signature scheme: {}", s)));
             }
         };
 

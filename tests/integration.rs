@@ -63,14 +63,8 @@ fn simple_delegation() {
             MetadataPath::new("delegation".into()).unwrap(),
             false,
             1,
-            vec![delegation_key.key_id().clone()]
-                .iter()
-                .cloned()
-                .collect(),
-            vec![VirtualTargetPath::new("foo".into()).unwrap()]
-                .iter()
-                .cloned()
-                .collect(),
+            vec![delegation_key.key_id().clone()].iter().cloned().collect(),
+            vec![VirtualTargetPath::new("foo".into()).unwrap()].iter().cloned().collect(),
         )
         .unwrap()],
     )
@@ -94,12 +88,9 @@ fn simple_delegation() {
         .signed::<Json>(&delegation_key)
         .unwrap();
 
-    tuf.update_delegation(&MetadataPath::new("delegation".into()).unwrap(), delegation)
-        .unwrap();
+    tuf.update_delegation(&MetadataPath::new("delegation".into()).unwrap(), delegation).unwrap();
 
-    assert!(tuf
-        .target_description(&VirtualTargetPath::new("foo".into()).unwrap())
-        .is_ok());
+    assert!(tuf.target_description(&VirtualTargetPath::new("foo".into()).unwrap()).is_ok());
 }
 
 #[test]
@@ -157,14 +148,8 @@ fn nested_delegation() {
             MetadataPath::new("delegation-a".into()).unwrap(),
             false,
             1,
-            vec![delegation_a_key.key_id().clone()]
-                .iter()
-                .cloned()
-                .collect(),
-            vec![VirtualTargetPath::new("foo".into()).unwrap()]
-                .iter()
-                .cloned()
-                .collect(),
+            vec![delegation_a_key.key_id().clone()].iter().cloned().collect(),
+            vec![VirtualTargetPath::new("foo".into()).unwrap()].iter().cloned().collect(),
         )
         .unwrap()],
     )
@@ -184,14 +169,8 @@ fn nested_delegation() {
             MetadataPath::new("delegation-b".into()).unwrap(),
             false,
             1,
-            vec![delegation_b_key.key_id().clone()]
-                .iter()
-                .cloned()
-                .collect(),
-            vec![VirtualTargetPath::new("foo".into()).unwrap()]
-                .iter()
-                .cloned()
-                .collect(),
+            vec![delegation_b_key.key_id().clone()].iter().cloned().collect(),
+            vec![VirtualTargetPath::new("foo".into()).unwrap()].iter().cloned().collect(),
         )
         .unwrap()],
     )
@@ -202,11 +181,7 @@ fn nested_delegation() {
         .signed::<Json>(&delegation_a_key)
         .unwrap();
 
-    tuf.update_delegation(
-        &MetadataPath::new("delegation-a".into()).unwrap(),
-        delegation,
-    )
-    .unwrap();
+    tuf.update_delegation(&MetadataPath::new("delegation-a".into()).unwrap(), delegation).unwrap();
 
     //// build delegation B ////
 
@@ -222,13 +197,7 @@ fn nested_delegation() {
         .signed::<Json>(&delegation_b_key)
         .unwrap();
 
-    tuf.update_delegation(
-        &MetadataPath::new("delegation-b".into()).unwrap(),
-        delegation,
-    )
-    .unwrap();
+    tuf.update_delegation(&MetadataPath::new("delegation-b".into()).unwrap(), delegation).unwrap();
 
-    assert!(tuf
-        .target_description(&VirtualTargetPath::new("foo".into()).unwrap())
-        .is_ok());
+    assert!(tuf.target_description(&VirtualTargetPath::new("foo".into()).unwrap()).is_ok());
 }
