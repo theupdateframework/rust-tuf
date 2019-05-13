@@ -1,6 +1,7 @@
 //! Interfaces for interacting with different types of TUF repositories.
 
 use futures::compat::{Future01CompatExt, Stream01CompatExt};
+use futures::future::BoxFuture;
 use futures::io::{AllowStdIo, AsyncRead};
 use futures::prelude::*;
 use http::{Response, StatusCode, Uri};
@@ -9,12 +10,13 @@ use hyper::client::connect::Connect;
 use hyper::Client;
 use hyper::Request;
 use log::debug;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::fs::{DirBuilder, File};
 use std::io::{self, Cursor};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use tempfile::{self, NamedTempFile};
 
 use crate::crypto::{self, HashAlgorithm, HashValue};
@@ -24,14 +26,14 @@ use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, SignedMetadata, TargetDescription, TargetPath,
 };
 use crate::util::SafeReader;
-use crate::{Result, TufFuture};
+use crate::Result;
 use url::Url;
 
 /// Top-level trait that represents a TUF repository and contains all the ways it can be interacted
 /// with.
 pub trait Repository<D>
 where
-    D: DataInterchange,
+    D: DataInterchange + Sync,
 {
     /// Store signed metadata.
     ///
@@ -42,9 +44,9 @@ where
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
         metadata: &'a SignedMetadata<D, M>,
-    ) -> TufFuture<'a, Result<()>>
+    ) -> BoxFuture<'a, Result<()>>
     where
-        M: Metadata + 'static;
+        M: Metadata + Sync + 'static;
 
     /// Fetch signed metadata.
     fn fetch_metadata<'a, M>(
@@ -53,7 +55,7 @@ where
         version: &'a MetadataVersion,
         max_length: &'a Option<usize>,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> TufFuture<'a, Result<SignedMetadata<D, M>>>
+    ) -> BoxFuture<'a, Result<SignedMetadata<D, M>>>
     where
         M: Metadata + 'static;
 
@@ -62,16 +64,16 @@ where
         &'a self,
         read: R,
         target_path: &'a TargetPath,
-    ) -> TufFuture<'a, Result<()>>
+    ) -> BoxFuture<'a, Result<()>>
     where
-        R: AsyncRead + 'a;
+        R: AsyncRead + Send + Unpin + 'a;
 
     /// Fetch the given target.
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
-    ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>>;
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>>;
 
     /// Perform a sanity check that `M`, `Role`, and `MetadataPath` all desrcribe the same entity.
     fn check<M>(meta_path: &MetadataPath) -> Result<()>
@@ -115,18 +117,18 @@ where
 
 impl<D> Repository<D> for FileSystemRepository<D>
 where
-    D: DataInterchange,
+    D: DataInterchange + Sync,
 {
     fn store_metadata<'a, M>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
         metadata: &'a SignedMetadata<D, M>,
-    ) -> TufFuture<'a, Result<()>>
+    ) -> BoxFuture<'a, Result<()>>
     where
-        M: Metadata + 'static,
+        M: Metadata + Sync + 'static,
     {
-        Box::pin(async move {
+        async move {
             Self::check::<M>(meta_path)?;
 
             let mut path = self.local_path.join("metadata");
@@ -141,7 +143,8 @@ where
             temp_file.persist(&path)?;
 
             Ok(())
-        })
+        }
+            .boxed()
     }
 
     /// Fetch signed metadata.
@@ -151,11 +154,11 @@ where
         version: &'a MetadataVersion,
         max_length: &'a Option<usize>,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> TufFuture<'a, Result<SignedMetadata<D, M>>>
+    ) -> BoxFuture<'a, Result<SignedMetadata<D, M>>>
     where
         M: Metadata + 'static,
     {
-        Box::pin(async move {
+        async move {
             Self::check::<M>(&meta_path)?;
 
             let mut path = self.local_path.join("metadata");
@@ -172,18 +175,19 @@ where
             await!(reader.read_to_end(&mut buf))?;
 
             Ok(D::from_slice(&buf)?)
-        })
+        }
+            .boxed()
     }
 
     fn store_target<'a, R>(
         &'a self,
         mut read: R,
         target_path: &'a TargetPath,
-    ) -> TufFuture<'a, Result<()>>
+    ) -> BoxFuture<'a, Result<()>>
     where
-        R: AsyncRead + 'a,
+        R: AsyncRead + Send + Unpin + 'a,
     {
-        Box::pin(async move {
+        async move {
             let mut path = self.local_path.join("targets");
             path.extend(target_path.components());
 
@@ -196,15 +200,16 @@ where
             temp_file.into_inner().persist(&path)?;
 
             Ok(())
-        })
+        }
+            .boxed()
     }
 
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
-    ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
-        Box::pin(async move {
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        async move {
             let mut path = self.local_path.join("targets");
             path.extend(target_path.components());
 
@@ -214,7 +219,7 @@ where
 
             let (alg, value) = crypto::hash_preference(target_description.hashes())?;
 
-            let reader: Box<dyn AsyncRead> = Box::new(SafeReader::new(
+            let reader: Box<dyn AsyncRead + Send + Unpin> = Box::new(SafeReader::new(
                 AllowStdIo::new(File::open(&path)?),
                 target_description.length(),
                 0,
@@ -222,7 +227,8 @@ where
             )?);
 
             Ok(reader)
-        })
+        }
+            .boxed()
     }
 }
 
@@ -377,7 +383,7 @@ where
 impl<C, D> Repository<D> for HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange,
+    D: DataInterchange + Sync,
 {
     /// This always returns `Err` as storing over HTTP is not yet supported.
     fn store_metadata<'a, M>(
@@ -385,13 +391,11 @@ where
         _: &'a MetadataPath,
         _: &'a MetadataVersion,
         _: &'a SignedMetadata<D, M>,
-    ) -> TufFuture<'a, Result<()>>
+    ) -> BoxFuture<'a, Result<()>>
     where
         M: Metadata + 'static,
     {
-        Box::pin(async {
-            Err(Error::Opaque("Http repo store metadata not implemented".to_string()))
-        })
+        async { Err(Error::Opaque("Http repo store metadata not implemented".to_string())) }.boxed()
     }
 
     fn fetch_metadata<'a, M>(
@@ -400,11 +404,11 @@ where
         version: &'a MetadataVersion,
         max_length: &'a Option<usize>,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> TufFuture<'a, Result<SignedMetadata<D, M>>>
+    ) -> BoxFuture<'a, Result<SignedMetadata<D, M>>>
     where
         M: Metadata + 'static,
     {
-        Box::pin(async move {
+        async move {
             Self::check::<M>(meta_path)?;
 
             let components = meta_path.components::<D>(&version);
@@ -424,23 +428,24 @@ where
             await!(reader.read_to_end(&mut buf))?;
 
             Ok(D::from_slice(&buf)?)
-        })
+        }
+            .boxed()
     }
 
     /// This always returns `Err` as storing over HTTP is not yet supported.
-    fn store_target<'a, R>(&'a self, _: R, _: &'a TargetPath) -> TufFuture<'a, Result<()>>
+    fn store_target<'a, R>(&'a self, _: R, _: &'a TargetPath) -> BoxFuture<'a, Result<()>>
     where
         R: AsyncRead + 'a,
     {
-        Box::pin(async { Err(Error::Opaque("Http repo store not implemented".to_string())) })
+        async { Err(Error::Opaque("Http repo store not implemented".to_string())) }.boxed()
     }
 
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
-    ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
-        Box::pin(async move {
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        async move {
             let (alg, value) = crypto::hash_preference(target_description.hashes())?;
             let components = target_path.components();
             let resp = await!(self.get(&None, &components))?;
@@ -455,8 +460,9 @@ where
                 Some((alg, value.clone())),
             )?;
 
-            Ok(Box::new(reader) as Box<dyn AsyncRead>)
-        })
+            Ok(Box::new(reader) as Box<dyn AsyncRead + Send + Unpin>)
+        }
+            .boxed()
     }
 }
 
@@ -468,7 +474,7 @@ where
     D: DataInterchange,
 {
     metadata: ArcHashMap<(MetadataPath, MetadataVersion), Vec<u8>>,
-    targets: ArcHashMap<TargetPath, Vec<u8>>,
+    targets: ArcHashMap<TargetPath, Arc<Vec<u8>>>,
     interchange: PhantomData<D>,
 }
 
@@ -497,25 +503,25 @@ where
 
 impl<D> Repository<D> for EphemeralRepository<D>
 where
-    D: DataInterchange,
+    D: DataInterchange + Sync,
 {
     fn store_metadata<'a, M>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
         metadata: &'a SignedMetadata<D, M>,
-    ) -> TufFuture<'a, Result<()>>
+    ) -> BoxFuture<'a, Result<()>>
     where
-        M: Metadata + 'static,
+        M: Metadata + Sync + 'static,
     {
-        Box::pin(async move {
+        async move {
             Self::check::<M>(meta_path)?;
             let mut buf = Vec::new();
             D::to_writer(&mut buf, metadata)?;
-            let mut metadata = self.metadata.write().unwrap();
-            let _ = metadata.insert((meta_path.clone(), version.clone()), buf);
+            self.metadata.write().insert((meta_path.clone(), version.clone()), buf);
             Ok(())
-        })
+        }
+            .boxed()
     }
 
     fn fetch_metadata<'a, M>(
@@ -524,75 +530,85 @@ where
         version: &'a MetadataVersion,
         max_length: &'a Option<usize>,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> TufFuture<'a, Result<SignedMetadata<D, M>>>
+    ) -> BoxFuture<'a, Result<SignedMetadata<D, M>>>
     where
         M: Metadata + 'static,
     {
-        Box::pin(async move {
+        async move {
             Self::check::<M>(meta_path)?;
 
-            let metadata = self.metadata.read().unwrap();
-            match metadata.get(&(meta_path.clone(), version.clone())) {
-                Some(bytes) => {
-                    let mut reader = SafeReader::new(
-                        &**bytes,
-                        max_length.unwrap_or(::std::usize::MAX) as u64,
-                        0,
-                        hash_data,
-                    )?;
-
-                    let mut buf = Vec::with_capacity(max_length.unwrap_or(0));
-                    await!(reader.read_to_end(&mut buf))?;
-
-                    D::from_slice(&buf)
+            let bytes = match self.metadata.read().get(&(meta_path.clone(), version.clone())) {
+                Some(bytes) => bytes.clone(),
+                None => {
+                    return Err(Error::NotFound);
                 }
-                None => Err(Error::NotFound),
-            }
-        })
+            };
+
+            let mut reader = SafeReader::new(
+                &*bytes,
+                max_length.unwrap_or(::std::usize::MAX) as u64,
+                0,
+                hash_data,
+            )?;
+
+            let mut buf = Vec::with_capacity(max_length.unwrap_or(0));
+            await!(reader.read_to_end(&mut buf))?;
+
+            D::from_slice(&buf)
+        }
+            .boxed()
     }
 
     fn store_target<'a, R>(
         &'a self,
         mut read: R,
         target_path: &'a TargetPath,
-    ) -> TufFuture<'a, Result<()>>
+    ) -> BoxFuture<'a, Result<()>>
     where
-        R: AsyncRead + 'a,
+        R: AsyncRead + Send + Unpin + 'a,
     {
-        Box::pin(async move {
-            println!("EphemeralRepository.store_target: {:?}", target_path);
+        async move {
             let mut buf = Vec::new();
             await!(read.read_to_end(&mut buf))?;
-            let mut targets = self.targets.write().unwrap();
-            let _ = targets.insert(target_path.clone(), buf);
+            self.targets.write().insert(target_path.clone(), Arc::new(buf));
             Ok(())
-        })
+        }
+            .boxed()
     }
 
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,
-    ) -> TufFuture<'a, Result<Box<dyn AsyncRead>>> {
-        Box::pin(async move {
-            let targets = self.targets.read().unwrap();
-            match targets.get(target_path) {
-                Some(bytes) => {
-                    let cur = Cursor::new(bytes.clone());
-                    let (alg, value) = crypto::hash_preference(target_description.hashes())?;
-
-                    let reader: Box<dyn AsyncRead> = Box::new(SafeReader::new(
-                        cur,
-                        target_description.length(),
-                        0,
-                        Some((alg, value.clone())),
-                    )?);
-
-                    Ok(reader)
-                }
-                None => Err(Error::NotFound),
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        // Helper wrapper in order to get Arc<Vec<u8>> to be compatible with Cursor.
+        struct Wrapper(Arc<Vec<u8>>);
+        impl AsRef<[u8]> for Wrapper {
+            fn as_ref(&self) -> &[u8] {
+                &**self.0
             }
-        })
+        }
+
+        async move {
+            let bytes = match self.targets.read().get(target_path) {
+                Some(bytes) => bytes.clone(),
+                None => {
+                    return Err(Error::NotFound);
+                }
+            };
+
+            let (alg, value) = crypto::hash_preference(target_description.hashes())?;
+
+            let reader: Box<dyn AsyncRead + Send + Unpin> = Box::new(SafeReader::new(
+                Cursor::new(Wrapper(bytes)),
+                target_description.length(),
+                0,
+                Some((alg, value.clone())),
+            )?);
+
+            Ok(reader)
+        }
+            .boxed()
     }
 }
 

@@ -109,7 +109,7 @@
     clippy::op_ref,
     clippy::too_many_arguments
 )]
-#![feature(async_await, await_macro, futures_api)]
+#![feature(async_await, await_macro)]
 
 pub mod client;
 pub mod crypto;
@@ -127,6 +127,3 @@ pub use crate::tuf::*;
 
 /// Alias for `Result<T, Error>`.
 pub type Result<T> = std::result::Result<T, Error>;
-
-/// Alias for `Pin<Box<dyn Future<Output = T> + 'a>>`.
-pub type TufFuture<'a, T> = std::pin::Pin<Box<dyn futures::Future<Output = T> + 'a>>;
