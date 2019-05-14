@@ -113,10 +113,7 @@ fn safe_path(path: &str) -> Result<()> {
 
     for bad_str in PATH_ILLEGAL_STRINGS {
         if path.contains(bad_str) {
-            return Err(Error::IllegalArgument(format!(
-                "Path cannot contain {:?}",
-                bad_str
-            )));
+            return Err(Error::IllegalArgument(format!("Path cannot contain {:?}", bad_str)));
         }
     }
 
@@ -273,11 +270,7 @@ where
         let raw = D::serialize(&metadata)?;
         let bytes = D::canonicalize(&raw)?;
         let sig = private_key.sign(&bytes)?;
-        Ok(SignedMetadata {
-            signatures: vec![sig],
-            metadata,
-            _interchage: PhantomData,
-        })
+        Ok(SignedMetadata { signatures: vec![sig], metadata, _interchage: PhantomData })
     }
 
     /// Append a signature to this signed metadata. Will overwrite signature by keys with the same
@@ -317,8 +310,7 @@ where
         let raw = D::serialize(&self.metadata)?;
         let bytes = D::canonicalize(&raw)?;
         let sig = private_key.sign(&bytes)?;
-        self.signatures
-            .retain(|s| s.key_id() != private_key.key_id());
+        self.signatures.retain(|s| s.key_id() != private_key.key_id());
         self.signatures.push(sig);
         Ok(())
     }
@@ -328,24 +320,14 @@ where
     /// key ID, then the signatures from `self` will replace the signatures from `other`.
     pub fn merge_signatures(&mut self, other: &Self) -> Result<()> {
         if self.metadata != other.metadata {
-            return Err(Error::IllegalArgument(
-                "Attempted to merge unequal metadata".into(),
-            ));
+            return Err(Error::IllegalArgument("Attempted to merge unequal metadata".into()));
         }
 
-        let key_ids = self
-            .signatures
-            .iter()
-            .map(|s| s.key_id().clone())
-            .collect::<HashSet<KeyId>>();
+        let key_ids =
+            self.signatures.iter().map(|s| s.key_id().clone()).collect::<HashSet<KeyId>>();
 
-        self.signatures.extend(
-            other
-                .signatures
-                .iter()
-                .filter(|s| !key_ids.contains(s.key_id()))
-                .cloned(),
-        );
+        self.signatures
+            .extend(other.signatures.iter().filter(|s| !key_ids.contains(s.key_id())).cloned());
 
         Ok(())
     }
@@ -437,10 +419,7 @@ where
                     }
                 },
                 None => {
-                    warn!(
-                        "Key ID {:?} was not found in the set of authorized keys.",
-                        sig.key_id()
-                    );
+                    warn!("Key ID {:?} was not found in the set of authorized keys.", sig.key_id());
                 }
             }
             if signatures_needed == 0 {
@@ -746,9 +725,7 @@ impl Serialize for RootMetadata {
 impl<'de> Deserialize<'de> for RootMetadata {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::RootMetadata = Deserialize::deserialize(de)?;
-        intermediate
-            .try_into()
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        intermediate.try_into().map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -808,9 +785,7 @@ impl Serialize for RoleDefinition {
 impl<'de> Deserialize<'de> for RoleDefinition {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::RoleDefinition = Deserialize::deserialize(de)?;
-        intermediate
-            .try_into()
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        intermediate.try_into().map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -995,11 +970,7 @@ impl TimestampMetadata {
             )));
         }
 
-        Ok(TimestampMetadata {
-            version,
-            expires,
-            snapshot,
-        })
+        Ok(TimestampMetadata { version, expires, snapshot })
     }
 
     /// An immutable reference to the snapshot description.
@@ -1034,9 +1005,7 @@ impl Serialize for TimestampMetadata {
 impl<'de> Deserialize<'de> for TimestampMetadata {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::TimestampMetadata = Deserialize::deserialize(de)?;
-        intermediate
-            .try_into()
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        intermediate.try_into().map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -1056,24 +1025,16 @@ impl MetadataDescription {
         hash_algs: &[HashAlgorithm],
     ) -> Result<Self> {
         if version < 1 {
-            return Err(Error::IllegalArgument(
-                "Version must be greater than zero".into(),
-            ));
+            return Err(Error::IllegalArgument("Version must be greater than zero".into()));
         }
 
         let (length, hashes) = crypto::calculate_hashes(read, hash_algs)?;
 
         if length > ::std::usize::MAX as u64 {
-            return Err(Error::IllegalArgument(
-                "Calculated length exceeded usize".into(),
-            ));
+            return Err(Error::IllegalArgument("Calculated length exceeded usize".into()));
         }
 
-        Ok(MetadataDescription {
-            version,
-            length: length as usize,
-            hashes,
-        })
+        Ok(MetadataDescription { version, length: length as usize, hashes })
     }
 
     /// Create a new `MetadataDescription`.
@@ -1090,16 +1051,10 @@ impl MetadataDescription {
         }
 
         if hashes.is_empty() {
-            return Err(Error::IllegalArgument(
-                "Cannot have empty set of hashes".into(),
-            ));
+            return Err(Error::IllegalArgument("Cannot have empty set of hashes".into()));
         }
 
-        Ok(MetadataDescription {
-            version,
-            length,
-            hashes,
-        })
+        Ok(MetadataDescription { version, length, hashes })
     }
 
     /// The version of the described metadata.
@@ -1121,9 +1076,7 @@ impl MetadataDescription {
 impl<'de> Deserialize<'de> for MetadataDescription {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::MetadataDescription = Deserialize::deserialize(de)?;
-        intermediate
-            .try_into()
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        intermediate.try_into().map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -1222,11 +1175,7 @@ impl Default for SnapshotMetadataBuilder {
 
 impl From<SnapshotMetadata> for SnapshotMetadataBuilder {
     fn from(meta: SnapshotMetadata) -> Self {
-        SnapshotMetadataBuilder {
-            version: meta.version,
-            expires: meta.expires,
-            meta: meta.meta,
-        }
+        SnapshotMetadataBuilder { version: meta.version, expires: meta.expires, meta: meta.meta }
     }
 }
 
@@ -1252,11 +1201,7 @@ impl SnapshotMetadata {
             )));
         }
 
-        Ok(SnapshotMetadata {
-            version,
-            expires,
-            meta,
-        })
+        Ok(SnapshotMetadata { version, expires, meta })
     }
 
     /// An immutable reference to the metadata paths and descriptions.
@@ -1291,9 +1236,7 @@ impl Serialize for SnapshotMetadata {
 impl<'de> Deserialize<'de> for SnapshotMetadata {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::SnapshotMetadata = Deserialize::deserialize(de)?;
-        intermediate
-            .try_into()
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        intermediate.try_into().map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -1376,11 +1319,7 @@ impl VirtualTargetPath {
             .map(|group| {
                 group
                     .iter()
-                    .filter(|parent| {
-                        parents[0]
-                            .iter()
-                            .any(|p| parent.is_child(p) || parent == &p)
-                    })
+                    .filter(|parent| parents[0].iter().any(|p| parent.is_child(p) || parent == &p))
                     .cloned()
                     .collect::<HashSet<_>>()
             })
@@ -1450,9 +1389,7 @@ impl TargetDescription {
     /// preferred.
     pub fn new(length: u64, hashes: HashMap<HashAlgorithm, HashValue>) -> Result<Self> {
         if hashes.is_empty() {
-            return Err(Error::IllegalArgument(
-                "Cannot have empty set of hashes".into(),
-            ));
+            return Err(Error::IllegalArgument("Cannot have empty set of hashes".into()));
         }
 
         Ok(TargetDescription { length, hashes })
@@ -1508,9 +1445,7 @@ impl TargetDescription {
 impl<'de> Deserialize<'de> for TargetDescription {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::TargetDescription = Deserialize::deserialize(de)?;
-        intermediate
-            .try_into()
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        intermediate.try_into().map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -1538,12 +1473,7 @@ impl TargetsMetadata {
             )));
         }
 
-        Ok(TargetsMetadata {
-            version,
-            expires,
-            targets,
-            delegations,
-        })
+        Ok(TargetsMetadata { version, expires, targets, delegations })
     }
 
     /// An immutable reference to the descriptions of targets.
@@ -1583,9 +1513,7 @@ impl Serialize for TargetsMetadata {
 impl<'de> Deserialize<'de> for TargetsMetadata {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::TargetsMetadata = Deserialize::deserialize(de)?;
-        intermediate
-            .try_into()
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        intermediate.try_into().map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -1693,24 +1621,14 @@ impl Delegations {
             return Err(Error::IllegalArgument("Roles cannot be empty.".into()));
         }
 
-        if roles.len()
-            != roles
-                .iter()
-                .map(|r| &r.role)
-                .collect::<HashSet<&MetadataPath>>()
-                .len()
-        {
+        if roles.len() != roles.iter().map(|r| &r.role).collect::<HashSet<&MetadataPath>>().len() {
             return Err(Error::IllegalArgument(
                 "Cannot have duplicated roles in delegations.".into(),
             ));
         }
 
         Ok(Delegations {
-            keys: keys
-                .iter()
-                .cloned()
-                .map(|k| (k.key_id().clone(), k))
-                .collect(),
+            keys: keys.iter().cloned().map(|k| (k.key_id().clone(), k)).collect(),
             roles,
         })
     }
@@ -1738,9 +1656,7 @@ impl Serialize for Delegations {
 impl<'de> Deserialize<'de> for Delegations {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::Delegations = Deserialize::deserialize(de)?;
-        intermediate
-            .try_into()
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        intermediate.try_into().map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -1781,13 +1697,7 @@ impl Delegation {
             ));
         }
 
-        Ok(Delegation {
-            role,
-            terminating,
-            threshold,
-            key_ids,
-            paths,
-        })
+        Ok(Delegation { role, terminating, threshold, key_ids, paths })
     }
 
     /// An immutable reference to the delegations's metadata path (role).
@@ -1828,9 +1738,7 @@ impl Serialize for Delegation {
 impl<'de> Deserialize<'de> for Delegation {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::Delegation = Deserialize::deserialize(de)?;
-        intermediate
-            .try_into()
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        intermediate.try_into().map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -1850,13 +1758,7 @@ mod test {
 
     #[test]
     fn no_pardir_in_target_path() {
-        let bad_paths = &[
-            "..",
-            "../some/path",
-            "../some/path/",
-            "some/../path",
-            "some/../path/..",
-        ];
+        let bad_paths = &["..", "../some/path", "../some/path/", "some/../path", "some/../path/.."];
 
         for path in bad_paths.iter() {
             assert!(safe_path(*path).is_err());
@@ -1882,11 +1784,7 @@ mod test {
             // target illegally nested
             (false, "foo/bar", &[&["baz/"], &["foo/bar"]]),
             // target illegally deeply nested
-            (
-                false,
-                "foo/bar/baz",
-                &[&["foo/"], &["foo/quux/"], &["foo/bar/baz"]],
-            ),
+            (false, "foo/bar/baz", &[&["foo/"], &["foo/quux/"], &["foo/bar/baz"]]),
             // empty
             (false, "foo", &[&[]]),
             // empty 2
@@ -1908,10 +1806,7 @@ mod test {
                         .collect::<HashSet<_>>()
                 })
                 .collect::<Vec<_>>();
-            println!(
-                "CASE: expect: {} path: {:?} parents: {:?}",
-                expected, target, parents
-            );
+            println!("CASE: expect: {} path: {:?} parents: {:?}", expected, target, parents);
             assert_eq!(target.matches_chain(&parents), expected);
         }
     }
@@ -2402,14 +2297,8 @@ mod test {
     #[test]
     fn deserialize_json_root_duplicate_keys() {
         let mut root_json = make_root();
-        let dupe = root_json
-            .as_object()
-            .unwrap()
-            .get("keys")
-            .unwrap()
-            .as_array()
-            .unwrap()[0]
-            .clone();
+        let dupe =
+            root_json.as_object().unwrap().get("keys").unwrap().as_array().unwrap()[0].clone();
         root_json
             .as_object_mut()
             .unwrap()
@@ -2435,12 +2324,10 @@ mod test {
     fn deserialize_json_role_definition_illegal_threshold() {
         let role_def = RoleDefinition::new(
             1,
-            hashset!(
-                PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
-                    .unwrap()
-                    .key_id()
-                    .clone()
-            ),
+            hashset!(PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+                .unwrap()
+                .key_id()
+                .clone()),
         )
         .unwrap();
 
@@ -2476,10 +2363,7 @@ mod test {
     #[test]
     fn deserialize_json_root_bad_type() {
         let mut root = make_root();
-        let _ = root
-            .as_object_mut()
-            .unwrap()
-            .insert("type".into(), json!("snapshot"));
+        let _ = root.as_object_mut().unwrap().insert("type".into(), json!("snapshot"));
         assert!(serde_json::from_value::<RootMetadata>(root).is_err());
     }
 
@@ -2520,10 +2404,7 @@ mod test {
     #[test]
     fn deserialize_json_snapshot_bad_type() {
         let mut snapshot = make_snapshot();
-        let _ = snapshot
-            .as_object_mut()
-            .unwrap()
-            .insert("type".into(), json!("root"));
+        let _ = snapshot.as_object_mut().unwrap().insert("type".into(), json!("root"));
         assert!(serde_json::from_value::<SnapshotMetadata>(snapshot).is_err());
     }
 
@@ -2543,10 +2424,7 @@ mod test {
     #[test]
     fn deserialize_json_timestamp_bad_type() {
         let mut timestamp = make_timestamp();
-        let _ = timestamp
-            .as_object_mut()
-            .unwrap()
-            .insert("type".into(), json!("root"));
+        let _ = timestamp.as_object_mut().unwrap().insert("type".into(), json!("root"));
         assert!(serde_json::from_value::<TimestampMetadata>(timestamp).is_err());
     }
 
@@ -2566,10 +2444,7 @@ mod test {
     #[test]
     fn deserialize_json_targets_bad_type() {
         let mut targets = make_targets();
-        let _ = targets
-            .as_object_mut()
-            .unwrap()
-            .insert("type".into(), json!("root"));
+        let _ = targets.as_object_mut().unwrap().insert("type".into(), json!("root"));
         assert!(serde_json::from_value::<TargetsMetadata>(targets).is_err());
     }
 
@@ -2607,14 +2482,9 @@ mod test {
     #[test]
     fn deserialize_json_delegations_duplicated_roles() {
         let mut delegations = make_delegations();
-        let dupe = delegations
-            .as_object()
-            .unwrap()
-            .get("roles".into())
-            .unwrap()
-            .as_array()
-            .unwrap()[0]
-            .clone();
+        let dupe =
+            delegations.as_object().unwrap().get("roles".into()).unwrap().as_array().unwrap()[0]
+                .clone();
         delegations
             .as_object_mut()
             .unwrap()
@@ -2642,14 +2512,9 @@ mod test {
     #[test]
     fn deserialize_json_delegation_duplicate_key_ids() {
         let mut delegation = make_delegation();
-        let dupe = delegation
-            .as_object()
-            .unwrap()
-            .get("key_ids".into())
-            .unwrap()
-            .as_array()
-            .unwrap()[0]
-            .clone();
+        let dupe =
+            delegation.as_object().unwrap().get("key_ids".into()).unwrap().as_array().unwrap()[0]
+                .clone();
         delegation
             .as_object_mut()
             .unwrap()
@@ -2665,14 +2530,9 @@ mod test {
     #[test]
     fn deserialize_json_delegation_duplicate_paths() {
         let mut delegation = make_delegation();
-        let dupe = delegation
-            .as_object()
-            .unwrap()
-            .get("paths".into())
-            .unwrap()
-            .as_array()
-            .unwrap()[0]
-            .clone();
+        let dupe = delegation.as_object().unwrap().get("paths".into()).unwrap().as_array().unwrap()
+            [0]
+        .clone();
         delegation
             .as_object_mut()
             .unwrap()
@@ -2705,14 +2565,9 @@ mod test {
         .unwrap();
         let mut delegations = serde_json::to_value(delegations).unwrap();
 
-        let dupe = delegations
-            .as_object()
-            .unwrap()
-            .get("keys".into())
-            .unwrap()
-            .as_array()
-            .unwrap()[0]
-            .clone();
+        let dupe = delegations.as_object().unwrap().get("keys".into()).unwrap().as_array().unwrap()
+            [0]
+        .clone();
         delegations
             .as_object_mut()
             .unwrap()

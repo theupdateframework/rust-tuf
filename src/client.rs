@@ -50,8 +50,10 @@
 //! ```
 
 use chrono::offset::Utc;
+use futures::future::Future;
 use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use log::{error, warn};
+use std::pin::Pin;
 
 use crate::crypto::{self, KeyId};
 use crate::error::Error;
@@ -62,7 +64,7 @@ use crate::metadata::{
 };
 use crate::repository::Repository;
 use crate::tuf::Tuf;
-use crate::{Result, TufFuture};
+use crate::Result;
 
 /// Translates real paths (where a file is stored) into virtual paths (how it is addressed in TUF)
 /// and back.
@@ -112,7 +114,7 @@ impl PathTranslator for DefaultTranslator {
 /// A client that interacts with TUF repositories.
 pub struct Client<D, L, R, T>
 where
-    D: DataInterchange,
+    D: DataInterchange + Sync,
     L: Repository<D>,
     R: Repository<D>,
     T: PathTranslator,
@@ -125,7 +127,7 @@ where
 
 impl<D, L, R, T> Client<D, L, R, T>
 where
-    D: DataInterchange,
+    D: DataInterchange + Sync,
     L: Repository<D> + 'static,
     R: Repository<D> + 'static,
     T: PathTranslator + 'static,
@@ -144,12 +146,7 @@ where
 
         let tuf = Tuf::from_root(root)?;
 
-        Ok(Client {
-            tuf,
-            config,
-            local,
-            remote,
-        })
+        Ok(Client { tuf, config, local, remote })
     }
 
     /// Create a new TUF client. It will attempt to load initial root metadata the local and remote
@@ -191,12 +188,7 @@ where
 
         let tuf = Tuf::from_root_pinned(root, trusted_root_keys)?;
 
-        Ok(Client {
-            tuf,
-            config,
-            local,
-            remote,
-        })
+        Ok(Client { tuf, config, local, remote })
     }
 
     /// Update TUF metadata from the remote repository.
@@ -219,7 +211,7 @@ where
         version: &'a MetadataVersion,
         metadata: &'a SignedMetadata<D, M>,
     ) where
-        M: Metadata + 'static,
+        M: Metadata + Sync + 'static,
     {
         match await!(self.local.store_metadata(path, version, metadata)) {
             Ok(()) => {}
@@ -414,25 +406,28 @@ where
     }
 
     /// Fetch a target from the remote repo and write it to the provided writer.
-    pub async fn fetch_target_to_writer<'a, W: AsyncWrite + 'a>(
+    pub async fn fetch_target_to_writer<'a, W>(
         &'a mut self,
         target: &'a TargetPath,
         mut write: W,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        W: AsyncWrite + Send + Unpin,
+    {
         let mut read = await!(self._fetch_target(&target))?;
         await!(read.copy_into(&mut write))?;
         Ok(())
     }
 
     // TODO this should check the local repo first
-    async fn _fetch_target<'a>(&'a mut self, target: &'a TargetPath) -> Result<Box<dyn AsyncRead>> {
+    async fn _fetch_target<'a>(
+        &'a mut self,
+        target: &'a TargetPath,
+    ) -> Result<Box<dyn AsyncRead + Send + Unpin>> {
         let virt = self.config.path_translator.real_to_virtual(target)?;
 
-        let snapshot = self
-            .tuf
-            .snapshot()
-            .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
-            .clone();
+        let snapshot =
+            self.tuf.snapshot().ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?.clone();
         let (_, target_description) =
             await!(self.lookup_target_description(false, 0, &virt, &snapshot, None));
         let target_description = target_description?;
@@ -463,10 +458,7 @@ where
             None => match self.tuf.targets() {
                 Some(t) => t.clone(),
                 None => {
-                    return (
-                        default_terminate,
-                        Err(Error::MissingMetadata(Role::Targets)),
-                    );
+                    return (default_terminate, Err(Error::MissingMetadata(Role::Targets)));
                 }
             },
         };
@@ -536,10 +528,7 @@ where
                 }
             };
 
-            match self
-                .tuf
-                .update_delegation(delegation.role(), signed_meta.clone())
-            {
+            match self.tuf.update_delegation(delegation.role(), signed_meta.clone()) {
                 Ok(_) => {
                     match await!(self.local.store_metadata(
                         delegation.role(),
@@ -547,27 +536,20 @@ where
                         &signed_meta,
                     )) {
                         Ok(_) => (),
-                        Err(e) => warn!(
-                            "Error storing metadata {:?} locally: {:?}",
-                            delegation.role(),
-                            e
-                        ),
+                        Err(e) => {
+                            warn!("Error storing metadata {:?} locally: {:?}", delegation.role(), e)
+                        }
                     }
 
-                    let meta = self
-                        .tuf
-                        .delegations()
-                        .get(delegation.role())
-                        .unwrap()
-                        .clone();
-                    let (term, res) = await!(Box::pin(self.lookup_target_description(
+                    let meta = self.tuf.delegations().get(delegation.role()).unwrap().clone();
+                    let f: Pin<Box<Future<Output = _>>> = Box::pin(self.lookup_target_description(
                         delegation.terminating(),
                         current_depth + 1,
                         target,
                         snapshot,
                         Some(meta.as_ref()),
-                    ))
-                        as TufFuture<(bool, Result<TargetDescription>)>);
+                    ));
+                    let (term, res) = await!(f);
 
                     if term && res.is_err() {
                         return (true, res);
@@ -797,9 +779,7 @@ mod test {
         // Make sure the version 3 is signed by version 2's keys.
         root3.add_signature(&KEYS[1]).unwrap();
 
-        let mut targets = TargetsMetadataBuilder::new()
-            .signed::<Json>(&KEYS[0])
-            .unwrap();
+        let mut targets = TargetsMetadataBuilder::new().signed::<Json>(&KEYS[0]).unwrap();
 
         targets.add_signature(&KEYS[1]).unwrap();
         targets.add_signature(&KEYS[2]).unwrap();
