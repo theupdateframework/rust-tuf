@@ -181,7 +181,7 @@ where
 
     fn store_target<'a, R>(
         &'a self,
-        mut read: R,
+        read: R,
         target_path: &'a TargetPath,
     ) -> BoxFuture<'a, Result<()>>
     where
@@ -617,7 +617,6 @@ mod test {
     use super::*;
     use crate::interchange::Json;
     use futures::executor::block_on;
-    use futures::io::AsyncReadExt;
     use tempfile;
 
     #[test]

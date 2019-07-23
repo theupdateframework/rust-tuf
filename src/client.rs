@@ -414,7 +414,7 @@ where
     where
         W: AsyncWrite + Send + Unpin,
     {
-        let mut read = await!(self._fetch_target(&target))?;
+        let read = await!(self._fetch_target(&target))?;
         await!(read.copy_into(&mut write))?;
         Ok(())
     }
@@ -542,13 +542,14 @@ where
                     }
 
                     let meta = self.tuf.delegations().get(delegation.role()).unwrap().clone();
-                    let f: Pin<Box<Future<Output = _>>> = Box::pin(self.lookup_target_description(
-                        delegation.terminating(),
-                        current_depth + 1,
-                        target,
-                        snapshot,
-                        Some(meta.as_ref()),
-                    ));
+                    let f: Pin<Box<dyn Future<Output = _>>> =
+                        Box::pin(self.lookup_target_description(
+                            delegation.terminating(),
+                            current_depth + 1,
+                            target,
+                            snapshot,
+                            Some(meta.as_ref()),
+                        ));
                     let (term, res) = await!(f);
 
                     if term && res.is_err() {

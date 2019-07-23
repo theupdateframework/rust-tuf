@@ -1,7 +1,7 @@
 use chrono::offset::Utc;
 use chrono::DateTime;
 use futures::io::AsyncRead;
-use futures::{try_ready, Poll};
+use futures::{ready, Poll};
 use ring::digest::{self, SHA256, SHA512};
 use std::io::{self, ErrorKind};
 use std::marker::Unpin;
@@ -78,7 +78,7 @@ impl<R: AsyncRead + Unpin> AsyncRead for SafeReader<R> {
         cx: &mut Context,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        let read_bytes = try_ready!(Pin::new(&mut self.inner).poll_read(cx, buf));
+        let read_bytes = ready!(Pin::new(&mut self.inner).poll_read(cx, buf))?;
 
         if self.start_time.is_none() {
             self.start_time = Some(Utc::now())
