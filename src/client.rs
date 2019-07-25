@@ -142,7 +142,7 @@ where
         let root_version = MetadataVersion::Number(1);
 
         let root =
-            local.fetch_metadata(&root_path, &root_version, &config.max_root_length, None).await?;
+            local.fetch_metadata(&root_path, &root_version, config.max_root_length, None).await?;
 
         let tuf = Tuf::from_root(root)?;
 
@@ -163,14 +163,14 @@ where
         let root_version = MetadataVersion::Number(1);
 
         let root = match local
-            .fetch_metadata(&root_path, &root_version, &config.max_root_length, None)
+            .fetch_metadata(&root_path, &root_version, config.max_root_length, None)
             .await
         {
             Ok(root) => root,
             Err(_) => {
                 // FIXME: should we be fetching the latest version instead of version 1?
                 let root = remote
-                    .fetch_metadata(&root_path, &root_version, &config.max_root_length, None)
+                    .fetch_metadata(&root_path, &root_version, config.max_root_length, None)
                     .await?;
 
                 local.store_metadata(&root_path, &MetadataVersion::Number(1), &root).await?;
@@ -228,7 +228,7 @@ where
 
         let latest_root = self
             .remote
-            .fetch_metadata(&root_path, &MetadataVersion::None, &self.config.max_root_length, None)
+            .fetch_metadata(&root_path, &MetadataVersion::None, self.config.max_root_length, None)
             .await?;
         let latest_version = latest_root.version();
 
@@ -250,7 +250,7 @@ where
 
             let signed_root = self
                 .remote
-                .fetch_metadata(&root_path, &version, &self.config.max_root_length, None)
+                .fetch_metadata(&root_path, &version, self.config.max_root_length, None)
                 .await?;
 
             if !self.tuf.update_root(signed_root.clone())? {
@@ -288,7 +288,7 @@ where
             .fetch_metadata(
                 &timestamp_path,
                 &MetadataVersion::None,
-                &self.config.max_timestamp_length,
+                self.config.max_timestamp_length,
                 None,
             )
             .await?;
@@ -333,7 +333,7 @@ where
 
         let signed_snapshot = self
             .remote
-            .fetch_metadata(&snapshot_path, &version, &snapshot_length, Some((alg, value.clone())))
+            .fetch_metadata(&snapshot_path, &version, snapshot_length, Some((alg, value.clone())))
             .await?;
 
         if self.tuf.update_snapshot(signed_snapshot.clone())? {
@@ -377,7 +377,7 @@ where
 
         let signed_targets = self
             .remote
-            .fetch_metadata(&targets_path, &version, &targets_length, Some((alg, value.clone())))
+            .fetch_metadata(&targets_path, &version, targets_length, Some((alg, value.clone())))
             .await?;
 
         if self.tuf.update_targets(signed_targets.clone())? {
@@ -494,7 +494,7 @@ where
                 .fetch_metadata::<TargetsMetadata>(
                     delegation.role(),
                     &MetadataVersion::None,
-                    &role_length,
+                    role_length,
                     Some((alg, value.clone())),
                 )
                 .await;
@@ -507,7 +507,7 @@ where
                         .fetch_metadata::<TargetsMetadata>(
                             delegation.role(),
                             &version,
-                            &role_length,
+                            role_length,
                             Some((alg, value.clone())),
                         )
                         .await
@@ -879,7 +879,7 @@ mod test {
             block_on(client.local.fetch_metadata::<RootMetadata>(
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(1),
-                &None,
+                None,
                 None
             ))
             .unwrap(),
@@ -927,7 +927,7 @@ mod test {
             block_on(client.local.fetch_metadata::<RootMetadata>(
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(3),
-                &None,
+                None,
                 None
             ))
             .unwrap(),
