@@ -172,7 +172,7 @@ where
             )?;
 
             let mut buf = Vec::with_capacity(max_length.unwrap_or(0));
-            await!(reader.read_to_end(&mut buf))?;
+            reader.read_to_end(&mut buf).await?;
 
             Ok(D::from_slice(&buf)?)
         }
@@ -181,7 +181,7 @@ where
 
     fn store_target<'a, R>(
         &'a self,
-        mut read: R,
+        read: R,
         target_path: &'a TargetPath,
     ) -> BoxFuture<'a, Result<()>>
     where
@@ -196,7 +196,7 @@ where
             }
 
             let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
-            await!(read.copy_into(&mut temp_file))?;
+            read.copy_into(&mut temp_file).await?;
             temp_file.into_inner().persist(&path)?;
 
             Ok(())
@@ -365,7 +365,7 @@ where
             .header("User-Agent", &*self.user_agent)
             .body(Body::default())?;
 
-        let resp = await!(self.client.request(req).compat())?;
+        let resp = self.client.request(req).compat().await?;
         let status = resp.status();
 
         if !status.is_success() {
@@ -412,7 +412,7 @@ where
             Self::check::<M>(meta_path)?;
 
             let components = meta_path.components::<D>(&version);
-            let resp = await!(self.get(&self.metadata_prefix, &components))?;
+            let resp = self.get(&self.metadata_prefix, &components).await?;
 
             let stream =
                 resp.into_body().compat().map_err(|err| io::Error::new(io::ErrorKind::Other, err));
@@ -425,7 +425,7 @@ where
             )?;
 
             let mut buf = Vec::new();
-            await!(reader.read_to_end(&mut buf))?;
+            reader.read_to_end(&mut buf).await?;
 
             Ok(D::from_slice(&buf)?)
         }
@@ -448,7 +448,7 @@ where
         async move {
             let (alg, value) = crypto::hash_preference(target_description.hashes())?;
             let components = target_path.components();
-            let resp = await!(self.get(&None, &components))?;
+            let resp = self.get(&None, &components).await?;
 
             let stream =
                 resp.into_body().compat().map_err(|err| io::Error::new(io::ErrorKind::Other, err));
@@ -552,7 +552,7 @@ where
             )?;
 
             let mut buf = Vec::with_capacity(max_length.unwrap_or(0));
-            await!(reader.read_to_end(&mut buf))?;
+            reader.read_to_end(&mut buf).await?;
 
             D::from_slice(&buf)
         }
@@ -569,7 +569,7 @@ where
     {
         async move {
             let mut buf = Vec::new();
-            await!(read.read_to_end(&mut buf))?;
+            read.read_to_end(&mut buf).await?;
             self.targets.write().insert(target_path.clone(), Arc::new(buf));
             Ok(())
         }
@@ -617,7 +617,6 @@ mod test {
     use super::*;
     use crate::interchange::Json;
     use futures::executor::block_on;
-    use futures::io::AsyncReadExt;
     use tempfile;
 
     #[test]
@@ -629,17 +628,17 @@ mod test {
             let target_description =
                 TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
             let path = TargetPath::new("batty".into()).unwrap();
-            await!(repo.store_target(data, &path)).unwrap();
+            repo.store_target(data, &path).await.unwrap();
 
-            let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
+            let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
             let mut buf = Vec::new();
-            await!(read.read_to_end(&mut buf)).unwrap();
+            read.read_to_end(&mut buf).await.unwrap();
             assert_eq!(buf.as_slice(), data);
 
             let bad_data: &[u8] = b"you're in a desert";
-            await!(repo.store_target(bad_data, &path)).unwrap();
-            let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
-            assert!(await!(read.read_to_end(&mut buf)).is_err());
+            repo.store_target(bad_data, &path).await.unwrap();
+            let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
+            assert!(read.read_to_end(&mut buf).await.is_err());
         })
     }
 
@@ -658,7 +657,7 @@ mod test {
             let target_description =
                 TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
             let path = TargetPath::new("foo/bar/baz".into()).unwrap();
-            await!(repo.store_target(data, &path)).unwrap();
+            repo.store_target(data, &path).await.unwrap();
             assert!(temp_dir.path().join("targets").join("foo").join("bar").join("baz").exists());
 
             let mut buf = Vec::new();
@@ -667,15 +666,15 @@ mod test {
             // This is needed for `tempfile` on Windows, which doesn't open the
             // files in a mode that allows the file to be opened multiple times.
             {
-                let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
-                await!(read.read_to_end(&mut buf)).unwrap();
+                let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
+                read.read_to_end(&mut buf).await.unwrap();
                 assert_eq!(buf.as_slice(), data);
             }
 
             let bad_data: &[u8] = b"you're in a desert";
-            await!(repo.store_target(bad_data, &path)).unwrap();
-            let mut read = await!(repo.fetch_target(&path, &target_description)).unwrap();
-            assert!(await!(read.read_to_end(&mut buf)).is_err());
+            repo.store_target(bad_data, &path).await.unwrap();
+            let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
+            assert!(read.read_to_end(&mut buf).await.is_err());
         })
     }
 }

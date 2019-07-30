@@ -1,7 +1,7 @@
 use chrono::offset::Utc;
 use chrono::DateTime;
 use futures::io::AsyncRead;
-use futures::{try_ready, Poll};
+use futures::{ready, Poll};
 use ring::digest::{self, SHA256, SHA512};
 use std::io::{self, ErrorKind};
 use std::marker::Unpin;
@@ -78,7 +78,7 @@ impl<R: AsyncRead + Unpin> AsyncRead for SafeReader<R> {
         cx: &mut Context,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        let read_bytes = try_ready!(Pin::new(&mut self.inner).poll_read(cx, buf));
+        let read_bytes = ready!(Pin::new(&mut self.inner).poll_read(cx, buf))?;
 
         if self.start_time.is_none() {
             self.start_time = Some(Utc::now())
@@ -141,7 +141,7 @@ mod test {
             let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
             let mut reader = SafeReader::new(bytes, bytes.len() as u64, 0, None).unwrap();
             let mut buf = Vec::new();
-            assert!(await!(reader.read_to_end(&mut buf)).is_ok());
+            assert!(reader.read_to_end(&mut buf).await.is_ok());
             assert_eq!(buf, bytes);
         })
     }
@@ -152,7 +152,7 @@ mod test {
             let bytes: &[u8] = &[0x00; 64 * 1024];
             let mut reader = SafeReader::new(bytes, bytes.len() as u64, 0, None).unwrap();
             let mut buf = Vec::new();
-            assert!(await!(reader.read_to_end(&mut buf)).is_ok());
+            assert!(reader.read_to_end(&mut buf).await.is_ok());
             assert_eq!(buf, bytes);
         })
     }
@@ -163,7 +163,7 @@ mod test {
             let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
             let mut reader = SafeReader::new(bytes, (bytes.len() as u64) + 1, 0, None).unwrap();
             let mut buf = Vec::new();
-            assert!(await!(reader.read_to_end(&mut buf)).is_ok());
+            assert!(reader.read_to_end(&mut buf).await.is_ok());
             assert_eq!(buf, bytes);
         })
     }
@@ -174,7 +174,7 @@ mod test {
             let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
             let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, 0, None).unwrap();
             let mut buf = Vec::new();
-            assert!(await!(reader.read_to_end(&mut buf)).is_err());
+            assert!(reader.read_to_end(&mut buf).await.is_err());
         })
     }
 
@@ -184,7 +184,7 @@ mod test {
             let bytes: &[u8] = &[0x00; 64 * 1024];
             let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, 0, None).unwrap();
             let mut buf = Vec::new();
-            assert!(await!(reader.read_to_end(&mut buf)).is_err());
+            assert!(reader.read_to_end(&mut buf).await.is_err());
         })
     }
 
@@ -203,7 +203,7 @@ mod test {
             )
             .unwrap();
             let mut buf = Vec::new();
-            assert!(await!(reader.read_to_end(&mut buf)).is_ok());
+            assert!(reader.read_to_end(&mut buf).await.is_ok());
             assert_eq!(buf, bytes);
         })
     }
@@ -224,7 +224,7 @@ mod test {
             )
             .unwrap();
             let mut buf = Vec::new();
-            assert!(await!(reader.read_to_end(&mut buf)).is_err());
+            assert!(reader.read_to_end(&mut buf).await.is_err());
         })
     }
 
@@ -243,7 +243,7 @@ mod test {
             )
             .unwrap();
             let mut buf = Vec::new();
-            assert!(await!(reader.read_to_end(&mut buf)).is_ok());
+            assert!(reader.read_to_end(&mut buf).await.is_ok());
             assert_eq!(buf, bytes);
         })
     }
@@ -264,7 +264,7 @@ mod test {
             )
             .unwrap();
             let mut buf = Vec::new();
-            assert!(await!(reader.read_to_end(&mut buf)).is_err());
+            assert!(reader.read_to_end(&mut buf).await.is_err());
         })
     }
 }

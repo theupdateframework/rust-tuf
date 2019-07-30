@@ -415,7 +415,7 @@ impl PrivateKey {
     }
 
     fn ed25519_from_pkcs8(der_key: &[u8]) -> Result<Self> {
-        let key = Ed25519KeyPair::from_pkcs8(Input::from(der_key))
+        let key = Ed25519KeyPair::from_pkcs8(der_key)
             .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
 
         let public = PublicKey {
@@ -436,7 +436,7 @@ impl PrivateKey {
             ));
         }
 
-        let key = RsaKeyPair::from_pkcs8(Input::from(der_key))
+        let key = RsaKeyPair::from_pkcs8(der_key)
             .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
 
         if key.public_modulus_len() < 256 {
@@ -591,7 +591,7 @@ impl PublicKey {
 
     /// Use this key to verify a message with a signature.
     pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<()> {
-        let alg: &ring::signature::VerificationAlgorithm = match self.scheme {
+        let alg: &dyn ring::signature::VerificationAlgorithm = match self.scheme {
             SignatureScheme::Ed25519 => &ED25519,
             SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
             SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
@@ -600,13 +600,8 @@ impl PublicKey {
             }
         };
 
-        ring::signature::verify(
-            alg,
-            Input::from(&self.value.0),
-            Input::from(msg),
-            Input::from(&sig.value.0),
-        )
-        .map_err(|_| Error::BadSignature)
+        let key = ring::signature::UnparsedPublicKey::new(alg, &self.value.0);
+        key.verify(msg, &sig.value.0).map_err(|_| Error::BadSignature)
     }
 }
 
