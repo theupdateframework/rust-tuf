@@ -681,6 +681,7 @@ impl Debug for PublicKeyValue {
 /// A structure that contains a `Signature` and associated data for verifying it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Signature {
+    #[serde(rename = "keyid")]
     key_id: KeyId,
     value: SignatureValue,
 }
@@ -957,10 +958,11 @@ mod test {
         let sig = key.sign(msg).unwrap();
         let encoded = serde_json::to_value(&sig).unwrap();
         let jsn = json!({
-        "key_id": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-        "value": "_k0Tsqc8Azod5_UQeyBfx7oOFWbLlbkjScrmqkU4lWATv-D3v5d8sHK7Z\
-            eh4K18zoFc_54gWKZoBfKW6VZ45DA==",
-        });
+            "keyid": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
+            "value": "_k0Tsqc8Azod5_UQeyBfx7oOFWbLlbkjScrmqkU4lWATv-D3v5d8sHK7Z\
+                eh4K18zoFc_54gWKZoBfKW6VZ45DA==",
+            }
+        );
         assert_eq!(encoded, jsn);
 
         let decoded: Signature = serde_json::from_value(encoded).unwrap();

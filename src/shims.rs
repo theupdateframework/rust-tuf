@@ -98,6 +98,7 @@ struct RoleDefinitions {
 #[derive(Serialize, Deserialize)]
 pub struct RoleDefinition {
     threshold: u32,
+    #[serde(rename = "keyids")]
     key_ids: Vec<crypto::KeyId>,
 }
 
@@ -266,6 +267,7 @@ pub struct Delegation {
     role: metadata::MetadataPath,
     terminating: bool,
     threshold: u32,
+    #[serde(rename = "keyids")]
     key_ids: Vec<crypto::KeyId>,
     paths: Vec<metadata::VirtualTargetPath>,
 }
