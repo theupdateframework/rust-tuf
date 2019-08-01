@@ -803,7 +803,7 @@ impl<'de> Deserialize<'de> for RoleDefinition {
 /// // wrong
 /// let _ = MetadataPath::new("root.json".into());
 /// ```
-#[derive(Debug, Clone, PartialEq, Hash, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct MetadataPath(String);
 
 impl MetadataPath {
@@ -1905,32 +1905,32 @@ mod test {
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
-            "keys": [
-                {
-                    "type": "ed25519",
-                    "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQAUEK4wU6pwu_qYQoqHnWTTACo1\
-                        ePffquscsHZOhg9-Cw==",
-                },
-                {
-                    "type": "ed25519",
-                    "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb\
-                        -WO5CJQDTjK9GHGWjtg==",
-                },
-                {
+            "keys": {
+                "4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o=": {
                     "type": "ed25519",
                     "scheme": "ed25519",
                     "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQ\
                         vtGgZ_8giaAwL7q3PQ==",
                 },
-                {
+                "5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs=": {
                     "type": "ed25519",
                     "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao_\
-                        NhZ1_7zzCKL8rKzsg==",
+                    "public_key": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao\
+                        _NhZ1_7zzCKL8rKzsg==",
                 },
-            ],
+                "C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw=": {
+                    "type": "ed25519",
+                    "scheme": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQAUEK4wU6pwu_qYQoqHnWTTACo1\
+                        ePffquscsHZOhg9-Cw==",
+                },
+                "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
+                    "type": "ed25519",
+                    "scheme": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb-\
+                        WO5CJQDTjK9GHGWjtg==",
+                }
+            },
             "roles": {
                 "root": {
                     "threshold": 1,
@@ -2296,18 +2296,46 @@ mod test {
     // Refuse to deserialize root metadata if it contains duplicate keys
     #[test]
     fn deserialize_json_root_duplicate_keys() {
-        let mut root_json = make_root();
-        let dupe =
-            root_json.as_object().unwrap().get("keys").unwrap().as_array().unwrap()[0].clone();
-        root_json
-            .as_object_mut()
-            .unwrap()
-            .get_mut("keys")
-            .unwrap()
-            .as_array_mut()
-            .unwrap()
-            .push(dupe);
-        assert!(serde_json::from_value::<RootMetadata>(root_json).is_err());
+        let root_json = r#"{
+            "type": "root",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "consistent_snapshot": false,
+            "keys": {
+                "4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o=": {
+                    "type": "ed25519",
+                    "scheme": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQvtGgZ_8giaAwL7q3PQ=="
+                },
+                "4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o=": {
+                    "type": "ed25519",
+                    "scheme": "ed25519",
+                    "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQvtGgZ_8giaAwL7q3PQ=="
+                }
+            },
+            "roles": {
+                "root": {
+                    "threshold": 1,
+                    "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="]
+                },
+                "snapshot": {
+                    "threshold": 1,
+                    "key_ids": ["5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs="]
+                },
+                "targets": {
+                    "threshold": 1,
+                    "key_ids": ["4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o="]
+                },
+                "timestamp": {
+                    "threshold": 1,
+                    "key_ids": ["C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw="]
+                }
+            }
+        }"#;
+        match serde_json::from_str::<RootMetadata>(root_json) {
+            Err(ref err) if err.is_data() => {}
+            result => panic!("unexpected result: {:?}", result),
+        }
     }
 
     fn set_threshold(value: &mut serde_json::Value, threshold: i32) {

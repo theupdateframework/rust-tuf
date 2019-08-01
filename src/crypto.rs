@@ -699,7 +699,7 @@ impl Signature {
 }
 
 /// The available hash algorithms.
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum HashAlgorithm {
     /// SHA256 as describe in [RFC-6234](https://tools.ietf.org/html/rfc6234)
     #[serde(rename = "sha256")]

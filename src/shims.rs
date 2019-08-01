@@ -2,8 +2,7 @@ use chrono::offset::Utc;
 use chrono::prelude::*;
 use data_encoding::BASE64URL;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::iter::FromIterator;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::crypto;
 use crate::error::Error;
@@ -34,22 +33,19 @@ pub struct RootMetadata {
     version: u32,
     consistent_snapshot: bool,
     expires: String,
-    keys: Vec<crypto::PublicKey>,
+    #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
+    keys: BTreeMap<crypto::KeyId, crypto::PublicKey>,
     roles: RoleDefinitions,
 }
 
 impl RootMetadata {
     pub fn from(meta: &metadata::RootMetadata) -> Result<Self> {
-        let mut keys =
-            meta.keys().iter().map(|(_, v)| v.clone()).collect::<Vec<crypto::PublicKey>>();
-        keys.sort_by_key(|k| k.key_id().clone());
-
         Ok(RootMetadata {
             typ: metadata::Role::Root,
             version: meta.version(),
             expires: format_datetime(&meta.expires()),
             consistent_snapshot: meta.consistent_snapshot(),
-            keys,
+            keys: meta.keys().iter().map(|(id, key)| (id.clone(), key.clone())).collect(),
             roles: RoleDefinitions {
                 root: meta.root().clone(),
                 snapshot: meta.snapshot().clone(),
@@ -59,7 +55,7 @@ impl RootMetadata {
         })
     }
 
-    pub fn try_into(mut self) -> Result<metadata::RootMetadata> {
+    pub fn try_into(self) -> Result<metadata::RootMetadata> {
         if self.typ != metadata::Role::Root {
             return Err(Error::Encoding(format!(
                 "Attempted to decode root metdata labeled as {:?}",
@@ -67,18 +63,11 @@ impl RootMetadata {
             )));
         }
 
-        let keys_len = self.keys.len();
-        let keys = HashMap::from_iter(self.keys.drain(..).map(|k| (k.key_id().clone(), k)));
-
-        if keys.len() != keys_len {
-            return Err(Error::IllegalArgument("Cannot have duplicate keys".into()));
-        }
-
         metadata::RootMetadata::new(
             self.version,
             parse_datetime(&self.expires)?,
             self.consistent_snapshot,
-            keys,
+            self.keys.into_iter().collect(),
             self.roles.root,
             self.roles.snapshot,
             self.roles.targets,
@@ -168,7 +157,7 @@ pub struct SnapshotMetadata {
     typ: metadata::Role,
     version: u32,
     expires: String,
-    meta: HashMap<metadata::MetadataPath, metadata::MetadataDescription>,
+    meta: BTreeMap<metadata::MetadataPath, metadata::MetadataDescription>,
 }
 
 impl SnapshotMetadata {
@@ -177,7 +166,7 @@ impl SnapshotMetadata {
             typ: metadata::Role::Snapshot,
             version: metadata.version(),
             expires: format_datetime(&metadata.expires()),
-            meta: metadata.meta().clone(),
+            meta: metadata.meta().iter().map(|(p, d)| (p.clone(), d.clone())).collect(),
         })
     }
 
@@ -189,7 +178,11 @@ impl SnapshotMetadata {
             )));
         }
 
-        metadata::SnapshotMetadata::new(self.version, parse_datetime(&self.expires)?, self.meta)
+        metadata::SnapshotMetadata::new(
+            self.version,
+            parse_datetime(&self.expires)?,
+            self.meta.into_iter().collect(),
+        )
     }
 }
 
@@ -199,7 +192,7 @@ pub struct TargetsMetadata {
     typ: metadata::Role,
     version: u32,
     expires: String,
-    targets: HashMap<metadata::VirtualTargetPath, metadata::TargetDescription>,
+    targets: BTreeMap<metadata::VirtualTargetPath, metadata::TargetDescription>,
     #[serde(skip_serializing_if = "Option::is_none")]
     delegations: Option<metadata::Delegations>,
 }
@@ -210,7 +203,7 @@ impl TargetsMetadata {
             typ: metadata::Role::Targets,
             version: metadata.version(),
             expires: format_datetime(&metadata.expires()),
-            targets: metadata.targets().clone(),
+            targets: metadata.targets().iter().map(|(p, d)| (p.clone(), d.clone())).collect(),
             delegations: metadata.delegations().cloned(),
         })
     }
@@ -226,7 +219,7 @@ impl TargetsMetadata {
         metadata::TargetsMetadata::new(
             self.version,
             parse_datetime(&self.expires)?,
-            self.targets,
+            self.targets.into_iter().collect(),
             self.delegations,
         )
     }
@@ -331,12 +324,12 @@ impl Delegations {
 #[derive(Deserialize)]
 pub struct TargetDescription {
     length: u64,
-    hashes: HashMap<crypto::HashAlgorithm, crypto::HashValue>,
+    hashes: BTreeMap<crypto::HashAlgorithm, crypto::HashValue>,
 }
 
 impl TargetDescription {
     pub fn try_into(self) -> Result<metadata::TargetDescription> {
-        metadata::TargetDescription::new(self.length, self.hashes)
+        metadata::TargetDescription::new(self.length, self.hashes.into_iter().collect())
     }
 }
 
@@ -344,11 +337,62 @@ impl TargetDescription {
 pub struct MetadataDescription {
     version: u32,
     length: usize,
-    hashes: HashMap<crypto::HashAlgorithm, crypto::HashValue>,
+    hashes: BTreeMap<crypto::HashAlgorithm, crypto::HashValue>,
 }
 
 impl MetadataDescription {
     pub fn try_into(self) -> Result<metadata::MetadataDescription> {
-        metadata::MetadataDescription::new(self.version, self.length, self.hashes)
+        metadata::MetadataDescription::new(
+            self.version,
+            self.length,
+            self.hashes.into_iter().collect(),
+        )
+    }
+}
+
+/// Custom deserialize to reject duplicate keys.
+mod deserialize_reject_duplicates {
+    use serde::de::{Deserialize, Deserializer, Error, MapAccess, Visitor};
+    use std::collections::BTreeMap;
+    use std::fmt;
+    use std::marker::PhantomData;
+    use std::result::Result;
+
+    pub fn deserialize<'de, K, V, D>(deserializer: D) -> Result<BTreeMap<K, V>, D::Error>
+    where
+        K: Deserialize<'de> + Ord,
+        V: Deserialize<'de>,
+        D: Deserializer<'de>,
+    {
+        struct BTreeVisitor<K, V> {
+            marker: PhantomData<(K, V)>,
+        };
+
+        impl<'de, K, V> Visitor<'de> for BTreeVisitor<K, V>
+        where
+            K: Deserialize<'de> + Ord,
+            V: Deserialize<'de>,
+        {
+            type Value = BTreeMap<K, V>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("map")
+            }
+
+            fn visit_map<M>(self, mut access: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut map = BTreeMap::new();
+                while let Some((key, value)) = access.next_entry()? {
+                    if map.insert(key, value).is_some() {
+                        return Err(M::Error::custom("Cannot have duplicate keys"));
+                    }
+                }
+                Ok(map)
+            }
+        }
+
+        deserializer.deserialize_map(BTreeVisitor { marker: PhantomData })
     }
 }
