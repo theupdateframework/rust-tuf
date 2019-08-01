@@ -1,6 +1,5 @@
 use chrono::offset::Utc;
 use chrono::prelude::*;
-use data_encoding::BASE64URL;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
@@ -227,32 +226,36 @@ impl TargetsMetadata {
 
 #[derive(Serialize, Deserialize)]
 pub struct PublicKey {
-    #[serde(rename = "type")]
-    typ: crypto::KeyType,
+    keytype: crypto::KeyType,
     scheme: crypto::SignatureScheme,
-    public_key: String,
+    keyval: PublicKeyValue,
 }
 
 impl PublicKey {
     pub fn new(
-        typ: crypto::KeyType,
+        keytype: crypto::KeyType,
         scheme: crypto::SignatureScheme,
-        public_key_bytes: &[u8],
+        public_key: String,
     ) -> Self {
-        PublicKey { typ, scheme, public_key: BASE64URL.encode(public_key_bytes) }
+        PublicKey { keytype, scheme, keyval: PublicKeyValue { public: public_key } }
     }
 
-    pub fn public_key(&self) -> &String {
-        &self.public_key
+    pub fn public_key(&self) -> &str {
+        &self.keyval.public
     }
 
     pub fn scheme(&self) -> &crypto::SignatureScheme {
         &self.scheme
     }
 
-    pub fn typ(&self) -> &crypto::KeyType {
-        &self.typ
+    pub fn keytype(&self) -> &crypto::KeyType {
+        &self.keytype
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PublicKeyValue {
+    public: String,
 }
 
 #[derive(Serialize, Deserialize)]

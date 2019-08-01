@@ -623,7 +623,10 @@ impl Serialize for PublicKey {
         let bytes = self
             .as_spki()
             .map_err(|e| SerializeError::custom(format!("Couldn't write key as SPKI: {:?}", e)))?;
-        shims::PublicKey::new(self.typ.clone(), self.scheme.clone(), &bytes).serialize(ser)
+
+        let key = BASE64URL.encode(&bytes);
+
+        shims::PublicKey::new(self.typ.clone(), self.scheme.clone(), key).serialize(ser)
     }
 }
 
@@ -638,11 +641,11 @@ impl<'de> Deserialize<'de> for PublicKey {
             DeserializeError::custom(format!("Couldn't parse key as SPKI: {:?}", e))
         })?;
 
-        if intermediate.typ() != &key.typ {
+        if intermediate.keytype() != &key.typ {
             return Err(DeserializeError::custom(format!(
                 "Key type listed in the metadata did not match the type extrated \
                  from the key. {:?} vs. {:?}",
-                intermediate.typ(),
+                intermediate.keytype(),
                 key.typ,
             )));
         }
@@ -790,6 +793,7 @@ fn write_pkcs1(n: &[u8], e: &[u8]) -> ::std::result::Result<Vec<u8>, derp::Error
 #[cfg(test)]
 mod test {
     use super::*;
+    use pretty_assertions::assert_eq;
     use serde_json::{self, json};
 
     const RSA_2048_PK8: &'static [u8] = include_bytes!("../tests/rsa/rsa-2048.pk8.der");
@@ -891,9 +895,11 @@ mod test {
         let pub_key = PublicKey::from_spki(der, SignatureScheme::RsaSsaPssSha256).unwrap();
         let encoded = serde_json::to_value(&pub_key).unwrap();
         let jsn = json!({
-            "type": "rsa",
+            "keytype": "rsa",
             "scheme": "rsassa-pss-sha256",
-            "public_key": BASE64URL.encode(der),
+            "keyval": {
+                "public": BASE64URL.encode(der),
+            }
         });
         assert_eq!(encoded, jsn);
         let decoded: PublicKey = serde_json::from_value(encoded).unwrap();
@@ -906,9 +912,11 @@ mod test {
         let pub_key = PublicKey::from_spki(der, SignatureScheme::Ed25519).unwrap();
         let encoded = serde_json::to_value(&pub_key).unwrap();
         let jsn = json!({
-            "type": "ed25519",
+            "keytype": "ed25519",
             "scheme": "ed25519",
-            "public_key": BASE64URL.encode(der),
+            "keyval": {
+                "public": BASE64URL.encode(der),
+            }
         });
         assert_eq!(encoded, jsn);
         let decoded: PublicKey = serde_json::from_value(encoded).unwrap();

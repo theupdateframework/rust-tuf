@@ -1746,6 +1746,7 @@ mod test {
     use crate::interchange::Json;
     use chrono::prelude::*;
     use maplit::{hashmap, hashset};
+    use pretty_assertions::assert_eq;
     use serde_json::json;
 
     const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
@@ -1905,28 +1906,36 @@ mod test {
             "consistent_snapshot": false,
             "keys": {
                 "4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o=": {
-                    "type": "ed25519",
+                    "keytype": "ed25519",
                     "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQ\
-                        vtGgZ_8giaAwL7q3PQ==",
+                    "keyval": {
+                        "public": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQ\
+                            vtGgZ_8giaAwL7q3PQ==",
+                    },
                 },
                 "5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs=": {
-                    "type": "ed25519",
+                    "keytype": "ed25519",
                     "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao\
-                        _NhZ1_7zzCKL8rKzsg==",
+                    "keyval": {
+                        "public": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao\
+                            _NhZ1_7zzCKL8rKzsg==",
+                    },
                 },
                 "C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw=": {
-                    "type": "ed25519",
+                    "keytype": "ed25519",
                     "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQAUEK4wU6pwu_qYQoqHnWTTACo1\
-                        ePffquscsHZOhg9-Cw==",
+                    "keyval": {
+                        "public": "MCwwBwYDK2VwBQADIQAUEK4wU6pwu_qYQoqHnWTTACo1\
+                            ePffquscsHZOhg9-Cw==",
+                    },
                 },
                 "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
-                    "type": "ed25519",
+                    "keytype": "ed25519",
                     "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb-\
-                        WO5CJQDTjK9GHGWjtg==",
+                    "keyval": {
+                        "public": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb-\
+                            WO5CJQDTjK9GHGWjtg==",
+                    },
                 }
             },
             "roles": {
@@ -2087,10 +2096,12 @@ mod test {
             "delegations": {
                 "keys": {
                     "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
-                        "type": "ed25519",
+                        "keytype": "ed25519",
                         "scheme": "ed25519",
-                        "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb\
-                            -WO5CJQDTjK9GHGWjtg==",
+                        "keyval": {
+                            "public": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb\
+                                -WO5CJQDTjK9GHGWjtg==",
+                        }
                     },
                 },
                 "roles": [
