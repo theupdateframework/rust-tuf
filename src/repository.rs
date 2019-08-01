@@ -92,6 +92,60 @@ where
     }
 }
 
+impl<T, D> Repository<D> for &T
+where
+    T: Repository<D>,
+    D: DataInterchange + Sync,
+{
+    fn store_metadata<'a, M>(
+        &'a self,
+        meta_path: &'a MetadataPath,
+        version: &'a MetadataVersion,
+        metadata: &'a SignedMetadata<D, M>,
+    ) -> BoxFuture<'a, Result<()>>
+    where
+        M: Metadata + Sync + 'static,
+    {
+        (**self).store_metadata(meta_path, version, metadata)
+    }
+
+    /// Fetch signed metadata.
+    fn fetch_metadata<'a, M>(
+        &'a self,
+        meta_path: &'a MetadataPath,
+        version: &'a MetadataVersion,
+        max_length: &'a Option<usize>,
+        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
+    ) -> BoxFuture<'a, Result<SignedMetadata<D, M>>>
+    where
+        M: Metadata + 'static,
+    {
+        (**self).fetch_metadata(meta_path, version, max_length, hash_data)
+    }
+
+    /// Store the given target.
+    fn store_target<'a, R>(
+        &'a self,
+        read: R,
+        target_path: &'a TargetPath,
+    ) -> BoxFuture<'a, Result<()>>
+    where
+        R: AsyncRead + Send + Unpin + 'a,
+    {
+        (**self).store_target(read, target_path)
+    }
+
+    /// Fetch the given target.
+    fn fetch_target<'a>(
+        &'a self,
+        target_path: &'a TargetPath,
+        target_description: &'a TargetDescription,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        {
+            (**self).fetch_target(target_path, target_description)
+        }
+    }
+}
 /// A repository contained on the local file system.
 pub struct FileSystemRepository<D>
 where
