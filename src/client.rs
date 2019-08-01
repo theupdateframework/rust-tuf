@@ -142,7 +142,7 @@ where
         let root_version = MetadataVersion::Number(1);
 
         let root =
-            local.fetch_metadata(&root_path, &root_version, &config.max_root_length, None).await?;
+            local.fetch_metadata(&root_path, &root_version, config.max_root_length, None).await?;
 
         let tuf = Tuf::from_root(root)?;
 
@@ -162,21 +162,16 @@ where
         let root_path = MetadataPath::from_role(&Role::Root);
         let root_version = MetadataVersion::Number(1);
 
-        let root = match local.fetch_metadata(
-            &root_path,
-            &root_version,
-            &config.max_root_length,
-            None,
-        ).await {
+        let root = match local
+            .fetch_metadata(&root_path, &root_version, config.max_root_length, None)
+            .await
+        {
             Ok(root) => root,
             Err(_) => {
                 // FIXME: should we be fetching the latest version instead of version 1?
-                let root = remote.fetch_metadata(
-                    &root_path,
-                    &root_version,
-                    &config.max_root_length,
-                    None,
-                ).await?;
+                let root = remote
+                    .fetch_metadata(&root_path, &root_version, config.max_root_length, None)
+                    .await?;
 
                 local.store_metadata(&root_path, &MetadataVersion::Number(1), &root).await?;
 
@@ -231,12 +226,10 @@ where
     async fn update_root(&mut self) -> Result<bool> {
         let root_path = MetadataPath::from_role(&Role::Root);
 
-        let latest_root = self.remote.fetch_metadata(
-            &root_path,
-            &MetadataVersion::None,
-            &self.config.max_root_length,
-            None,
-        ).await?;
+        let latest_root = self
+            .remote
+            .fetch_metadata(&root_path, &MetadataVersion::None, self.config.max_root_length, None)
+            .await?;
         let latest_version = latest_root.version();
 
         if latest_version < self.tuf.root().version() {
@@ -255,12 +248,10 @@ where
         for i in (self.tuf.root().version() + 1)..latest_version {
             let version = MetadataVersion::Number(i);
 
-            let signed_root = self.remote.fetch_metadata(
-                &root_path,
-                &version,
-                &self.config.max_root_length,
-                None,
-            ).await?;
+            let signed_root = self
+                .remote
+                .fetch_metadata(&root_path, &version, self.config.max_root_length, None)
+                .await?;
 
             if !self.tuf.update_root(signed_root.clone())? {
                 error!("{}", err_msg);
@@ -277,7 +268,7 @@ where
 
         let latest_version = MetadataVersion::Number(latest_version);
 
-        self.store_metadata(&root_path, &latest_version, &latest_root,).await;
+        self.store_metadata(&root_path, &latest_version, &latest_root).await;
         self.store_metadata(&root_path, &MetadataVersion::None, &latest_root).await;
 
         if self.tuf.root().expires() <= &Utc::now() {
@@ -292,18 +283,21 @@ where
     async fn update_timestamp(&mut self) -> Result<bool> {
         let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
 
-        let signed_timestamp = self.remote.fetch_metadata(
-            &timestamp_path,
-            &MetadataVersion::None,
-            &self.config.max_timestamp_length,
-            None,
-        ).await?;
+        let signed_timestamp = self
+            .remote
+            .fetch_metadata(
+                &timestamp_path,
+                &MetadataVersion::None,
+                self.config.max_timestamp_length,
+                None,
+            )
+            .await?;
 
         if self.tuf.update_timestamp(signed_timestamp.clone())? {
             let latest_version = signed_timestamp.version();
             let latest_version = MetadataVersion::Number(latest_version);
 
-            self.store_metadata(&timestamp_path, &latest_version, &signed_timestamp,).await;
+            self.store_metadata(&timestamp_path, &latest_version, &signed_timestamp).await;
 
             Ok(true)
         } else {
@@ -337,12 +331,10 @@ where
         let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
         let snapshot_length = Some(snapshot_description.length());
 
-        let signed_snapshot = self.remote.fetch_metadata(
-            &snapshot_path,
-            &version,
-            &snapshot_length,
-            Some((alg, value.clone())),
-        ).await?;
+        let signed_snapshot = self
+            .remote
+            .fetch_metadata(&snapshot_path, &version, snapshot_length, Some((alg, value.clone())))
+            .await?;
 
         if self.tuf.update_snapshot(signed_snapshot.clone())? {
             self.store_metadata(&snapshot_path, &version, &signed_snapshot).await;
@@ -383,12 +375,10 @@ where
         let targets_path = MetadataPath::from_role(&Role::Targets);
         let targets_length = Some(targets_description.length());
 
-        let signed_targets = self.remote.fetch_metadata(
-            &targets_path,
-            &version,
-            &targets_length,
-            Some((alg, value.clone())),
-        ).await?;
+        let signed_targets = self
+            .remote
+            .fetch_metadata(&targets_path, &version, targets_length, Some((alg, value.clone())))
+            .await?;
 
         if self.tuf.update_targets(signed_targets.clone())? {
             self.store_metadata(&targets_path, &version, &signed_targets).await;
@@ -499,22 +489,29 @@ where
             };
 
             let role_length = Some(role_meta.length());
-            let signed_meta = self.local.fetch_metadata::<TargetsMetadata>(
-                delegation.role(),
-                &MetadataVersion::None,
-                &role_length,
-                Some((alg, value.clone())),
-            ).await;
+            let signed_meta = self
+                .local
+                .fetch_metadata::<TargetsMetadata>(
+                    delegation.role(),
+                    &MetadataVersion::None,
+                    role_length,
+                    Some((alg, value.clone())),
+                )
+                .await;
 
             let signed_meta = match signed_meta {
                 Ok(signed_meta) => signed_meta,
                 Err(_) => {
-                    match self.remote.fetch_metadata::<TargetsMetadata>(
-                        delegation.role(),
-                        &version,
-                        &role_length,
-                        Some((alg, value.clone())),
-                    ).await {
+                    match self
+                        .remote
+                        .fetch_metadata::<TargetsMetadata>(
+                            delegation.role(),
+                            &version,
+                            role_length,
+                            Some((alg, value.clone())),
+                        )
+                        .await
+                    {
                         Ok(m) => m,
                         Err(ref e) if !delegation.terminating() => {
                             warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
@@ -530,11 +527,11 @@ where
 
             match self.tuf.update_delegation(delegation.role(), signed_meta.clone()) {
                 Ok(_) => {
-                    match self.local.store_metadata(
-                        delegation.role(),
-                        &MetadataVersion::None,
-                        &signed_meta,
-                    ).await {
+                    match self
+                        .local
+                        .store_metadata(delegation.role(), &MetadataVersion::None, &signed_meta)
+                        .await
+                    {
                         Ok(_) => (),
                         Err(e) => {
                             warn!("Error storing metadata {:?} locally: {:?}", delegation.role(), e)
@@ -882,7 +879,7 @@ mod test {
             block_on(client.local.fetch_metadata::<RootMetadata>(
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(1),
-                &None,
+                None,
                 None
             ))
             .unwrap(),
@@ -930,7 +927,7 @@ mod test {
             block_on(client.local.fetch_metadata::<RootMetadata>(
                 &MetadataPath::from_role(&Role::Root),
                 &MetadataVersion::Number(3),
-                &None,
+                None,
                 None
             ))
             .unwrap(),
