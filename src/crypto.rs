@@ -1,6 +1,6 @@
 //! Cryptographic structures and functions.
 
-use data_encoding::BASE64URL;
+use data_encoding::{BASE64URL, HEXLOWER};
 use derp::{self, Der, Tag};
 use ring;
 use ring::digest::{self, SHA256, SHA512};
@@ -207,8 +207,8 @@ pub enum SignatureScheme {
 }
 
 /// Wrapper type for the value of a cryptographic signature.
-#[derive(Clone, PartialEq)]
-pub struct SignatureValue(Vec<u8>);
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct SignatureValue(#[serde(with = "crate::format_hex")] Vec<u8>);
 
 impl SignatureValue {
     /// Create a new `SignatureValue` from the given bytes.
@@ -218,35 +218,17 @@ impl SignatureValue {
         SignatureValue(bytes)
     }
 
-    /// Create a new `SignatureValue` from the given base64url string.
+    /// Create a new `SignatureValue` from the given hex string.
     ///
     /// Note: It is unlikely that you ever want to do this manually.
-    pub fn from_string(string: &str) -> Result<Self> {
-        Ok(SignatureValue(BASE64URL.decode(string.as_bytes())?))
+    pub fn from_hex(string: &str) -> Result<Self> {
+        Ok(SignatureValue(HEXLOWER.decode(string.as_bytes())?))
     }
 }
 
 impl Debug for SignatureValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "SignatureValue {{ \"{}\" }}", BASE64URL.encode(&self.0))
-    }
-}
-
-impl Serialize for SignatureValue {
-    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        BASE64URL.encode(&self.0).serialize(ser)
-    }
-}
-
-impl<'de> Deserialize<'de> for SignatureValue {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
-        let string: String = Deserialize::deserialize(de)?;
-        SignatureValue::from_string(&string).map_err(|e| {
-            DeserializeError::custom(format!("Signature value was not valid base64url: {:?}", e))
-        })
+        write!(f, "SignatureValue {{ \"{}\" }}", HEXLOWER.encode(&self.0))
     }
 }
 
@@ -713,8 +695,8 @@ pub enum HashAlgorithm {
 }
 
 /// Wrapper for the value of a hash digest.
-#[derive(Clone, Eq, PartialEq, Hash)]
-pub struct HashValue(Vec<u8>);
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct HashValue(#[serde(with = "crate::format_hex")] Vec<u8>);
 
 impl HashValue {
     /// Create a new `HashValue` from the given digest bytes.
@@ -728,34 +710,15 @@ impl HashValue {
     }
 }
 
-impl Serialize for HashValue {
-    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        BASE64URL.encode(&self.0).serialize(ser)
-    }
-}
-
-impl<'de> Deserialize<'de> for HashValue {
-    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
-        let s: String = Deserialize::deserialize(de)?;
-        let bytes = BASE64URL
-            .decode(s.as_bytes())
-            .map_err(|e| DeserializeError::custom(format!("Base64: {:?}", e)))?;
-        Ok(HashValue(bytes))
-    }
-}
-
 impl Debug for HashValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "HashValue {{ \"{}\" }}", BASE64URL.encode(&self.0))
+        write!(f, "HashValue {{ \"{}\" }}", HEXLOWER.encode(&self.0))
     }
 }
 
 impl Display for HashValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", BASE64URL.encode(&self.0))
+        write!(f, "{}", HEXLOWER.encode(&self.0))
     }
 }
 
@@ -914,10 +877,10 @@ mod test {
 
     #[test]
     fn serde_signature_value() {
-        let s = "T5vfRrM1iHpgzGwAHe7MbJH_7r4chkOAphV3OPCCv0I=";
+        let s = "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db";
         let jsn = json!(s);
         let parsed: SignatureValue = serde_json::from_str(&format!("\"{}\"", s)).unwrap();
-        assert_eq!(parsed, SignatureValue::from_string(s).unwrap());
+        assert_eq!(parsed, SignatureValue::from_hex(s).unwrap());
         let encoded = serde_json::to_value(&parsed).unwrap();
         assert_eq!(encoded, jsn);
     }
@@ -960,8 +923,9 @@ mod test {
         let encoded = serde_json::to_value(&sig).unwrap();
         let jsn = json!({
             "keyid": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-            "sig": "_k0Tsqc8Azod5_UQeyBfx7oOFWbLlbkjScrmqkU4lWATv-D3v5d8sHK7Z\
-                eh4K18zoFc_54gWKZoBfKW6VZ45DA==",
+            "sig": "fe4d13b2a73c033a1de7f5107b205fc7ba0e1566cb95b92349cae6aa453\
+                8956013bfe0f7bf977cb072bb65e8782b5f33a0573fe78816299a017ca5ba55\
+                9e390c",
             }
         );
         assert_eq!(encoded, jsn);

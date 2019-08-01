@@ -84,9 +84,9 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///
 /// `SCHEME` is a string (either `ed25519`, `rsassa-pss-sha256`, or `rsassa-pss-sha512`
 ///
-/// `HASH_VALUE` is a base64url encoded hash value.
+/// `HASH_VALUE` is a hex encoded hash value.
 ///
-/// `SIG_VALUE` is a base64url encoded signature value.
+/// `SIG_VALUE` is a hex encoded signature value.
 ///
 /// `METADATA_DESCRIPTION` is the following:
 ///
