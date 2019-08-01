@@ -1901,7 +1901,7 @@ mod test {
             .unwrap();
 
         let jsn = json!({
-            "type": "root",
+            "_type": "root",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
@@ -1972,7 +1972,7 @@ mod test {
             .unwrap();
 
         let jsn = json!({
-            "type": "timestamp",
+            "_type": "timestamp",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "snapshot": {
@@ -2007,7 +2007,7 @@ mod test {
             .unwrap();
 
         let jsn = json!({
-            "type": "snapshot",
+            "_type": "snapshot",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -2039,7 +2039,7 @@ mod test {
             .unwrap();
 
         let jsn = json!({
-            "type": "targets",
+            "_type": "targets",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "targets": {
@@ -2081,7 +2081,7 @@ mod test {
             .unwrap();
 
         let jsn = json!({
-            "type": "targets",
+            "_type": "targets",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "targets": {},
@@ -2136,12 +2136,12 @@ mod test {
             "signatures": [
                 {
                     "keyid": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-                    "value": "5zv0RA1_apWwMHNRgcuhkNwnz1iNj8aPkZrA3bruehf5ncKiPekLHGVJWWodPEIESj\
-                        9k9FBLI4TK422Y7RR2AQ==",
+                    "value": "LpLKsO8-X6-u8KN2130IEWMr4lcp7nt-fEHErwdZlQQGFB0Vmz6MUDNlNZJxSBgBU9\
+                        LZ2vyolgyfyRjGgDDIAw==",
                 }
             ],
             "signed": {
-                "type": "snapshot",
+                "_type": "snapshot",
                 "version": 1,
                 "expires": "2017-01-01T00:00:00Z",
                 "meta": {
@@ -2391,7 +2391,7 @@ mod test {
     #[test]
     fn deserialize_json_root_bad_type() {
         let mut root = make_root();
-        let _ = root.as_object_mut().unwrap().insert("type".into(), json!("snapshot"));
+        let _ = root.as_object_mut().unwrap().insert("_type".into(), json!("snapshot"));
         assert!(serde_json::from_value::<RootMetadata>(root).is_err());
     }
 
@@ -2432,7 +2432,7 @@ mod test {
     #[test]
     fn deserialize_json_snapshot_bad_type() {
         let mut snapshot = make_snapshot();
-        let _ = snapshot.as_object_mut().unwrap().insert("type".into(), json!("root"));
+        let _ = snapshot.as_object_mut().unwrap().insert("_type".into(), json!("root"));
         assert!(serde_json::from_value::<SnapshotMetadata>(snapshot).is_err());
     }
 
@@ -2452,7 +2452,7 @@ mod test {
     #[test]
     fn deserialize_json_timestamp_bad_type() {
         let mut timestamp = make_timestamp();
-        let _ = timestamp.as_object_mut().unwrap().insert("type".into(), json!("root"));
+        let _ = timestamp.as_object_mut().unwrap().insert("_type".into(), json!("root"));
         assert!(serde_json::from_value::<TimestampMetadata>(timestamp).is_err());
     }
 
@@ -2472,7 +2472,7 @@ mod test {
     #[test]
     fn deserialize_json_targets_bad_type() {
         let mut targets = make_targets();
-        let _ = targets.as_object_mut().unwrap().insert("type".into(), json!("root"));
+        let _ = targets.as_object_mut().unwrap().insert("_type".into(), json!("root"));
         assert!(serde_json::from_value::<TargetsMetadata>(targets).is_err());
     }
 
