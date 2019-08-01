@@ -114,7 +114,7 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        max_length: &'a Option<usize>,
+        max_length: Option<usize>,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> BoxFuture<'a, Result<SignedMetadata<D, M>>>
     where
