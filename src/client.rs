@@ -91,7 +91,7 @@ pub trait PathTranslator {
 }
 
 /// A `PathTranslator` that does nothing.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct DefaultTranslator;
 
 impl DefaultTranslator {
@@ -580,7 +580,7 @@ where
 /// assert_eq!(config.max_delegation_depth(), 8);
 /// let _: &DefaultTranslator = config.path_translator();
 /// ```
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Config<T>
 where
     T: PathTranslator,
