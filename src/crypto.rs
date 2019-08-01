@@ -34,6 +34,10 @@ const RSA_SPKI_OID: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x
 /// 1.3.101.112 curveEd25519(EdDSA 25519 signature algorithm)
 const ED25519_SPKI_OID: &[u8] = &[0x2b, 0x65, 0x70];
 
+fn python_tuf_compatibility_keyid_hash_algorithms() -> Option<Vec<String>> {
+    Some(vec!["sha256".to_string(), "sha512".to_string()])
+}
+
 /// Given a map of hash algorithms and their values, get the prefered algorithm and the hash
 /// calculated by it. Returns an `Err` if there is no match.
 ///
@@ -118,6 +122,7 @@ pub fn calculate_hashes<R: Read>(
 fn shim_public_key(
     key_type: &KeyType,
     signature_scheme: &SignatureScheme,
+    keyid_hash_algorithms: &Option<Vec<String>>,
     public_key: &[u8],
 ) -> ::std::result::Result<shims::PublicKey, derp::Error> {
     let key = match key_type {
@@ -131,6 +136,7 @@ fn shim_public_key(
     Ok(shims::PublicKey::new(
         key_type.clone(),
         signature_scheme.clone(),
+        keyid_hash_algorithms.clone(),
         key,
     ))
 }
@@ -138,11 +144,17 @@ fn shim_public_key(
 fn calculate_key_id(
     key_type: &KeyType,
     signature_scheme: &SignatureScheme,
+    keyid_hash_algorithms: &Option<Vec<String>>,
     public_key: &[u8],
 ) -> Result<KeyId> {
     use crate::interchange::{DataInterchange, Json};
 
-    let public_key = shim_public_key(key_type, signature_scheme, public_key)?;
+    let public_key = shim_public_key(
+        key_type,
+        signature_scheme,
+        keyid_hash_algorithms,
+        public_key,
+    )?;
     let public_key = Json::canonicalize(&Json::serialize(&public_key)?)?;
     let mut context = digest::Context::new(&SHA256);
     context.update(&public_key);
@@ -406,12 +418,23 @@ impl PrivateKey {
     }
 
     fn ed25519_from_pkcs8(der_key: &[u8]) -> Result<Self> {
+        Self::ed25519_from_pkcs8_with_keyid_hash_algorithms(
+            der_key,
+            python_tuf_compatibility_keyid_hash_algorithms(),
+        )
+    }
+
+    fn ed25519_from_pkcs8_with_keyid_hash_algorithms(
+        der_key: &[u8],
+        keyid_hash_algorithms: Option<Vec<String>>,
+    ) -> Result<Self> {
         let key = Ed25519KeyPair::from_pkcs8(der_key)
             .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
 
         let public = PublicKey::new(
             KeyType::Ed25519,
             SignatureScheme::Ed25519,
+            keyid_hash_algorithms,
             key.public_key().as_ref().to_vec(),
         )?;
         let private = PrivateKeyType::Ed25519(key);
@@ -438,7 +461,12 @@ impl PrivateKey {
 
         let pub_key = extract_rsa_pub_from_pkcs8(der_key)?;
 
-        let public = PublicKey::new(KeyType::Rsa, scheme, pub_key)?;
+        let public = PublicKey::new(
+            KeyType::Rsa,
+            scheme,
+            python_tuf_compatibility_keyid_hash_algorithms(),
+            pub_key,
+        )?;
         let private = PrivateKeyType::Rsa(Arc::new(key));
 
         Ok(PrivateKey { private, public })
@@ -526,17 +554,24 @@ pub struct PublicKey {
     typ: KeyType,
     key_id: KeyId,
     scheme: SignatureScheme,
+    keyid_hash_algorithms: Option<Vec<String>>,
     value: PublicKeyValue,
 }
 
 impl PublicKey {
-    fn new(typ: KeyType, scheme: SignatureScheme, value: Vec<u8>) -> Result<Self> {
-        let key_id = calculate_key_id(&typ, &scheme, &value)?;
+    fn new(
+        typ: KeyType,
+        scheme: SignatureScheme,
+        keyid_hash_algorithms: Option<Vec<String>>,
+        value: Vec<u8>,
+    ) -> Result<Self> {
+        let key_id = calculate_key_id(&typ, &scheme, &keyid_hash_algorithms, &value)?;
         let value = PublicKeyValue(value);
         Ok(PublicKey {
             typ,
             key_id,
             scheme,
+            keyid_hash_algorithms,
             value,
         })
     }
@@ -545,6 +580,21 @@ impl PublicKey {
     ///
     /// See the documentation on `KeyValue` for more information on SPKI.
     pub fn from_spki(der_bytes: &[u8], scheme: SignatureScheme) -> Result<Self> {
+        Self::from_spki_with_keyid_hash_algorithms(
+            der_bytes,
+            scheme,
+            python_tuf_compatibility_keyid_hash_algorithms(),
+        )
+    }
+
+    /// Parse DER bytes as an SPKI key and the `keyid_hash_algorithms`.
+    ///
+    /// See the documentation on `KeyValue` for more information on SPKI.
+    fn from_spki_with_keyid_hash_algorithms(
+        der_bytes: &[u8],
+        scheme: SignatureScheme,
+        keyid_hash_algorithms: Option<Vec<String>>,
+    ) -> Result<Self> {
         let input = Input::from(der_bytes);
 
         let (typ, value) = input.read_all(derp::Error::Read, |input| {
@@ -564,17 +614,25 @@ impl PublicKey {
             })
         })?;
 
-        Self::new(typ, scheme, value)
+        Self::new(typ, scheme, keyid_hash_algorithms, value)
     }
 
-    fn from_ed25519(bytes: Vec<u8>) -> Result<Self> {
+    fn from_ed25519_with_keyid_hash_algorithms(
+        bytes: Vec<u8>,
+        keyid_hash_algorithms: Option<Vec<String>>,
+    ) -> Result<Self> {
         if bytes.len() != 32 {
             return Err(Error::IllegalArgument(
                 "ed25519 keys must be 32 bytes long".into(),
             ));
         }
 
-        Self::new(KeyType::Ed25519, SignatureScheme::Ed25519, bytes)
+        Self::new(
+            KeyType::Ed25519,
+            SignatureScheme::Ed25519,
+            keyid_hash_algorithms,
+            bytes,
+        )
     }
 
     /// Write the public key as SPKI DER bytes.
@@ -627,7 +685,10 @@ impl PublicKey {
 impl PartialEq for PublicKey {
     fn eq(&self, other: &Self) -> bool {
         // key_id is derived from these fields, so we ignore it.
-        self.typ == other.typ && self.scheme == other.scheme && self.value == other.value
+        self.typ == other.typ
+            && self.scheme == other.scheme
+            && self.keyid_hash_algorithms == other.keyid_hash_algorithms
+            && self.value == other.value
     }
 }
 
@@ -650,6 +711,7 @@ impl hash::Hash for PublicKey {
         // key_id is derived from these fields, so we ignore it.
         self.typ.hash(state);
         self.scheme.hash(state);
+        self.keyid_hash_algorithms.hash(state);
         self.value.hash(state);
     }
 }
@@ -659,8 +721,13 @@ impl Serialize for PublicKey {
     where
         S: Serializer,
     {
-        let key = shim_public_key(&self.typ, &self.scheme, &self.value.0)
-            .map_err(|e| SerializeError::custom(format!("Couldn't write key as SPKI: {:?}", e)))?;
+        let key = shim_public_key(
+            &self.typ,
+            &self.scheme,
+            &self.keyid_hash_algorithms,
+            &self.value.0,
+        )
+        .map_err(|e| SerializeError::custom(format!("Couldn't write key as SPKI: {:?}", e)))?;
         key.serialize(ser)
     }
 }
@@ -684,7 +751,11 @@ impl<'de> Deserialize<'de> for PublicKey {
                         DeserializeError::custom(format!("Couldn't parse key as HEX: {:?}", e))
                     })?;
 
-                PublicKey::from_ed25519(bytes).map_err(|e| {
+                PublicKey::from_ed25519_with_keyid_hash_algorithms(
+                    bytes,
+                    intermediate.keyid_hash_algorithms().clone(),
+                )
+                .map_err(|e| {
                     DeserializeError::custom(format!("Couldn't parse key as ed25519: {:?}", e))
                 })?
             }
@@ -693,7 +764,12 @@ impl<'de> Deserialize<'de> for PublicKey {
                     .decode(intermediate.public_key().as_bytes())
                     .map_err(|e| DeserializeError::custom(format!("{:?}", e)))?;
 
-                PublicKey::from_spki(&bytes, intermediate.scheme().clone()).map_err(|e| {
+                PublicKey::from_spki_with_keyid_hash_algorithms(
+                    &bytes,
+                    intermediate.scheme().clone(),
+                    intermediate.keyid_hash_algorithms().clone(),
+                )
+                .map_err(|e| {
                     DeserializeError::custom(format!("Couldn't parse key as SPKI: {:?}", e))
                 })?
             }
@@ -973,6 +1049,7 @@ mod test {
         let jsn = json!({
             "keytype": "rsa",
             "scheme": "rsassa-pss-sha256",
+            "keyid_hash_algorithms": ["sha256", "sha512"],
             "keyval": {
                 "public": BASE64URL.encode(der),
             }
@@ -983,17 +1060,55 @@ mod test {
     }
 
     #[test]
+    fn de_ser_rsa_public_key_with_keyid_hash_algo() {
+        let original = json!({
+            "keytype": "rsa",
+            "scheme": "rsassa-pss-sha256",
+            "keyid_hash_algorithms": ["sha256", "sha512"],
+            "keyval": {
+                "public": BASE64URL.encode(RSA_2048_SPKI),
+            }
+        });
+
+        let decoded: PublicKey = serde_json::from_value(original.clone()).unwrap();
+        let encoded = serde_json::to_value(&decoded).unwrap();
+
+        assert_eq!(original, encoded);
+    }
+
+    #[test]
+    fn de_ser_rsa_public_key_without_keyid_hash_algo() {
+        let original = json!({
+            "keytype": "rsa",
+            "scheme": "rsassa-pss-sha256",
+            "keyval": {
+                "public": BASE64URL.encode(RSA_2048_SPKI),
+            }
+        });
+
+        let decoded: PublicKey = serde_json::from_value(original.clone()).unwrap();
+        let encoded = serde_json::to_value(&decoded).unwrap();
+
+        assert_eq!(original, encoded);
+    }
+
+    #[test]
     fn serde_ed25519_public_key() {
         let pub_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
             .unwrap()
             .public()
             .clone();
 
-        let pub_key = PublicKey::from_ed25519(pub_key.as_bytes().to_vec()).unwrap();
+        let pub_key = PublicKey::from_ed25519_with_keyid_hash_algorithms(
+            pub_key.as_bytes().to_vec(),
+            python_tuf_compatibility_keyid_hash_algorithms(),
+        )
+        .unwrap();
         let encoded = serde_json::to_value(&pub_key).unwrap();
         let jsn = json!({
             "keytype": "ed25519",
             "scheme": "ed25519",
+            "keyid_hash_algorithms": ["sha256", "sha512"],
             "keyval": {
                 "public": HEXLOWER.encode(pub_key.as_bytes()),
             }
@@ -1004,16 +1119,84 @@ mod test {
     }
 
     #[test]
+    fn de_ser_ed25519_public_key_with_keyid_hash_algo() {
+        let pub_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+            .unwrap()
+            .public()
+            .clone();
+        let pub_key = PublicKey::from_ed25519_with_keyid_hash_algorithms(
+            pub_key.as_bytes().to_vec(),
+            python_tuf_compatibility_keyid_hash_algorithms(),
+        )
+        .unwrap();
+        let original = json!({
+            "keytype": "ed25519",
+            "scheme": "ed25519",
+            "keyid_hash_algorithms": ["sha256", "sha512"],
+            "keyval": {
+                "public": HEXLOWER.encode(pub_key.as_bytes()),
+            }
+        });
+
+        let encoded: PublicKey = serde_json::from_value(original.clone()).unwrap();
+        let decoded = serde_json::to_value(&encoded).unwrap();
+
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn de_ser_ed25519_public_key_without_keyid_hash_algo() {
+        let pub_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+            .unwrap()
+            .public()
+            .clone();
+        let pub_key =
+            PublicKey::from_ed25519_with_keyid_hash_algorithms(pub_key.as_bytes().to_vec(), None)
+                .unwrap();
+        let original = json!({
+            "keytype": "ed25519",
+            "scheme": "ed25519",
+            "keyval": {
+                "public": HEXLOWER.encode(pub_key.as_bytes()),
+            }
+        });
+
+        let encoded: PublicKey = serde_json::from_value(original.clone()).unwrap();
+        let decoded = serde_json::to_value(&encoded).unwrap();
+
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
     fn serde_signature() {
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let msg = b"test";
         let sig = key.sign(msg).unwrap();
         let encoded = serde_json::to_value(&sig).unwrap();
         let jsn = json!({
-            "keyid": "e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554",
+            "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
             "sig": "fe4d13b2a73c033a1de7f5107b205fc7ba0e1566cb95b92349cae6aa453\
                 8956013bfe0f7bf977cb072bb65e8782b5f33a0573fe78816299a017ca5ba55\
                 9e390c",
+        });
+        assert_eq!(encoded, jsn);
+
+        let decoded: Signature = serde_json::from_value(encoded).unwrap();
+        assert_eq!(decoded, sig);
+    }
+
+    #[test]
+    fn serde_signature_without_keyid_hash_algo() {
+        let key =
+            PrivateKey::ed25519_from_pkcs8_with_keyid_hash_algorithms(ED25519_1_PK8, None).unwrap();
+        let msg = b"test";
+        let sig = key.sign(msg).unwrap();
+        let encoded = serde_json::to_value(&sig).unwrap();
+        let jsn = json!({
+            "keyid": "e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554",
+            "sig": "fe4d13b2a73c033a1de7f5107b205fc7ba0e1566cb95b92349cae6aa453\
+                    8956013bfe0f7bf977cb072bb65e8782b5f33a0573fe78816299a017ca5ba55\
+                    9e390c",
         });
         assert_eq!(encoded, jsn);
 

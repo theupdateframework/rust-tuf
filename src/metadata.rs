@@ -2089,36 +2089,99 @@ mod test {
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
             "keys": {
+                "09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1": {
+                    "keytype": "ed25519",
+                    "scheme": "ed25519",
+                    "keyid_hash_algorithms": ["sha256", "sha512"],
+                    "keyval": {
+                        "public": "1410ae3053aa70bbfa98428a879d64d3002a3578f7dfaaeb1cb0764e860f7e0b",
+                    },
+                },
+                "40e35e8f6003ab90d104710cf88901edab931597401f91c19eeb366060ab3d53": {
+                    "keytype": "ed25519",
+                    "scheme": "ed25519",
+                    "keyid_hash_algorithms": ["sha256", "sha512"],
+                    "keyval": {
+                        "public": "166376c90a7f717d027056272f361c252fb050bed1a067ff2089a0302fbab73d",
+                    },
+                },
+                "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a": {
+                    "keytype": "ed25519",
+                    "scheme": "ed25519",
+                    "keyid_hash_algorithms": ["sha256", "sha512"],
+                    "keyval": {
+                        "public": "eb8ac26b5c9ef0279e3be3e82262a93bce16fe58ee422500d38caf461c65a3b6",
+                    },
+                },
+                "fd7b7741686fa44903f1e4b61d7db869939f402b4acedc044767922c7d309983": {
+                    "keytype": "ed25519",
+                    "scheme": "ed25519",
+                    "keyid_hash_algorithms": ["sha256", "sha512"],
+                    "keyval": {
+                        "public": "68d9ecb387371005a8eb8e60105305c34356a8fcd859d7fef3cc228bf2b2b3b2",
+                    },
+                }
+            },
+            "roles": {
+                "root": {
+                    "threshold": 1,
+                    "keyids": ["a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a"],
+                },
+                "snapshot": {
+                    "threshold": 1,
+                    "keyids": ["fd7b7741686fa44903f1e4b61d7db869939f402b4acedc044767922c7d309983"],
+                },
+                "targets": {
+                    "threshold": 1,
+                    "keyids": ["40e35e8f6003ab90d104710cf88901edab931597401f91c19eeb366060ab3d53"],
+                },
+                "timestamp": {
+                    "threshold": 1,
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"],
+                },
+            },
+        });
+
+        let encoded = serde_json::to_value(&root).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: RootMetadata = serde_json::from_value(encoded).unwrap();
+        assert_eq!(decoded, root);
+    }
+
+    fn jsn_root_metadata_without_keyid_hash_algos() -> serde_json::Value {
+        json!({
+            "_type": "root",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "consistent_snapshot": false,
+            "keys": {
                 "12435b260b6172bd750aeb102f54a347c56b109e0524ab1f144593c07af66356": {
                     "keytype": "ed25519",
                     "scheme": "ed25519",
                     "keyval": {
-                        "public": "68d9ecb387371005a8eb8e60105305c34356a8fcd859\
-                            d7fef3cc228bf2b2b3b2",
+                        "public": "68d9ecb387371005a8eb8e60105305c34356a8fcd859d7fef3cc228bf2b2b3b2",
                     },
                 },
                 "3af6b427c05274532231760f39d81212fdf8ac1a9f8fddf12722623ccec02fec": {
                     "keytype": "ed25519",
                     "scheme": "ed25519",
                     "keyval": {
-                        "public": "1410ae3053aa70bbfa98428a879d64d3002a3578f7df\
-                            aaeb1cb0764e860f7e0b",
+                        "public": "1410ae3053aa70bbfa98428a879d64d3002a3578f7dfaaeb1cb0764e860f7e0b",
                     },
                 },
                 "b9c336828063cf4fe5348e9fe2d86827c7b3104a76b1f4484a56bbef1ef08cfb": {
                     "keytype": "ed25519",
                     "scheme": "ed25519",
                     "keyval": {
-                        "public": "166376c90a7f717d027056272f361c252fb050bed1a0\
-                            67ff2089a0302fbab73d",
+                        "public": "166376c90a7f717d027056272f361c252fb050bed1a067ff2089a0302fbab73d",
                     },
                 },
                 "e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554": {
                     "keytype": "ed25519",
                     "scheme": "ed25519",
                     "keyval": {
-                        "public": "eb8ac26b5c9ef0279e3be3e82262a93bce16fe58ee422\
-                            500d38caf461c65a3b6",
+                        "public": "eb8ac26b5c9ef0279e3be3e82262a93bce16fe58ee422500d38caf461c65a3b6",
                     },
                 }
             },
@@ -2140,12 +2203,43 @@ mod test {
                     "keyids": ["3af6b427c05274532231760f39d81212fdf8ac1a9f8fddf12722623ccec02fec"],
                 },
             },
-        });
+        })
+    }
 
-        let encoded = serde_json::to_value(&root).unwrap();
-        assert_eq!(encoded, jsn);
-        let decoded: RootMetadata = serde_json::from_value(encoded).unwrap();
-        assert_eq!(decoded, root);
+    #[test]
+    fn de_ser_root_metadata_without_keyid_hash_algorithms() {
+        let jsn = jsn_root_metadata_without_keyid_hash_algos();
+        let decoded: RootMetadata = serde_json::from_value(jsn.clone()).unwrap();
+        let encoded = serde_json::to_value(decoded).unwrap();
+
+        assert_eq!(jsn, encoded);
+    }
+
+    #[test]
+    fn sign_and_verify_root_metadata() {
+        let jsn = jsn_root_metadata_without_keyid_hash_algos();
+        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let decoded: RootMetadata = serde_json::from_value(jsn).unwrap();
+
+        let signed: SignedMetadata<crate::interchange::cjson::Json, _> =
+            SignedMetadata::new(decoded, &root_key).unwrap();
+        signed.verify(1, &[root_key.public().clone()]).unwrap();
+    }
+
+    #[test]
+    fn verify_signed_serialized_root_metadata() {
+        let jsn = json!({
+            "signatures": [{
+                "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
+                "sig": "c4ba838e0d3f783716393a4d691f568f840733ff488bb79ac68287e97e0b31d63fcef392dbc978e878c2103ba231905af634cc651d6f0e63a35782d051ac6e00"
+            }],
+            "signed": jsn_root_metadata_without_keyid_hash_algos()
+        });
+        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let decoded: SignedMetadata<crate::interchange::cjson::Json, RootMetadata> =
+            serde_json::from_value(jsn).unwrap();
+
+        decoded.verify(1, &[root_key.public().clone()]).unwrap();
     }
 
     #[test]
@@ -2373,9 +2467,10 @@ mod test {
             "targets": {},
             "delegations": {
                 "keys": {
-                    "e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554": {
+                    "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a": {
                         "keytype": "ed25519",
                         "scheme": "ed25519",
+                        "keyid_hash_algorithms": ["sha256", "sha512"],
                         "keyval": {
                             "public": "eb8ac26b5c9ef0279e3be3e82262a93bce16fe58\
                                 ee422500d38caf461c65a3b6",
@@ -2387,7 +2482,7 @@ mod test {
                         "role": "foo/bar",
                         "terminating": false,
                         "threshold": 1,
-                        "keyids": ["e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554"],
+                        "keyids": ["a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a"],
                         "paths": ["baz/quux"],
                     },
                 ],
@@ -2423,10 +2518,10 @@ mod test {
         let jsn = json!({
             "signatures": [
                 {
-                    "keyid": "e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554",
-                    "sig": "ea48ddc7b3ea614b394e508eb8722100f94ff1a4e3aac3af09\
-                        da0dada4f878431e8ac26160833405ec239924dfe62edf605fee82\
-                        94c49b4acade55c76e817602",
+                    "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
+                    "sig": "ea48ddc7b3ea614b394e508eb8722100f94ff1a4e3aac3af09d\
+                        a0dada4f878431e8ac26160833405ec239924dfe62edf605fee8294\
+                        c49b4acade55c76e817602",
                 }
             ],
             "signed": {
