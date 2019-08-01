@@ -1900,6 +1900,7 @@ mod test {
 
         let jsn = json!({
             "_type": "root",
+            "spec_version": "1.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
@@ -1971,6 +1972,7 @@ mod test {
 
         let jsn = json!({
             "_type": "timestamp",
+            "spec_version": "1.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "snapshot": {
@@ -2006,6 +2008,7 @@ mod test {
 
         let jsn = json!({
             "_type": "snapshot",
+            "spec_version": "1.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -2038,6 +2041,7 @@ mod test {
 
         let jsn = json!({
             "_type": "targets",
+            "spec_version": "1.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "targets": {
@@ -2081,6 +2085,7 @@ mod test {
 
         let jsn = json!({
             "_type": "targets",
+            "spec_version": "1.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "targets": {},
@@ -2135,13 +2140,14 @@ mod test {
             "signatures": [
                 {
                     "keyid": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-                    "sig": "2e92cab0ef3e5fafaef0a376d77d0811632be25729ee7b7e7c\
-                        41c4af0759950406141d159b3e8c50336535927148180153d2d9da\
-                        fca8960c9fc918c68030c803",
+                    "sig": "6af7a8b13ea4ab59e6483490c8bb7ac1dec7354042c00bbc84\
+                        e0df928ffccfc8654f41191c438efb2bf6f7f44f57750eebde0893\
+                        cbe64eb8073132017937770b",
                 }
             ],
             "signed": {
                 "_type": "snapshot",
+                "spec_version": "1.0",
                 "version": 1,
                 "expires": "2017-01-01T00:00:00Z",
                 "meta": {
@@ -2298,6 +2304,7 @@ mod test {
     fn deserialize_json_root_duplicate_keys() {
         let root_json = r#"{
             "type": "root",
+            "spec_version": "1.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
@@ -2387,11 +2394,19 @@ mod test {
         assert!(serde_json::from_value::<RoleDefinition>(jsn).is_err());
     }
 
-    // Refuse to deserialilze root metadata with wrong type field
+    // Refuse to deserialize root metadata with wrong type field
     #[test]
     fn deserialize_json_root_bad_type() {
         let mut root = make_root();
         let _ = root.as_object_mut().unwrap().insert("_type".into(), json!("snapshot"));
+        assert!(serde_json::from_value::<RootMetadata>(root).is_err());
+    }
+
+    // Refuse to deserialize root metadata with unknown spec version
+    #[test]
+    fn deserialize_json_root_bad_spec_version() {
+        let mut root = make_root();
+        let _ = root.as_object_mut().unwrap().insert("spec_version".into(), json!("0"));
         assert!(serde_json::from_value::<RootMetadata>(root).is_err());
     }
 
@@ -2428,11 +2443,19 @@ mod test {
         assert!(serde_json::from_value::<SnapshotMetadata>(snapshot).is_err());
     }
 
-    // Refuse to deserialilze snapshot metadata with wrong type field
+    // Refuse to deserialize snapshot metadata with wrong type field
     #[test]
     fn deserialize_json_snapshot_bad_type() {
         let mut snapshot = make_snapshot();
         let _ = snapshot.as_object_mut().unwrap().insert("_type".into(), json!("root"));
+        assert!(serde_json::from_value::<SnapshotMetadata>(snapshot).is_err());
+    }
+
+    // Refuse to deserialize snapshot metadata with unknown spec version
+    #[test]
+    fn deserialize_json_snapshot_spec_version() {
+        let mut snapshot = make_snapshot();
+        let _ = snapshot.as_object_mut().unwrap().insert("spec_version".into(), json!("0"));
         assert!(serde_json::from_value::<SnapshotMetadata>(snapshot).is_err());
     }
 
@@ -2448,11 +2471,19 @@ mod test {
         assert!(serde_json::from_value::<TimestampMetadata>(timestamp).is_err());
     }
 
-    // Refuse to deserialilze timestamp metadata with wrong type field
+    // Refuse to deserialize timestamp metadata with wrong type field
     #[test]
     fn deserialize_json_timestamp_bad_type() {
         let mut timestamp = make_timestamp();
         let _ = timestamp.as_object_mut().unwrap().insert("_type".into(), json!("root"));
+        assert!(serde_json::from_value::<TimestampMetadata>(timestamp).is_err());
+    }
+
+    // Refuse to deserialize timestamp metadata with unknown spec version
+    #[test]
+    fn deserialize_json_timestamp_bad_spec_version() {
+        let mut timestamp = make_timestamp();
+        let _ = timestamp.as_object_mut().unwrap().insert("spec_version".into(), json!("0"));
         assert!(serde_json::from_value::<TimestampMetadata>(timestamp).is_err());
     }
 
@@ -2468,11 +2499,19 @@ mod test {
         assert!(serde_json::from_value::<TargetsMetadata>(targets).is_err());
     }
 
-    // Refuse to deserialilze targets metadata with wrong type field
+    // Refuse to deserialize targets metadata with wrong type field
     #[test]
     fn deserialize_json_targets_bad_type() {
         let mut targets = make_targets();
         let _ = targets.as_object_mut().unwrap().insert("_type".into(), json!("root"));
+        assert!(serde_json::from_value::<TargetsMetadata>(targets).is_err());
+    }
+
+    // Refuse to deserialize targets metadata with unknown spec version
+    #[test]
+    fn deserialize_json_targets_bad_spec_version() {
+        let mut targets = make_targets();
+        let _ = targets.as_object_mut().unwrap().insert("spec_version".into(), json!("0"));
         assert!(serde_json::from_value::<TargetsMetadata>(targets).is_err());
     }
 
