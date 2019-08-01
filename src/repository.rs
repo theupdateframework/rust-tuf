@@ -146,12 +146,74 @@ where
         }
     }
 }
+
+/// A builder to create a repository contained on the local file system.
+pub struct FileSystemRepositoryBuilder {
+    local_path: PathBuf,
+    metadata_prefix: Option<PathBuf>,
+    targets_prefix: Option<PathBuf>,
+}
+
+impl FileSystemRepositoryBuilder {
+    /// Create a new repository with the given `local_path` prefix.
+    pub fn new<P: Into<PathBuf>>(local_path: P) -> Self {
+        FileSystemRepositoryBuilder {
+            local_path: local_path.into(),
+            metadata_prefix: None,
+            targets_prefix: None,
+        }
+    }
+
+    /// The argument `metadata_prefix` is used to provide an alternate path where metadata is
+    /// stored on the repository. If `None`, this defaults to `/`. For example, if there is a TUF
+    /// repository at `/usr/local/repo/`, but all metadata is stored at `/usr/local/repo/meta/`,
+    /// then passing the arg `Some("meta".into())` would cause `root.json` to be fetched from
+    /// `/usr/local/repo/meta/root.json`.
+    pub fn metadata_prefix<P: Into<PathBuf>>(mut self, metadata_prefix: P) -> Self {
+        self.metadata_prefix = Some(metadata_prefix.into());
+        self
+    }
+
+    /// The argument `targets_prefix` is used to provide an alternate path where targets are
+    /// stored on the repository. If `None`, this defaults to `/`. For example, if there is a TUF
+    /// repository at `/usr/local/repo/`, but all targets are stored at `/usr/local/repo/targets/`,
+    /// then passing the arg `Some("targets".into())` would cause `hello-world` to be fetched from
+    /// `/usr/local/repo/targets/hello-world`.
+    pub fn targets_prefix<P: Into<PathBuf>>(mut self, targets_prefix: P) -> Self {
+        self.targets_prefix = Some(targets_prefix.into());
+        self
+    }
+
+    /// Build a `FileSystemRepository`.
+    pub fn build<D>(self) -> Result<FileSystemRepository<D>>
+    where
+        D: DataInterchange,
+    {
+        let metadata_path = if let Some(metadata_prefix) = self.metadata_prefix {
+            self.local_path.join(metadata_prefix)
+        } else {
+            self.local_path.clone()
+        };
+        DirBuilder::new().recursive(true).create(&metadata_path)?;
+
+        let targets_path = if let Some(targets_prefix) = self.targets_prefix {
+            self.local_path.join(targets_prefix)
+        } else {
+            self.local_path.clone()
+        };
+        DirBuilder::new().recursive(true).create(&targets_path)?;
+
+        Ok(FileSystemRepository { metadata_path, targets_path, interchange: PhantomData })
+    }
+}
+
 /// A repository contained on the local file system.
 pub struct FileSystemRepository<D>
 where
     D: DataInterchange,
 {
-    local_path: PathBuf,
+    metadata_path: PathBuf,
+    targets_path: PathBuf,
     interchange: PhantomData<D>,
 }
 
@@ -161,11 +223,10 @@ where
 {
     /// Create a new repository on the local file system.
     pub fn new(local_path: PathBuf) -> Result<Self> {
-        for p in &["metadata", "targets", "temp"] {
-            DirBuilder::new().recursive(true).create(local_path.join(p))?
-        }
-
-        Ok(FileSystemRepository { local_path, interchange: PhantomData })
+        FileSystemRepositoryBuilder::new(local_path)
+            .metadata_prefix("metadata")
+            .targets_prefix("targets")
+            .build()
     }
 }
 
@@ -185,7 +246,7 @@ where
         async move {
             Self::check::<M>(meta_path)?;
 
-            let mut path = self.local_path.join("metadata");
+            let mut path = self.metadata_path.clone();
             path.extend(meta_path.components::<D>(version));
 
             if path.exists() {
@@ -215,7 +276,7 @@ where
         async move {
             Self::check::<M>(&meta_path)?;
 
-            let mut path = self.local_path.join("metadata");
+            let mut path = self.metadata_path.clone();
             path.extend(meta_path.components::<D>(&version));
 
             let mut reader = SafeReader::new(
@@ -242,7 +303,7 @@ where
         R: AsyncRead + Send + Unpin + 'a,
     {
         async move {
-            let mut path = self.local_path.join("targets");
+            let mut path = self.targets_path.clone();
             path.extend(target_path.components());
 
             if path.exists() {
@@ -264,7 +325,7 @@ where
         target_description: &'a TargetDescription,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
-            let mut path = self.local_path.join("targets");
+            let mut path = self.targets_path.clone();
             path.extend(target_path.components());
 
             if !path.exists() {
@@ -311,6 +372,7 @@ where
     interchange: PhantomData<D>,
     user_agent: Option<String>,
     metadata_prefix: Option<Vec<String>>,
+    targets_prefix: Option<Vec<String>>,
     min_bytes_per_second: u32,
 }
 
@@ -327,6 +389,7 @@ where
             interchange: PhantomData,
             user_agent: None,
             metadata_prefix: None,
+            targets_prefix: None,
             min_bytes_per_second: 4096,
         }
     }
@@ -341,13 +404,23 @@ where
         self
     }
 
-    /// The argument `metadata_prefix` is used provide an alternate path where metadata is stored on
-    /// the repository. If `None`, this defaults to `/`. For example, if there is a TUF repository
-    /// at `https://tuf.example.com/`, but all metadata is stored at `/meta/`, then passing the
-    /// arg `Some("meta".into())` would cause `root.json` to be fetched from
+    /// The argument `metadata_prefix` is used to provide an alternate path where metadata is
+    /// stored on the repository. If `None`, this defaults to `/`. For example, if there is a TUF
+    /// repository at `https://tuf.example.com/`, but all metadata is stored at `/meta/`, then
+    /// passing the arg `Some("meta".into())` would cause `root.json` to be fetched from
     /// `https://tuf.example.com/meta/root.json`.
     pub fn metadata_prefix(mut self, metadata_prefix: Vec<String>) -> Self {
         self.metadata_prefix = Some(metadata_prefix);
+        self
+    }
+
+    /// The argument `targets_prefix` is used to provide an alternate path where targets is
+    /// stored on the repository. If `None`, this defaults to `/`. For example, if there is a TUF
+    /// repository at `https://tuf.example.com/`, but all targets are stored at `/targets/`, then
+    /// passing the arg `Some("targets".into())` would cause `hello-world` to be fetched from
+    /// `https://tuf.example.com/targets/hello-world`.
+    pub fn targets_prefix(mut self, targets_prefix: Vec<String>) -> Self {
+        self.targets_prefix = Some(targets_prefix);
         self
     }
 
@@ -370,6 +443,7 @@ where
             interchange: self.interchange,
             user_agent: user_agent,
             metadata_prefix: self.metadata_prefix,
+            targets_prefix: self.targets_prefix,
             min_bytes_per_second: self.min_bytes_per_second,
         }
     }
@@ -385,6 +459,7 @@ where
     client: Client<C>,
     user_agent: String,
     metadata_prefix: Option<Vec<String>>,
+    targets_prefix: Option<Vec<String>>,
     min_bytes_per_second: u32,
     interchange: PhantomData<D>,
 }
@@ -502,7 +577,7 @@ where
         async move {
             let (alg, value) = crypto::hash_preference(target_description.hashes())?;
             let components = target_path.components();
-            let resp = self.get(&None, &components).await?;
+            let resp = self.get(&self.targets_prefix, &components).await?;
 
             let stream =
                 resp.into_body().compat().map_err(|err| io::Error::new(io::ErrorKind::Other, err));
@@ -700,19 +775,22 @@ mod test {
     fn file_system_repo_targets() {
         block_on(async {
             let temp_dir = tempfile::Builder::new().prefix("rust-tuf").tempdir().unwrap();
-            let repo = FileSystemRepository::<Json>::new(temp_dir.path().to_path_buf()).unwrap();
+            let repo = FileSystemRepositoryBuilder::new(temp_dir.path().to_path_buf())
+                .metadata_prefix("meta")
+                .targets_prefix("targs")
+                .build::<Json>()
+                .unwrap();
 
             // test that init worked
-            assert!(temp_dir.path().join("metadata").exists());
-            assert!(temp_dir.path().join("targets").exists());
-            assert!(temp_dir.path().join("temp").exists());
+            assert!(temp_dir.path().join("meta").exists());
+            assert!(temp_dir.path().join("targs").exists());
 
             let data: &[u8] = b"like tears in the rain";
             let target_description =
                 TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
             let path = TargetPath::new("foo/bar/baz".into()).unwrap();
             repo.store_target(data, &path).await.unwrap();
-            assert!(temp_dir.path().join("targets").join("foo").join("bar").join("baz").exists());
+            assert!(temp_dir.path().join("targs").join("foo").join("bar").join("baz").exists());
 
             let mut buf = Vec::new();
 
