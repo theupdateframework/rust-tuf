@@ -128,9 +128,9 @@ where
 impl<D, L, R, T> Client<D, L, R, T>
 where
     D: DataInterchange + Sync,
-    L: Repository<D> + 'static,
-    R: Repository<D> + 'static,
-    T: PathTranslator + 'static,
+    L: Repository<D>,
+    R: Repository<D>,
+    T: PathTranslator,
 {
     /// Create a new TUF client. It will attempt to load initial root metadata from the local repo
     /// and return an error if it cannot do so.
