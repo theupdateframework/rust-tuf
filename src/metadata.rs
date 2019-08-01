@@ -1855,7 +1855,7 @@ mod test {
         let role_def = RoleDefinition::new(2, hashes).unwrap();
         let jsn = json!({
             "threshold": 2,
-            "key_ids": [
+            "keyids": [
                 // these need to be sorted for determinism
                 "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
                 "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
@@ -1868,7 +1868,7 @@ mod test {
 
         let jsn = json!({
             "threshold": 0,
-            "key_ids": [
+            "keyids": [
                 "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
             ],
         });
@@ -1876,7 +1876,7 @@ mod test {
 
         let jsn = json!({
             "threshold": -1,
-            "key_ids": [
+            "keyids": [
                 "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
             ],
         });
@@ -1934,19 +1934,19 @@ mod test {
             "roles": {
                 "root": {
                     "threshold": 1,
-                    "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
+                    "keyids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
                 },
                 "snapshot": {
                     "threshold": 1,
-                    "key_ids": ["5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs="],
+                    "keyids": ["5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs="],
                 },
                 "targets": {
                     "threshold": 1,
-                    "key_ids": ["4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o="],
+                    "keyids": ["4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o="],
                 },
                 "timestamp": {
                     "threshold": 1,
-                    "key_ids": ["C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw="],
+                    "keyids": ["C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw="],
                 },
             },
         });
@@ -2099,7 +2099,7 @@ mod test {
                         "role": "foo/bar",
                         "terminating": false,
                         "threshold": 1,
-                        "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
+                        "keyids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
                         "paths": ["baz/quux"],
                     },
                 ],
@@ -2135,7 +2135,7 @@ mod test {
         let jsn = json!({
             "signatures": [
                 {
-                    "key_id": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
+                    "keyid": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
                     "value": "5zv0RA1_apWwMHNRgcuhkNwnz1iNj8aPkZrA3bruehf5ncKiPekLHGVJWWodPEIESj\
                         9k9FBLI4TK422Y7RR2AQ==",
                 }
@@ -2378,7 +2378,7 @@ mod test {
         let mut jsn = serde_json::to_value(&role_def).unwrap();
 
         match jsn.as_object_mut() {
-            Some(obj) => match obj.get_mut("key_ids").unwrap().as_array_mut() {
+            Some(obj) => match obj.get_mut("keyids").unwrap().as_array_mut() {
                 Some(arr) => arr.push(json!(key_id)),
                 None => panic!(),
             },
@@ -2513,12 +2513,12 @@ mod test {
     fn deserialize_json_delegation_duplicate_key_ids() {
         let mut delegation = make_delegation();
         let dupe =
-            delegation.as_object().unwrap().get("key_ids".into()).unwrap().as_array().unwrap()[0]
+            delegation.as_object().unwrap().get("keyids".into()).unwrap().as_array().unwrap()[0]
                 .clone();
         delegation
             .as_object_mut()
             .unwrap()
-            .get_mut("key_ids".into())
+            .get_mut("keyids".into())
             .unwrap()
             .as_array_mut()
             .unwrap()
