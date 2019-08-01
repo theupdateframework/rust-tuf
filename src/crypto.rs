@@ -683,6 +683,7 @@ impl Debug for PublicKeyValue {
 pub struct Signature {
     #[serde(rename = "keyid")]
     key_id: KeyId,
+    #[serde(rename = "sig")]
     value: SignatureValue,
 }
 
@@ -959,7 +960,7 @@ mod test {
         let encoded = serde_json::to_value(&sig).unwrap();
         let jsn = json!({
             "keyid": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-            "value": "_k0Tsqc8Azod5_UQeyBfx7oOFWbLlbkjScrmqkU4lWATv-D3v5d8sHK7Z\
+            "sig": "_k0Tsqc8Azod5_UQeyBfx7oOFWbLlbkjScrmqkU4lWATv-D3v5d8sHK7Z\
                 eh4K18zoFc_54gWKZoBfKW6VZ45DA==",
             }
         );
