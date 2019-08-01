@@ -28,7 +28,7 @@ fn format_datetime(ts: &DateTime<Utc>) -> String {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RootMetadata {
-    #[serde(rename = "type")]
+    #[serde(rename = "_type")]
     typ: metadata::Role,
     version: u32,
     consistent_snapshot: bool,
@@ -118,7 +118,7 @@ impl RoleDefinition {
 
 #[derive(Serialize, Deserialize)]
 pub struct TimestampMetadata {
-    #[serde(rename = "type")]
+    #[serde(rename = "_type")]
     typ: metadata::Role,
     version: u32,
     expires: String,
@@ -153,7 +153,7 @@ impl TimestampMetadata {
 
 #[derive(Serialize, Deserialize)]
 pub struct SnapshotMetadata {
-    #[serde(rename = "type")]
+    #[serde(rename = "_type")]
     typ: metadata::Role,
     version: u32,
     expires: String,
@@ -188,7 +188,7 @@ impl SnapshotMetadata {
 
 #[derive(Serialize, Deserialize)]
 pub struct TargetsMetadata {
-    #[serde(rename = "type")]
+    #[serde(rename = "_type")]
     typ: metadata::Role,
     version: u32,
     expires: String,
