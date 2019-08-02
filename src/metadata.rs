@@ -1612,7 +1612,7 @@ impl Delegations {
     // TODO check all keys are used
     // TODO check all roles have their ID in the set of keys
     /// Create a new `Delegations` wrapper from the given set of trusted keys and roles.
-    pub fn new(keys: &HashSet<PublicKey>, roles: Vec<Delegation>) -> Result<Self> {
+    pub fn new(keys: HashMap<KeyId, PublicKey>, roles: Vec<Delegation>) -> Result<Self> {
         if keys.is_empty() {
             return Err(Error::IllegalArgument("Keys cannot be empty.".into()));
         }
@@ -1627,10 +1627,7 @@ impl Delegations {
             ));
         }
 
-        Ok(Delegations {
-            keys: keys.iter().cloned().map(|k| (k.key_id().clone(), k)).collect(),
-            roles,
-        })
+        Ok(Delegations { keys, roles })
     }
 
     /// An immutable reference to the keys used for this set of delegations.
@@ -2062,7 +2059,7 @@ mod test {
     fn serde_targets_with_delegations_metadata() {
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let delegations = Delegations::new(
-            &hashset![key.public().clone()],
+            hashmap! { key.key_id().clone() => key.public().clone() },
             vec![Delegation::new(
                 MetadataPath::new("foo/bar".into()).unwrap(),
                 false,
@@ -2086,14 +2083,14 @@ mod test {
             "expires": "2017-01-01T00:00:00Z",
             "targets": {},
             "delegations": {
-                "keys": [
-                    {
+                "keys": {
+                    "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
                         "type": "ed25519",
                         "scheme": "ed25519",
                         "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb\
                             -WO5CJQDTjK9GHGWjtg==",
                     },
-                ],
+                },
                 "roles": [
                     {
                         "role": "foo/bar",
@@ -2240,7 +2237,7 @@ mod test {
             .public()
             .clone();
         let delegations = Delegations::new(
-            &hashset![key.clone()],
+            hashmap! { key.key_id().clone() => key.clone() },
             vec![Delegation::new(
                 MetadataPath::new("foo".into()).unwrap(),
                 false,
@@ -2485,7 +2482,7 @@ mod test {
             .unwrap()
             .get_mut("keys".into())
             .unwrap()
-            .as_array_mut()
+            .as_object_mut()
             .unwrap()
             .clear();
         assert!(serde_json::from_value::<Delegations>(delegations).is_err());
@@ -2575,35 +2572,36 @@ mod test {
     // Refuse to deserialize a Delegations struct with duplicate keys
     #[test]
     fn deserialize_json_delegations_duplicate_keys() {
-        let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
-            .unwrap()
-            .public()
-            .clone();
-        let delegations = Delegations::new(
-            &hashset!(key.clone()),
-            vec![Delegation::new(
-                MetadataPath::new("foo".into()).unwrap(),
-                false,
-                1,
-                hashset!(key.key_id().clone()),
-                hashset!(VirtualTargetPath::new("bar".into()).unwrap()),
-            )
-            .unwrap()],
-        )
-        .unwrap();
-        let mut delegations = serde_json::to_value(delegations).unwrap();
-
-        let dupe = delegations.as_object().unwrap().get("keys".into()).unwrap().as_array().unwrap()
-            [0]
-        .clone();
-        delegations
-            .as_object_mut()
-            .unwrap()
-            .get_mut("keys".into())
-            .unwrap()
-            .as_array_mut()
-            .unwrap()
-            .push(dupe);
-        assert!(serde_json::from_value::<Delegations>(delegations).is_err());
+        let delegations_json = r#"{
+            "keys": {
+                "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
+                    "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb-WO5CJQDTjK9GHGWjtg==",
+                    "scheme": "ed25519",
+                    "type": "ed25519"
+                },
+                "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
+                    "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb-WO5CJQDTjK9GHGWjtg==",
+                    "scheme": "ed25519",
+                    "type": "ed25519"
+                }
+            },
+            "roles": [
+            {
+                "keyids": [
+                    "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="
+                ],
+                "paths": [
+                    "bar"
+                ],
+                "role": "foo",
+                "terminating": false,
+                "threshold": 1
+            }
+            ]
+        }"#;
+        match serde_json::from_str::<Delegations>(delegations_json) {
+            Err(ref err) if err.is_data() => {}
+            result => panic!("unexpected result: {:?}", result),
+        }
     }
 }

@@ -1,4 +1,4 @@
-use maplit::hashset;
+use maplit::hashmap;
 use tuf::crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
 use tuf::interchange::Json;
 use tuf::metadata::{
@@ -58,7 +58,7 @@ fn simple_delegation() {
 
     //// build the targets ////
     let delegations = Delegations::new(
-        &hashset![delegation_key.public().clone()],
+        hashmap! { delegation_key.public().key_id().clone() => delegation_key.public().clone() },
         vec![Delegation::new(
             MetadataPath::new("delegation".into()).unwrap(),
             false,
@@ -143,7 +143,9 @@ fn nested_delegation() {
     //// build the targets ////
 
     let delegations = Delegations::new(
-        &hashset![delegation_a_key.public().clone()],
+        hashmap! {
+            delegation_b_key.public().key_id().clone() => delegation_a_key.public().clone(),
+        },
         vec![Delegation::new(
             MetadataPath::new("delegation-a".into()).unwrap(),
             false,
@@ -164,7 +166,7 @@ fn nested_delegation() {
     //// build delegation A ////
 
     let delegations = Delegations::new(
-        &hashset![delegation_b_key.public().clone()],
+        hashmap! { delegation_b_key.public().key_id().clone() => delegation_b_key.public().clone() },
         vec![Delegation::new(
             MetadataPath::new("delegation-b".into()).unwrap(),
             false,
