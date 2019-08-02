@@ -115,8 +115,13 @@ fn shim_public_key(
     signature_scheme: &SignatureScheme,
     public_key: &[u8],
 ) -> ::std::result::Result<shims::PublicKey, derp::Error> {
-    let bytes = write_spki(public_key, &key_type)?;
-    let key = BASE64URL.encode(&bytes);
+    let key = match key_type {
+        KeyType::Ed25519 => HEXLOWER.encode(public_key),
+        KeyType::Rsa | KeyType::Unknown(_) => {
+            let bytes = write_spki(public_key, &key_type)?;
+            BASE64URL.encode(&bytes)
+        }
+    };
 
     Ok(shims::PublicKey::new(key_type.clone(), signature_scheme.clone(), key))
 }
@@ -213,6 +218,11 @@ impl SignatureValue {
     /// Note: It is unlikely that you ever want to do this manually.
     pub fn from_hex(string: &str) -> Result<Self> {
         Ok(SignatureValue(HEXLOWER.decode(string.as_bytes())?))
+    }
+
+    /// Return the signature as bytes.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
     }
 }
 
@@ -538,6 +548,14 @@ impl PublicKey {
         Self::new(typ, scheme, value)
     }
 
+    fn from_ed25519(bytes: Vec<u8>) -> Result<Self> {
+        if bytes.len() != 32 {
+            return Err(Error::IllegalArgument("ed25519 keys must be 32 bytes long".into()));
+        }
+
+        Self::new(KeyType::Ed25519, SignatureScheme::Ed25519, bytes)
+    }
+
     /// Write the public key as SPKI DER bytes.
     ///
     /// See the documentation on `KeyValue` for more information on SPKI.
@@ -558,6 +576,11 @@ impl PublicKey {
     /// An immutable reference to the key's ID.
     pub fn key_id(&self) -> &KeyId {
         &self.key_id
+    }
+
+    /// Return the public key as bytes.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.value.0
     }
 
     /// Use this key to verify a message with a signature.
@@ -618,13 +641,34 @@ impl Serialize for PublicKey {
 impl<'de> Deserialize<'de> for PublicKey {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let intermediate: shims::PublicKey = Deserialize::deserialize(de)?;
-        let bytes = BASE64URL
-            .decode(intermediate.public_key().as_bytes())
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))?;
 
-        let key = PublicKey::from_spki(&bytes, intermediate.scheme().clone()).map_err(|e| {
-            DeserializeError::custom(format!("Couldn't parse key as SPKI: {:?}", e))
-        })?;
+        let key = match intermediate.keytype() {
+            KeyType::Ed25519 => {
+                if intermediate.scheme() != &SignatureScheme::Ed25519 {
+                    return Err(DeserializeError::custom(format!(
+                        "ed25519 key type must be used with the ed25519 signature scheme, not {:?}",
+                        intermediate.scheme()
+                    )));
+                }
+
+                let bytes = HEXLOWER.decode(intermediate.public_key().as_bytes()).map_err(|e| {
+                    DeserializeError::custom(format!("Couldn't parse key as HEX: {:?}", e))
+                })?;
+
+                PublicKey::from_ed25519(bytes).map_err(|e| {
+                    DeserializeError::custom(format!("Couldn't parse key as ed25519: {:?}", e))
+                })?
+            }
+            KeyType::Rsa | KeyType::Unknown(_) => {
+                let bytes = BASE64URL
+                    .decode(intermediate.public_key().as_bytes())
+                    .map_err(|e| DeserializeError::custom(format!("{:?}", e)))?;
+
+                PublicKey::from_spki(&bytes, intermediate.scheme().clone()).map_err(|e| {
+                    DeserializeError::custom(format!("Couldn't parse key as SPKI: {:?}", e))
+                })?
+            }
+        };
 
         if intermediate.keytype() != &key.typ {
             return Err(DeserializeError::custom(format!(
@@ -789,8 +833,8 @@ mod test {
     const RSA_4096_SPKI: &'static [u8] = include_bytes!("../tests/rsa/rsa-4096.spki.der");
     const RSA_4096_PKCS1: &'static [u8] = include_bytes!("../tests/rsa/rsa-4096.pkcs1.der");
 
-    const ED25519_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
-    const ED25519_SPKI: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.spki.der");
+    const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
+    const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
 
     #[test]
     fn parse_rsa_2048_spki() {
@@ -844,14 +888,28 @@ mod test {
 
     #[test]
     fn ed25519_read_pkcs8_and_sign() {
-        let key = PrivateKey::from_pkcs8(ED25519_PK8, SignatureScheme::Ed25519).unwrap();
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let msg = b"test";
 
         let sig = key.sign(msg).unwrap();
 
-        let public =
+        let pub_key =
             PublicKey::from_spki(&key.public.as_spki().unwrap(), SignatureScheme::Ed25519).unwrap();
-        public.verify(msg, &sig).unwrap();
+
+        assert_eq!(pub_key.verify(msg, &sig), Ok(()));
+
+        // Make sure we match what ring expects.
+        let ring_key = ring::signature::Ed25519KeyPair::from_pkcs8(ED25519_1_PK8).unwrap();
+        assert_eq!(key.public().as_bytes(), ring_key.public_key().as_ref());
+        assert_eq!(sig.value().as_bytes(), ring_key.sign(msg).as_ref());
+
+        // Make sure verification fails with the wrong key.
+        let bad_pub_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
+            .unwrap()
+            .public()
+            .clone();
+
+        assert_eq!(bad_pub_key.verify(msg, &sig), Err(Error::BadSignature));
     }
 
     #[test]
@@ -893,14 +951,18 @@ mod test {
 
     #[test]
     fn serde_ed25519_public_key() {
-        let der = ED25519_SPKI;
-        let pub_key = PublicKey::from_spki(der, SignatureScheme::Ed25519).unwrap();
+        let pub_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+            .unwrap()
+            .public()
+            .clone();
+
+        let pub_key = PublicKey::from_ed25519(pub_key.as_bytes().to_vec()).unwrap();
         let encoded = serde_json::to_value(&pub_key).unwrap();
         let jsn = json!({
             "keytype": "ed25519",
             "scheme": "ed25519",
             "keyval": {
-                "public": BASE64URL.encode(der),
+                "public": HEXLOWER.encode(pub_key.as_bytes()),
             }
         });
         assert_eq!(encoded, jsn);
@@ -910,12 +972,12 @@ mod test {
 
     #[test]
     fn serde_signature() {
-        let key = PrivateKey::from_pkcs8(ED25519_PK8, SignatureScheme::Ed25519).unwrap();
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let msg = b"test";
         let sig = key.sign(msg).unwrap();
         let encoded = serde_json::to_value(&sig).unwrap();
         let jsn = json!({
-            "keyid": "218407c5b325798364fb331db730565604eeae7760fa09538584ad2290769731",
+            "keyid": "e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554",
             "sig": "fe4d13b2a73c033a1de7f5107b205fc7ba0e1566cb95b92349cae6aa453\
                 8956013bfe0f7bf977cb072bb65e8782b5f33a0573fe78816299a017ca5ba55\
                 9e390c",
