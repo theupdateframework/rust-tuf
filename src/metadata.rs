@@ -2136,7 +2136,7 @@ mod test {
             "signatures": [
                 {
                     "keyid": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-                    "value": "LpLKsO8-X6-u8KN2130IEWMr4lcp7nt-fEHErwdZlQQGFB0Vmz6MUDNlNZJxSBgBU9\
+                    "sig": "LpLKsO8-X6-u8KN2130IEWMr4lcp7nt-fEHErwdZlQQGFB0Vmz6MUDNlNZJxSBgBU9\
                         LZ2vyolgyfyRjGgDDIAw==",
                 }
             ],
