@@ -110,67 +110,57 @@ pub fn calculate_hashes<R: Read>(
     Ok((size, hashes))
 }
 
-fn calculate_key_id(public_key: &[u8]) -> KeyId {
+fn shim_public_key(
+    key_type: &KeyType,
+    signature_scheme: &SignatureScheme,
+    public_key: &[u8],
+) -> ::std::result::Result<shims::PublicKey, derp::Error> {
+    let bytes = write_spki(public_key, &key_type)?;
+    let key = BASE64URL.encode(&bytes);
+
+    Ok(shims::PublicKey::new(key_type.clone(), signature_scheme.clone(), key))
+}
+
+fn calculate_key_id(
+    key_type: &KeyType,
+    signature_scheme: &SignatureScheme,
+    public_key: &[u8],
+) -> Result<KeyId> {
+    use crate::interchange::{DataInterchange, Json};
+
+    let public_key = shim_public_key(key_type, signature_scheme, public_key)?;
+    let public_key = Json::canonicalize(&Json::serialize(&public_key)?)?;
     let mut context = digest::Context::new(&SHA256);
     context.update(&public_key);
-    KeyId(context.finish().as_ref().to_vec())
+
+    let key_id = HEXLOWER.encode(context.finish().as_ref());
+
+    Ok(KeyId(key_id))
 }
 
 /// Wrapper type for public key's ID.
 ///
 /// # Calculating
-/// A `KeyId` is calculated as `sha256(spki(pub_key_bytes))` where `spki` is a function that takes
-/// any encoding for a public key an converts it into the `SubjectPublicKeyInfo` (SPKI) DER
-/// encoding as defined in [RFC 3280 Appendix A](https://www.ietf.org/rfc/rfc3280.txt).
-///
-/// Note: Historically the TUF spec says that a key's ID should be calculated with
-/// `sha256(cjson(encoded(pub_key_bytes)))`, but since there could be multiple supported data
-/// interchange formats, relying on an encoding that uses JSON does not make sense.
-///
-/// # ASN.1
-/// ```bash
-/// PublicKey ::= CHOICE {
-///     -- This field is checked for consistency against `subjectPublicKey`.
-///     -- The OID determines how we attempt to parse the `BIT STRING`.
-///     algorithm        AlgorithmIdentifier,
-///     -- Either:
-///     --   1. Encapsulates an `RsaPublicKey`
-///     --   2. Equals an `Ed25519PublicKey`
-///     subjectPublicKey BIT STRING
-/// }
-///
-/// AlgorithmIdentifier ::= SEQUENCE {
-///     -- Either:
-///     --   1. 1.2.840.113549.1.1.1 rsaEncryption(PKCS #1)
-///     --   2. 1.3.101.112 curveEd25519(EdDSA 25519 signature algorithm)
-///     algorithm  OBJECT IDENTIFIER,
-///     -- In our cases, this is always `NULL`.
-///     parameters ANY DEFINED BY algorithm OPTIONAL
-/// }
-///
-/// RsaPublicKey ::= SEQUENCE {
-///     modulus  INTEGER (1..MAX),
-///     exponent INTEGER (1..MAX)
-/// }
-///
-/// Ed25519PublicKey ::= BIT STRING
-/// ```
+/// A `KeyId` is calculated as the hex digest of the SHA-256 hash of the canonical form of the
+/// public key, or `hexdigest(sha256(cjson(public_key)))`.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct KeyId(Vec<u8>);
+pub struct KeyId(String);
 
-impl KeyId {
-    /// Parse a key ID from a base64url string.
-    pub fn from_string(string: &str) -> Result<Self> {
-        if string.len() != 44 {
-            return Err(Error::IllegalArgument("Base64 key ID must be 44 characters long".into()));
+impl FromStr for KeyId {
+    type Err = Error;
+
+    /// Parse a key ID from a string.
+    fn from_str(string: &str) -> Result<Self> {
+        if string.len() != 64 {
+            return Err(Error::IllegalArgument("key ID must be 64 characters long".into()));
         }
-        Ok(KeyId(BASE64URL.decode(string.as_bytes())?))
+        Ok(KeyId(string.to_owned()))
     }
 }
 
 impl Debug for KeyId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "KeyId {{ \"{}\" }}", BASE64URL.encode(&self.0))
+        write!(f, "KeyId {{ \"{}\" }}", self.0)
     }
 }
 
@@ -179,14 +169,14 @@ impl Serialize for KeyId {
     where
         S: Serializer,
     {
-        BASE64URL.encode(&self.0).serialize(ser)
+        self.0.serialize(ser)
     }
 }
 
 impl<'de> Deserialize<'de> for KeyId {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let string: String = Deserialize::deserialize(de)?;
-        KeyId::from_string(&string).map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        KeyId::from_str(&string).map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -400,12 +390,11 @@ impl PrivateKey {
         let key = Ed25519KeyPair::from_pkcs8(der_key)
             .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
 
-        let public = PublicKey {
-            typ: KeyType::Ed25519,
-            scheme: SignatureScheme::Ed25519,
-            key_id: calculate_key_id(&write_spki(key.public_key().as_ref(), &KeyType::Ed25519)?),
-            value: PublicKeyValue(key.public_key().as_ref().to_vec()),
-        };
+        let public = PublicKey::new(
+            KeyType::Ed25519,
+            SignatureScheme::Ed25519,
+            key.public_key().as_ref().to_vec(),
+        )?;
         let private = PrivateKeyType::Ed25519(key);
 
         Ok(PrivateKey { private, public })
@@ -430,12 +419,7 @@ impl PrivateKey {
 
         let pub_key = extract_rsa_pub_from_pkcs8(der_key)?;
 
-        let public = PublicKey {
-            typ: KeyType::Rsa,
-            scheme,
-            key_id: calculate_key_id(&write_spki(&pub_key, &KeyType::Rsa)?),
-            value: PublicKeyValue(pub_key),
-        };
+        let public = PublicKey::new(KeyType::Rsa, scheme, pub_key)?;
         let private = PrivateKeyType::Rsa(Arc::new(key));
 
         Ok(PrivateKey { private, public })
@@ -522,6 +506,12 @@ pub struct PublicKey {
 }
 
 impl PublicKey {
+    fn new(typ: KeyType, scheme: SignatureScheme, value: Vec<u8>) -> Result<Self> {
+        let key_id = calculate_key_id(&typ, &scheme, &value)?;
+        let value = PublicKeyValue(value);
+        Ok(PublicKey { typ, key_id, scheme, value })
+    }
+
     /// Parse DER bytes as an SPKI key.
     ///
     /// See the documentation on `KeyValue` for more information on SPKI.
@@ -545,8 +535,7 @@ impl PublicKey {
             })
         })?;
 
-        let key_id = calculate_key_id(der_bytes);
-        Ok(PublicKey { typ, key_id, scheme, value: PublicKeyValue(value) })
+        Self::new(typ, scheme, value)
     }
 
     /// Write the public key as SPKI DER bytes.
@@ -620,13 +609,9 @@ impl Serialize for PublicKey {
     where
         S: Serializer,
     {
-        let bytes = self
-            .as_spki()
+        let key = shim_public_key(&self.typ, &self.scheme, &self.value.0)
             .map_err(|e| SerializeError::custom(format!("Couldn't write key as SPKI: {:?}", e)))?;
-
-        let key = BASE64URL.encode(&bytes);
-
-        shims::PublicKey::new(self.typ.clone(), self.scheme.clone(), key).serialize(ser)
+        key.serialize(ser)
     }
 }
 
@@ -871,10 +856,10 @@ mod test {
 
     #[test]
     fn serde_key_id() {
-        let s = "T5vfRrM1iHpgzGwAHe7MbJH_7r4chkOAphV3OPCCv0I=";
+        let s = "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db";
         let jsn = json!(s);
         let parsed: KeyId = serde_json::from_str(&format!("\"{}\"", s)).unwrap();
-        assert_eq!(parsed, KeyId::from_string(s).unwrap());
+        assert_eq!(parsed, KeyId::from_str(s).unwrap());
         let encoded = serde_json::to_value(&parsed).unwrap();
         assert_eq!(encoded, jsn);
     }
@@ -930,12 +915,11 @@ mod test {
         let sig = key.sign(msg).unwrap();
         let encoded = serde_json::to_value(&sig).unwrap();
         let jsn = json!({
-            "keyid": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
+            "keyid": "218407c5b325798364fb331db730565604eeae7760fa09538584ad2290769731",
             "sig": "fe4d13b2a73c033a1de7f5107b205fc7ba0e1566cb95b92349cae6aa453\
                 8956013bfe0f7bf977cb072bb65e8782b5f33a0573fe78816299a017ca5ba55\
                 9e390c",
-            }
-        );
+        });
         assert_eq!(encoded, jsn);
 
         let decoded: Signature = serde_json::from_value(encoded).unwrap();

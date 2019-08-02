@@ -1748,6 +1748,7 @@ mod test {
     use maplit::{hashmap, hashset};
     use pretty_assertions::assert_eq;
     use serde_json::json;
+    use std::str::FromStr;
 
     const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
@@ -1845,19 +1846,19 @@ mod test {
     #[test]
     fn serde_role_definition() {
         let hashes = hashset!(
-            "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
-            "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
+            "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
+            "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
         )
         .iter()
-        .map(|k| KeyId::from_string(*k).unwrap())
+        .map(|k| KeyId::from_str(*k).unwrap())
         .collect();
         let role_def = RoleDefinition::new(2, hashes).unwrap();
         let jsn = json!({
             "threshold": 2,
             "keyids": [
                 // these need to be sorted for determinism
-                "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
-                "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+                "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
+                "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
             ],
         });
         let encoded = serde_json::to_value(&role_def).unwrap();
@@ -1868,7 +1869,8 @@ mod test {
         let jsn = json!({
             "threshold": 0,
             "keyids": [
-                "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+                "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
+                "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
             ],
         });
         assert!(serde_json::from_value::<RoleDefinition>(jsn).is_err());
@@ -1876,7 +1878,8 @@ mod test {
         let jsn = json!({
             "threshold": -1,
             "keyids": [
-                "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+                "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
+                "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
             ],
         });
         assert!(serde_json::from_value::<RoleDefinition>(jsn).is_err());
@@ -1905,55 +1908,51 @@ mod test {
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
             "keys": {
-                "4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o=": {
+                "218407c5b325798364fb331db730565604eeae7760fa09538584ad2290769731": {
                     "keytype": "ed25519",
                     "scheme": "ed25519",
                     "keyval": {
-                        "public": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQ\
-                            vtGgZ_8giaAwL7q3PQ==",
+                        "public": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb-WO5CJQDTjK9GHGWjtg==",
                     },
                 },
-                "5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs=": {
+                "256e4ce533b211a249076d551b110cd13ae0b21474bddd14276da3d99cf87c18": {
                     "keytype": "ed25519",
                     "scheme": "ed25519",
                     "keyval": {
-                        "public": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao\
-                            _NhZ1_7zzCKL8rKzsg==",
+                        "public": "MCwwBwYDK2VwBQADIQAUEK4wU6pwu_qYQoqHnWTTACo1ePffquscsHZOhg9-Cw==",
                     },
                 },
-                "C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw=": {
+                "5d289e84203c7b42cb636ea1d0a8bd620bde9c21dfee3f2e5cf584d0fe97b368": {
                     "keytype": "ed25519",
                     "scheme": "ed25519",
                     "keyval": {
-                        "public": "MCwwBwYDK2VwBQADIQAUEK4wU6pwu_qYQoqHnWTTACo1\
-                            ePffquscsHZOhg9-Cw==",
+                        "public": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao_NhZ1_7zzCKL8rKzsg==",
                     },
                 },
-                "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
+                "d41ab60869f0ea8c605585cc1783678d27755458b630cf062cb2fa212f5a117d": {
                     "keytype": "ed25519",
                     "scheme": "ed25519",
                     "keyval": {
-                        "public": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb-\
-                            WO5CJQDTjK9GHGWjtg==",
+                        "public": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQvtGgZ_8giaAwL7q3PQ==",
                     },
                 }
             },
             "roles": {
                 "root": {
                     "threshold": 1,
-                    "keyids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
+                    "keyids": ["218407c5b325798364fb331db730565604eeae7760fa09538584ad2290769731"],
                 },
                 "snapshot": {
                     "threshold": 1,
-                    "keyids": ["5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs="],
+                    "keyids": ["5d289e84203c7b42cb636ea1d0a8bd620bde9c21dfee3f2e5cf584d0fe97b368"],
                 },
                 "targets": {
                     "threshold": 1,
-                    "keyids": ["4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o="],
+                    "keyids": ["d41ab60869f0ea8c605585cc1783678d27755458b630cf062cb2fa212f5a117d"],
                 },
                 "timestamp": {
                     "threshold": 1,
-                    "keyids": ["C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw="],
+                    "keyids": ["256e4ce533b211a249076d551b110cd13ae0b21474bddd14276da3d99cf87c18"],
                 },
             },
         });
@@ -2095,7 +2094,7 @@ mod test {
             "targets": {},
             "delegations": {
                 "keys": {
-                    "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
+                    "218407c5b325798364fb331db730565604eeae7760fa09538584ad2290769731": {
                         "keytype": "ed25519",
                         "scheme": "ed25519",
                         "keyval": {
@@ -2109,7 +2108,7 @@ mod test {
                         "role": "foo/bar",
                         "terminating": false,
                         "threshold": 1,
-                        "keyids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
+                        "keyids": ["218407c5b325798364fb331db730565604eeae7760fa09538584ad2290769731"],
                         "paths": ["baz/quux"],
                     },
                 ],
@@ -2145,10 +2144,10 @@ mod test {
         let jsn = json!({
             "signatures": [
                 {
-                    "keyid": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-                    "sig": "2e92cab0ef3e5fafaef0a376d77d0811632be25729ee7b7e7c\
-                        41c4af0759950406141d159b3e8c50336535927148180153d2d9da\
-                        fca8960c9fc918c68030c803",
+                    "keyid": "218407c5b325798364fb331db730565604eeae7760fa09538584ad2290769731",
+                    "sig": "2e92cab0ef3e5fafaef0a376d77d0811632be25729ee7b7e7c4\
+                        1c4af0759950406141d159b3e8c50336535927148180153d2d9dafc\
+                        a8960c9fc918c68030c803",
                 }
             ],
             "signed": {
