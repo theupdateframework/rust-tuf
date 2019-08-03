@@ -857,7 +857,7 @@ impl MetadataPath {
     ///            ["foo".to_string(), "1.bar.json".to_string()]);
     /// assert_eq!(path.components::<Json>(
     ///                 &MetadataVersion::Hash(HashValue::new(vec![0x69, 0xb7, 0x1d]))),
-    ///            ["foo".to_string(), "abcd.bar.json".to_string()]);
+    ///            ["foo".to_string(), "69b71d.bar.json".to_string()]);
     /// ```
     pub fn components<D>(&self, version: &MetadataVersion) -> Vec<String>
     where
@@ -1835,7 +1835,8 @@ mod test {
         let jsn = json!({
             "length": 30,
             "hashes": {
-                "sha256": "_F10XHEryG6poxJk2sDJVu61OFf2d-7QWCm7cQE8rhg=",
+                "sha256": "fc5d745c712bc86ea9a31264dac0c956eeb53857f677eed05829\
+                    bb71013cae18",
             },
         });
         let parsed_str: TargetDescription = serde_json::from_str(&jsn_str).unwrap();
@@ -2046,7 +2047,8 @@ mod test {
                 "foo": {
                     "length": 3,
                     "hashes": {
-                        "sha256": "LCa0a2j_xo_5m0U8HTBBNBNCLXBkg7-g-YpeiGJm564=",
+                        "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                            bfa0f98a5e886266e7ae",
                     },
                 },
             },
@@ -2136,8 +2138,9 @@ mod test {
             "signatures": [
                 {
                     "keyid": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-                    "sig": "LpLKsO8-X6-u8KN2130IEWMr4lcp7nt-fEHErwdZlQQGFB0Vmz6MUDNlNZJxSBgBU9\
-                        LZ2vyolgyfyRjGgDDIAw==",
+                    "sig": "2e92cab0ef3e5fafaef0a376d77d0811632be25729ee7b7e7c\
+                        41c4af0759950406141d159b3e8c50336535927148180153d2d9da\
+                        fca8960c9fc918c68030c803",
                 }
             ],
             "signed": {
