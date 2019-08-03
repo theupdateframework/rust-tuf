@@ -298,26 +298,21 @@ impl Delegation {
 
 #[derive(Serialize, Deserialize)]
 pub struct Delegations {
-    keys: Vec<crypto::PublicKey>,
+    #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
+    keys: BTreeMap<crypto::KeyId, crypto::PublicKey>,
     roles: Vec<metadata::Delegation>,
 }
 
 impl Delegations {
     pub fn from(delegations: &metadata::Delegations) -> Delegations {
-        let mut keys =
-            delegations.keys().iter().map(|(_, k)| k.clone()).collect::<Vec<crypto::PublicKey>>();
-        keys.sort();
-
-        Delegations { keys, roles: delegations.roles().clone() }
+        Delegations {
+            keys: delegations.keys().iter().map(|(id, key)| (id.clone(), key.clone())).collect(),
+            roles: delegations.roles().clone(),
+        }
     }
 
-    pub fn try_into(mut self) -> Result<metadata::Delegations> {
-        let keys_len = self.keys.len();
-        let keys = self.keys.drain(..).collect::<HashSet<crypto::PublicKey>>();
-        if keys.len() != keys_len {
-            return Err(Error::Encoding("Cannot have duplicate keys".into()));
-        }
-        metadata::Delegations::new(&keys, self.roles)
+    pub fn try_into(self) -> Result<metadata::Delegations> {
+        metadata::Delegations::new(self.keys.into_iter().collect(), self.roles)
     }
 }
 
