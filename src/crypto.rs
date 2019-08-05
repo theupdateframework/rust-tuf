@@ -170,7 +170,7 @@ impl KeyId {
 
 impl Debug for KeyId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "KeyId {{ \"{}\" }}", BASE64URL.encode(&self.0))
+        f.debug_tuple("KeyId").field(&BASE64URL.encode(&self.0)).finish()
     }
 }
 
@@ -228,7 +228,7 @@ impl SignatureValue {
 
 impl Debug for SignatureValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "SignatureValue {{ \"{}\" }}", HEXLOWER.encode(&self.0))
+        f.debug_tuple("SignatureValue").field(&HEXLOWER.encode(&self.0)).finish()
     }
 }
 
@@ -310,10 +310,10 @@ enum PrivateKeyType {
 impl Debug for PrivateKeyType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match *self {
-            PrivateKeyType::Ed25519(_) => "ed25519",
-            PrivateKeyType::Rsa(_) => "rsa",
+            PrivateKeyType::Ed25519(_) => "Ed25519",
+            PrivateKeyType::Rsa(_) => "Rsa",
         };
-        write!(f, "PrivateKeyType {{ \"{}\" }}", s)
+        f.debug_tuple(s).field(&"_").finish()
     }
 }
 
@@ -656,7 +656,7 @@ struct PublicKeyValue(Vec<u8>);
 
 impl Debug for PublicKeyValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PublicKeyValue {{ \"{}\" }}", BASE64URL.encode(&self.0))
+        f.debug_tuple("PublicKeyValue").field(&BASE64URL.encode(&self.0)).finish()
     }
 }
 
@@ -712,7 +712,7 @@ impl HashValue {
 
 impl Debug for HashValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "HashValue {{ \"{}\" }}", HEXLOWER.encode(&self.0))
+        f.debug_tuple("HashValue").field(&HEXLOWER.encode(&self.0)).finish()
     }
 }
 
