@@ -68,8 +68,7 @@ impl RootMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!(
-                "Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
         }
 
         metadata::RootMetadata::new(
@@ -132,7 +131,8 @@ pub struct TimestampMetadata {
     spec_version: String,
     version: u32,
     expires: String,
-    snapshot: metadata::MetadataDescription,
+    #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
+    meta: BTreeMap<metadata::MetadataPath, metadata::MetadataDescription>,
 }
 
 impl TimestampMetadata {
@@ -142,27 +142,26 @@ impl TimestampMetadata {
             spec_version: SPEC_VERSION.to_string(),
             version: metadata.version(),
             expires: format_datetime(metadata.expires()),
-            snapshot: metadata.snapshot().clone(),
+            meta: metadata.meta().iter().map(|(p, d)| (p.clone(), d.clone())).collect(),
         })
     }
 
     pub fn try_into(self) -> Result<metadata::TimestampMetadata> {
         if self.typ != metadata::Role::Timestamp {
             return Err(Error::Encoding(format!(
-                "Attempted to decode datetime metdata labeled as {:?}",
+                "Attempted to decode timestamp metdata labeled as {:?}",
                 self.typ
             )));
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!(
-                "Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
         }
 
         metadata::TimestampMetadata::new(
             self.version,
             parse_datetime(&self.expires)?,
-            self.snapshot,
+            self.meta.into_iter().collect(),
         )
     }
 }
@@ -198,8 +197,7 @@ impl SnapshotMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!(
-                "Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
         }
 
         metadata::SnapshotMetadata::new(
@@ -243,8 +241,7 @@ impl TargetsMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!(
-                "Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
         }
 
         metadata::TargetsMetadata::new(

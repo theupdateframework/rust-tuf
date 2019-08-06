@@ -936,7 +936,10 @@ impl TimestampMetadataBuilder {
 
     /// Construct a new `TimestampMetadata`.
     pub fn build(self) -> Result<TimestampMetadata> {
-        TimestampMetadata::new(self.version, self.expires, self.snapshot)
+        let mut meta = HashMap::new();
+        meta.insert(MetadataPath::from_role(&Role::Snapshot), self.snapshot);
+
+        TimestampMetadata::new(self.version, self.expires, meta)
     }
 
     /// Construct a new `SignedMetadata<D, TimestampMetadata>`.
@@ -953,7 +956,7 @@ impl TimestampMetadataBuilder {
 pub struct TimestampMetadata {
     version: u32,
     expires: DateTime<Utc>,
-    snapshot: MetadataDescription,
+    meta: HashMap<MetadataPath, MetadataDescription>,
 }
 
 impl TimestampMetadata {
@@ -961,7 +964,7 @@ impl TimestampMetadata {
     pub fn new(
         version: u32,
         expires: DateTime<Utc>,
-        snapshot: MetadataDescription,
+        meta: HashMap<MetadataPath, MetadataDescription>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
@@ -970,12 +973,12 @@ impl TimestampMetadata {
             )));
         }
 
-        Ok(TimestampMetadata { version, expires, snapshot })
+        Ok(TimestampMetadata { version, expires, meta })
     }
 
-    /// An immutable reference to the snapshot description.
-    pub fn snapshot(&self) -> &MetadataDescription {
-        &self.snapshot
+    /// An immutable reference to the metadata paths and descriptions.
+    pub fn meta(&self) -> &HashMap<MetadataPath, MetadataDescription> {
+        &self.meta
     }
 }
 
@@ -1975,13 +1978,15 @@ mod test {
             "spec_version": "1.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
-            "snapshot": {
-                "version": 1,
-                "length": 100,
-                "hashes": {
-                    "sha256": "",
+            "meta": {
+                "snapshot": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": "",
+                    },
                 },
-            },
+            }
         });
 
         let encoded = serde_json::to_value(&timestamp).unwrap();
@@ -2516,6 +2521,37 @@ mod test {
         let mut timestamp = make_timestamp();
         let _ = timestamp.as_object_mut().unwrap().insert("spec_version".into(), json!("0"));
         assert!(serde_json::from_value::<TimestampMetadata>(timestamp).is_err());
+    }
+
+    // Refuse to deserialize timestamp metadata if it contains duplicate metadata
+    #[test]
+    fn deserialize_json_timestamp_duplicate_metadata() {
+        let timestamp_json = r#"{
+            "_type": "timestamp",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "snapshot": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": ""
+                    }
+                },
+                "snapshot": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": ""
+                    }
+                }
+            }
+        }"#;
+        match serde_json::from_str::<TimestampMetadata>(timestamp_json) {
+            Err(ref err) if err.is_data() => {}
+            result => panic!("unexpected result: {:?}", result),
+        }
     }
 
     // Refuse to deserialize targets metadata with illegal versions
