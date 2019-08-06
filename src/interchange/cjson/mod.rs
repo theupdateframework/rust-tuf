@@ -9,6 +9,8 @@ use crate::Result;
 use crate::error::{Error};
 use crate::interchange::DataInterchange;
 
+pub(crate) mod shims;
+
 /// JSON data interchange.
 ///
 /// # Schema
