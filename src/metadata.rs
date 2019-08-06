@@ -2303,7 +2303,7 @@ mod test {
     #[test]
     fn deserialize_json_root_duplicate_keys() {
         let root_json = r#"{
-            "type": "root",
+            "_type": "root",
             "spec_version": "1.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
