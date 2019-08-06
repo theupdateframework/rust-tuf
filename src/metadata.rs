@@ -2459,6 +2459,37 @@ mod test {
         assert!(serde_json::from_value::<SnapshotMetadata>(snapshot).is_err());
     }
 
+    // Refuse to deserialize snapshot metadata if it contains duplicate metadata
+    #[test]
+    fn deserialize_json_snapshot_duplicate_metadata() {
+        let snapshot_json = r#"{
+            "_type": "snapshot",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "targets": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": ""
+                    }
+                },
+                "targets": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": ""
+                    }
+                }
+            }
+        }"#;
+        match serde_json::from_str::<SnapshotMetadata>(snapshot_json) {
+            Err(ref err) if err.is_data() => {}
+            result => panic!("unexpected result: {:?}", result),
+        }
+    }
+
     // Refuse to deserialize timestamp metadata with illegal versions
     #[test]
     fn deserialize_json_timestamp_illegal_version() {

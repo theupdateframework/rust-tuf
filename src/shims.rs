@@ -174,6 +174,7 @@ pub struct SnapshotMetadata {
     spec_version: String,
     version: u32,
     expires: String,
+    #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
     meta: BTreeMap<metadata::MetadataPath, metadata::MetadataDescription>,
 }
 
