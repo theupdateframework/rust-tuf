@@ -870,9 +870,9 @@ impl MetadataPath {
     }
 }
 
-impl ToString for MetadataPath {
-    fn to_string(&self) -> String {
-        self.0.clone()
+impl Display for MetadataPath {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
@@ -1979,7 +1979,7 @@ mod test {
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
-                "snapshot": {
+                "snapshot.json": {
                     "version": 1,
                     "length": 100,
                     "hashes": {
@@ -2000,7 +2000,7 @@ mod test {
         let snapshot = SnapshotMetadataBuilder::new()
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
             .insert_metadata_description(
-                MetadataPath::new("foo".into()).unwrap(),
+                MetadataPath::new("targets".into()).unwrap(),
                 MetadataDescription::new(
                     1,
                     100,
@@ -2017,7 +2017,7 @@ mod test {
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
-                "foo": {
+                "targets.json": {
                     "version": 1,
                     "length": 100,
                     "hashes": {
@@ -2126,7 +2126,7 @@ mod test {
         let snapshot = SnapshotMetadataBuilder::new()
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
             .insert_metadata_description(
-                MetadataPath::new("foo".into()).unwrap(),
+                MetadataPath::new("targets".into()).unwrap(),
                 MetadataDescription::new(
                     1,
                     100,
@@ -2145,9 +2145,9 @@ mod test {
             "signatures": [
                 {
                     "keyid": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-                    "sig": "6af7a8b13ea4ab59e6483490c8bb7ac1dec7354042c00bbc84\
-                        e0df928ffccfc8654f41191c438efb2bf6f7f44f57750eebde0893\
-                        cbe64eb8073132017937770b",
+                    "sig": "ea48ddc7b3ea614b394e508eb8722100f94ff1a4e3aac3af09d\
+                        a0dada4f878431e8ac26160833405ec239924dfe62edf605fee8294\
+                        c49b4acade55c76e817602",
                 }
             ],
             "signed": {
@@ -2156,7 +2156,7 @@ mod test {
                 "version": 1,
                 "expires": "2017-01-01T00:00:00Z",
                 "meta": {
-                    "foo": {
+                    "targets.json": {
                         "version": 1,
                         "length": 100,
                         "hashes": {
@@ -2473,14 +2473,14 @@ mod test {
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
-                "targets": {
+                "targets.json": {
                     "version": 1,
                     "length": 100,
                     "hashes": {
                         "sha256": ""
                     }
                 },
-                "targets": {
+                "targets.json": {
                     "version": 1,
                     "length": 100,
                     "hashes": {
@@ -2532,14 +2532,14 @@ mod test {
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
-                "snapshot": {
+                "snapshot.json": {
                     "version": 1,
                     "length": 100,
                     "hashes": {
                         "sha256": ""
                     }
                 },
-                "snapshot": {
+                "snapshot.json": {
                     "version": 1,
                     "length": 100,
                     "hashes": {

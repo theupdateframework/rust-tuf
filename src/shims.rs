@@ -132,7 +132,7 @@ pub struct TimestampMetadata {
     version: u32,
     expires: String,
     #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
-    meta: BTreeMap<metadata::MetadataPath, metadata::MetadataDescription>,
+    meta: BTreeMap<String, metadata::MetadataDescription>,
 }
 
 impl TimestampMetadata {
@@ -142,7 +142,7 @@ impl TimestampMetadata {
             spec_version: SPEC_VERSION.to_string(),
             version: metadata.version(),
             expires: format_datetime(metadata.expires()),
-            meta: metadata.meta().iter().map(|(p, d)| (p.clone(), d.clone())).collect(),
+            meta: metadata.meta().iter().map(|(p, d)| (format!("{}.json", p), d.clone())).collect(),
         })
     }
 
@@ -161,7 +161,16 @@ impl TimestampMetadata {
         metadata::TimestampMetadata::new(
             self.version,
             parse_datetime(&self.expires)?,
-            self.meta.into_iter().collect(),
+            self.meta.into_iter().map(|(p, d)| {
+                if !p.ends_with(".json") {
+                    return Err(Error::Encoding(format!("Metadata does not end with .json: {}", p)));
+                }
+
+                let s = p.split_at(p.len() - ".json".len()).0.into();
+                let p = metadata::MetadataPath::new(s)?;
+
+                Ok((p, d))
+            }).collect::<Result<_>>()?,
         )
     }
 }
@@ -174,7 +183,7 @@ pub struct SnapshotMetadata {
     version: u32,
     expires: String,
     #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
-    meta: BTreeMap<metadata::MetadataPath, metadata::MetadataDescription>,
+    meta: BTreeMap<String, metadata::MetadataDescription>,
 }
 
 impl SnapshotMetadata {
@@ -184,7 +193,7 @@ impl SnapshotMetadata {
             spec_version: SPEC_VERSION.to_string(),
             version: metadata.version(),
             expires: format_datetime(&metadata.expires()),
-            meta: metadata.meta().iter().map(|(p, d)| (p.clone(), d.clone())).collect(),
+            meta: metadata.meta().iter().map(|(p, d)| (format!("{}.json", p), d.clone())).collect(),
         })
     }
 
@@ -203,7 +212,16 @@ impl SnapshotMetadata {
         metadata::SnapshotMetadata::new(
             self.version,
             parse_datetime(&self.expires)?,
-            self.meta.into_iter().collect(),
+            self.meta.into_iter().map(|(p, d)| {
+                if !p.ends_with(".json") {
+                    return Err(Error::Encoding(format!("Metadata does not end with .json: {}", p)));
+                }
+
+                let s = p.split_at(p.len() - ".json".len()).0.into();
+                let p = metadata::MetadataPath::new(s)?;
+
+                Ok((p, d))
+            }).collect::<Result<_>>()?,
         )
     }
 }
