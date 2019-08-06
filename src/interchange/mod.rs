@@ -114,7 +114,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///
 /// ```bash
 /// {
-///   "key_id": KEY_ID,
+///   "keyid": KEY_ID,
 ///   "signature": SIG_VALUE
 /// }
 /// ```
@@ -132,7 +132,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///
 /// ```bash
 /// {
-///   "type": "root",
+///   "_type": "root",
 ///   "version": NATURAL_NUMBER,
 ///   "expires": EXPIRES,
 ///   "keys": [PUB_KEY, ...]
@@ -150,7 +150,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 /// ```bash
 /// {
 ///   "threshold": NATURAL_NUMBER,
-///   "key_ids": [KEY_ID, ...]
+///   "keyids": [KEY_ID, ...]
 /// }
 /// ```
 ///
@@ -158,7 +158,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///
 /// ```bash
 /// {
-///   "type": "snapshot",
+///   "_type": "snapshot",
 ///   "version": NATURAL_NUMBER,
 ///   "expires": EXPIRES,
 ///   "meta": {
@@ -174,7 +174,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///
 /// ```bash
 /// {
-///   "type": "timestamp",
+///   "_type": "timestamp",
 ///   "version": NATURAL_NUMBER,
 ///   "expires": EXPIRES,
 ///   "targets": {
@@ -204,7 +204,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///   "name": ROLE,
 ///   "threshold": NATURAL_NUMBER,
 ///   "terminating": BOOLEAN,
-///   "key_ids": [KEY_ID, ...],
+///   "keyids": [KEY_ID, ...],
 ///   "paths": [PATH, ...]
 /// }
 /// ```
@@ -217,7 +217,7 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
 ///
 /// ```bash
 /// {
-///   "type": "timestamp",
+///   "_type": "timestamp",
 ///   "version": NATURAL_NUMBER,
 ///   "expires": EXPIRES,
 ///   "snapshot": METADATA_DESCRIPTION
