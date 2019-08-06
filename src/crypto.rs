@@ -191,8 +191,6 @@ pub enum SignatureScheme {
     /// [RSASSA-PSS](https://tools.ietf.org/html/rfc5756) calculated over SHA512
     #[serde(rename = "rsassa-pss-sha512")]
     RsaSsaPssSha512,
-    /// Placeholder for an unknown scheme.
-    Unknown(String),
 }
 
 /// Wrapper type for the value of a cryptographic signature.
@@ -233,8 +231,6 @@ pub enum KeyType {
     Ed25519,
     /// [RSA](https://en.wikipedia.org/wiki/RSA_%28cryptosystem%29)
     Rsa,
-    /// Placeholder for an unknown key type.
-    Unknown(String),
 }
 
 impl KeyType {
@@ -249,11 +245,10 @@ impl KeyType {
         }
     }
 
-    fn as_oid(&self) -> Result<&'static [u8]> {
+    fn as_oid(&self) -> &'static [u8] {
         match *self {
-            KeyType::Rsa => Ok(RSA_SPKI_OID),
-            KeyType::Ed25519 => Ok(ED25519_SPKI_OID),
-            KeyType::Unknown(ref s) => Err(Error::UnknownKeyType(s.clone())),
+            KeyType::Rsa => RSA_SPKI_OID,
+            KeyType::Ed25519 => ED25519_SPKI_OID,
         }
     }
 }
@@ -275,7 +270,6 @@ impl ToString for KeyType {
         match *self {
             KeyType::Ed25519 => "ed25519".to_string(),
             KeyType::Rsa => "rsa".to_string(),
-            KeyType::Unknown(ref s) => s.to_string(),
         }
     }
 }
@@ -327,7 +321,6 @@ impl PrivateKey {
                 .map(|bytes| bytes.as_ref().to_vec())
                 .map_err(|_| Error::Opaque("Failed to generate Ed25519 key".into())),
             KeyType::Rsa => Self::rsa_gen(),
-            KeyType::Unknown(s) => Err(Error::IllegalArgument(format!("Unknown key type: {}", s))),
         }
     }
 
@@ -583,9 +576,6 @@ impl PublicKey {
             SignatureScheme::Ed25519 => &ED25519,
             SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
             SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
-            SignatureScheme::Unknown(ref s) => {
-                return Err(Error::IllegalArgument(format!("Unknown signature scheme: {}", s)));
-            }
         };
 
         let key = ring::signature::UnparsedPublicKey::new(alg, &self.value.0);
@@ -753,12 +743,10 @@ fn write_spki(public: &[u8], key_type: &KeyType) -> ::std::result::Result<Vec<u8
     {
         let mut der = Der::new(&mut output);
         der.sequence(|der| {
-            der.sequence(|der| match key_type.as_oid().ok() {
-                Some(tag) => {
-                    der.element(Tag::Oid, tag)?;
-                    der.null()
-                }
-                None => Err(derp::Error::WrongValue),
+            der.sequence(|der| {
+                let tag = key_type.as_oid();
+                der.element(Tag::Oid, tag)?;
+                der.null()
             })?;
             der.bit_string(0, public)
         })?;
