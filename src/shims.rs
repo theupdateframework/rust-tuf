@@ -9,6 +9,8 @@ use crate::error::Error;
 use crate::metadata::{self, Metadata};
 use crate::Result;
 
+const SPEC_VERSION: &str = "1.0";
+
 fn parse_datetime(ts: &str) -> Result<DateTime<Utc>> {
     Utc.datetime_from_str(ts, "%FT%TZ")
         .map_err(|e| Error::Encoding(format!("Can't parse DateTime: {:?}", e)))
@@ -30,6 +32,7 @@ fn format_datetime(ts: &DateTime<Utc>) -> String {
 pub struct RootMetadata {
     #[serde(rename = "_type")]
     typ: metadata::Role,
+    spec_version: String,
     version: u32,
     consistent_snapshot: bool,
     expires: String,
@@ -42,6 +45,7 @@ impl RootMetadata {
     pub fn from(meta: &metadata::RootMetadata) -> Result<Self> {
         Ok(RootMetadata {
             typ: metadata::Role::Root,
+            spec_version: SPEC_VERSION.to_string(),
             version: meta.version(),
             expires: format_datetime(&meta.expires()),
             consistent_snapshot: meta.consistent_snapshot(),
@@ -61,6 +65,11 @@ impl RootMetadata {
                 "Attempted to decode root metdata labeled as {:?}",
                 self.typ
             )));
+        }
+
+        if self.spec_version != SPEC_VERSION {
+            return Err(Error::Encoding(format!(
+                "Unknown spec version {}", self.spec_version)));
         }
 
         metadata::RootMetadata::new(
@@ -120,6 +129,7 @@ impl RoleDefinition {
 pub struct TimestampMetadata {
     #[serde(rename = "_type")]
     typ: metadata::Role,
+    spec_version: String,
     version: u32,
     expires: String,
     snapshot: metadata::MetadataDescription,
@@ -129,6 +139,7 @@ impl TimestampMetadata {
     pub fn from(metadata: &metadata::TimestampMetadata) -> Result<Self> {
         Ok(TimestampMetadata {
             typ: metadata::Role::Timestamp,
+            spec_version: SPEC_VERSION.to_string(),
             version: metadata.version(),
             expires: format_datetime(metadata.expires()),
             snapshot: metadata.snapshot().clone(),
@@ -143,6 +154,11 @@ impl TimestampMetadata {
             )));
         }
 
+        if self.spec_version != SPEC_VERSION {
+            return Err(Error::Encoding(format!(
+                "Unknown spec version {}", self.spec_version)));
+        }
+
         metadata::TimestampMetadata::new(
             self.version,
             parse_datetime(&self.expires)?,
@@ -155,6 +171,7 @@ impl TimestampMetadata {
 pub struct SnapshotMetadata {
     #[serde(rename = "_type")]
     typ: metadata::Role,
+    spec_version: String,
     version: u32,
     expires: String,
     meta: BTreeMap<metadata::MetadataPath, metadata::MetadataDescription>,
@@ -164,6 +181,7 @@ impl SnapshotMetadata {
     pub fn from(metadata: &metadata::SnapshotMetadata) -> Result<Self> {
         Ok(SnapshotMetadata {
             typ: metadata::Role::Snapshot,
+            spec_version: SPEC_VERSION.to_string(),
             version: metadata.version(),
             expires: format_datetime(&metadata.expires()),
             meta: metadata.meta().iter().map(|(p, d)| (p.clone(), d.clone())).collect(),
@@ -178,6 +196,11 @@ impl SnapshotMetadata {
             )));
         }
 
+        if self.spec_version != SPEC_VERSION {
+            return Err(Error::Encoding(format!(
+                "Unknown spec version {}", self.spec_version)));
+        }
+
         metadata::SnapshotMetadata::new(
             self.version,
             parse_datetime(&self.expires)?,
@@ -190,6 +213,7 @@ impl SnapshotMetadata {
 pub struct TargetsMetadata {
     #[serde(rename = "_type")]
     typ: metadata::Role,
+    spec_version: String,
     version: u32,
     expires: String,
     targets: BTreeMap<metadata::VirtualTargetPath, metadata::TargetDescription>,
@@ -201,6 +225,7 @@ impl TargetsMetadata {
     pub fn from(metadata: &metadata::TargetsMetadata) -> Result<Self> {
         Ok(TargetsMetadata {
             typ: metadata::Role::Targets,
+            spec_version: SPEC_VERSION.to_string(),
             version: metadata.version(),
             expires: format_datetime(&metadata.expires()),
             targets: metadata.targets().iter().map(|(p, d)| (p.clone(), d.clone())).collect(),
@@ -214,6 +239,11 @@ impl TargetsMetadata {
                 "Attempted to decode targets metdata labeled as {:?}",
                 self.typ
             )));
+        }
+
+        if self.spec_version != SPEC_VERSION {
+            return Err(Error::Encoding(format!(
+                "Unknown spec version {}", self.spec_version)));
         }
 
         metadata::TargetsMetadata::new(
