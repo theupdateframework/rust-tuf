@@ -68,8 +68,7 @@ impl RootMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!(
-                "Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
         }
 
         metadata::RootMetadata::new(
@@ -155,8 +154,7 @@ impl TimestampMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!(
-                "Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
         }
 
         metadata::TimestampMetadata::new(
@@ -197,8 +195,7 @@ impl SnapshotMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!(
-                "Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
         }
 
         metadata::SnapshotMetadata::new(
@@ -242,8 +239,7 @@ impl TargetsMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!(
-                "Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
         }
 
         metadata::TargetsMetadata::new(
@@ -346,15 +342,29 @@ impl Delegations {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct TargetDescription {
     length: u64,
     hashes: BTreeMap<crypto::HashAlgorithm, crypto::HashValue>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    custom: BTreeMap<String, serde_json::Value>,
 }
 
 impl TargetDescription {
+    pub fn from(description: &metadata::TargetDescription) -> TargetDescription {
+        TargetDescription {
+            length: description.length(),
+            hashes: description.hashes().iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            custom: description.custom().iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+        }
+    }
+
     pub fn try_into(self) -> Result<metadata::TargetDescription> {
-        metadata::TargetDescription::new(self.length, self.hashes.into_iter().collect())
+        metadata::TargetDescription::new(
+            self.length,
+            self.hashes.into_iter().collect(),
+            self.custom.into_iter().collect(),
+        )
     }
 }
 
