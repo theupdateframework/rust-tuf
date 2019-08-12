@@ -23,7 +23,7 @@ use std::sync::Arc;
 use untrusted::Input;
 
 use crate::error::Error;
-use crate::shims;
+use crate::interchange::cjson::shims;
 use crate::Result;
 
 const HASH_ALG_PREFS: &[HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
