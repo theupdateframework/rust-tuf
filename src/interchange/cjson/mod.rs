@@ -5,9 +5,9 @@ use serde_json;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 
-use crate::Result;
-use crate::error::{Error};
+use crate::error::Error;
 use crate::interchange::DataInterchange;
+use crate::Result;
 
 pub(crate) mod shims;
 
