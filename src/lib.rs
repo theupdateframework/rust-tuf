@@ -120,7 +120,6 @@ pub mod repository;
 pub mod tuf;
 
 mod format_hex;
-mod shims;
 mod util;
 
 pub use crate::error::*;

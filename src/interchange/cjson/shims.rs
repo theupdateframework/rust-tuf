@@ -67,8 +67,7 @@ impl RootMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!(
-                "Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
         }
 
         metadata::RootMetadata::new(
@@ -154,8 +153,7 @@ impl TimestampMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!(
-                "Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
         }
 
         metadata::TimestampMetadata::new(
@@ -196,8 +194,7 @@ impl SnapshotMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!(
-                "Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
         }
 
         metadata::SnapshotMetadata::new(
@@ -241,8 +238,7 @@ impl TargetsMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!(
-                "Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
         }
 
         metadata::TargetsMetadata::new(

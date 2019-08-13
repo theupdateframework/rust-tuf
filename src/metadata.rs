@@ -13,8 +13,8 @@ use std::marker::PhantomData;
 
 use crate::crypto::{self, HashAlgorithm, HashValue, KeyId, PrivateKey, PublicKey, Signature};
 use crate::error::Error;
+use crate::interchange::cjson::shims;
 use crate::interchange::DataInterchange;
-use crate::shims;
 use crate::Result;
 
 #[rustfmt::skip]
