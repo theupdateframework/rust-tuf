@@ -5,10 +5,7 @@ use derp::{self, Der, Tag};
 use ring;
 use ring::digest::{self, SHA256, SHA512};
 use ring::rand::SystemRandom;
-use ring::signature::{
-    Ed25519KeyPair, KeyPair, RsaKeyPair, ED25519, RSA_PSS_2048_8192_SHA256,
-    RSA_PSS_2048_8192_SHA512, RSA_PSS_SHA256, RSA_PSS_SHA512,
-};
+use ring::signature::{self, KeyPair};
 use serde::de::{Deserialize, Deserializer, Error as DeserializeError};
 use serde::ser::{Error as SerializeError, Serialize, Serializer};
 use serde_derive::{Deserialize, Serialize};
@@ -33,6 +30,11 @@ const RSA_SPKI_OID: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x
 
 /// 1.3.101.112 curveEd25519(EdDSA 25519 signature algorithm)
 const ED25519_SPKI_OID: &[u8] = &[0x2b, 0x65, 0x70];
+
+const ED25519: &str = "ed25519";
+const RSA: &str = "rsa";
+const RSASSA_PSS_SHA256: &str = "rsassa-pss-sha256";
+const RSASSA_PSS_SHA512: &str = "rsassa-pss-sha512";
 
 /// Given a map of hash algorithms and their values, get the prefered algorithm and the hash
 /// calculated by it. Returns an `Err` if there is no match.
@@ -117,7 +119,7 @@ fn shim_public_key(
 ) -> ::std::result::Result<shims::PublicKey, derp::Error> {
     let key = match key_type {
         KeyType::Ed25519 => HEXLOWER.encode(public_key),
-        KeyType::Rsa | KeyType::Unknown(_) => {
+        KeyType::Rsa => {
             let bytes = write_spki(public_key, &key_type)?;
             BASE64URL.encode(&bytes)
         }
@@ -180,17 +182,53 @@ impl<'de> Deserialize<'de> for KeyId {
 }
 
 /// Cryptographic signature schemes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SignatureScheme {
     /// [Ed25519](https://ed25519.cr.yp.to/)
-    #[serde(rename = "ed25519")]
     Ed25519,
     /// [RSASSA-PSS](https://tools.ietf.org/html/rfc5756) calculated over SHA256
-    #[serde(rename = "rsassa-pss-sha256")]
     RsaSsaPssSha256,
     /// [RSASSA-PSS](https://tools.ietf.org/html/rfc5756) calculated over SHA512
-    #[serde(rename = "rsassa-pss-sha512")]
     RsaSsaPssSha512,
+}
+
+impl FromStr for SignatureScheme {
+    type Err = Error;
+
+    fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
+        match s {
+            ED25519 => Ok(SignatureScheme::Ed25519),
+            RSASSA_PSS_SHA256 => Ok(SignatureScheme::RsaSsaPssSha256),
+            RSASSA_PSS_SHA512 => Ok(SignatureScheme::RsaSsaPssSha512),
+            scheme => Err(Error::UnknownSignatureScheme(scheme.into())),
+        }
+    }
+}
+
+impl Display for SignatureScheme {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match *self {
+            SignatureScheme::Ed25519 => ED25519,
+            SignatureScheme::RsaSsaPssSha256 => RSASSA_PSS_SHA256,
+            SignatureScheme::RsaSsaPssSha512 => RSASSA_PSS_SHA512,
+        })
+    }
+}
+
+impl Serialize for SignatureScheme {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ser.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for SignatureScheme {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let string: String = Deserialize::deserialize(de)?;
+        string.parse().map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+    }
 }
 
 /// Wrapper type for the value of a cryptographic signature.
@@ -258,19 +296,19 @@ impl FromStr for KeyType {
 
     fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
         match s {
-            "ed25519" => Ok(KeyType::Ed25519),
-            "rsa" => Ok(KeyType::Rsa),
-            typ => Err(Error::Encoding(typ.into())),
+            ED25519 => Ok(KeyType::Ed25519),
+            RSA => Ok(KeyType::Rsa),
+            typ => Err(Error::UnknownKeyType(typ.into())),
         }
     }
 }
 
-impl ToString for KeyType {
-    fn to_string(&self) -> String {
-        match *self {
-            KeyType::Ed25519 => "ed25519".to_string(),
-            KeyType::Rsa => "rsa".to_string(),
-        }
+impl Display for KeyType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match *self {
+            KeyType::Ed25519 => ED25519,
+            KeyType::Rsa => RSA,
+        })
     }
 }
 
@@ -291,8 +329,8 @@ impl<'de> Deserialize<'de> for KeyType {
 }
 
 enum PrivateKeyType {
-    Ed25519(Ed25519KeyPair),
-    Rsa(Arc<RsaKeyPair>),
+    Ed25519(signature::Ed25519KeyPair),
+    Rsa(Arc<signature::RsaKeyPair>),
 }
 
 impl Debug for PrivateKeyType {
@@ -317,7 +355,7 @@ impl PrivateKey {
     /// Note: For RSA keys, `openssl` needs to the on the `$PATH`.
     pub fn new(key_type: KeyType) -> Result<Vec<u8>> {
         match key_type {
-            KeyType::Ed25519 => Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
+            KeyType::Ed25519 => signature::Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
                 .map(|bytes| bytes.as_ref().to_vec())
                 .map_err(|_| Error::Opaque("Failed to generate Ed25519 key".into())),
             KeyType::Rsa => Self::rsa_gen(),
@@ -384,7 +422,7 @@ impl PrivateKey {
     }
 
     fn ed25519_from_pkcs8(der_key: &[u8]) -> Result<Self> {
-        let key = Ed25519KeyPair::from_pkcs8(der_key)
+        let key = signature::Ed25519KeyPair::from_pkcs8(der_key)
             .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
 
         let public = PublicKey::new(
@@ -404,7 +442,7 @@ impl PrivateKey {
             ));
         }
 
-        let key = RsaKeyPair::from_pkcs8(der_key)
+        let key = signature::RsaKeyPair::from_pkcs8(der_key)
             .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
 
         if key.public_modulus_len() < 256 {
@@ -428,14 +466,14 @@ impl PrivateKey {
             (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha256) => {
                 let rng = SystemRandom::new();
                 let mut buf = vec![0; rsa.public_modulus_len()];
-                rsa.sign(&RSA_PSS_SHA256, &rng, msg, &mut buf)
+                rsa.sign(&signature::RSA_PSS_SHA256, &rng, msg, &mut buf)
                     .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
                 SignatureValue(buf)
             }
             (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha512) => {
                 let rng = SystemRandom::new();
                 let mut buf = vec![0; rsa.public_modulus_len()];
-                rsa.sign(&RSA_PSS_SHA512, &rng, msg, &mut buf)
+                rsa.sign(&signature::RSA_PSS_SHA512, &rng, msg, &mut buf)
                     .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
                 SignatureValue(buf)
             }
@@ -572,13 +610,13 @@ impl PublicKey {
 
     /// Use this key to verify a message with a signature.
     pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<()> {
-        let alg: &dyn ring::signature::VerificationAlgorithm = match self.scheme {
-            SignatureScheme::Ed25519 => &ED25519,
-            SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
-            SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
+        let alg: &dyn signature::VerificationAlgorithm = match self.scheme {
+            SignatureScheme::Ed25519 => &signature::ED25519,
+            SignatureScheme::RsaSsaPssSha256 => &signature::RSA_PSS_2048_8192_SHA256,
+            SignatureScheme::RsaSsaPssSha512 => &signature::RSA_PSS_2048_8192_SHA512,
         };
 
-        let key = ring::signature::UnparsedPublicKey::new(alg, &self.value.0);
+        let key = signature::UnparsedPublicKey::new(alg, &self.value.0);
         key.verify(msg, &sig.value.0).map_err(|_| Error::BadSignature)
     }
 }
@@ -643,7 +681,7 @@ impl<'de> Deserialize<'de> for PublicKey {
                     DeserializeError::custom(format!("Couldn't parse key as ed25519: {:?}", e))
                 })?
             }
-            KeyType::Rsa | KeyType::Unknown(_) => {
+            KeyType::Rsa => {
                 let bytes = BASE64URL
                     .decode(intermediate.public_key().as_bytes())
                     .map_err(|e| DeserializeError::custom(format!("{:?}", e)))?;
@@ -804,6 +842,7 @@ fn write_pkcs1(n: &[u8], e: &[u8]) -> ::std::result::Result<Vec<u8>, derp::Error
 #[cfg(test)]
 mod test {
     use super::*;
+    use matches::assert_matches;
     use pretty_assertions::assert_eq;
     use serde_json::{self, json};
 
@@ -953,6 +992,19 @@ mod test {
     }
 
     #[test]
+    fn serde_unknown_key_type() {
+        let encoded = json!({
+            "keytype": "bad-key",
+            "scheme": "ed25519",
+            "public_key": "",
+        });
+        assert_matches!(
+            serde_json::from_value::<PublicKey>(encoded),
+            Err(ref err) if err.to_string() == "UnknownKeyType(\"bad-key\")"
+        );
+    }
+
+    #[test]
     fn serde_signature() {
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let msg = b"test";
@@ -968,6 +1020,19 @@ mod test {
 
         let decoded: Signature = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, sig);
+    }
+
+    #[test]
+    fn serde_unknown_signature_scheme() {
+        let encoded = json!({
+            "keytype": "ed25519",
+            "scheme": "bad-sig",
+            "public_key": "",
+        });
+        assert_matches!(
+            serde_json::from_value::<PublicKey>(encoded),
+            Err(ref err) if err.to_string() == "UnknownSignatureScheme(\"bad-sig\")"
+        );
     }
 
     #[test]

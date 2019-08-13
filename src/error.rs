@@ -41,6 +41,8 @@ pub enum Error {
     UnkonwnHashAlgorithm(String),
     /// There is no known or available key type.
     UnknownKeyType(String),
+    /// There is no known or available signature scheme.
+    UnknownSignatureScheme(String),
     /// The metadata or target failed to verify.
     VerificationFailure(String),
 }
@@ -60,6 +62,7 @@ impl ::std::error::Error for Error {
             Error::TargetUnavailable => "target unavailable",
             Error::UnkonwnHashAlgorithm(_) => "unknown hash algorithm",
             Error::UnknownKeyType(_) => "unknown key type",
+            Error::UnknownSignatureScheme(_) => "unknown signature scheme",
             Error::VerificationFailure(_) => "verification failure",
         }
     }
