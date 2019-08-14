@@ -1380,7 +1380,7 @@ impl TargetPath {
 pub struct TargetDescription {
     length: u64,
     hashes: HashMap<HashAlgorithm, HashValue>,
-    custom: HashMap<String, serde_json::Value>,
+    custom: Option<HashMap<String, serde_json::Value>>,
 }
 
 impl TargetDescription {
@@ -1391,7 +1391,7 @@ impl TargetDescription {
     pub fn new(
         length: u64,
         hashes: HashMap<HashAlgorithm, HashValue>,
-        custom: HashMap<String, serde_json::Value>,
+        custom: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<Self> {
         if hashes.is_empty() {
             return Err(Error::IllegalArgument("Cannot have empty set of hashes".into()));
@@ -1431,7 +1431,8 @@ impl TargetDescription {
     where
         R: Read,
     {
-        Self::from_reader_with_custom(read, hash_algs, HashMap::new())
+        let (length, hashes) = crypto::calculate_hashes(read, hash_algs)?;
+        Ok(TargetDescription { length, hashes, custom: None })
     }
 
     /// Read the from the given reader and custom metadata and calculate the length and hash
@@ -1466,7 +1467,7 @@ impl TargetDescription {
     ///     assert_eq!(target_description.length(), bytes.len() as u64);
     ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
     ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
-    ///     assert_eq!(target_description.custom().get("Hello"), Some(&"World".into()));
+    ///     assert_eq!(target_description.custom().and_then(|c| c.get("Hello")), Some(&"World".into()));
     /// }
     /// ```
     pub fn from_reader_with_custom<R>(
@@ -1478,7 +1479,7 @@ impl TargetDescription {
         R: Read,
     {
         let (length, hashes) = crypto::calculate_hashes(read, hash_algs)?;
-        Ok(TargetDescription { length, hashes, custom })
+        Ok(TargetDescription { length, hashes, custom: Some(custom) })
     }
 
     /// The maximum length of the target.
@@ -1492,8 +1493,8 @@ impl TargetDescription {
     }
 
     /// An immutable reference to the custom metadata.
-    pub fn custom(&self) -> &HashMap<String, serde_json::Value> {
-        &self.custom
+    pub fn custom(&self) -> Option<&HashMap<String, serde_json::Value>> {
+        self.custom.as_ref()
     }
 }
 
@@ -2093,11 +2094,24 @@ mod test {
     }
 
     #[test]
-    fn serde_targets_custom_metadata() {
+    fn serde_targets_metadata() {
         let targets = TargetsMetadataBuilder::new()
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
             .insert_target_description(
                 VirtualTargetPath::new("foo".into()).unwrap(),
+                TargetDescription::from_reader(&b"foo"[..], &[HashAlgorithm::Sha256]).unwrap(),
+            )
+            .insert_target_description(
+                VirtualTargetPath::new("bar".into()).unwrap(),
+                TargetDescription::from_reader_with_custom(
+                    &b"foo"[..],
+                    &[HashAlgorithm::Sha256],
+                    HashMap::new(),
+                )
+                .unwrap(),
+            )
+            .insert_target_description(
+                VirtualTargetPath::new("baz".into()).unwrap(),
                 TargetDescription::from_reader_with_custom(
                     &b"foo"[..],
                     &[HashAlgorithm::Sha256],
@@ -2123,42 +2137,24 @@ mod test {
                         "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
                             bfa0f98a5e886266e7ae",
                     },
-                    "custom": {
-                        "foo": 1,
-                        "bar": "baz",
-                    },
                 },
-            },
-        });
-
-        let encoded = serde_json::to_value(&targets).unwrap();
-        assert_eq!(encoded, jsn);
-        let decoded: TargetsMetadata = serde_json::from_value(encoded).unwrap();
-        assert_eq!(decoded, targets);
-    }
-
-    #[test]
-    fn serde_targets_metadata() {
-        let targets = TargetsMetadataBuilder::new()
-            .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
-            .insert_target_description(
-                VirtualTargetPath::new("foo".into()).unwrap(),
-                TargetDescription::from_reader(&b"foo"[..], &[HashAlgorithm::Sha256]).unwrap(),
-            )
-            .build()
-            .unwrap();
-
-        let jsn = json!({
-            "_type": "targets",
-            "spec_version": "1.0",
-            "version": 1,
-            "expires": "2017-01-01T00:00:00Z",
-            "targets": {
-                "foo": {
+                "bar": {
                     "length": 3,
                     "hashes": {
                         "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
                             bfa0f98a5e886266e7ae",
+                    },
+                    "custom": {},
+                },
+                "baz": {
+                    "length": 3,
+                    "hashes": {
+                        "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                            bfa0f98a5e886266e7ae",
+                    },
+                    "custom": {
+                        "foo": 1,
+                        "bar": "baz",
                     },
                 },
             },
