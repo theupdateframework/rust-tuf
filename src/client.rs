@@ -7,6 +7,7 @@
 //! # use futures::executor::block_on;
 //! # use hyper::client::Client as HttpClient;
 //! # use std::path::PathBuf;
+//! # use std::str::FromStr;
 //! # use tuf::{Result, Tuf};
 //! # use tuf::crypto::KeyId;
 //! # use tuf::client::{Client, Config};
@@ -16,15 +17,15 @@
 //! # use tuf::repository::{Repository, FileSystemRepository, HttpRepositoryBuilder};
 //!
 //! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
-//!     "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
-//!     "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
-//!     "T5vfRrM1iHpgzGwAHe7MbJH_7r4chkOAphV3OPCCv0I=",
+//!     "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
+//!     "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
+//!     "0823260c29956d0b64baa19a64c49c87922ba2bc532d09a6965aef044da490bd",
 //! ];
 //!
 //! # fn main() -> Result<()> {
 //! # block_on(async {
 //! let key_ids: Vec<KeyId> = TRUSTED_ROOT_KEY_IDS.iter()
-//!     .map(|k| KeyId::from_string(k).unwrap())
+//!     .map(|k| KeyId::from_str(k).unwrap())
 //!     .collect();
 //!
 //! let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))?;
