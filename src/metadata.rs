@@ -936,10 +936,7 @@ impl TimestampMetadataBuilder {
 
     /// Construct a new `TimestampMetadata`.
     pub fn build(self) -> Result<TimestampMetadata> {
-        let mut meta = HashMap::new();
-        meta.insert(MetadataPath::from_role(&Role::Snapshot), self.snapshot);
-
-        TimestampMetadata::new(self.version, self.expires, meta)
+        TimestampMetadata::new(self.version, self.expires, self.snapshot)
     }
 
     /// Construct a new `SignedMetadata<D, TimestampMetadata>`.
@@ -956,7 +953,7 @@ impl TimestampMetadataBuilder {
 pub struct TimestampMetadata {
     version: u32,
     expires: DateTime<Utc>,
-    meta: HashMap<MetadataPath, MetadataDescription>,
+    snapshot: MetadataDescription,
 }
 
 impl TimestampMetadata {
@@ -964,7 +961,7 @@ impl TimestampMetadata {
     pub fn new(
         version: u32,
         expires: DateTime<Utc>,
-        meta: HashMap<MetadataPath, MetadataDescription>,
+        snapshot: MetadataDescription,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
@@ -973,12 +970,12 @@ impl TimestampMetadata {
             )));
         }
 
-        Ok(TimestampMetadata { version, expires, meta })
+        Ok(TimestampMetadata { version, expires, snapshot })
     }
 
-    /// An immutable reference to the metadata paths and descriptions.
-    pub fn meta(&self) -> &HashMap<MetadataPath, MetadataDescription> {
-        &self.meta
+    /// An immutable reference to the snapshot description.
+    pub fn snapshot(&self) -> &MetadataDescription {
+        &self.snapshot
     }
 }
 
@@ -1749,6 +1746,7 @@ mod test {
     use crate::interchange::Json;
     use chrono::prelude::*;
     use maplit::{hashmap, hashset};
+    use matches::assert_matches;
     use serde_json::json;
 
     const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
@@ -1993,6 +1991,54 @@ mod test {
         assert_eq!(encoded, jsn);
         let decoded: TimestampMetadata = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, timestamp);
+    }
+
+    #[test]
+    fn serde_timestamp_metadata_missing_snapshot() {
+        let jsn = json!({
+            "_type": "timestamp",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {}
+        });
+
+        assert_matches!(
+            serde_json::from_value::<TimestampMetadata>(jsn),
+            Err(ref err) if err.to_string() == "missing field `snapshot.json`"
+        );
+    }
+
+    #[test]
+    fn serde_timestamp_metadata_extra_metadata() {
+        let jsn = json!({
+            "_type": "timestamp",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "snapshot.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": "",
+                    },
+                },
+                "targets.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": "",
+                    },
+                },
+            }
+        });
+
+        assert_matches!(
+            serde_json::from_value::<TimestampMetadata>(jsn),
+            Err(ref err) if err.to_string() ==
+            "unknown field `targets.json`, expected `snapshot.json`"
+        );
     }
 
     #[test]

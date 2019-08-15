@@ -311,14 +311,7 @@ where
         // timestamp metadata. If hashes and version do not match, discard the new snapshot
         // metadata, abort the update cycle, and report the failure.
         let snapshot_description = match self.tuf.timestamp() {
-            Some(ts) => match ts.meta().get(&MetadataPath::from_role(&Role::Snapshot)) {
-                Some(d) => Ok(d),
-                None => Err(Error::VerificationFailure(
-                    "Timestamp metadata does not contain a description of the \
-                     current snapshot metadata."
-                        .into(),
-                )),
-            },
+            Some(ts) => Ok(ts.snapshot()),
             None => Err(Error::MissingMetadata(Role::Timestamp)),
         }?
         .clone();

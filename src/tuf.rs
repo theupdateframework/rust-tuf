@@ -221,16 +221,7 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
-            let snapshot_description = timestamp
-                .meta()
-                .get(&MetadataPath::from_role(&Role::Snapshot))
-                .ok_or_else(|| {
-                    Error::VerificationFailure(
-                        "Timestamp metadata had no description of the snapshot metadata".into(),
-                    )
-                })?;
-
-            if self.current_snapshot_version() != snapshot_description.version() {
+            if self.current_snapshot_version() != timestamp.snapshot().version() {
                 self.snapshot = None;
             }
         }
@@ -248,22 +239,14 @@ impl<D: DataInterchange> Tuf<D> {
             let root = self.safe_root_ref()?;
             let timestamp = self.safe_timestamp_ref()?;
             let current_version = self.current_snapshot_version();
-            let snapshot_description = timestamp
-                .meta()
-                .get(&MetadataPath::from_role(&Role::Snapshot))
-                .ok_or_else(|| {
-                    Error::VerificationFailure(
-                        "Timestamp metadata had no description of the snapshot metadata".into(),
-                    )
-                })?;
 
-            if snapshot_description.version() < current_version {
+            if timestamp.snapshot().version() < current_version {
                 return Err(Error::VerificationFailure(format!(
                     "Attempted to roll back snapshot metadata at version {} to {}.",
                     current_version,
-                    snapshot_description.version()
+                    timestamp.snapshot().version()
                 )));
-            } else if snapshot_description.version() == current_version {
+            } else if timestamp.snapshot().version() == current_version {
                 return Ok(false);
             }
 
@@ -280,11 +263,11 @@ impl<D: DataInterchange> Tuf<D> {
 
             let snapshot = signed_snapshot.as_ref();
 
-            if snapshot.version() != snapshot_description.version() {
+            if snapshot.version() != timestamp.snapshot().version() {
                 return Err(Error::VerificationFailure(format!(
                     "The timestamp metadata reported that the snapshot metadata should be at \
                      version {} but version {} was found instead.",
-                    snapshot_description.version(),
+                    timestamp.snapshot().version(),
                     snapshot.version()
                 )));
             }

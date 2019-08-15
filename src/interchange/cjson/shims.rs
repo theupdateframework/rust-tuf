@@ -131,8 +131,14 @@ pub struct TimestampMetadata {
     spec_version: String,
     version: u32,
     expires: String,
-    #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
-    meta: BTreeMap<String, metadata::MetadataDescription>,
+    meta: TimestampMeta,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TimestampMeta {
+    #[serde(rename = "snapshot.json")]
+    snapshot: metadata::MetadataDescription,
 }
 
 impl TimestampMetadata {
@@ -142,7 +148,7 @@ impl TimestampMetadata {
             spec_version: SPEC_VERSION.to_string(),
             version: metadata.version(),
             expires: format_datetime(metadata.expires()),
-            meta: metadata.meta().iter().map(|(p, d)| (format!("{}.json", p), d.clone())).collect(),
+            meta: TimestampMeta { snapshot: metadata.snapshot().clone() },
         })
     }
 
@@ -161,16 +167,7 @@ impl TimestampMetadata {
         metadata::TimestampMetadata::new(
             self.version,
             parse_datetime(&self.expires)?,
-            self.meta.into_iter().map(|(p, d)| {
-                if !p.ends_with(".json") {
-                    return Err(Error::Encoding(format!("Metadata does not end with .json: {}", p)));
-                }
-
-                let s = p.split_at(p.len() - ".json".len()).0.into();
-                let p = metadata::MetadataPath::new(s)?;
-
-                Ok((p, d))
-            }).collect::<Result<_>>()?,
+            self.meta.snapshot,
         )
     }
 }
@@ -212,16 +209,22 @@ impl SnapshotMetadata {
         metadata::SnapshotMetadata::new(
             self.version,
             parse_datetime(&self.expires)?,
-            self.meta.into_iter().map(|(p, d)| {
-                if !p.ends_with(".json") {
-                    return Err(Error::Encoding(format!("Metadata does not end with .json: {}", p)));
-                }
+            self.meta
+                .into_iter()
+                .map(|(p, d)| {
+                    if !p.ends_with(".json") {
+                        return Err(Error::Encoding(format!(
+                            "Metadata does not end with .json: {}",
+                            p
+                        )));
+                    }
 
-                let s = p.split_at(p.len() - ".json".len()).0.into();
-                let p = metadata::MetadataPath::new(s)?;
+                    let s = p.split_at(p.len() - ".json".len()).0.into();
+                    let p = metadata::MetadataPath::new(s)?;
 
-                Ok((p, d))
-            }).collect::<Result<_>>()?,
+                    Ok((p, d))
+                })
+                .collect::<Result<_>>()?,
         )
     }
 }

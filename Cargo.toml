@@ -42,6 +42,7 @@ url = "2"
 [dev-dependencies]
 lazy_static = "1"
 maplit = "1"
+matches = "0.1.8"
 
 [features]
 default = ["hyper/default"]
