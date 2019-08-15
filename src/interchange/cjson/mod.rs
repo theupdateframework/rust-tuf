@@ -24,7 +24,7 @@ pub(crate) mod shims;
 ///
 /// `EXPIRES` is an ISO-8601 date time in format `YYYY-MM-DD'T'hh:mm:ss'Z'`.
 ///
-/// `KEY_ID` is the base64url encoded value of `sha256(spki(pub_key))`.
+/// `KEY_ID` is the hex encoded value of `sha256(cjson(pub_key))`.
 ///
 /// `PUB_KEY` is the following:
 ///

@@ -1747,7 +1747,9 @@ mod test {
     use chrono::prelude::*;
     use maplit::{hashmap, hashset};
     use matches::assert_matches;
+    use pretty_assertions::assert_eq;
     use serde_json::json;
+    use std::str::FromStr;
 
     const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
@@ -1845,19 +1847,19 @@ mod test {
     #[test]
     fn serde_role_definition() {
         let hashes = hashset!(
-            "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
-            "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
+            "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
+            "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
         )
         .iter()
-        .map(|k| KeyId::from_string(*k).unwrap())
+        .map(|k| KeyId::from_str(*k).unwrap())
         .collect();
         let role_def = RoleDefinition::new(2, hashes).unwrap();
         let jsn = json!({
             "threshold": 2,
             "keyids": [
                 // these need to be sorted for determinism
-                "ar9AgoRsmeEcf6Ponta_1TZu1ds5uXbDemBig30O7ck=",
-                "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+                "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
+                "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
             ],
         });
         let encoded = serde_json::to_value(&role_def).unwrap();
@@ -1868,7 +1870,8 @@ mod test {
         let jsn = json!({
             "threshold": 0,
             "keyids": [
-                "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+                "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
+                "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
             ],
         });
         assert!(serde_json::from_value::<RoleDefinition>(jsn).is_err());
@@ -1876,7 +1879,8 @@ mod test {
         let jsn = json!({
             "threshold": -1,
             "keyids": [
-                "diNfThTFm0PI8R-Bq7NztUIvZbZiaC_weJBgcqaHlWw=",
+                "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
+                "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
             ],
         });
         assert!(serde_json::from_value::<RoleDefinition>(jsn).is_err());
@@ -1906,47 +1910,55 @@ mod test {
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
             "keys": {
-                "4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o=": {
-                    "type": "ed25519",
+                "12435b260b6172bd750aeb102f54a347c56b109e0524ab1f144593c07af66356": {
+                    "keytype": "ed25519",
                     "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQ\
-                        vtGgZ_8giaAwL7q3PQ==",
+                    "keyval": {
+                        "public": "68d9ecb387371005a8eb8e60105305c34356a8fcd859\
+                            d7fef3cc228bf2b2b3b2",
+                    },
                 },
-                "5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs=": {
-                    "type": "ed25519",
+                "3af6b427c05274532231760f39d81212fdf8ac1a9f8fddf12722623ccec02fec": {
+                    "keytype": "ed25519",
                     "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQBo2eyzhzcQBajrjmAQUwXDQ1ao\
-                        _NhZ1_7zzCKL8rKzsg==",
+                    "keyval": {
+                        "public": "1410ae3053aa70bbfa98428a879d64d3002a3578f7df\
+                            aaeb1cb0764e860f7e0b",
+                    },
                 },
-                "C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw=": {
-                    "type": "ed25519",
+                "b9c336828063cf4fe5348e9fe2d86827c7b3104a76b1f4484a56bbef1ef08cfb": {
+                    "keytype": "ed25519",
                     "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQAUEK4wU6pwu_qYQoqHnWTTACo1\
-                        ePffquscsHZOhg9-Cw==",
+                    "keyval": {
+                        "public": "166376c90a7f717d027056272f361c252fb050bed1a0\
+                            67ff2089a0302fbab73d",
+                    },
                 },
-                "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
-                    "type": "ed25519",
+                "e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554": {
+                    "keytype": "ed25519",
                     "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb-\
-                        WO5CJQDTjK9GHGWjtg==",
+                    "keyval": {
+                        "public": "eb8ac26b5c9ef0279e3be3e82262a93bce16fe58ee422\
+                            500d38caf461c65a3b6",
+                    },
                 }
             },
             "roles": {
                 "root": {
                     "threshold": 1,
-                    "keyids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
+                    "keyids": ["e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554"],
                 },
                 "snapshot": {
                     "threshold": 1,
-                    "keyids": ["5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs="],
+                    "keyids": ["12435b260b6172bd750aeb102f54a347c56b109e0524ab1f144593c07af66356"],
                 },
                 "targets": {
                     "threshold": 1,
-                    "keyids": ["4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o="],
+                    "keyids": ["b9c336828063cf4fe5348e9fe2d86827c7b3104a76b1f4484a56bbef1ef08cfb"],
                 },
                 "timestamp": {
                     "threshold": 1,
-                    "keyids": ["C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw="],
+                    "keyids": ["3af6b427c05274532231760f39d81212fdf8ac1a9f8fddf12722623ccec02fec"],
                 },
             },
         });
@@ -2142,11 +2154,13 @@ mod test {
             "targets": {},
             "delegations": {
                 "keys": {
-                    "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=": {
-                        "type": "ed25519",
+                    "e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554": {
+                        "keytype": "ed25519",
                         "scheme": "ed25519",
-                        "public_key": "MCwwBwYDK2VwBQADIQDrisJrXJ7wJ5474-giYqk7zhb\
-                            -WO5CJQDTjK9GHGWjtg==",
+                        "keyval": {
+                            "public": "eb8ac26b5c9ef0279e3be3e82262a93bce16fe58\
+                                ee422500d38caf461c65a3b6",
+                        }
                     },
                 },
                 "roles": [
@@ -2154,7 +2168,7 @@ mod test {
                         "role": "foo/bar",
                         "terminating": false,
                         "threshold": 1,
-                        "keyids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="],
+                        "keyids": ["e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554"],
                         "paths": ["baz/quux"],
                     },
                 ],
@@ -2190,10 +2204,10 @@ mod test {
         let jsn = json!({
             "signatures": [
                 {
-                    "keyid": "qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY=",
-                    "sig": "ea48ddc7b3ea614b394e508eb8722100f94ff1a4e3aac3af09d\
-                        a0dada4f878431e8ac26160833405ec239924dfe62edf605fee8294\
-                        c49b4acade55c76e817602",
+                    "keyid": "e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554",
+                    "sig": "ea48ddc7b3ea614b394e508eb8722100f94ff1a4e3aac3af09\
+                        da0dada4f878431e8ac26160833405ec239924dfe62edf605fee82\
+                        94c49b4acade55c76e817602",
                 }
             ],
             "signed": {
