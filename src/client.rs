@@ -410,19 +410,26 @@ where
         Ok(())
     }
 
-    // TODO this should check the local repo first
-    async fn _fetch_target<'a>(
+    /// Fetch a target description from the remote repo and return it.
+    async fn fetch_target_description<'a>(
         &'a mut self,
         target: &'a TargetPath,
-    ) -> Result<Box<dyn AsyncRead + Send + Unpin>> {
+    ) -> Result<TargetDescription> {
         let virt = self.config.path_translator.real_to_virtual(target)?;
 
         let snapshot =
             self.tuf.snapshot().ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?.clone();
         let (_, target_description) =
             self.lookup_target_description(false, 0, &virt, &snapshot, None).await;
-        let target_description = target_description?;
+        target_description
+    }
 
+    // TODO this should check the local repo first
+    async fn _fetch_target<'a>(
+        &'a mut self,
+        target: &'a TargetPath,
+    ) -> Result<Box<dyn AsyncRead + Send + Unpin>> {
+        let target_description = self.fetch_target_description(target).await?;
         self.remote.fetch_target(target, &target_description).await
     }
 

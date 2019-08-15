@@ -368,15 +368,29 @@ impl Delegations {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct TargetDescription {
     length: u64,
     hashes: BTreeMap<crypto::HashAlgorithm, crypto::HashValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    custom: Option<BTreeMap<String, serde_json::Value>>,
 }
 
 impl TargetDescription {
+    pub fn from(description: &metadata::TargetDescription) -> TargetDescription {
+        TargetDescription {
+            length: description.length(),
+            hashes: description.hashes().iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            custom: description.custom().map(|custom| custom.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
+        }
+    }
+
     pub fn try_into(self) -> Result<metadata::TargetDescription> {
-        metadata::TargetDescription::new(self.length, self.hashes.into_iter().collect())
+        metadata::TargetDescription::new(
+            self.length,
+            self.hashes.into_iter().collect(),
+            self.custom.map(|custom| custom.into_iter().collect()),
+        )
     }
 }
 
