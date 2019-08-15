@@ -870,9 +870,9 @@ impl MetadataPath {
     }
 }
 
-impl ToString for MetadataPath {
-    fn to_string(&self) -> String {
-        self.0.clone()
+impl Display for MetadataPath {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
@@ -1746,6 +1746,7 @@ mod test {
     use crate::interchange::Json;
     use chrono::prelude::*;
     use maplit::{hashmap, hashset};
+    use matches::assert_matches;
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::str::FromStr;
@@ -1987,13 +1988,15 @@ mod test {
             "spec_version": "1.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
-            "snapshot": {
-                "version": 1,
-                "length": 100,
-                "hashes": {
-                    "sha256": "",
+            "meta": {
+                "snapshot.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": "",
+                    },
                 },
-            },
+            }
         });
 
         let encoded = serde_json::to_value(&timestamp).unwrap();
@@ -2003,11 +2006,59 @@ mod test {
     }
 
     #[test]
+    fn serde_timestamp_metadata_missing_snapshot() {
+        let jsn = json!({
+            "_type": "timestamp",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {}
+        });
+
+        assert_matches!(
+            serde_json::from_value::<TimestampMetadata>(jsn),
+            Err(ref err) if err.to_string() == "missing field `snapshot.json`"
+        );
+    }
+
+    #[test]
+    fn serde_timestamp_metadata_extra_metadata() {
+        let jsn = json!({
+            "_type": "timestamp",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "snapshot.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": "",
+                    },
+                },
+                "targets.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": "",
+                    },
+                },
+            }
+        });
+
+        assert_matches!(
+            serde_json::from_value::<TimestampMetadata>(jsn),
+            Err(ref err) if err.to_string() ==
+            "unknown field `targets.json`, expected `snapshot.json`"
+        );
+    }
+
+    #[test]
     fn serde_snapshot_metadata() {
         let snapshot = SnapshotMetadataBuilder::new()
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
             .insert_metadata_description(
-                MetadataPath::new("foo".into()).unwrap(),
+                MetadataPath::new("targets".into()).unwrap(),
                 MetadataDescription::new(
                     1,
                     100,
@@ -2024,7 +2075,7 @@ mod test {
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
-                "foo": {
+                "targets.json": {
                     "version": 1,
                     "length": 100,
                     "hashes": {
@@ -2135,7 +2186,7 @@ mod test {
         let snapshot = SnapshotMetadataBuilder::new()
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
             .insert_metadata_description(
-                MetadataPath::new("foo".into()).unwrap(),
+                MetadataPath::new("targets".into()).unwrap(),
                 MetadataDescription::new(
                     1,
                     100,
@@ -2154,9 +2205,9 @@ mod test {
             "signatures": [
                 {
                     "keyid": "e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554",
-                    "sig": "6af7a8b13ea4ab59e6483490c8bb7ac1dec7354042c00bbc84e\
-                        0df928ffccfc8654f41191c438efb2bf6f7f44f57750eebde0893cb\
-                        e64eb8073132017937770b",
+                    "sig": "ea48ddc7b3ea614b394e508eb8722100f94ff1a4e3aac3af09\
+                        da0dada4f878431e8ac26160833405ec239924dfe62edf605fee82\
+                        94c49b4acade55c76e817602",
                 }
             ],
             "signed": {
@@ -2165,7 +2216,7 @@ mod test {
                 "version": 1,
                 "expires": "2017-01-01T00:00:00Z",
                 "meta": {
-                    "foo": {
+                    "targets.json": {
                         "version": 1,
                         "length": 100,
                         "hashes": {
@@ -2317,7 +2368,7 @@ mod test {
     #[test]
     fn deserialize_json_root_duplicate_keys() {
         let root_json = r#"{
-            "type": "root",
+            "_type": "root",
             "spec_version": "1.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
@@ -2473,6 +2524,37 @@ mod test {
         assert!(serde_json::from_value::<SnapshotMetadata>(snapshot).is_err());
     }
 
+    // Refuse to deserialize snapshot metadata if it contains duplicate metadata
+    #[test]
+    fn deserialize_json_snapshot_duplicate_metadata() {
+        let snapshot_json = r#"{
+            "_type": "snapshot",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "targets.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": ""
+                    }
+                },
+                "targets.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": ""
+                    }
+                }
+            }
+        }"#;
+        match serde_json::from_str::<SnapshotMetadata>(snapshot_json) {
+            Err(ref err) if err.is_data() => {}
+            result => panic!("unexpected result: {:?}", result),
+        }
+    }
+
     // Refuse to deserialize timestamp metadata with illegal versions
     #[test]
     fn deserialize_json_timestamp_illegal_version() {
@@ -2499,6 +2581,37 @@ mod test {
         let mut timestamp = make_timestamp();
         let _ = timestamp.as_object_mut().unwrap().insert("spec_version".into(), json!("0"));
         assert!(serde_json::from_value::<TimestampMetadata>(timestamp).is_err());
+    }
+
+    // Refuse to deserialize timestamp metadata if it contains duplicate metadata
+    #[test]
+    fn deserialize_json_timestamp_duplicate_metadata() {
+        let timestamp_json = r#"{
+            "_type": "timestamp",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "snapshot.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": ""
+                    }
+                },
+                "snapshot.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": ""
+                    }
+                }
+            }
+        }"#;
+        match serde_json::from_str::<TimestampMetadata>(timestamp_json) {
+            Err(ref err) if err.is_data() => {}
+            result => panic!("unexpected result: {:?}", result),
+        }
     }
 
     // Refuse to deserialize targets metadata with illegal versions
