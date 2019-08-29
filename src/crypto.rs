@@ -180,7 +180,7 @@ impl<'de> Deserialize<'de> for KeyId {
 }
 
 /// Cryptographic signature schemes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SignatureScheme {
     /// [Ed25519](https://ed25519.cr.yp.to/)
     #[serde(rename = "ed25519")]
@@ -227,7 +227,7 @@ impl Debug for SignatureValue {
 }
 
 /// Types of public keys.
-#[derive(Clone, PartialEq, Debug, Eq)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum KeyType {
     /// [Ed25519](https://ed25519.cr.yp.to/)
     Ed25519,
@@ -595,8 +595,8 @@ impl PublicKey {
 
 impl PartialEq for PublicKey {
     fn eq(&self, other: &Self) -> bool {
-        // the other two fields are derived from this one, we ignore them
-        self.value == other.value
+        // key_id is derived from these fields, so we ignore it.
+        self.typ == other.typ && self.scheme == other.scheme && self.value == other.value
     }
 }
 
@@ -616,7 +616,9 @@ impl PartialOrd for PublicKey {
 
 impl hash::Hash for PublicKey {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        // the other two fields are derived from this one, we ignore them
+        // key_id is derived from these fields, so we ignore it.
+        self.typ.hash(state);
+        self.scheme.hash(state);
         self.value.hash(state);
     }
 }
@@ -993,5 +995,30 @@ mod test {
     fn new_ed25519_key() {
         let bytes = PrivateKey::new(KeyType::Ed25519).unwrap();
         let _ = PrivateKey::from_pkcs8(&bytes, SignatureScheme::Ed25519).unwrap();
+    }
+
+    #[test]
+    fn test_public_key_eq() {
+        let key256 = PublicKey::from_spki(RSA_2048_SPKI, SignatureScheme::RsaSsaPssSha256).unwrap();
+        let key512 = PublicKey::from_spki(RSA_2048_SPKI, SignatureScheme::RsaSsaPssSha512).unwrap();
+        assert_eq!(key256, key256);
+        assert_ne!(key256, key512);
+    }
+
+    #[test]
+    fn test_public_key_hash() {
+        use std::hash::{BuildHasher, Hash, Hasher};
+
+        let key256 = PublicKey::from_spki(RSA_2048_SPKI, SignatureScheme::RsaSsaPssSha256).unwrap();
+        let key512 = PublicKey::from_spki(RSA_2048_SPKI, SignatureScheme::RsaSsaPssSha512).unwrap();
+
+        let state = std::collections::hash_map::RandomState::new();
+        let mut hasher256 = state.build_hasher();
+        key256.hash(&mut hasher256);
+
+        let mut hasher512 = state.build_hasher();
+        key512.hash(&mut hasher512);
+
+        assert_ne!(hasher256.finish(), hasher512.finish());
     }
 }
