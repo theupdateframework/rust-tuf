@@ -512,7 +512,7 @@ where
 impl<C, D> Repository<D> for HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange + Sync,
+    D: DataInterchange + Send + Sync,
 {
     /// This always returns `Err` as storing over HTTP is not yet supported.
     fn store_metadata<'a, M>(

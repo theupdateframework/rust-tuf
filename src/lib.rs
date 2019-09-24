@@ -109,7 +109,6 @@
     clippy::op_ref,
     clippy::too_many_arguments
 )]
-#![feature(async_await)]
 
 pub mod client;
 pub mod crypto;
