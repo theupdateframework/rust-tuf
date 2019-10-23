@@ -259,7 +259,7 @@ where
 
             Ok(())
         }
-            .boxed()
+        .boxed()
     }
 
     /// Fetch signed metadata.
@@ -291,7 +291,7 @@ where
 
             Ok(D::from_slice(&buf)?)
         }
-            .boxed()
+        .boxed()
     }
 
     fn store_target<'a, R>(
@@ -316,7 +316,7 @@ where
 
             Ok(())
         }
-            .boxed()
+        .boxed()
     }
 
     fn fetch_target<'a>(
@@ -343,7 +343,7 @@ where
 
             Ok(reader)
         }
-            .boxed()
+        .boxed()
     }
 }
 
@@ -558,7 +558,7 @@ where
 
             Ok(D::from_slice(&buf)?)
         }
-            .boxed()
+        .boxed()
     }
 
     /// This always returns `Err` as storing over HTTP is not yet supported.
@@ -591,7 +591,7 @@ where
 
             Ok(Box::new(reader) as Box<dyn AsyncRead + Send + Unpin>)
         }
-            .boxed()
+        .boxed()
     }
 }
 
@@ -650,7 +650,7 @@ where
             self.metadata.write().insert((meta_path.clone(), version.clone()), buf);
             Ok(())
         }
-            .boxed()
+        .boxed()
     }
 
     fn fetch_metadata<'a, M>(
@@ -685,7 +685,7 @@ where
 
             D::from_slice(&buf)
         }
-            .boxed()
+        .boxed()
     }
 
     fn store_target<'a, R>(
@@ -702,7 +702,7 @@ where
             self.targets.write().insert(target_path.clone(), Arc::new(buf));
             Ok(())
         }
-            .boxed()
+        .boxed()
     }
 
     fn fetch_target<'a>(
@@ -737,7 +737,7 @@ where
 
             Ok(reader)
         }
-            .boxed()
+        .boxed()
     }
 }
 
