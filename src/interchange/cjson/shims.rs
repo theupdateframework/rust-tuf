@@ -381,7 +381,9 @@ impl TargetDescription {
         TargetDescription {
             length: description.length(),
             hashes: description.hashes().iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-            custom: description.custom().map(|custom| custom.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
+            custom: description
+                .custom()
+                .map(|custom| custom.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
         }
     }
 
