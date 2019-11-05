@@ -218,7 +218,7 @@ impl SnapshotMetadata {
                         )));
                     }
 
-                    let s = p.split_at(p.len() - ".json".len()).0.into();
+                    let s = p.split_at(p.len() - ".json".len()).0;
                     let p = metadata::MetadataPath::new(s)?;
 
                     Ok((p, d))

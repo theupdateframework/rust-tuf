@@ -38,11 +38,11 @@ fn simple_delegation() {
 
     let snapshot = SnapshotMetadataBuilder::new()
         .insert_metadata_description(
-            MetadataPath::new("targets".into()).unwrap(),
+            MetadataPath::new("targets").unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .insert_metadata_description(
-            MetadataPath::new("delegation".into()).unwrap(),
+            MetadataPath::new("delegation").unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .signed::<Json>(&snapshot_key)
@@ -60,7 +60,7 @@ fn simple_delegation() {
     let delegations = Delegations::new(
         hashmap! { delegation_key.public().key_id().clone() => delegation_key.public().clone() },
         vec![Delegation::new(
-            MetadataPath::new("delegation".into()).unwrap(),
+            MetadataPath::new("delegation").unwrap(),
             false,
             1,
             vec![delegation_key.key_id().clone()].iter().cloned().collect(),
@@ -88,7 +88,7 @@ fn simple_delegation() {
         .signed::<Json>(&delegation_key)
         .unwrap();
 
-    tuf.update_delegation(&MetadataPath::new("delegation".into()).unwrap(), delegation).unwrap();
+    tuf.update_delegation(&MetadataPath::new("delegation").unwrap(), delegation).unwrap();
 
     assert!(tuf.target_description(&VirtualTargetPath::new("foo".into()).unwrap()).is_ok());
 }
@@ -118,15 +118,15 @@ fn nested_delegation() {
 
     let snapshot = SnapshotMetadataBuilder::new()
         .insert_metadata_description(
-            MetadataPath::new("targets".into()).unwrap(),
+            MetadataPath::new("targets").unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .insert_metadata_description(
-            MetadataPath::new("delegation-a".into()).unwrap(),
+            MetadataPath::new("delegation-a").unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .insert_metadata_description(
-            MetadataPath::new("delegation-b".into()).unwrap(),
+            MetadataPath::new("delegation-b").unwrap(),
             MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .signed::<Json>(&snapshot_key)
@@ -147,7 +147,7 @@ fn nested_delegation() {
             delegation_b_key.public().key_id().clone() => delegation_a_key.public().clone(),
         },
         vec![Delegation::new(
-            MetadataPath::new("delegation-a".into()).unwrap(),
+            MetadataPath::new("delegation-a").unwrap(),
             false,
             1,
             vec![delegation_a_key.key_id().clone()].iter().cloned().collect(),
@@ -168,7 +168,7 @@ fn nested_delegation() {
     let delegations = Delegations::new(
         hashmap! { delegation_b_key.public().key_id().clone() => delegation_b_key.public().clone() },
         vec![Delegation::new(
-            MetadataPath::new("delegation-b".into()).unwrap(),
+            MetadataPath::new("delegation-b").unwrap(),
             false,
             1,
             vec![delegation_b_key.key_id().clone()].iter().cloned().collect(),
@@ -183,7 +183,7 @@ fn nested_delegation() {
         .signed::<Json>(&delegation_a_key)
         .unwrap();
 
-    tuf.update_delegation(&MetadataPath::new("delegation-a".into()).unwrap(), delegation).unwrap();
+    tuf.update_delegation(&MetadataPath::new("delegation-a").unwrap(), delegation).unwrap();
 
     //// build delegation B ////
 
@@ -199,7 +199,7 @@ fn nested_delegation() {
         .signed::<Json>(&delegation_b_key)
         .unwrap();
 
-    tuf.update_delegation(&MetadataPath::new("delegation-b".into()).unwrap(), delegation).unwrap();
+    tuf.update_delegation(&MetadataPath::new("delegation-b").unwrap(), delegation).unwrap();
 
     assert!(tuf.target_description(&VirtualTargetPath::new("foo".into()).unwrap()).is_ok());
 }

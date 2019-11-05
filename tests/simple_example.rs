@@ -86,7 +86,7 @@ where
         .timestamp_key(timestamp_key.public().clone())
         .signed::<Json>(&root_key)?;
 
-    let root_path = MetadataPath::new("root".into())?;
+    let root_path = MetadataPath::new("root")?;
     remote.store_metadata(&root_path, &MetadataVersion::Number(1), &signed).await?;
     remote.store_metadata(&root_path, &MetadataVersion::None, &signed).await?;
 
@@ -105,7 +105,7 @@ where
         )?
         .signed::<Json>(&targets_key)?;
 
-    let targets_path = &MetadataPath::new("targets".into())?;
+    let targets_path = &MetadataPath::new("targets")?;
     remote.store_metadata(&targets_path, &MetadataVersion::Number(1), &targets).await?;
     remote.store_metadata(&targets_path, &MetadataVersion::None, &targets).await?;
 
@@ -115,7 +115,7 @@ where
         .insert_metadata(&targets, &[HashAlgorithm::Sha256])?
         .signed::<Json>(&snapshot_key)?;
 
-    let snapshot_path = MetadataPath::new("snapshot".into())?;
+    let snapshot_path = MetadataPath::new("snapshot")?;
     remote.store_metadata(&snapshot_path, &MetadataVersion::Number(1), &snapshot).await?;
     remote.store_metadata(&snapshot_path, &MetadataVersion::None, &snapshot).await?;
 
@@ -124,7 +124,7 @@ where
     let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])?
         .signed::<Json>(&timestamp_key)?;
 
-    let timestamp_path = MetadataPath::new("timestamp".into())?;
+    let timestamp_path = MetadataPath::new("timestamp")?;
     remote.store_metadata(&timestamp_path, &MetadataVersion::Number(1), &timestamp).await?;
     remote.store_metadata(&timestamp_path, &MetadataVersion::None, &timestamp).await?;
 
