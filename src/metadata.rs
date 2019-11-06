@@ -170,7 +170,7 @@ impl Role {
     /// assert!(Role::Timestamp.fuzzy_matches_path(&MetadataPath::from_role(&Role::Timestamp)));
     ///
     /// assert!(!Role::Root.fuzzy_matches_path(&MetadataPath::from_role(&Role::Snapshot)));
-    /// assert!(!Role::Root.fuzzy_matches_path(&MetadataPath::new("wat".into()).unwrap()));
+    /// assert!(!Role::Root.fuzzy_matches_path(&MetadataPath::new("wat").unwrap()));
     /// ```
     pub fn fuzzy_matches_path(&self, path: &MetadataPath) -> bool {
         match *self {
@@ -798,10 +798,10 @@ impl<'de> Deserialize<'de> for RoleDefinition {
 /// use tuf::metadata::MetadataPath;
 ///
 /// // right
-/// let _ = MetadataPath::new("root".into());
+/// let _ = MetadataPath::new("root");
 ///
 /// // wrong
-/// let _ = MetadataPath::new("root.json".into());
+/// let _ = MetadataPath::new("root.json");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct MetadataPath(String);
@@ -811,16 +811,17 @@ impl MetadataPath {
     ///
     /// ```
     /// # use tuf::metadata::MetadataPath;
-    /// assert!(MetadataPath::new("foo".into()).is_ok());
-    /// assert!(MetadataPath::new("/foo".into()).is_err());
-    /// assert!(MetadataPath::new("../foo".into()).is_err());
-    /// assert!(MetadataPath::new("foo/..".into()).is_err());
-    /// assert!(MetadataPath::new("foo/../bar".into()).is_err());
-    /// assert!(MetadataPath::new("..foo".into()).is_ok());
-    /// assert!(MetadataPath::new("foo/..bar".into()).is_ok());
-    /// assert!(MetadataPath::new("foo/bar..".into()).is_ok());
+    /// assert!(MetadataPath::new("foo").is_ok());
+    /// assert!(MetadataPath::new("/foo").is_err());
+    /// assert!(MetadataPath::new("../foo").is_err());
+    /// assert!(MetadataPath::new("foo/..").is_err());
+    /// assert!(MetadataPath::new("foo/../bar").is_err());
+    /// assert!(MetadataPath::new("..foo").is_ok());
+    /// assert!(MetadataPath::new("foo/..bar").is_ok());
+    /// assert!(MetadataPath::new("foo/bar..").is_ok());
     /// ```
-    pub fn new(path: String) -> Result<Self> {
+    pub fn new<P: Into<String>>(path: P) -> Result<Self> {
+        let path = path.into();
         safe_path(&path)?;
         Ok(MetadataPath(path))
     }
@@ -830,13 +831,13 @@ impl MetadataPath {
     /// ```
     /// # use tuf::metadata::{Role, MetadataPath};
     /// assert_eq!(MetadataPath::from_role(&Role::Root),
-    ///            MetadataPath::new("root".into()).unwrap());
+    ///            MetadataPath::new("root").unwrap());
     /// assert_eq!(MetadataPath::from_role(&Role::Snapshot),
-    ///            MetadataPath::new("snapshot".into()).unwrap());
+    ///            MetadataPath::new("snapshot").unwrap());
     /// assert_eq!(MetadataPath::from_role(&Role::Targets),
-    ///            MetadataPath::new("targets".into()).unwrap());
+    ///            MetadataPath::new("targets").unwrap());
     /// assert_eq!(MetadataPath::from_role(&Role::Timestamp),
-    ///            MetadataPath::new("timestamp".into()).unwrap());
+    ///            MetadataPath::new("timestamp").unwrap());
     /// ```
     pub fn from_role(role: &Role) -> Self {
         Self::new(format!("{}", role)).unwrap()
@@ -850,7 +851,7 @@ impl MetadataPath {
     /// # use tuf::interchange::Json;
     /// # use tuf::metadata::{MetadataPath, MetadataVersion};
     /// #
-    /// let path = MetadataPath::new("foo/bar".into()).unwrap();
+    /// let path = MetadataPath::new("foo/bar").unwrap();
     /// assert_eq!(path.components::<Json>(&MetadataVersion::None),
     ///            ["foo".to_string(), "bar.json".to_string()]);
     /// assert_eq!(path.components::<Json>(&MetadataVersion::Number(1)),
@@ -1139,7 +1140,7 @@ impl SnapshotMetadataBuilder {
     {
         let bytes = D::canonicalize(&D::serialize(metadata)?)?;
         let description = MetadataDescription::from_reader(&*bytes, metadata.version(), hash_algs)?;
-        let path = MetadataPath::new(path.into())?;
+        let path = MetadataPath::new(path)?;
         Ok(self.insert_metadata_description(path, description))
     }
 
@@ -2123,7 +2124,7 @@ mod test {
         let snapshot = SnapshotMetadataBuilder::new()
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
             .insert_metadata_description(
-                MetadataPath::new("targets".into()).unwrap(),
+                MetadataPath::new("targets").unwrap(),
                 MetadataDescription::new(
                     1,
                     100,
@@ -2235,7 +2236,7 @@ mod test {
         let delegations = Delegations::new(
             hashmap! { key.key_id().clone() => key.public().clone() },
             vec![Delegation::new(
-                MetadataPath::new("foo/bar".into()).unwrap(),
+                MetadataPath::new("foo/bar").unwrap(),
                 false,
                 1,
                 hashset!(key.key_id().clone()),
@@ -2291,7 +2292,7 @@ mod test {
         let snapshot = SnapshotMetadataBuilder::new()
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
             .insert_metadata_description(
-                MetadataPath::new("targets".into()).unwrap(),
+                MetadataPath::new("targets").unwrap(),
                 MetadataDescription::new(
                     1,
                     100,
@@ -2418,7 +2419,7 @@ mod test {
         let delegations = Delegations::new(
             hashmap! { key.key_id().clone() => key.clone() },
             vec![Delegation::new(
-                MetadataPath::new("foo".into()).unwrap(),
+                MetadataPath::new("foo").unwrap(),
                 false,
                 1,
                 hashset!(key.key_id().clone()),
@@ -2437,7 +2438,7 @@ mod test {
             .public()
             .clone();
         let delegation = Delegation::new(
-            MetadataPath::new("foo".into()).unwrap(),
+            MetadataPath::new("foo").unwrap(),
             false,
             1,
             hashset!(key.key_id().clone()),
