@@ -68,7 +68,9 @@ pub fn calculate_hashes<R: Read>(
     hash_algs: &[HashAlgorithm],
 ) -> Result<(u64, HashMap<HashAlgorithm, HashValue>)> {
     if hash_algs.is_empty() {
-        return Err(Error::IllegalArgument("Cannot provide empty set of hash algorithms".into()));
+        return Err(Error::IllegalArgument(
+            "Cannot provide empty set of hash algorithms".into(),
+        ));
     }
 
     let mut size = 0;
@@ -78,7 +80,10 @@ pub fn calculate_hashes<R: Read>(
             HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
             HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
             HashAlgorithm::Unknown(ref s) => {
-                return Err(Error::IllegalArgument(format!("Unknown hash algorithm: {}", s)));
+                return Err(Error::IllegalArgument(format!(
+                    "Unknown hash algorithm: {}",
+                    s
+                )));
             }
         };
 
@@ -123,7 +128,11 @@ fn shim_public_key(
         }
     };
 
-    Ok(shims::PublicKey::new(key_type.clone(), signature_scheme.clone(), key))
+    Ok(shims::PublicKey::new(
+        key_type.clone(),
+        signature_scheme.clone(),
+        key,
+    ))
 }
 
 fn calculate_key_id(
@@ -157,7 +166,9 @@ impl FromStr for KeyId {
     /// Parse a key ID from a string.
     fn from_str(string: &str) -> Result<Self> {
         if string.len() != 64 {
-            return Err(Error::IllegalArgument("key ID must be 64 characters long".into()));
+            return Err(Error::IllegalArgument(
+                "key ID must be 64 characters long".into(),
+            ));
         }
         Ok(KeyId(string.to_owned()))
     }
@@ -222,7 +233,9 @@ impl SignatureValue {
 
 impl Debug for SignatureValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("SignatureValue").field(&HEXLOWER.encode(&self.0)).finish()
+        f.debug_tuple("SignatureValue")
+            .field(&HEXLOWER.encode(&self.0))
+            .finish()
     }
 }
 
@@ -292,7 +305,9 @@ impl Serialize for KeyType {
 impl<'de> Deserialize<'de> for KeyType {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let string: String = Deserialize::deserialize(de)?;
-        string.parse().map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        string
+            .parse()
+            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
     }
 }
 
@@ -457,7 +472,10 @@ impl PrivateKey {
             }
         };
 
-        Ok(Signature { key_id: self.key_id().clone(), value })
+        Ok(Signature {
+            key_id: self.key_id().clone(),
+            value,
+        })
     }
 
     fn rsa_gen() -> Result<Vec<u8>> {
@@ -476,7 +494,9 @@ impl PrivateKey {
             .output()?;
 
         let mut pk8 = Command::new("openssl")
-            .args(&["pkcs8", "-inform", "der", "-topk8", "-nocrypt", "-outform", "der"])
+            .args(&[
+                "pkcs8", "-inform", "der", "-topk8", "-nocrypt", "-outform", "der",
+            ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()?;
@@ -513,7 +533,12 @@ impl PublicKey {
     fn new(typ: KeyType, scheme: SignatureScheme, value: Vec<u8>) -> Result<Self> {
         let key_id = calculate_key_id(&typ, &scheme, &value)?;
         let value = PublicKeyValue(value);
-        Ok(PublicKey { typ, key_id, scheme, value })
+        Ok(PublicKey {
+            typ,
+            key_id,
+            scheme,
+            value,
+        })
     }
 
     /// Parse DER bytes as an SPKI key.
@@ -544,7 +569,9 @@ impl PublicKey {
 
     fn from_ed25519(bytes: Vec<u8>) -> Result<Self> {
         if bytes.len() != 32 {
-            return Err(Error::IllegalArgument("ed25519 keys must be 32 bytes long".into()));
+            return Err(Error::IllegalArgument(
+                "ed25519 keys must be 32 bytes long".into(),
+            ));
         }
 
         Self::new(KeyType::Ed25519, SignatureScheme::Ed25519, bytes)
@@ -584,12 +611,16 @@ impl PublicKey {
             SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_2048_8192_SHA256,
             SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
             SignatureScheme::Unknown(ref s) => {
-                return Err(Error::IllegalArgument(format!("Unknown signature scheme: {}", s)));
+                return Err(Error::IllegalArgument(format!(
+                    "Unknown signature scheme: {}",
+                    s
+                )));
             }
         };
 
         let key = ring::signature::UnparsedPublicKey::new(alg, &self.value.0);
-        key.verify(msg, &sig.value.0).map_err(|_| Error::BadSignature)
+        key.verify(msg, &sig.value.0)
+            .map_err(|_| Error::BadSignature)
     }
 }
 
@@ -647,9 +678,11 @@ impl<'de> Deserialize<'de> for PublicKey {
                     )));
                 }
 
-                let bytes = HEXLOWER.decode(intermediate.public_key().as_bytes()).map_err(|e| {
-                    DeserializeError::custom(format!("Couldn't parse key as HEX: {:?}", e))
-                })?;
+                let bytes = HEXLOWER
+                    .decode(intermediate.public_key().as_bytes())
+                    .map_err(|e| {
+                        DeserializeError::custom(format!("Couldn't parse key as HEX: {:?}", e))
+                    })?;
 
                 PublicKey::from_ed25519(bytes).map_err(|e| {
                     DeserializeError::custom(format!("Couldn't parse key as ed25519: {:?}", e))
@@ -684,7 +717,9 @@ struct PublicKeyValue(Vec<u8>);
 
 impl Debug for PublicKeyValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("PublicKeyValue").field(&BASE64URL.encode(&self.0)).finish()
+        f.debug_tuple("PublicKeyValue")
+            .field(&BASE64URL.encode(&self.0))
+            .finish()
     }
 }
 
@@ -740,7 +775,9 @@ impl HashValue {
 
 impl Debug for HashValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("HashValue").field(&HEXLOWER.encode(&self.0)).finish()
+        f.debug_tuple("HashValue")
+            .field(&HEXLOWER.encode(&self.0))
+            .finish()
     }
 }
 

@@ -203,7 +203,11 @@ impl FileSystemRepositoryBuilder {
         };
         DirBuilder::new().recursive(true).create(&targets_path)?;
 
-        Ok(FileSystemRepository { metadata_path, targets_path, interchange: PhantomData })
+        Ok(FileSystemRepository {
+            metadata_path,
+            targets_path,
+            interchange: PhantomData,
+        })
     }
 }
 
@@ -501,7 +505,10 @@ where
             if status == StatusCode::NOT_FOUND {
                 Err(Error::NotFound)
             } else {
-                Err(Error::Opaque(format!("Error getting {:?}: {:?}", self.url, resp)))
+                Err(Error::Opaque(format!(
+                    "Error getting {:?}: {:?}",
+                    self.url, resp
+                )))
             }
         } else {
             Ok(resp)
@@ -524,7 +531,12 @@ where
     where
         M: Metadata + 'static,
     {
-        async { Err(Error::Opaque("Http repo store metadata not implemented".to_string())) }.boxed()
+        async {
+            Err(Error::Opaque(
+                "Http repo store metadata not implemented".to_string(),
+            ))
+        }
+        .boxed()
     }
 
     fn fetch_metadata<'a, M>(
@@ -543,8 +555,10 @@ where
             let components = meta_path.components::<D>(&version);
             let resp = self.get(&self.metadata_prefix, &components).await?;
 
-            let stream =
-                resp.into_body().compat().map_err(|err| io::Error::new(io::ErrorKind::Other, err));
+            let stream = resp
+                .into_body()
+                .compat()
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
 
             let mut reader = SafeReader::new(
                 stream.into_async_read(),
@@ -579,8 +593,10 @@ where
             let components = target_path.components();
             let resp = self.get(&self.targets_prefix, &components).await?;
 
-            let stream =
-                resp.into_body().compat().map_err(|err| io::Error::new(io::ErrorKind::Other, err));
+            let stream = resp
+                .into_body()
+                .compat()
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
 
             let reader = SafeReader::new(
                 stream.into_async_read(),
@@ -647,7 +663,9 @@ where
             Self::check::<M>(meta_path)?;
             let mut buf = Vec::new();
             D::to_writer(&mut buf, metadata)?;
-            self.metadata.write().insert((meta_path.clone(), version.clone()), buf);
+            self.metadata
+                .write()
+                .insert((meta_path.clone(), version.clone()), buf);
             Ok(())
         }
         .boxed()
@@ -666,7 +684,11 @@ where
         async move {
             Self::check::<M>(meta_path)?;
 
-            let bytes = match self.metadata.read().get(&(meta_path.clone(), version.clone())) {
+            let bytes = match self
+                .metadata
+                .read()
+                .get(&(meta_path.clone(), version.clone()))
+            {
                 Some(bytes) => bytes.clone(),
                 None => {
                     return Err(Error::NotFound);
@@ -699,7 +721,9 @@ where
         async move {
             let mut buf = Vec::new();
             read.read_to_end(&mut buf).await?;
-            self.targets.write().insert(target_path.clone(), Arc::new(buf));
+            self.targets
+                .write()
+                .insert(target_path.clone(), Arc::new(buf));
             Ok(())
         }
         .boxed()
@@ -774,7 +798,10 @@ mod test {
     #[test]
     fn file_system_repo_targets() {
         block_on(async {
-            let temp_dir = tempfile::Builder::new().prefix("rust-tuf").tempdir().unwrap();
+            let temp_dir = tempfile::Builder::new()
+                .prefix("rust-tuf")
+                .tempdir()
+                .unwrap();
             let repo = FileSystemRepositoryBuilder::new(temp_dir.path().to_path_buf())
                 .metadata_prefix("meta")
                 .targets_prefix("targs")
@@ -790,7 +817,13 @@ mod test {
                 TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
             let path = TargetPath::new("foo/bar/baz".into()).unwrap();
             repo.store_target(data, &path).await.unwrap();
-            assert!(temp_dir.path().join("targs").join("foo").join("bar").join("baz").exists());
+            assert!(temp_dir
+                .path()
+                .join("targs")
+                .join("foo")
+                .join("bar")
+                .join("baz")
+                .exists());
 
             let mut buf = Vec::new();
 

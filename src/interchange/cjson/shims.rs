@@ -48,7 +48,11 @@ impl RootMetadata {
             version: meta.version(),
             expires: format_datetime(&meta.expires()),
             consistent_snapshot: meta.consistent_snapshot(),
-            keys: meta.keys().iter().map(|(id, key)| (id.clone(), key.clone())).collect(),
+            keys: meta
+                .keys()
+                .iter()
+                .map(|(id, key)| (id.clone(), key.clone()))
+                .collect(),
             roles: RoleDefinitions {
                 root: meta.root().clone(),
                 snapshot: meta.snapshot().clone(),
@@ -67,7 +71,10 @@ impl RootMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!(
+                "Unknown spec version {}",
+                self.spec_version
+            )));
         }
 
         metadata::RootMetadata::new(
@@ -100,23 +107,35 @@ pub struct RoleDefinition {
 
 impl RoleDefinition {
     pub fn from(role: &metadata::RoleDefinition) -> Result<Self> {
-        let mut key_ids = role.key_ids().iter().cloned().collect::<Vec<crypto::KeyId>>();
+        let mut key_ids = role
+            .key_ids()
+            .iter()
+            .cloned()
+            .collect::<Vec<crypto::KeyId>>();
         key_ids.sort();
 
-        Ok(RoleDefinition { threshold: role.threshold(), key_ids })
+        Ok(RoleDefinition {
+            threshold: role.threshold(),
+            key_ids,
+        })
     }
 
     pub fn try_into(mut self) -> Result<metadata::RoleDefinition> {
         let vec_len = self.key_ids.len();
         if vec_len < 1 {
-            return Err(Error::Encoding("Role defined with no assoiciated key IDs.".into()));
+            return Err(Error::Encoding(
+                "Role defined with no assoiciated key IDs.".into(),
+            ));
         }
 
         let key_ids = self.key_ids.drain(0..).collect::<HashSet<crypto::KeyId>>();
         let dupes = vec_len - key_ids.len();
 
         if dupes != 0 {
-            return Err(Error::Encoding(format!("Found {} duplicate key IDs.", dupes)));
+            return Err(Error::Encoding(format!(
+                "Found {} duplicate key IDs.",
+                dupes
+            )));
         }
 
         Ok(metadata::RoleDefinition::new(self.threshold, key_ids)?)
@@ -147,7 +166,9 @@ impl TimestampMetadata {
             spec_version: SPEC_VERSION.to_string(),
             version: metadata.version(),
             expires: format_datetime(metadata.expires()),
-            meta: TimestampMeta { snapshot: metadata.snapshot().clone() },
+            meta: TimestampMeta {
+                snapshot: metadata.snapshot().clone(),
+            },
         })
     }
 
@@ -160,7 +181,10 @@ impl TimestampMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!(
+                "Unknown spec version {}",
+                self.spec_version
+            )));
         }
 
         metadata::TimestampMetadata::new(
@@ -189,7 +213,11 @@ impl SnapshotMetadata {
             spec_version: SPEC_VERSION.to_string(),
             version: metadata.version(),
             expires: format_datetime(&metadata.expires()),
-            meta: metadata.meta().iter().map(|(p, d)| (format!("{}.json", p), d.clone())).collect(),
+            meta: metadata
+                .meta()
+                .iter()
+                .map(|(p, d)| (format!("{}.json", p), d.clone()))
+                .collect(),
         })
     }
 
@@ -202,7 +230,10 @@ impl SnapshotMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!(
+                "Unknown spec version {}",
+                self.spec_version
+            )));
         }
 
         metadata::SnapshotMetadata::new(
@@ -247,7 +278,11 @@ impl TargetsMetadata {
             spec_version: SPEC_VERSION.to_string(),
             version: metadata.version(),
             expires: format_datetime(&metadata.expires()),
-            targets: metadata.targets().iter().map(|(p, d)| (p.clone(), d.clone())).collect(),
+            targets: metadata
+                .targets()
+                .iter()
+                .map(|(p, d)| (p.clone(), d.clone()))
+                .collect(),
             delegations: metadata.delegations().cloned(),
         })
     }
@@ -261,7 +296,10 @@ impl TargetsMetadata {
         }
 
         if self.spec_version != SPEC_VERSION {
-            return Err(Error::Encoding(format!("Unknown spec version {}", self.spec_version)));
+            return Err(Error::Encoding(format!(
+                "Unknown spec version {}",
+                self.spec_version
+            )));
         }
 
         metadata::TargetsMetadata::new(
@@ -286,7 +324,11 @@ impl PublicKey {
         scheme: crypto::SignatureScheme,
         public_key: String,
     ) -> Self {
-        PublicKey { keytype, scheme, keyval: PublicKeyValue { public: public_key } }
+        PublicKey {
+            keytype,
+            scheme,
+            keyval: PublicKeyValue { public: public_key },
+        }
     }
 
     pub fn public_key(&self) -> &str {
@@ -319,9 +361,17 @@ pub struct Delegation {
 
 impl Delegation {
     pub fn from(meta: &metadata::Delegation) -> Self {
-        let mut paths = meta.paths().iter().cloned().collect::<Vec<metadata::VirtualTargetPath>>();
+        let mut paths = meta
+            .paths()
+            .iter()
+            .cloned()
+            .collect::<Vec<metadata::VirtualTargetPath>>();
         paths.sort();
-        let mut key_ids = meta.key_ids().iter().cloned().collect::<Vec<crypto::KeyId>>();
+        let mut key_ids = meta
+            .key_ids()
+            .iter()
+            .cloned()
+            .collect::<Vec<crypto::KeyId>>();
         key_ids.sort();
 
         Delegation {
@@ -334,12 +384,20 @@ impl Delegation {
     }
 
     pub fn try_into(self) -> Result<metadata::Delegation> {
-        let paths = self.paths.iter().cloned().collect::<HashSet<metadata::VirtualTargetPath>>();
+        let paths = self
+            .paths
+            .iter()
+            .cloned()
+            .collect::<HashSet<metadata::VirtualTargetPath>>();
         if paths.len() != self.paths.len() {
             return Err(Error::Encoding("Non-unique delegation paths.".into()));
         }
 
-        let key_ids = self.key_ids.iter().cloned().collect::<HashSet<crypto::KeyId>>();
+        let key_ids = self
+            .key_ids
+            .iter()
+            .cloned()
+            .collect::<HashSet<crypto::KeyId>>();
         if key_ids.len() != self.key_ids.len() {
             return Err(Error::Encoding("Non-unique delegation key IDs.".into()));
         }
@@ -358,7 +416,11 @@ pub struct Delegations {
 impl Delegations {
     pub fn from(delegations: &metadata::Delegations) -> Delegations {
         Delegations {
-            keys: delegations.keys().iter().map(|(id, key)| (id.clone(), key.clone())).collect(),
+            keys: delegations
+                .keys()
+                .iter()
+                .map(|(id, key)| (id.clone(), key.clone()))
+                .collect(),
             roles: delegations.roles().clone(),
         }
     }
@@ -380,7 +442,11 @@ impl TargetDescription {
     pub fn from(description: &metadata::TargetDescription) -> TargetDescription {
         TargetDescription {
             length: description.length(),
-            hashes: description.hashes().iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            hashes: description
+                .hashes()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             custom: description
                 .custom()
                 .map(|custom| custom.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
@@ -456,6 +522,8 @@ mod deserialize_reject_duplicates {
             }
         }
 
-        deserializer.deserialize_map(BTreeVisitor { marker: PhantomData })
+        deserializer.deserialize_map(BTreeVisitor {
+            marker: PhantomData,
+        })
     }
 }

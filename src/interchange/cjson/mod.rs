@@ -335,12 +335,12 @@ impl Value {
                 buf.extend(b"false");
                 Ok(())
             }
-            Value::Number(Number::I64(n)) => {
-                itoa::write(buf, n).map(|_| ()).map_err(|err| format!("Write error: {}", err))
-            }
-            Value::Number(Number::U64(n)) => {
-                itoa::write(buf, n).map(|_| ()).map_err(|err| format!("Write error: {}", err))
-            }
+            Value::Number(Number::I64(n)) => itoa::write(buf, n)
+                .map(|_| ())
+                .map_err(|err| format!("Write error: {}", err)),
+            Value::Number(Number::U64(n)) => itoa::write(buf, n)
+                .map(|_| ())
+                .map_err(|err| format!("Write error: {}", err)),
             Value::String(ref s) => {
                 // this mess is abusing serde_json to get json escaping
                 let s = serde_json::Value::String(s.clone());

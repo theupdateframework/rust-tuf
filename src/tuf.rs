@@ -37,7 +37,9 @@ impl<D: DataInterchange> Tuf<D> {
     {
         let root_key_ids = root_key_ids.into_iter().collect::<HashSet<&KeyId>>();
 
-        signed_root.signatures_mut().retain(|s| root_key_ids.contains(s.key_id()));
+        signed_root
+            .signatures_mut()
+            .retain(|s| root_key_ids.contains(s.key_id()));
         Self::from_root(signed_root)
     }
 
@@ -115,19 +117,31 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     fn current_timestamp_version(&self) -> u32 {
-        self.timestamp.as_ref().map(|t| t.as_ref().version()).unwrap_or(0)
+        self.timestamp
+            .as_ref()
+            .map(|t| t.as_ref().version())
+            .unwrap_or(0)
     }
 
     fn current_snapshot_version(&self) -> u32 {
-        self.snapshot.as_ref().map(|t| t.as_ref().version()).unwrap_or(0)
+        self.snapshot
+            .as_ref()
+            .map(|t| t.as_ref().version())
+            .unwrap_or(0)
     }
 
     fn current_targets_version(&self) -> u32 {
-        self.targets.as_ref().map(|t| t.as_ref().version()).unwrap_or(0)
+        self.targets
+            .as_ref()
+            .map(|t| t.as_ref().version())
+            .unwrap_or(0)
     }
 
     fn current_delegation_version(&self, role: &MetadataPath) -> u32 {
-        self.delegations.get(role).map(|t| t.as_ref().version()).unwrap_or(0)
+        self.delegations
+            .get(role)
+            .map(|t| t.as_ref().version())
+            .unwrap_or(0)
     }
 
     /// Verify and update the root metadata.
@@ -276,7 +290,11 @@ impl<D: DataInterchange> Tuf<D> {
             // regardless so we can prevent rollback attacks againsts targets/delegations.
         };
 
-        if self.targets.as_ref().map(|s| s.as_ref().version()).unwrap_or(0)
+        if self
+            .targets
+            .as_ref()
+            .map(|s| s.as_ref().version())
+            .unwrap_or(0)
             != signed_snapshot
                 .as_ref()
                 .meta()
@@ -327,8 +345,10 @@ impl<D: DataInterchange> Tuf<D> {
         {
             let root = self.safe_root_ref()?;
             let snapshot = self.safe_snapshot_ref()?;
-            let targets_description =
-                snapshot.meta().get(&MetadataPath::from_role(&Role::Targets)).ok_or_else(|| {
+            let targets_description = snapshot
+                .meta()
+                .get(&MetadataPath::from_role(&Role::Targets))
+                .ok_or_else(|| {
                     Error::VerificationFailure(
                         "Snapshot metadata had no description of the targets metadata".into(),
                     )
@@ -390,7 +410,9 @@ impl<D: DataInterchange> Tuf<D> {
             let targets_delegations = match targets.delegations() {
                 Some(d) => d,
                 None => {
-                    return Err(Error::VerificationFailure("Delegations not authorized".into()));
+                    return Err(Error::VerificationFailure(
+                        "Delegations not authorized".into(),
+                    ));
                 }
             };
 
@@ -717,7 +739,9 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let snapshot = SnapshotMetadataBuilder::new().signed::<Json>(&KEYS[1]).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
 
         let timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
@@ -743,7 +767,9 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let snapshot = SnapshotMetadataBuilder::new().signed::<Json>(&KEYS[1]).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
 
         let timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
@@ -795,7 +821,9 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let snapshot = SnapshotMetadataBuilder::new().signed::<Json>(&KEYS[2]).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
 
         let timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
@@ -821,7 +849,10 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let snapshot = SnapshotMetadataBuilder::new().version(2).signed::<Json>(&KEYS[2]).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .version(2)
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
 
         let timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
@@ -831,7 +862,10 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        let snapshot = SnapshotMetadataBuilder::new().version(1).signed::<Json>(&KEYS[1]).unwrap();
+        let snapshot = SnapshotMetadataBuilder::new()
+            .version(1)
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
 
         assert!(tuf.update_snapshot(snapshot).is_err());
     }
@@ -846,7 +880,9 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        let targets = TargetsMetadataBuilder::new().signed::<Json>(&KEYS[2]).unwrap();
+        let targets = TargetsMetadataBuilder::new()
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .insert_metadata(&targets, &[HashAlgorithm::Sha256])
@@ -918,7 +954,10 @@ mod test {
 
         let mut tuf = Tuf::from_root(root).unwrap();
 
-        let targets = TargetsMetadataBuilder::new().version(2).signed::<Json>(&KEYS[2]).unwrap();
+        let targets = TargetsMetadataBuilder::new()
+            .version(2)
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .insert_metadata(&targets, &[HashAlgorithm::Sha256])
@@ -935,7 +974,10 @@ mod test {
         tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
 
-        let targets = TargetsMetadataBuilder::new().version(1).signed::<Json>(&KEYS[2]).unwrap();
+        let targets = TargetsMetadataBuilder::new()
+            .version(1)
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
 
         assert!(tuf.update_targets(targets).is_err());
     }

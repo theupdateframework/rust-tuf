@@ -41,7 +41,10 @@ fn with_translator() {
 #[test]
 fn without_translator() {
     let mut remote = EphemeralRepository::<Json>::new();
-    let config = Config::build().path_translator(MyPathTranslator {}).finish().unwrap();
+    let config = Config::build()
+        .path_translator(MyPathTranslator {})
+        .finish()
+        .unwrap();
 
     block_on(async {
         let root_key_ids = init_server(&mut remote, &config).await.unwrap();
@@ -87,8 +90,12 @@ where
         .signed::<Json>(&root_key)?;
 
     let root_path = MetadataPath::new("root")?;
-    remote.store_metadata(&root_path, &MetadataVersion::Number(1), &signed).await?;
-    remote.store_metadata(&root_path, &MetadataVersion::None, &signed).await?;
+    remote
+        .store_metadata(&root_path, &MetadataVersion::Number(1), &signed)
+        .await?;
+    remote
+        .store_metadata(&root_path, &MetadataVersion::None, &signed)
+        .await?;
 
     //// build the targets ////
 
@@ -106,8 +113,12 @@ where
         .signed::<Json>(&targets_key)?;
 
     let targets_path = &MetadataPath::new("targets")?;
-    remote.store_metadata(&targets_path, &MetadataVersion::Number(1), &targets).await?;
-    remote.store_metadata(&targets_path, &MetadataVersion::None, &targets).await?;
+    remote
+        .store_metadata(&targets_path, &MetadataVersion::Number(1), &targets)
+        .await?;
+    remote
+        .store_metadata(&targets_path, &MetadataVersion::None, &targets)
+        .await?;
 
     //// build the snapshot ////
 
@@ -116,8 +127,12 @@ where
         .signed::<Json>(&snapshot_key)?;
 
     let snapshot_path = MetadataPath::new("snapshot")?;
-    remote.store_metadata(&snapshot_path, &MetadataVersion::Number(1), &snapshot).await?;
-    remote.store_metadata(&snapshot_path, &MetadataVersion::None, &snapshot).await?;
+    remote
+        .store_metadata(&snapshot_path, &MetadataVersion::Number(1), &snapshot)
+        .await?;
+    remote
+        .store_metadata(&snapshot_path, &MetadataVersion::None, &snapshot)
+        .await?;
 
     //// build the timestamp ////
 
@@ -125,8 +140,12 @@ where
         .signed::<Json>(&timestamp_key)?;
 
     let timestamp_path = MetadataPath::new("timestamp")?;
-    remote.store_metadata(&timestamp_path, &MetadataVersion::Number(1), &timestamp).await?;
-    remote.store_metadata(&timestamp_path, &MetadataVersion::None, &timestamp).await?;
+    remote
+        .store_metadata(&timestamp_path, &MetadataVersion::Number(1), &timestamp)
+        .await?;
+    remote
+        .store_metadata(&timestamp_path, &MetadataVersion::None, &timestamp)
+        .await?;
 
     Ok(vec![root_key.key_id().clone()])
 }

@@ -142,12 +142,18 @@ where
         let root_path = MetadataPath::from_role(&Role::Root);
         let root_version = MetadataVersion::Number(1);
 
-        let root =
-            local.fetch_metadata(&root_path, &root_version, config.max_root_length, None).await?;
+        let root = local
+            .fetch_metadata(&root_path, &root_version, config.max_root_length, None)
+            .await?;
 
         let tuf = Tuf::from_root(root)?;
 
-        Ok(Client { tuf, config, local, remote })
+        Ok(Client {
+            tuf,
+            config,
+            local,
+            remote,
+        })
     }
 
     /// Create a new TUF client. It will attempt to load initial root metadata the local and remote
@@ -174,7 +180,9 @@ where
                     .fetch_metadata(&root_path, &root_version, config.max_root_length, None)
                     .await?;
 
-                local.store_metadata(&root_path, &MetadataVersion::Number(1), &root).await?;
+                local
+                    .store_metadata(&root_path, &MetadataVersion::Number(1), &root)
+                    .await?;
 
                 // FIXME: should we also the root as `MetadataVersion::None`?
 
@@ -184,7 +192,12 @@ where
 
         let tuf = Tuf::from_root_pinned(root, trusted_root_keys)?;
 
-        Ok(Client { tuf, config, local, remote })
+        Ok(Client {
+            tuf,
+            config,
+            local,
+            remote,
+        })
     }
 
     /// Update TUF metadata from the remote repository.
@@ -229,7 +242,12 @@ where
 
         let latest_root = self
             .remote
-            .fetch_metadata(&root_path, &MetadataVersion::None, self.config.max_root_length, None)
+            .fetch_metadata(
+                &root_path,
+                &MetadataVersion::None,
+                self.config.max_root_length,
+                None,
+            )
             .await?;
         let latest_version = latest_root.version();
 
@@ -259,7 +277,8 @@ where
                 return Err(Error::Programming(err_msg.into()));
             }
 
-            self.store_metadata(&root_path, &version, &signed_root).await;
+            self.store_metadata(&root_path, &version, &signed_root)
+                .await;
         }
 
         if !self.tuf.update_root(latest_root.clone())? {
@@ -269,8 +288,10 @@ where
 
         let latest_version = MetadataVersion::Number(latest_version);
 
-        self.store_metadata(&root_path, &latest_version, &latest_root).await;
-        self.store_metadata(&root_path, &MetadataVersion::None, &latest_root).await;
+        self.store_metadata(&root_path, &latest_version, &latest_root)
+            .await;
+        self.store_metadata(&root_path, &MetadataVersion::None, &latest_root)
+            .await;
 
         if self.tuf.root().expires() <= &Utc::now() {
             error!("Root metadata expired, potential freeze attack");
@@ -298,7 +319,8 @@ where
             let latest_version = signed_timestamp.version();
             let latest_version = MetadataVersion::Number(latest_version);
 
-            self.store_metadata(&timestamp_path, &latest_version, &signed_timestamp).await;
+            self.store_metadata(&timestamp_path, &latest_version, &signed_timestamp)
+                .await;
 
             Ok(true)
         } else {
@@ -334,11 +356,17 @@ where
 
         let signed_snapshot = self
             .remote
-            .fetch_metadata(&snapshot_path, &version, snapshot_length, Some((alg, value.clone())))
+            .fetch_metadata(
+                &snapshot_path,
+                &version,
+                snapshot_length,
+                Some((alg, value.clone())),
+            )
             .await?;
 
         if self.tuf.update_snapshot(signed_snapshot.clone())? {
-            self.store_metadata(&snapshot_path, &version, &signed_snapshot).await;
+            self.store_metadata(&snapshot_path, &version, &signed_snapshot)
+                .await;
 
             Ok(true)
         } else {
@@ -378,11 +406,17 @@ where
 
         let signed_targets = self
             .remote
-            .fetch_metadata(&targets_path, &version, targets_length, Some((alg, value.clone())))
+            .fetch_metadata(
+                &targets_path,
+                &version,
+                targets_length,
+                Some((alg, value.clone())),
+            )
             .await?;
 
         if self.tuf.update_targets(signed_targets.clone())? {
-            self.store_metadata(&targets_path, &version, &signed_targets).await;
+            self.store_metadata(&targets_path, &version, &signed_targets)
+                .await;
 
             Ok(true)
         } else {
@@ -417,10 +451,14 @@ where
     ) -> Result<TargetDescription> {
         let virt = self.config.path_translator.real_to_virtual(target)?;
 
-        let snapshot =
-            self.tuf.snapshot().ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?.clone();
-        let (_, target_description) =
-            self.lookup_target_description(false, 0, &virt, &snapshot, None).await;
+        let snapshot = self
+            .tuf
+            .snapshot()
+            .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
+            .clone();
+        let (_, target_description) = self
+            .lookup_target_description(false, 0, &virt, &snapshot, None)
+            .await;
         target_description
     }
 
@@ -456,7 +494,10 @@ where
             None => match self.tuf.targets() {
                 Some(t) => t.clone(),
                 None => {
-                    return (default_terminate, Err(Error::MissingMetadata(Role::Targets)));
+                    return (
+                        default_terminate,
+                        Err(Error::MissingMetadata(Role::Targets)),
+                    );
                 }
             },
         };
@@ -533,7 +574,10 @@ where
                 }
             };
 
-            match self.tuf.update_delegation(delegation.role(), signed_meta.clone()) {
+            match self
+                .tuf
+                .update_delegation(delegation.role(), signed_meta.clone())
+            {
                 Ok(_) => {
                     match self
                         .local
@@ -541,12 +585,19 @@ where
                         .await
                     {
                         Ok(_) => (),
-                        Err(e) => {
-                            warn!("Error storing metadata {:?} locally: {:?}", delegation.role(), e)
-                        }
+                        Err(e) => warn!(
+                            "Error storing metadata {:?} locally: {:?}",
+                            delegation.role(),
+                            e
+                        ),
                     }
 
-                    let meta = self.tuf.delegations().get(delegation.role()).unwrap().clone();
+                    let meta = self
+                        .tuf
+                        .delegations()
+                        .get(delegation.role())
+                        .unwrap()
+                        .clone();
                     let f: Pin<Box<dyn Future<Output = _>>> =
                         Box::pin(self.lookup_target_description(
                             delegation.terminating(),
@@ -786,7 +837,9 @@ mod test {
             // Make sure the version 3 is signed by version 2's keys.
             root3.add_signature(&KEYS[1]).unwrap();
 
-            let mut targets = TargetsMetadataBuilder::new().signed::<Json>(&KEYS[0]).unwrap();
+            let mut targets = TargetsMetadataBuilder::new()
+                .signed::<Json>(&KEYS[0])
+                .unwrap();
 
             targets.add_signature(&KEYS[1]).unwrap();
             targets.add_signature(&KEYS[2]).unwrap();
@@ -817,27 +870,37 @@ mod test {
             let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
             let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
 
-            repo.store_metadata(&root_path, &MetadataVersion::Number(1), &root1).await.unwrap();
+            repo.store_metadata(&root_path, &MetadataVersion::Number(1), &root1)
+                .await
+                .unwrap();
 
-            repo.store_metadata(&root_path, &MetadataVersion::None, &root1).await.unwrap();
+            repo.store_metadata(&root_path, &MetadataVersion::None, &root1)
+                .await
+                .unwrap();
 
             repo.store_metadata(&targets_path, &MetadataVersion::Number(1), &targets)
                 .await
                 .unwrap();
 
-            repo.store_metadata(&targets_path, &MetadataVersion::None, &targets).await.unwrap();
+            repo.store_metadata(&targets_path, &MetadataVersion::None, &targets)
+                .await
+                .unwrap();
 
             repo.store_metadata(&snapshot_path, &MetadataVersion::Number(1), &snapshot)
                 .await
                 .unwrap();
 
-            repo.store_metadata(&snapshot_path, &MetadataVersion::None, &snapshot).await.unwrap();
+            repo.store_metadata(&snapshot_path, &MetadataVersion::None, &snapshot)
+                .await
+                .unwrap();
 
             repo.store_metadata(&timestamp_path, &MetadataVersion::Number(1), &timestamp)
                 .await
                 .unwrap();
 
-            repo.store_metadata(&timestamp_path, &MetadataVersion::None, &timestamp).await.unwrap();
+            repo.store_metadata(&timestamp_path, &MetadataVersion::None, &timestamp)
+                .await
+                .unwrap();
 
             ////
             // Now, make sure that the local metadata got version 1.
@@ -878,7 +941,11 @@ mod test {
                 .await
                 .unwrap();
 
-            client.remote.store_metadata(&root_path, &MetadataVersion::None, &root2).await.unwrap();
+            client
+                .remote
+                .store_metadata(&root_path, &MetadataVersion::None, &root2)
+                .await
+                .unwrap();
 
             client
                 .remote
@@ -886,7 +953,11 @@ mod test {
                 .await
                 .unwrap();
 
-            client.remote.store_metadata(&root_path, &MetadataVersion::None, &root3).await.unwrap();
+            client
+                .remote
+                .store_metadata(&root_path, &MetadataVersion::None, &root3)
+                .await
+                .unwrap();
 
             ////
             // Finally, check that the update brings us to version 3.

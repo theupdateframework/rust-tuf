@@ -14,5 +14,7 @@ where
     D: Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
-    HEXLOWER.decode(s.as_bytes()).map_err(serde::de::Error::custom)
+    HEXLOWER
+        .decode(s.as_bytes())
+        .map_err(serde::de::Error::custom)
 }
