@@ -2480,38 +2480,48 @@ mod test {
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
             "keys": {
-                "4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o=": {
-                    "type": "ed25519",
+                "09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1": {
+                    "keytype": "ed25519",
                     "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQvtGgZ_8giaAwL7q3PQ=="
+                    "keyval": {
+                        "public": "1410ae3053aa70bbfa98428a879d64d3002a3578f7dfaaeb1cb0764e860f7e0b"
+                    }
                 },
-                "4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o=": {
-                    "type": "ed25519",
+                "09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1": {
+                    "keytype": "ed25519",
                     "scheme": "ed25519",
-                    "public_key": "MCwwBwYDK2VwBQADIQAWY3bJCn9xfQJwVicvNhwlL7BQvtGgZ_8giaAwL7q3PQ=="
+                    "keyval": {
+                        "public": "166376c90a7f717d027056272f361c252fb050bed1a067ff2089a0302fbab73d"
+                    }
                 }
             },
             "roles": {
                 "root": {
                     "threshold": 1,
-                    "key_ids": ["qfrfBrkB4lBBSDEBlZgaTGS_SrE6UfmON9kP4i3dJFY="]
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"]
                 },
                 "snapshot": {
                     "threshold": 1,
-                    "key_ids": ["5WvZhiiSSUung_OhJVbPshKwD_ZNkgeg80i4oy2KAVs="]
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"]
                 },
                 "targets": {
                     "threshold": 1,
-                    "key_ids": ["4hsyITLMQoWBg0ldCLKPlRZPIEf258cMg-xdAROsO6o="]
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"]
                 },
                 "timestamp": {
                     "threshold": 1,
-                    "key_ids": ["C2hNB7qN99EAbHVGHPIJc5Hqa9RfEilnMqsCNJ5dGdw="]
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"]
                 }
             }
         }"#;
         match serde_json::from_str::<RootMetadata>(root_json) {
-            Err(ref err) if err.is_data() => {}
+            Err(ref err) if err.is_data() => {
+                assert!(
+                    err.to_string().starts_with("Cannot have duplicate keys"),
+                    "unexpected err: {:?}",
+                    err
+                );
+            }
             result => panic!("unexpected result: {:?}", result),
         }
     }
