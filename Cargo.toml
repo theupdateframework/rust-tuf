@@ -25,7 +25,8 @@ path = "./src/lib.rs"
 chrono = { version = "0.4", features = [ "serde" ] }
 data-encoding = "2.0.0-rc.2"
 derp = "0.0.13"
-futures-preview = { version = "=0.3.0-alpha.19", features = [ "compat" ] }
+futures-io = "0.3.1"
+futures-util = { version = "0.3.1", features = [ "compat", "io" ] }
 http = "0.1"
 hyper = { version = "0.12", default-features = false }
 itoa = "0.4"
@@ -40,6 +41,7 @@ untrusted = "0.7"
 url = "2"
 
 [dev-dependencies]
+futures-executor = "0.3.1"
 lazy_static = "1"
 maplit = "1"
 matches = "0.1.8"

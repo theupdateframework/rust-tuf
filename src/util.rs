@@ -1,12 +1,12 @@
 use chrono::offset::Utc;
 use chrono::DateTime;
-use futures::io::AsyncRead;
-use futures::{ready, Poll};
+use futures_io::AsyncRead;
+use futures_util::ready;
 use ring::digest::{self, SHA256, SHA512};
 use std::io::{self, ErrorKind};
 use std::marker::Unpin;
 use std::pin::Pin;
-use std::task::Context;
+use std::task::{Context, Poll};
 
 use crate::crypto::{HashAlgorithm, HashValue};
 use crate::error::Error;
@@ -132,8 +132,8 @@ impl<R: AsyncRead + Unpin> AsyncRead for SafeReader<R> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use futures::executor::block_on;
-    use futures::io::AsyncReadExt;
+    use futures_executor::block_on;
+    use futures_util::io::AsyncReadExt;
 
     #[test]
     fn valid_read() {

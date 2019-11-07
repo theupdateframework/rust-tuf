@@ -5,6 +5,8 @@ dist: trusty
 language: rust
 cache: cargo
 rust:
+  - stable
+  - beta
   - nightly
 
 env:
