@@ -3,8 +3,7 @@
 //! # Example
 //!
 //! ```no_run
-//! #![feature(async_await, futures_api)]
-//! # use futures::executor::block_on;
+//! # use futures_executor::block_on;
 //! # use hyper::client::Client as HttpClient;
 //! # use std::path::PathBuf;
 //! # use std::str::FromStr;
@@ -51,9 +50,10 @@
 //! ```
 
 use chrono::offset::Utc;
-use futures::future::Future;
-use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite};
+use futures_io::{AsyncRead, AsyncWrite};
+use futures_util::io::copy;
 use log::{error, warn};
+use std::future::Future;
 use std::pin::Pin;
 
 use crate::crypto::{self, KeyId};
@@ -440,7 +440,7 @@ where
         W: AsyncWrite + Send + Unpin,
     {
         let read = self._fetch_target(&target).await?;
-        read.copy_into(&mut write).await?;
+        copy(read, &mut write).await?;
         Ok(())
     }
 
@@ -774,7 +774,7 @@ mod test {
     };
     use crate::repository::EphemeralRepository;
     use chrono::prelude::*;
-    use futures::executor::block_on;
+    use futures_executor::block_on;
     use lazy_static::lazy_static;
 
     lazy_static! {

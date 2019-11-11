@@ -1,9 +1,10 @@
 //! Interfaces for interacting with different types of TUF repositories.
 
-use futures::compat::{Future01CompatExt, Stream01CompatExt};
-use futures::future::BoxFuture;
-use futures::io::{AllowStdIo, AsyncRead};
-use futures::prelude::*;
+use futures_io::AsyncRead;
+use futures_util::compat::{Future01CompatExt, Stream01CompatExt};
+use futures_util::future::{BoxFuture, FutureExt};
+use futures_util::io::{copy, AllowStdIo, AsyncReadExt, Cursor};
+use futures_util::stream::TryStreamExt;
 use http::{Response, StatusCode, Uri};
 use hyper::body::Body;
 use hyper::client::connect::Connect;
@@ -13,7 +14,7 @@ use log::debug;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::fs::{DirBuilder, File};
-use std::io::{self, Cursor};
+use std::io;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -315,7 +316,7 @@ where
             }
 
             let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
-            read.copy_into(&mut temp_file).await?;
+            copy(read, &mut temp_file).await?;
             temp_file.into_inner().persist(&path)?;
 
             Ok(())
@@ -769,7 +770,7 @@ where
 mod test {
     use super::*;
     use crate::interchange::Json;
-    use futures::executor::block_on;
+    use futures_executor::block_on;
     use tempfile;
 
     #[test]

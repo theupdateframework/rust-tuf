@@ -1,4 +1,4 @@
-use futures::executor::block_on;
+use futures_executor::block_on;
 use tuf::client::{Client, Config, PathTranslator};
 use tuf::crypto::{HashAlgorithm, KeyId, PrivateKey, SignatureScheme};
 use tuf::interchange::Json;
