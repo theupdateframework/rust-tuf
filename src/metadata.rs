@@ -489,13 +489,13 @@ pub struct RootMetadataBuilder {
     consistent_snapshot: bool,
     keys: HashMap<KeyId, PublicKey>,
     root_threshold: u32,
-    root_key_ids: HashSet<KeyId>,
+    root_key_ids: Vec<KeyId>,
     snapshot_threshold: u32,
-    snapshot_key_ids: HashSet<KeyId>,
+    snapshot_key_ids: Vec<KeyId>,
     targets_threshold: u32,
-    targets_key_ids: HashSet<KeyId>,
+    targets_key_ids: Vec<KeyId>,
     timestamp_threshold: u32,
-    timestamp_key_ids: HashSet<KeyId>,
+    timestamp_key_ids: Vec<KeyId>,
 }
 
 impl RootMetadataBuilder {
@@ -512,13 +512,13 @@ impl RootMetadataBuilder {
             consistent_snapshot: false,
             keys: HashMap::new(),
             root_threshold: 1,
-            root_key_ids: HashSet::new(),
+            root_key_ids: Vec::new(),
             snapshot_threshold: 1,
-            snapshot_key_ids: HashSet::new(),
+            snapshot_key_ids: Vec::new(),
             targets_threshold: 1,
-            targets_key_ids: HashSet::new(),
+            targets_key_ids: Vec::new(),
             timestamp_threshold: 1,
-            timestamp_key_ids: HashSet::new(),
+            timestamp_key_ids: Vec::new(),
         }
     }
 
@@ -550,7 +550,7 @@ impl RootMetadataBuilder {
     pub fn root_key(mut self, public_key: PublicKey) -> Self {
         let key_id = public_key.key_id().clone();
         self.keys.insert(key_id.clone(), public_key);
-        self.root_key_ids.insert(key_id);
+        self.root_key_ids.push(key_id);
         self
     }
 
@@ -564,7 +564,7 @@ impl RootMetadataBuilder {
     pub fn snapshot_key(mut self, public_key: PublicKey) -> Self {
         let key_id = public_key.key_id().clone();
         self.keys.insert(key_id.clone(), public_key);
-        self.snapshot_key_ids.insert(key_id);
+        self.snapshot_key_ids.push(key_id);
         self
     }
 
@@ -578,7 +578,7 @@ impl RootMetadataBuilder {
     pub fn targets_key(mut self, public_key: PublicKey) -> Self {
         let key_id = public_key.key_id().clone();
         self.keys.insert(key_id.clone(), public_key);
-        self.targets_key_ids.insert(key_id);
+        self.targets_key_ids.push(key_id);
         self
     }
 
@@ -592,7 +592,7 @@ impl RootMetadataBuilder {
     pub fn timestamp_key(mut self, public_key: PublicKey) -> Self {
         let key_id = public_key.key_id().clone();
         self.keys.insert(key_id.clone(), public_key);
-        self.timestamp_key_ids.insert(key_id);
+        self.timestamp_key_ids.push(key_id);
         self
     }
 
@@ -756,12 +756,12 @@ impl<'de> Deserialize<'de> for RootMetadata {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RoleDefinition {
     threshold: u32,
-    key_ids: HashSet<KeyId>,
+    key_ids: Vec<KeyId>,
 }
 
 impl RoleDefinition {
     /// Create a new `RoleDefinition` with a given threshold and set of authorized `KeyID`s.
-    pub fn new(threshold: u32, key_ids: HashSet<KeyId>) -> Result<Self> {
+    pub fn new(threshold: u32, key_ids: Vec<KeyId>) -> Result<Self> {
         if threshold < 1 {
             return Err(Error::IllegalArgument(format!("Threshold: {}", threshold)));
         }
@@ -789,7 +789,7 @@ impl RoleDefinition {
     }
 
     /// An immutable reference to the set of `KeyID`s that are authorized to sign the role.
-    pub fn key_ids(&self) -> &HashSet<KeyId> {
+    pub fn key_ids(&self) -> &[KeyId] {
         &self.key_ids
     }
 }
@@ -2025,18 +2025,20 @@ mod test {
 
     #[test]
     fn serde_role_definition() {
-        let hashes = hashset!(
-            "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
-            "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
-        )
-        .iter()
-        .map(|k| KeyId::from_str(*k).unwrap())
-        .collect();
-        let role_def = RoleDefinition::new(2, hashes).unwrap();
+        // keyid ordering must be preserved.
+        let keyids = vec![
+            KeyId::from_str("40e35e8f6003ab90d104710cf88901edab931597401f91c19eeb366060ab3d53")
+                .unwrap(),
+            KeyId::from_str("01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4")
+                .unwrap(),
+            KeyId::from_str("4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db")
+                .unwrap(),
+        ];
+        let role_def = RoleDefinition::new(3, keyids).unwrap();
         let jsn = json!({
-            "threshold": 2,
+            "threshold": 3,
             "keyids": [
-                // these need to be sorted for determinism
+                "40e35e8f6003ab90d104710cf88901edab931597401f91c19eeb366060ab3d53",
                 "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
                 "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
             ],
@@ -2045,7 +2047,10 @@ mod test {
         assert_eq!(encoded, jsn);
         let decoded: RoleDefinition = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, role_def);
+    }
 
+    #[test]
+    fn serde_invalid_role_definitions() {
         let jsn = json!({
             "threshold": 0,
             "keyids": [
@@ -2748,12 +2753,12 @@ mod test {
     fn deserialize_json_role_definition_illegal_threshold() {
         let role_def = RoleDefinition::new(
             1,
-            hashset!(
+            vec![
                 PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
                     .unwrap()
                     .key_id()
-                    .clone()
-            ),
+                    .clone(),
+            ],
         )
         .unwrap();
 
@@ -2767,7 +2772,7 @@ mod test {
 
         let role_def = RoleDefinition::new(
             2,
-            hashset!(
+            vec![
                 PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
                     .unwrap()
                     .key_id()
@@ -2776,7 +2781,7 @@ mod test {
                     .unwrap()
                     .key_id()
                     .clone(),
-            ),
+            ],
         )
         .unwrap();
 
@@ -2814,7 +2819,7 @@ mod test {
             .unwrap()
             .key_id()
             .clone();
-        let role_def = RoleDefinition::new(1, hashset!(key_id.clone())).unwrap();
+        let role_def = RoleDefinition::new(1, vec![key_id.clone()]).unwrap();
         let mut jsn = serde_json::to_value(&role_def).unwrap();
 
         match jsn.as_object_mut() {

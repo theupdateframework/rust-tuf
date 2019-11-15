@@ -107,12 +107,11 @@ pub struct RoleDefinition {
 
 impl RoleDefinition {
     pub fn from(role: &metadata::RoleDefinition) -> Result<Self> {
-        let mut key_ids = role
+        let key_ids = role
             .key_ids()
             .iter()
             .cloned()
             .collect::<Vec<crypto::KeyId>>();
-        key_ids.sort();
 
         Ok(RoleDefinition {
             threshold: role.threshold(),
@@ -120,7 +119,7 @@ impl RoleDefinition {
         })
     }
 
-    pub fn try_into(mut self) -> Result<metadata::RoleDefinition> {
+    pub fn try_into(self) -> Result<metadata::RoleDefinition> {
         let vec_len = self.key_ids.len();
         if vec_len < 1 {
             return Err(Error::Encoding(
@@ -128,8 +127,13 @@ impl RoleDefinition {
             ));
         }
 
-        let key_ids = self.key_ids.drain(0..).collect::<HashSet<crypto::KeyId>>();
-        let dupes = vec_len - key_ids.len();
+        let mut seen = HashSet::new();
+        let mut dupes = 0;
+        for key_id in self.key_ids.iter() {
+            if !seen.insert(key_id) {
+                dupes += 1;
+            }
+        }
 
         if dupes != 0 {
             return Err(Error::Encoding(format!(
@@ -138,7 +142,7 @@ impl RoleDefinition {
             )));
         }
 
-        Ok(metadata::RoleDefinition::new(self.threshold, key_ids)?)
+        Ok(metadata::RoleDefinition::new(self.threshold, self.key_ids)?)
     }
 }
 
