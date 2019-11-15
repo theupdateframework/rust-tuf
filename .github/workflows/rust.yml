@@ -1,0 +1,52 @@
+name: Rust
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  schedule:
+    - cron: "00 01 * * *"
+
+jobs:
+  ci:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+        rust:
+          - stable
+          - beta
+          - nightly
+          - "1.39.0"
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Install Rust
+        uses: actions-rs/toolchain/@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust }}
+          override: true
+          components: clippy
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+
+      - name: Run Tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+
+      - name: Audit for Security Vulnerabilities
+        uses: actions-rs/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Docs
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          args: --all-features --no-deps
