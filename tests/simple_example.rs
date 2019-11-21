@@ -16,7 +16,7 @@ const ED25519_2_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-2.pk8.der
 const ED25519_3_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-3.pk8.der");
 const ED25519_4_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-4.pk8.der");
 
-struct MyPathTranslator {}
+struct MyPathTranslator;
 
 impl PathTranslator for MyPathTranslator {
     fn real_to_virtual(&self, path: &TargetPath) -> Result<VirtualTargetPath> {
@@ -29,30 +29,59 @@ impl PathTranslator for MyPathTranslator {
 }
 
 #[test]
-fn with_translator() {
-    let mut remote = EphemeralRepository::<Json>::new();
-    let config = Config::default();
+fn consistent_snapshot_false_without_translator() {
     block_on(async {
-        let root_key_ids = init_server(&mut remote, &config).await.unwrap();
-        init_client(&root_key_ids, remote, config).await.unwrap();
+        let config = Config::default();
+
+        run_tests(config, false).await
     })
 }
 
 #[test]
-fn without_translator() {
-    let mut remote = EphemeralRepository::<Json>::new();
-    let config = Config::build()
-        .path_translator(MyPathTranslator {})
-        .finish()
-        .unwrap();
-
+fn consistent_snapshot_false_with_translator() {
     block_on(async {
-        let root_key_ids = init_server(&mut remote, &config).await.unwrap();
-        init_client(&root_key_ids, remote, config).await.unwrap();
+        let config = Config::build()
+            .path_translator(MyPathTranslator)
+            .finish()
+            .unwrap();
+
+        run_tests(config, false).await
     })
 }
 
-async fn init_client<T: 'static>(
+#[test]
+fn consistent_snapshot_true_without_translator() {
+    block_on(async {
+        let config = Config::default();
+
+        run_tests(config, true).await
+    })
+}
+
+#[test]
+fn consistent_snapshot_true_with_translator() {
+    block_on(async {
+        let config = Config::build()
+            .path_translator(MyPathTranslator)
+            .finish()
+            .unwrap();
+
+        run_tests(config, true).await
+    })
+}
+
+async fn run_tests<T>(config: Config<T>, consistent_snapshots: bool)
+where
+    T: PathTranslator,
+{
+    let mut remote = EphemeralRepository::<Json>::new();
+    let root_key_ids = init_server(&mut remote, &config, consistent_snapshots)
+        .await
+        .unwrap();
+    init_client(&root_key_ids, remote, config).await.unwrap();
+}
+
+async fn init_client<T>(
     root_key_ids: &[KeyId],
     remote: EphemeralRepository<Json>,
     config: Config<T>,
@@ -70,6 +99,7 @@ where
 async fn init_server<'a, T>(
     remote: &'a mut EphemeralRepository<Json>,
     config: &'a Config<T>,
+    consistent_snapshot: bool,
 ) -> Result<Vec<KeyId>>
 where
     T: PathTranslator,
@@ -83,6 +113,7 @@ where
     //// build the root ////
 
     let signed = RootMetadataBuilder::new()
+        .consistent_snapshot(consistent_snapshot)
         .root_key(root_key.public().clone())
         .snapshot_key(snapshot_key.public().clone())
         .targets_key(targets_key.public().clone())
