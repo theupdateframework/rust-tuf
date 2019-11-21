@@ -12,11 +12,6 @@ license = "MIT/Apache-2.0"
 keywords = [ "security", "update", "repository" ]
 categories = [ "cryptography" ]
 
-[badges]
-travis-ci = { repository = "heartsucker/rust-tuf", branch = "master" }
-appveyor = { repository = "heartsucker/rust-tuf", branch = "master", service = "github" }
-codecov = { repository = "heartsucker/rust-tuf", branch = "master", service = "github" }
-
 [lib]
 name = "tuf"
 path = "./src/lib.rs"
