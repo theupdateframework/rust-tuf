@@ -34,6 +34,15 @@ const RSA_SPKI_OID: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x
 /// 1.3.101.112 curveEd25519(EdDSA 25519 signature algorithm)
 const ED25519_SPKI_OID: &[u8] = &[0x2b, 0x65, 0x70];
 
+/// The length of an ed25519 private key in bytes
+const ED25519_PRIVATE_KEY_LENGTH: usize = 32;
+
+/// The length of an ed25519 public key in bytes
+const ED25519_PUBLIC_KEY_LENGTH: usize = 32;
+
+/// The length of an ed25519 keypair in bytes
+const ED25519_KEYPAIR_LENGTH: usize = ED25519_PRIVATE_KEY_LENGTH + ED25519_PUBLIC_KEY_LENGTH;
+
 fn python_tuf_compatibility_keyid_hash_algorithms() -> Option<Vec<String>> {
     Some(vec!["sha256".to_string(), "sha512".to_string()])
 }
@@ -358,6 +367,42 @@ impl PrivateKey {
         }
     }
 
+    /// Create a new `PrivateKey` from an ed25519 keypair, a 64 byte slice, where the first 32
+    /// bytes are the ed25519 seed, and the second 32 bytes are the public key.
+    pub fn from_ed25519(key: &[u8]) -> Result<Self> {
+        Self::from_ed25519_with_keyid_hash_algorithms(
+            key,
+            python_tuf_compatibility_keyid_hash_algorithms(),
+        )
+    }
+
+    fn from_ed25519_with_keyid_hash_algorithms(
+        key: &[u8],
+        keyid_hash_algorithms: Option<Vec<String>>,
+    ) -> Result<Self> {
+        if key.len() != ED25519_KEYPAIR_LENGTH {
+            return Err(Error::Encoding(
+                "ed25519 private keys must be 64 bytes long".into(),
+            ));
+        }
+
+        let private_key_bytes = &key[..ED25519_PRIVATE_KEY_LENGTH];
+        let public_key_bytes = &key[ED25519_PUBLIC_KEY_LENGTH..];
+
+        let key = Ed25519KeyPair::from_seed_and_public_key(private_key_bytes, public_key_bytes)
+            .map_err(|err| Error::Encoding(err.to_string()))?;
+
+        let public = PublicKey::new(
+            KeyType::Ed25519,
+            SignatureScheme::Ed25519,
+            keyid_hash_algorithms,
+            key.public_key().as_ref().to_vec(),
+        )?;
+        let private = PrivateKeyType::Ed25519(key);
+
+        Ok(PrivateKey { private, public })
+    }
+
     /// Create a private key from PKCS#8v2 DER bytes.
     ///
     /// # Generating Keys
@@ -617,10 +662,19 @@ impl PublicKey {
         Self::new(typ, scheme, keyid_hash_algorithms, value)
     }
 
-    fn from_ed25519_with_keyid_hash_algorithms(
-        bytes: Vec<u8>,
+    /// Parse ED25519 bytes as a public key.
+    pub fn from_ed25519<T: Into<Vec<u8>>>(bytes: T) -> Result<Self> {
+        Self::from_ed25519_with_keyid_hash_algorithms(
+            bytes,
+            python_tuf_compatibility_keyid_hash_algorithms(),
+        )
+    }
+
+    fn from_ed25519_with_keyid_hash_algorithms<T: Into<Vec<u8>>>(
+        bytes: T,
         keyid_hash_algorithms: Option<Vec<String>>,
     ) -> Result<Self> {
+        let bytes = bytes.into();
         if bytes.len() != 32 {
             return Err(Error::IllegalArgument(
                 "ed25519 keys must be 32 bytes long".into(),
@@ -942,19 +996,38 @@ mod test {
     const RSA_4096_SPKI: &'static [u8] = include_bytes!("../tests/rsa/rsa-4096.spki.der");
     const RSA_4096_PKCS1: &'static [u8] = include_bytes!("../tests/rsa/rsa-4096.pkcs1.der");
 
+    const ED25519_1_PRIVATE_KEY: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1");
+    const ED25519_1_PUBLIC_KEY: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pub");
     const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
+    const ED25519_1_SPKI: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.spki.der");
     const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
 
     #[test]
-    fn parse_rsa_2048_spki() {
+    fn parse_public_rsa_2048_spki() {
         let key = PublicKey::from_spki(RSA_2048_SPKI, SignatureScheme::RsaSsaPssSha256).unwrap();
         assert_eq!(key.typ, KeyType::Rsa);
+        assert_eq!(key.scheme, SignatureScheme::RsaSsaPssSha256);
     }
 
     #[test]
-    fn parse_rsa_4096_spki() {
+    fn parse_public_rsa_4096_spki() {
         let key = PublicKey::from_spki(RSA_4096_SPKI, SignatureScheme::RsaSsaPssSha256).unwrap();
         assert_eq!(key.typ, KeyType::Rsa);
+        assert_eq!(key.scheme, SignatureScheme::RsaSsaPssSha256);
+    }
+
+    #[test]
+    fn parse_public_ed25519_spki() {
+        let key = PublicKey::from_spki(ED25519_1_SPKI, SignatureScheme::Ed25519).unwrap();
+        assert_eq!(key.typ, KeyType::Ed25519);
+        assert_eq!(key.scheme, SignatureScheme::Ed25519);
+    }
+
+    #[test]
+    fn parse_public_ed25519() {
+        let key = PublicKey::from_ed25519(ED25519_1_PUBLIC_KEY).unwrap();
+        assert_eq!(key.typ, KeyType::Ed25519);
+        assert_eq!(key.scheme, SignatureScheme::Ed25519);
     }
 
     #[test]
@@ -998,6 +1071,32 @@ mod test {
     #[test]
     fn ed25519_read_pkcs8_and_sign() {
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let msg = b"test";
+
+        let sig = key.sign(msg).unwrap();
+
+        let pub_key =
+            PublicKey::from_spki(&key.public.as_spki().unwrap(), SignatureScheme::Ed25519).unwrap();
+
+        assert_eq!(pub_key.verify(msg, &sig), Ok(()));
+
+        // Make sure we match what ring expects.
+        let ring_key = ring::signature::Ed25519KeyPair::from_pkcs8(ED25519_1_PK8).unwrap();
+        assert_eq!(key.public().as_bytes(), ring_key.public_key().as_ref());
+        assert_eq!(sig.value().as_bytes(), ring_key.sign(msg).as_ref());
+
+        // Make sure verification fails with the wrong key.
+        let bad_pub_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
+            .unwrap()
+            .public()
+            .clone();
+
+        assert_eq!(bad_pub_key.verify(msg, &sig), Err(Error::BadSignature));
+    }
+
+    #[test]
+    fn ed25519_read_keypair_and_sign() {
+        let key = PrivateKey::from_ed25519(ED25519_1_PRIVATE_KEY).unwrap();
         let msg = b"test";
 
         let sig = key.sign(msg).unwrap();
