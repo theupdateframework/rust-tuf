@@ -446,7 +446,7 @@ where
     }
 
     /// Fetch a target description from the remote repo and return it.
-    async fn fetch_target_description<'a>(
+    pub async fn fetch_target_description<'a>(
         &'a mut self,
         target: &'a TargetPath,
     ) -> Result<TargetDescription> {
@@ -777,6 +777,8 @@ mod test {
     use chrono::prelude::*;
     use futures_executor::block_on;
     use lazy_static::lazy_static;
+    use maplit::hashmap;
+    use serde_json::json;
 
     lazy_static! {
         static ref KEYS: Vec<PrivateKey> = {
@@ -1113,5 +1115,134 @@ mod test {
                 .await
                 .unwrap(),
         );
+    }
+
+    #[test]
+    fn test_fetch_target_description_standard() {
+        block_on(test_fetch_target_description(
+            "standard/metadata".to_string(),
+            TargetDescription::from_reader(
+                "target with no custom metadata".as_bytes(),
+                &[HashAlgorithm::Sha256],
+            )
+            .unwrap(),
+        ));
+    }
+
+    #[test]
+    fn test_fetch_target_description_custom_empty() {
+        block_on(test_fetch_target_description(
+            "custom-empty".to_string(),
+            TargetDescription::from_reader_with_custom(
+                "target with empty custom metadata".as_bytes(),
+                &[HashAlgorithm::Sha256],
+                hashmap!(),
+            )
+            .unwrap(),
+        ));
+    }
+
+    #[test]
+    fn test_fetch_target_description_custom() {
+        block_on(test_fetch_target_description(
+            "custom/metadata".to_string(),
+            TargetDescription::from_reader_with_custom(
+                "target with lots of custom metadata".as_bytes(),
+                &[HashAlgorithm::Sha256],
+                hashmap!(
+                    "string".to_string() => json!("string"),
+                    "bool".to_string() => json!(true),
+                    "int".to_string() => json!(42),
+                    "object".to_string() => json!({
+                        "string": json!("string"),
+                        "bool": json!(true),
+                        "int": json!(42),
+                    }),
+                    "array".to_string() => json!([1, 2, 3]),
+                ),
+            )
+            .unwrap(),
+        ));
+    }
+
+    async fn test_fetch_target_description(path: String, expected_description: TargetDescription) {
+        // Generate an ephemeral repository with a single target.
+        let repo = EphemeralRepository::new();
+
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[0].public().clone())
+            .targets_key(KEYS[0].public().clone())
+            .timestamp_key(KEYS[0].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
+
+        let targets = TargetsMetadataBuilder::new()
+            .insert_target_description(
+                VirtualTargetPath::new(path.clone()).unwrap(),
+                expected_description.clone(),
+            )
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
+
+        let snapshot = SnapshotMetadataBuilder::new()
+            .insert_metadata(&targets, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
+
+        let timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Json>(&KEYS[0])
+                .unwrap();
+
+        // Register the metadata in the remote repository.
+        let root_path = MetadataPath::from_role(&Role::Root);
+        let targets_path = MetadataPath::from_role(&Role::Targets);
+        let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
+        let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
+
+        repo.store_metadata(&root_path, &MetadataVersion::Number(1), &root)
+            .await
+            .unwrap();
+
+        repo.store_metadata(&root_path, &MetadataVersion::None, &root)
+            .await
+            .unwrap();
+
+        repo.store_metadata(&targets_path, &MetadataVersion::None, &targets)
+            .await
+            .unwrap();
+
+        repo.store_metadata(&snapshot_path, &MetadataVersion::None, &snapshot)
+            .await
+            .unwrap();
+
+        repo.store_metadata(&timestamp_path, &MetadataVersion::None, &timestamp)
+            .await
+            .unwrap();
+
+        // Initialize and update client.
+        let key_ids = [KEYS[0].public().key_id().clone()];
+        let mut client = Client::with_root_pinned(
+            &key_ids,
+            Config::build().finish().unwrap(),
+            EphemeralRepository::new(),
+            repo,
+            1,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(client.update().await, Ok(true));
+
+        // Verify fetch_target_description returns expected target metadata
+        let description = client
+            .fetch_target_description(&TargetPath::new(path).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(description, expected_description);
     }
 }
