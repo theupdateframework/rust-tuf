@@ -149,10 +149,16 @@ impl TestKeyRotation {
         let remote = init_remote(&dir).unwrap();
 
         // Connect to the client with our initial keys.
-        let mut client =
-            Client::with_root_pinned(&key_ids, Config::default(), &self.local, remote, 1)
-                .await
-                .expect("client to open");
+        let mut client = Client::from_pinned_root_keyids(
+            Config::default(),
+            &MetadataVersion::Number(1),
+            1,
+            key_ids,
+            &self.local,
+            remote,
+        )
+        .await
+        .expect("client to open");
 
         // Update our TUF metadata. The first time should report there is new metadata, the second
         // time should not.

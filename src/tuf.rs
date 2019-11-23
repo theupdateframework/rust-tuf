@@ -5,7 +5,7 @@ use log::info;
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
-use crate::crypto::KeyId;
+use crate::crypto::{KeyId, PublicKey};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
@@ -26,27 +26,47 @@ pub struct Tuf<D: DataInterchange> {
 }
 
 impl<D: DataInterchange> Tuf<D> {
-    /// Create a new `TUF` struct from a known set of pinned root keys that are used to verify the
-    /// signed metadata.
-    pub fn from_root_pinned<'a, I>(
-        mut signed_root: SignedMetadata<D, RootMetadata>,
+    /// Create a new `TUF` struct from a known set of pinned root key ids that are used to verify
+    /// the signed metadata.
+    pub fn from_root_keyids_pinned<'a, I>(
+        signed_root: SignedMetadata<D, RootMetadata>,
+        threshold: u32,
         root_key_ids: I,
     ) -> Result<Self>
     where
         I: IntoIterator<Item = &'a KeyId>,
     {
-        let root_key_ids = root_key_ids.into_iter().collect::<HashSet<&KeyId>>();
+        {
+            let root = signed_root.as_ref();
+            signed_root.verify(
+                threshold,
+                root_key_ids
+                    .into_iter()
+                    .filter_map(|key_id| root.keys().get(key_id)),
+            )?
+        }
 
-        signed_root
-            .signatures_mut()
-            .retain(|s| root_key_ids.contains(s.key_id()));
+        Self::from_root(signed_root)
+    }
+
+    /// Create a new `TUF` struct from a known set of pinned root keys that are used to verify the
+    /// signed metadata.
+    pub fn from_root_keys_pinned<'a, I>(
+        signed_root: SignedMetadata<D, RootMetadata>,
+        threshold: u32,
+        root_keys: I,
+    ) -> Result<Self>
+    where
+        I: IntoIterator<Item = &'a PublicKey>,
+    {
+        signed_root.verify(threshold, root_keys)?;
         Self::from_root(signed_root)
     }
 
     /// Create a new `TUF` struct from a piece of metadata that is assumed to be trusted.
     ///
     /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
-    /// the related method `from_root_pinned`.
+    /// the related method `from_root_keys_pinned` and `from_root_keyids_pinned`.
     pub fn from_root(signed_root: SignedMetadata<D, RootMetadata>) -> Result<Self> {
         {
             let root = signed_root.as_ref();
@@ -658,7 +678,7 @@ mod test {
             .signed::<Json>(&root_key)
             .unwrap();
 
-        assert!(Tuf::from_root_pinned(root, &[root_key.key_id().clone()]).is_ok());
+        assert!(Tuf::from_root_keyids_pinned(root, 1, &[root_key.key_id().clone()]).is_ok());
     }
 
     #[test]
@@ -671,7 +691,7 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        assert!(Tuf::from_root_pinned(root, &[KEYS[1].key_id().clone()]).is_err());
+        assert!(Tuf::from_root_keyids_pinned(root, 1, &[KEYS[1].key_id().clone()]).is_err());
     }
 
     #[test]
