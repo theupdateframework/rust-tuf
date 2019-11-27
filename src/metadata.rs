@@ -929,7 +929,8 @@ impl TimestampMetadataBuilder {
         D: DataInterchange,
         M: Metadata,
     {
-        let bytes = D::canonicalize(&D::serialize(&snapshot)?)?;
+        let mut bytes = Vec::new();
+        D::to_writer(&mut bytes, &snapshot)?;
         let description = MetadataDescription::from_reader(&*bytes, snapshot.version(), hash_algs)?;
 
         Ok(Self::from_metadata_description(description))
@@ -1185,7 +1186,8 @@ impl SnapshotMetadataBuilder {
         M: Metadata,
         D: DataInterchange,
     {
-        let bytes = D::canonicalize(&D::serialize(metadata)?)?;
+        let mut bytes = Vec::new();
+        D::to_writer(&mut bytes, metadata)?;
         let description = MetadataDescription::from_reader(&*bytes, metadata.version(), hash_algs)?;
         let path = MetadataPath::new(path)?;
         Ok(self.insert_metadata_description(path, description))

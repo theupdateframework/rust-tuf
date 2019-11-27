@@ -264,7 +264,7 @@ impl DataInterchange for Json {
     /// let arr = vec![1, 2, 3];
     /// let mut buf = Vec::new();
     /// Json::to_writer(&mut buf, &arr).unwrap();
-    /// assert!(&buf == b"[1, 2, 3]" || &buf == b"[1,2,3]");
+    /// assert_eq!(&buf, b"[1,2,3]");
     /// ```
     fn to_writer<W, T: Sized>(mut writer: W, value: &T) -> Result<()>
     where
@@ -301,6 +301,76 @@ impl DataInterchange for Json {
         T: DeserializeOwned,
     {
         Ok(serde_json::from_slice(slice)?)
+    }
+}
+
+/// Pretty JSON data interchange.
+///
+/// This is identical to [Json] in all manners except for the `to_writer` method. Instead of
+/// writing the metadata in the canonical format, it instead pretty prints the metadata.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JsonPretty;
+
+impl DataInterchange for JsonPretty {
+    type RawData = serde_json::Value;
+
+    fn extension() -> &'static str {
+        Json::extension()
+    }
+
+    fn canonicalize(raw_data: &Self::RawData) -> Result<Vec<u8>> {
+        Json::canonicalize(raw_data)
+    }
+
+    fn deserialize<T>(raw_data: &Self::RawData) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        Json::deserialize(raw_data)
+    }
+
+    fn serialize<T>(data: &T) -> Result<Self::RawData>
+    where
+        T: Serialize,
+    {
+        Json::serialize(data)
+    }
+
+    /// ```
+    /// # use tuf::interchange::{DataInterchange, JsonPretty};
+    /// let arr = vec![1, 2, 3];
+    /// let mut buf = Vec::new();
+    /// JsonPretty::to_writer(&mut buf, &arr).unwrap();
+    /// assert_eq!(&String::from_utf8_lossy(&buf), "[
+    ///   1,
+    ///   2,
+    ///   3
+    /// ]");
+    /// ```
+    fn to_writer<W, T: Sized>(writer: W, value: &T) -> Result<()>
+    where
+        W: Write,
+        T: Serialize,
+    {
+        Ok(serde_json::to_writer_pretty(
+            writer,
+            &Self::serialize(value)?,
+        )?)
+    }
+
+    fn from_reader<R, T>(rdr: R) -> Result<T>
+    where
+        R: Read,
+        T: DeserializeOwned,
+    {
+        Json::from_reader(rdr)
+    }
+
+    fn from_slice<T>(slice: &[u8]) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        Json::from_slice(slice)
     }
 }
 
