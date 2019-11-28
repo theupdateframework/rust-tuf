@@ -284,7 +284,7 @@ where
     /// ID.
     ///
     /// **WARNING**: You should never have multiple TUF private keys on the same machine, so if
-    /// you're using this to append several signatures are once, you are doing something wrong. The
+    /// you're using this to append several signatures at once, you are doing something wrong. The
     /// preferred method is to generate your copy of the metadata locally and use `merge_signatures`
     /// to perform the "append" operations.
     ///
