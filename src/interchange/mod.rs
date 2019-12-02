@@ -1,7 +1,7 @@
 //! Structures and functions to aid in various TUF data interchange formats.
 
 pub(crate) mod cjson;
-pub use cjson::Json;
+pub use cjson::{Json, JsonPretty};
 
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
@@ -32,9 +32,6 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
         T: Serialize;
 
     /// Write a struct to a stream.
-    ///
-    /// Note: This *MUST* write the bytes canonically for hashes to line up correctly in other
-    /// areas of the library.
     fn to_writer<W, T: Sized>(writer: W, value: &T) -> Result<()>
     where
         W: Write,
