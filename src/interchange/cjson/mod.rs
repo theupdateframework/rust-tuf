@@ -263,11 +263,24 @@ impl DataInterchange for Json {
     }
 
     /// ```
+    /// # use serde_json::json;
     /// # use tuf::interchange::{DataInterchange, Json};
-    /// let arr = vec![1, 2, 3];
+    /// let json = json!({
+    ///     "o": {
+    ///         "a": [1, 2, 3],
+    ///         "s": "string",
+    ///         "n": 123,
+    ///         "t": true,
+    ///         "f": false,
+    ///         "0": null,
+    ///     },
+    /// });
     /// let mut buf = Vec::new();
-    /// Json::to_writer(&mut buf, &arr).unwrap();
-    /// assert_eq!(&buf, b"[1,2,3]");
+    /// Json::to_writer(&mut buf, &json).unwrap();
+    /// assert_eq!(
+    ///     &String::from_utf8(buf).unwrap(),
+    ///     r#"{"o":{"0":null,"a":[1,2,3],"f":false,"n":123,"s":"string","t":true}}"#
+    /// );
     /// ```
     fn to_writer<W, T: Sized>(mut writer: W, value: &T) -> Result<()>
     where
