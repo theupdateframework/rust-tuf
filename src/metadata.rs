@@ -1437,6 +1437,18 @@ impl TargetPath {
     pub fn value(&self) -> &str {
         &self.0
     }
+
+    /// Prefix the target path with a hash value to support TUF spec 5.5.2.
+    pub fn with_hash_prefix(&self, hash: &HashValue) -> Result<TargetPath> {
+        let mut components = self.components();
+
+        // The unwrap here is safe because we checked in `safe_path` that the path is not empty.
+        let file_name = components.pop().unwrap();
+
+        components.push(format!("{}.{}", hash, file_name));
+
+        TargetPath::new(components.join("/"))
+    }
 }
 
 /// Description of a target, used in verification.

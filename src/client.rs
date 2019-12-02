@@ -469,7 +469,16 @@ where
         target: &'a TargetPath,
     ) -> Result<Box<dyn AsyncRead + Send + Unpin>> {
         let target_description = self.fetch_target_description(target).await?;
-        self.remote.fetch_target(target, &target_description).await
+
+        // According to TUF section 5.5.2, when consistent snapshot is enabled, target files should
+        // be found at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.
+        if self.tuf.root().consistent_snapshot() {
+            let (_, value) = crypto::hash_preference(target_description.hashes())?;
+            let target = target.with_hash_prefix(value)?;
+            self.remote.fetch_target(&target, &target_description).await
+        } else {
+            self.remote.fetch_target(target, &target_description).await
+        }
     }
 
     async fn lookup_target_description<'a>(

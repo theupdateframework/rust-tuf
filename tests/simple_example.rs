@@ -1,10 +1,10 @@
 use futures_executor::block_on;
 use tuf::client::{Client, Config, PathTranslator};
-use tuf::crypto::{HashAlgorithm, KeyId, PrivateKey, SignatureScheme};
+use tuf::crypto::{self, HashAlgorithm, KeyId, PrivateKey, SignatureScheme};
 use tuf::interchange::Json;
 use tuf::metadata::{
-    MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder, TargetPath,
-    TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
+    MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder, TargetDescription,
+    TargetPath, TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
 use tuf::repository::{EphemeralRepository, Repository};
 use tuf::Result;
@@ -131,16 +131,25 @@ where
     //// build the targets ////
 
     let target_file: &[u8] = b"things fade, alternatives exclude";
+    let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])?;
 
     let target_path = TargetPath::new("foo-bar".into())?;
-    let _ = remote.store_target(target_file, &target_path).await;
+
+    // According to TUF section 5.5.2, when consistent snapshot is enabled, target files should be
+    // stored at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.
+    if consistent_snapshot {
+        let (_, value) = crypto::hash_preference(target_description.hashes())?;
+        let hash_prefixed_path = target_path.with_hash_prefix(&value)?;
+        let _ = remote.store_target(target_file, &hash_prefixed_path).await;
+    } else {
+        let _ = remote.store_target(target_file, &target_path).await;
+    };
 
     let targets = TargetsMetadataBuilder::new()
-        .insert_target_from_reader(
+        .insert_target_description(
             config.path_translator().real_to_virtual(&target_path)?,
-            target_file,
-            &[HashAlgorithm::Sha256],
-        )?
+            target_description,
+        )
         .signed::<Json>(&targets_key)?;
 
     let targets_path = &MetadataPath::new("targets")?;
