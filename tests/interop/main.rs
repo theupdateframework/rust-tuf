@@ -59,7 +59,6 @@ fn fuchsia_go_tuf_consistent_snapshot_false() {
 }
 
 #[test]
-#[ignore] // FIXME: Blocked on #225
 fn fuchsia_go_tuf_consistent_snapshot_true() {
     test_key_rotation(
         Path::new("tests")
@@ -80,7 +79,6 @@ fn fuchsia_go_tuf_transition_m4_consistent_snapshot_false() {
 }
 
 #[test]
-#[ignore] // FIXME: Blocked on #225
 fn fuchsia_go_tuf_transition_m4_consistent_snapshot_true() {
     test_key_rotation(
         Path::new("tests")
