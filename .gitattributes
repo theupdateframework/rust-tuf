@@ -1,0 +1,4 @@
+# If the git option `core.autoclrf` is enabled, the newlines on the golden
+# interop files might be changed from `\n` to `\r\n`, which breaks the hashes
+# in the metadata files. This disables that feature.
+* -text
