@@ -151,8 +151,8 @@ where
     /// Create a new TUF client. It will attempt to load initial root metadata the local and remote
     /// repositories using the provided key IDs to pin the verification.
     ///
-    /// **DEPRECATED**: This has been replaced with [Client::from_root_pinned_keyids].
-    #[deprecated(note = "use Client::from_root_pinned_keyids method instead")]
+    /// **DEPRECATED**: This has been replaced with [Client::from_pinned_root_keyids].
+    #[deprecated(note = "use Client::from_pinned_root_keyids method instead")]
     pub async fn with_root_keyids_pinned(
         trusted_root_keys: &[KeyId],
         config: Config<T>,
