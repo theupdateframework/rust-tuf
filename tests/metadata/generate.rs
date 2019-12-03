@@ -77,7 +77,7 @@ fn copy_repo(dir: &str, step: u8) {
         .arg("-r")
         .arg(src.to_str().unwrap())
         .arg(dst.to_str().unwrap())
-        .spawn()
+        .output()
         .expect("cp failed");
 }
 
@@ -98,15 +98,21 @@ async fn update_root(
     // Same expiration as go-tuf metadata generator.
     let expiration = Utc.ymd(2100, 1, 1).and_hms(0, 0, 0);
 
-    let root = RootMetadataBuilder::new()
+    let mut root = RootMetadataBuilder::new()
         .root_key(keys.get("root").unwrap().public().clone())
         .expires(expiration)
+        .version(version)
         .snapshot_key(keys.get("snapshot").unwrap().public().clone())
         .targets_key(keys.get("targets").unwrap().public().clone())
         .timestamp_key(keys.get("timestamp").unwrap().public().clone())
         .consistent_snapshot(consistent_snapshot)
         .signed::<JsonPretty>(signer)
         .unwrap();
+
+    // If we rotated the root, sign it again with the new key.
+    if let Some(_) = root_signer {
+        root.add_signature(keys.get("root").unwrap()).unwrap()
+    };
 
     let root_path = MetadataPath::from_role(&Role::Root);
     repo.store_metadata(&root_path, &MetadataVersion::Number(version), &root)
@@ -126,8 +132,11 @@ async fn add_target(
 ) {
     // Same expiration as go-tuf metadata generator.
     let expiration = Utc.ymd(2100, 1, 1).and_hms(0, 0, 0);
+    let version: u32 = (step + 1).into();
 
-    let mut targets_builder = TargetsMetadataBuilder::new().expires(expiration);
+    let mut targets_builder = TargetsMetadataBuilder::new()
+        .expires(expiration)
+        .version(version);
 
     let targets_path = MetadataPath::from_role(&Role::Targets);
     for i in 0..step + 1 {
@@ -165,25 +174,26 @@ async fn add_target(
     let target_path = TargetPath::new(target_str.into()).unwrap();
     repo.store_target(target_data, &target_path).await.unwrap();
 
-    let version = if consistent_snapshot {
-        MetadataVersion::Number((step + 1).into())
+    let version_prefix = if consistent_snapshot {
+        MetadataVersion::Number(version)
     } else {
         MetadataVersion::None
     };
 
-    repo.store_metadata(&targets_path, &version, &targets)
+    repo.store_metadata(&targets_path, &version_prefix, &targets)
         .await
         .unwrap();
 
     let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
     let snapshot = SnapshotMetadataBuilder::new()
         .expires(expiration)
+        .version(version)
         .insert_metadata(&targets, &[HashAlgorithm::Sha256])
         .unwrap()
         .signed::<JsonPretty>(&keys.get("snapshot").unwrap())
         .unwrap();
 
-    repo.store_metadata(&snapshot_path, &version, &snapshot)
+    repo.store_metadata(&snapshot_path, &version_prefix, &snapshot)
         .await
         .unwrap();
 
@@ -191,10 +201,11 @@ async fn add_target(
     let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
         .unwrap()
         .expires(expiration)
+        .version(version)
         .signed::<JsonPretty>(&keys.get("timestamp").unwrap())
         .unwrap();
 
-    // Timestamp doesn't require a version even in consistent_snapshot.
+    // Timestamp doesn't require a version prefix even in consistent_snapshot.
     repo.store_metadata(&timestamp_path, &MetadataVersion::None, &timestamp)
         .await
         .unwrap();

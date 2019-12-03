@@ -85,7 +85,27 @@ fn fuchsia_go_tuf_transition_m4_consistent_snapshot_true() {
             .join("interop")
             .join("fuchsia-go-tuf-transition-M4")
             .join("consistent-snapshot-true"),
-    )
+    );
+}
+
+// Tests to catch changes to the way we generate metadata.
+#[test]
+fn fuchsia_rust_tuf_identity_consistent_snapshot_false() {
+    test_key_rotation(
+        Path::new("tests")
+            .join("metadata")
+            .join("consistent-snapshot-false"),
+    );
+}
+
+#[test]
+#[ignore] // FIXME: Blocked on #225
+fn fuchsia_rust_tuf_identity_consistent_snapshot_true() {
+    test_key_rotation(
+        Path::new("tests")
+            .join("metadata")
+            .join("consistent-snapshot-true"),
+    );
 }
 
 fn test_key_rotation(dir: PathBuf) {
