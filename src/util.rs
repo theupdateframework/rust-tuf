@@ -101,6 +101,7 @@ impl<R: AsyncRead + Unpin> AsyncRead for SafeReader<R> {
         match self.bytes_read.checked_add(read_bytes as u64) {
             Some(sum) if sum <= self.max_size => self.bytes_read = sum,
             _ => {
+                println!("async read: {} bytes {} got max {} {:?}", read_bytes, self.bytes_read, self.max_size, buf);
                 return Poll::Ready(Err(io::Error::new(
                     ErrorKind::InvalidData,
                     "Read exceeded the maximum allowed bytes.",

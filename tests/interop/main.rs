@@ -99,7 +99,6 @@ fn rust_tuf_identity_consistent_snapshot_false() {
 }
 
 #[test]
-#[ignore] // FIXME: Blocked on #225
 fn rust_tuf_identity_consistent_snapshot_true() {
     test_key_rotation(
         Path::new("tests")
@@ -186,6 +185,8 @@ impl TestKeyRotation {
 
         // fetch all the targets and check they have the correct content
         for (target_path, expected) in self.expected_targets.iter() {
+            println!("target_path: {:?} expected {:?}", target_path, expected);
+
             let mut buf = Vec::new();
             assert_eq!(
                 client.fetch_target_to_writer(&target_path, &mut buf).await,

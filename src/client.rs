@@ -470,6 +470,8 @@ where
     ) -> Result<Box<dyn AsyncRead + Send + Unpin>> {
         let target_description = self.fetch_target_description(target).await?;
 
+        println!("_fetch_target: {:?}", target_description);
+
         // According to TUF section 5.5.2, when consistent snapshot is enabled, target files should
         // be found at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.
         if self.tuf.root().consistent_snapshot() {
