@@ -1,1 +1,46 @@
-../../4/repository/5.targets.json
+{
+  "signatures": [
+    {
+      "keyid": "bc8f087663855564b358ddf314d5932ab920af17bd1df2f58b397afd82d76dc1",
+      "sig": "c88a8309f966fb794f41acf864c2b204ecb32ada9c4f4844657fa67f174735f75bdd799dfe6850ea8a775b8d2acba5bf82def8b909d3633a0f289eb246cd9f05"
+    }
+  ],
+  "signed": {
+    "_type": "targets",
+    "expires": "2100-01-01T00:00:00Z",
+    "spec_version": "1.0",
+    "targets": {
+      "0": {
+        "hashes": {
+          "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+        },
+        "length": 1
+      },
+      "1": {
+        "hashes": {
+          "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+        },
+        "length": 1
+      },
+      "2": {
+        "hashes": {
+          "sha256": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+        },
+        "length": 1
+      },
+      "3": {
+        "hashes": {
+          "sha256": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"
+        },
+        "length": 1
+      },
+      "4": {
+        "hashes": {
+          "sha256": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a"
+        },
+        "length": 1
+      }
+    },
+    "version": 5
+  }
+}

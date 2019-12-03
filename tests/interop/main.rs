@@ -90,7 +90,7 @@ fn fuchsia_go_tuf_transition_m4_consistent_snapshot_true() {
 
 // Tests to catch changes to the way we generate metadata.
 #[test]
-fn fuchsia_rust_tuf_identity_consistent_snapshot_false() {
+fn rust_tuf_identity_consistent_snapshot_false() {
     test_key_rotation(
         Path::new("tests")
             .join("metadata")
@@ -100,7 +100,7 @@ fn fuchsia_rust_tuf_identity_consistent_snapshot_false() {
 
 #[test]
 #[ignore] // FIXME: Blocked on #225
-fn fuchsia_rust_tuf_identity_consistent_snapshot_true() {
+fn rust_tuf_identity_consistent_snapshot_true() {
     test_key_rotation(
         Path::new("tests")
             .join("metadata")

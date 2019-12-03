@@ -1,1 +1,23 @@
-../../3/repository/4.snapshot.json
+{
+  "signatures": [
+    {
+      "keyid": "b096bc2d67080cec22e6c0bbaa69cfd9d714b9e9ad847d255f950b2728855fef",
+      "sig": "46ec63e7984f022a3338eacb86e385f5dc464ec72ec876735b3522d5857ceef8a7f44264e3bc326233e54717c488e7ae37c72226ca62f1c75ab9000436ffff0f"
+    }
+  ],
+  "signed": {
+    "_type": "snapshot",
+    "expires": "2100-01-01T00:00:00Z",
+    "meta": {
+      "targets.json": {
+        "hashes": {
+          "sha256": "618ad46b2eb62ce9842ebd490b4e6f38d34c1c9318b43bd87dc2fe963a2acbfc"
+        },
+        "length": 1053,
+        "version": 4
+      }
+    },
+    "spec_version": "1.0",
+    "version": 4
+  }
+}

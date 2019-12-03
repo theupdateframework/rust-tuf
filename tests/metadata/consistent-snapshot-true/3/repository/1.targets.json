@@ -1,1 +1,22 @@
-../../2/repository/1.targets.json
+{
+  "signatures": [
+    {
+      "keyid": "808aa256a8172bb0cb961767c6768e55ccf732c99afccc6145752d7a328b7937",
+      "sig": "4c52ea661f1d5177a0c8d2b2f1187fbdc41e3bf2e25d134a89c7955317c783f36de6c224121f643916115a46061769f527465b23a481dd14c26eec4b58342607"
+    }
+  ],
+  "signed": {
+    "_type": "targets",
+    "expires": "2100-01-01T00:00:00Z",
+    "spec_version": "1.0",
+    "targets": {
+      "0": {
+        "hashes": {
+          "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+        },
+        "length": 1
+      }
+    },
+    "version": 1
+  }
+}

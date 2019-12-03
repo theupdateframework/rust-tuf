@@ -11,4 +11,5 @@ for d in consistent-snapshot-false consistent-snapshot-true; do
 done
 
 cargo run generate
-go run ./tools/linkify-metadata.go
+# TODO: re-enable when figure out how to make it play nicely with Windows.
+#go run ./tools/linkify-metadata.go
