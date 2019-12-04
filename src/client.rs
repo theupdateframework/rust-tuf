@@ -36,7 +36,7 @@
 //! .user_agent("rustup/1.4.0")
 //! .build();
 //!
-//! let mut client = Client::from_pinned_root_keyids(
+//! let mut client = Client::with_pinned_root_keyids(
 //!     Config::default(),
 //!     &MetadataVersion::Number(1),
 //!     1,
@@ -58,7 +58,7 @@ use log::{error, warn};
 use std::future::Future;
 use std::pin::Pin;
 
-use crate::crypto::{self, KeyId, PublicKey};
+use crate::crypto::{self, HashAlgorithm, HashValue, KeyId, PublicKey};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
@@ -145,22 +145,22 @@ where
     /// **DEPRECATED**: This has been replaced with [Client::from_local].
     #[deprecated(note = "use Client::from_local method instead")]
     pub async fn new(config: Config<T>, local: L, remote: R) -> Result<Self> {
-        Client::from_local(config, &MetadataVersion::Number(1), local, remote).await
+        Client::with_trusted_local(config, &MetadataVersion::Number(1), local, remote).await
     }
 
     /// Create a new TUF client. It will attempt to load initial root metadata the local and remote
     /// repositories using the provided key IDs to pin the verification.
     ///
-    /// **DEPRECATED**: This has been replaced with [Client::from_pinned_root_keyids].
-    #[deprecated(note = "use Client::from_pinned_root_keyids method instead")]
-    pub async fn with_root_keyids_pinned(
+    /// **DEPRECATED**: This has been replaced with [Client::with_pinned_root_keyids].
+    #[deprecated(note = "use Client::with_pinned_root_keyids method instead")]
+    pub async fn with_root_pinned(
         trusted_root_keys: &[KeyId],
         config: Config<T>,
         local: L,
         remote: R,
         version: u32,
     ) -> Result<Self> {
-        Client::from_pinned_root_keyids(
+        Client::with_pinned_root_keyids(
             config,
             &MetadataVersion::Number(version),
             1,
@@ -176,7 +176,7 @@ where
     /// cannot do so.
     ///
     /// **WARNING**: This method offers weaker security guarantees than the related method
-    /// `from_pinned_root_keys`.
+    /// `with_pinned_root_keys`.
     ///
     /// # Examples
     ///
@@ -216,7 +216,7 @@ where
     ///
     /// local.store_metadata(&root_path, &root_version, &root).await?;
     ///
-    /// let client = Client::from_local(
+    /// let client = Client::with_trusted_local(
     ///     Config::default(),
     ///     &root_version,
     ///     local,
@@ -226,7 +226,7 @@ where
     /// # })
     /// # }
     /// ```
-    pub async fn from_local(
+    pub async fn with_trusted_local(
         config: Config<T>,
         root_version: &MetadataVersion,
         local: L,
@@ -238,7 +238,7 @@ where
             .fetch_metadata(&root_path, root_version, config.max_root_length, None)
             .await?;
 
-        let tuf = Tuf::from_root(root)?;
+        let tuf = Tuf::with_root(root)?;
 
         Ok(Client {
             tuf,
@@ -292,7 +292,7 @@ where
     ///
     /// remote.store_metadata(&root_path, &root_version, &root).await?;
     ///
-    /// let client = Client::from_pinned_root_keyids(
+    /// let client = Client::with_pinned_root_keyids(
     ///     Config::default(),
     ///     &root_version,
     ///     root_threshold,
@@ -304,7 +304,7 @@ where
     /// # })
     /// # }
     /// ```
-    pub async fn from_pinned_root_keyids<'a, I>(
+    pub async fn with_pinned_root_keyids<'a, I>(
         config: Config<T>,
         root_version: &MetadataVersion,
         root_threshold: u32,
@@ -317,36 +317,37 @@ where
     {
         let root_path = MetadataPath::from_role(&Role::Root);
 
-        let (fetched, root) = fetch_metadata_from_local_then_remote(
+        let (fetched, root) = fetch_metadata_from_local_or_else_remote(
             &root_path,
             &root_version,
             config.max_root_length,
+            None,
             &local,
             &remote,
         )
         .await?;
 
-        let tuf = Tuf::from_root_keyids_pinned(root.clone(), root_threshold, trusted_root_keyids)?;
+        let tuf =
+            Tuf::with_root_with_pinned_keyids(root.clone(), root_threshold, trusted_root_keyids)?;
 
-        // Only store the metadata after we have validated it.
-        if fetched {
-            let root_version = MetadataVersion::Number(root.version());
-            local
-                .store_metadata(&root_path, &root_version, &root)
-                .await?;
-
-            // Also store this root metadata as the latest version.
-            local
-                .store_metadata(&root_path, &MetadataVersion::None, &root)
-                .await?;
-        }
-
-        Ok(Client {
+        let mut client = Client {
             tuf,
             config,
             local,
             remote,
-        })
+        };
+
+        // Only store the metadata after we have validated it.
+        if fetched {
+            let root_version = MetadataVersion::Number(root.version());
+            client
+                .store_metadata(&root_path, &root_version, &root)
+                .await;
+
+            // FIXME: should we also the root as `MetadataVersion::None`?
+        }
+
+        Ok(client)
     }
 
     /// Create a new TUF client. It will attempt to load initial root metadata from the local and remote
@@ -393,7 +394,7 @@ where
     ///
     /// remote.store_metadata(&root_path, &root_version, &root).await?;
     ///
-    /// let client = Client::from_pinned_root_keys(
+    /// let client = Client::with_pinned_root_keys(
     ///     Config::default(),
     ///     &root_version,
     ///     root_threshold,
@@ -405,7 +406,7 @@ where
     /// # })
     /// # }
     /// ```
-    pub async fn from_pinned_root_keys<'a, I>(
+    pub async fn with_pinned_root_keys<'a, I>(
         config: Config<T>,
         root_version: &MetadataVersion,
         root_threshold: u32,
@@ -418,36 +419,35 @@ where
     {
         let root_path = MetadataPath::from_role(&Role::Root);
 
-        let (fetched, root) = fetch_metadata_from_local_then_remote(
+        let (fetched, root) = fetch_metadata_from_local_or_else_remote(
             &root_path,
             root_version,
             config.max_root_length,
+            None,
             &local,
             &remote,
         )
         .await?;
 
-        let tuf = Tuf::from_root_keys_pinned(root.clone(), root_threshold, trusted_root_keys)?;
+        let tuf = Tuf::with_root_with_pinned_keys(root.clone(), root_threshold, trusted_root_keys)?;
 
-        // Only store the metadata after we have validated it.
-        if fetched {
-            let root_version = MetadataVersion::Number(root.version());
-            local
-                .store_metadata(&root_path, &root_version, &root)
-                .await?;
-
-            // Also store this root metadata as the latest version.
-            local
-                .store_metadata(&root_path, &MetadataVersion::None, &root)
-                .await?;
-        }
-
-        Ok(Client {
+        let mut client = Client {
             tuf,
             config,
             local,
             remote,
-        })
+        };
+
+        // Only store the metadata after we have validated it.
+        if fetched {
+            client
+                .store_metadata(&root_path, &root_version, &root)
+                .await;
+
+            // FIXME: should we also the root as `MetadataVersion::None`?
+        }
+
+        Ok(client)
     }
 
     /// Create a new TUF client. It will use trust this initial root metadata.
@@ -488,7 +488,7 @@ where
     ///     .signed::<Json>(&private_key)
     ///     .unwrap();
     ///
-    /// let client = Client::from_pinned_root(
+    /// let client = Client::with_pinned_root(
     ///     Config::default(),
     ///     root,
     ///     local,
@@ -498,25 +498,13 @@ where
     /// # })
     /// # }
     /// ```
-    pub async fn from_pinned_root(
+    pub async fn with_pinned_root(
         config: Config<T>,
         trusted_root: SignedMetadata<D, RootMetadata>,
         local: L,
         remote: R,
     ) -> Result<Self> {
-        let tuf = Tuf::from_root(trusted_root.clone())?;
-
-        let root_path = MetadataPath::from_role(&Role::Root);
-        let root_version = MetadataVersion::Number(trusted_root.version());
-
-        local
-            .store_metadata(&root_path, &root_version, &trusted_root)
-            .await?;
-
-        // Also store this root metadata as the latest version.
-        local
-            .store_metadata(&root_path, &MetadataVersion::None, &trusted_root)
-            .await?;
+        let tuf = Tuf::with_root(trusted_root.clone())?;
 
         Ok(Client {
             tuf,
@@ -960,23 +948,28 @@ where
 
 /// Helper function that first tries to fetch the metadata from the local store, and if it doesn't
 /// exist, try fetching it from the remote store.
-async fn fetch_metadata_from_local_then_remote<D, L, R>(
-    path: &MetadataPath,
-    version: &MetadataVersion,
+async fn fetch_metadata_from_local_or_else_remote<'a, D, L, R, M>(
+    path: &'a MetadataPath,
+    version: &'a MetadataVersion,
     max_length: Option<usize>,
-    local: &L,
-    remote: &R,
-) -> Result<(bool, SignedMetadata<D, RootMetadata>)>
+    hash_data: Option<(&'static HashAlgorithm, HashValue)>,
+    local: &'a L,
+    remote: &'a R,
+) -> Result<(bool, SignedMetadata<D, M>)>
 where
     D: DataInterchange + Sync,
     L: Repository<D>,
     R: Repository<D>,
+    M: Metadata + 'static,
 {
-    match local.fetch_metadata(path, version, max_length, None).await {
+    match local
+        .fetch_metadata(path, version, max_length, hash_data.clone())
+        .await
+    {
         Ok(meta) => Ok((false, meta)),
         Err(Error::NotFound) => {
             let meta = remote
-                .fetch_metadata(path, version, max_length, None)
+                .fetch_metadata(path, version, max_length, hash_data)
                 .await?;
             Ok((true, meta))
         }
@@ -1167,40 +1160,44 @@ mod test {
             let private_key = PrivateKey::from_pkcs8(
                 &PrivateKey::new(KeyType::Ed25519).unwrap(),
                 SignatureScheme::Ed25519,
-            ).unwrap();
+            )
+            .unwrap();
             let public_key = private_key.public().clone();
 
             assert_matches!(
-                Client::from_local(
+                Client::with_trusted_local(
                     Config::default(),
                     &MetadataVersion::Number(1),
                     &local,
                     &remote,
-                ).await,
+                )
+                .await,
                 Err(Error::NotFound)
             );
 
             assert_matches!(
-                Client::from_pinned_root_keys(
+                Client::with_pinned_root_keys(
                     Config::default(),
                     &MetadataVersion::Number(1),
                     1,
                     once(&public_key),
                     &local,
                     &remote,
-                ).await,
+                )
+                .await,
                 Err(Error::NotFound)
             );
 
             assert_matches!(
-                Client::from_pinned_root_keyids(
+                Client::with_pinned_root_keyids(
                     Config::default(),
                     &MetadataVersion::Number(1),
                     1,
                     once(public_key.key_id()),
                     &local,
                     &remote,
-                ).await,
+                )
+                .await,
                 Err(Error::NotFound)
             );
         })
@@ -1215,7 +1212,8 @@ mod test {
             let good_private_key = PrivateKey::from_pkcs8(
                 &PrivateKey::new(KeyType::Ed25519).unwrap(),
                 SignatureScheme::Ed25519,
-            ).unwrap();
+            )
+            .unwrap();
             let good_public_key = good_private_key.public().clone();
 
             let root_version = 1;
@@ -1232,39 +1230,41 @@ mod test {
             let root_path = MetadataPath::from_role(&Role::Root);
             let root_version = MetadataVersion::Number(root_version);
 
-            remote.store_metadata(
-                &root_path,
-                &root_version,
-                &root,
-            ).await.unwrap();
+            remote
+                .store_metadata(&root_path, &root_version, &root)
+                .await
+                .unwrap();
 
             let bad_private_key = PrivateKey::from_pkcs8(
                 &PrivateKey::new(KeyType::Ed25519).unwrap(),
                 SignatureScheme::Ed25519,
-            ).unwrap();
+            )
+            .unwrap();
             let bad_public_key = bad_private_key.public().clone();
 
             assert_matches!(
-                Client::from_pinned_root_keys(
+                Client::with_pinned_root_keys(
                     Config::default(),
                     &root_version,
                     1,
                     once(&bad_public_key),
                     &local,
                     &remote,
-                ).await,
+                )
+                .await,
                 Err(Error::VerificationFailure(_))
             );
 
             assert_matches!(
-                Client::from_pinned_root_keyids(
+                Client::with_pinned_root_keyids(
                     Config::default(),
                     &root_version,
                     1,
                     once(bad_public_key.key_id()),
                     &local,
                     &remote,
-                ).await,
+                )
+                .await,
                 Err(Error::VerificationFailure(_))
             );
         })
@@ -1382,7 +1382,7 @@ mod test {
             ////
             // Now, make sure that the local metadata got version 1.
             let key_ids = [KEYS[0].public().key_id().clone()];
-            let mut client = Client::from_pinned_root_keyids(
+            let mut client = Client::with_pinned_root_keyids(
                 Config::default(),
                 &MetadataVersion::Number(1),
                 1,
@@ -1567,7 +1567,7 @@ mod test {
             KEYS[0].public().key_id().clone(),
             KEYS[1].public().key_id().clone(),
         ];
-        let mut client = Client::from_pinned_root_keyids(
+        let mut client = Client::with_pinned_root_keyids(
             Config::build().finish().unwrap(),
             &MetadataVersion::Number(2),
             1,
@@ -1701,7 +1701,7 @@ mod test {
 
         // Initialize and update client.
         let mut client =
-            Client::from_pinned_root(Config::default(), root, EphemeralRepository::new(), repo)
+            Client::with_pinned_root(Config::default(), root, EphemeralRepository::new(), repo)
                 .await
                 .unwrap();
 

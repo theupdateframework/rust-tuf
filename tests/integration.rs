@@ -33,7 +33,7 @@ fn simple_delegation() {
         .unwrap();
 
     let mut tuf =
-        Tuf::<Json>::from_root_keyids_pinned(root, 1, &[root_key.key_id().clone()]).unwrap();
+        Tuf::<Json>::with_root_with_pinned_keyids(root, 1, &[root_key.key_id().clone()]).unwrap();
 
     //// build the snapshot and timestamp ////
 
@@ -123,7 +123,7 @@ fn nested_delegation() {
         .unwrap();
 
     let mut tuf =
-        Tuf::<Json>::from_root_keyids_pinned(root, 1, &[root_key.key_id().clone()]).unwrap();
+        Tuf::<Json>::with_root_with_pinned_keyids(root, 1, &[root_key.key_id().clone()]).unwrap();
 
     //// build the snapshot and timestamp ////
 

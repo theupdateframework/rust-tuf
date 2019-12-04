@@ -90,7 +90,7 @@ where
     T: PathTranslator,
 {
     let local = EphemeralRepository::<Json>::new();
-    let mut client = Client::from_pinned_root_keyids(
+    let mut client = Client::with_pinned_root_keyids(
         config,
         &MetadataVersion::Number(1),
         1,

@@ -149,7 +149,7 @@ impl TestKeyRotation {
         let remote = init_remote(&dir).unwrap();
 
         // Connect to the client with our initial keys.
-        let mut client = Client::from_pinned_root_keyids(
+        let mut client = Client::with_pinned_root_keyids(
             Config::default(),
             &MetadataVersion::Number(1),
             1,

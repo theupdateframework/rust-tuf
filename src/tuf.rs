@@ -28,7 +28,7 @@ pub struct Tuf<D: DataInterchange> {
 impl<D: DataInterchange> Tuf<D> {
     /// Create a new `TUF` struct from a known set of pinned root key ids that are used to verify
     /// the signed metadata.
-    pub fn from_root_keyids_pinned<'a, I>(
+    pub fn with_root_with_pinned_keyids<'a, I>(
         signed_root: SignedMetadata<D, RootMetadata>,
         threshold: u32,
         root_key_ids: I,
@@ -46,12 +46,12 @@ impl<D: DataInterchange> Tuf<D> {
             )?
         }
 
-        Self::from_root(signed_root)
+        Self::with_root(signed_root)
     }
 
     /// Create a new `TUF` struct from a known set of pinned root keys that are used to verify the
     /// signed metadata.
-    pub fn from_root_keys_pinned<'a, I>(
+    pub fn with_root_with_pinned_keys<'a, I>(
         signed_root: SignedMetadata<D, RootMetadata>,
         threshold: u32,
         root_keys: I,
@@ -60,14 +60,14 @@ impl<D: DataInterchange> Tuf<D> {
         I: IntoIterator<Item = &'a PublicKey>,
     {
         signed_root.verify(threshold, root_keys)?;
-        Self::from_root(signed_root)
+        Self::with_root(signed_root)
     }
 
     /// Create a new `TUF` struct from a piece of metadata that is assumed to be trusted.
     ///
     /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
-    /// the related method `from_root_keys_pinned` and `from_root_keyids_pinned`.
-    pub fn from_root(signed_root: SignedMetadata<D, RootMetadata>) -> Result<Self> {
+    /// the related method `with_root_with_pinned_keys` and `with_root_with_pinned_keyids`.
+    pub fn with_root(signed_root: SignedMetadata<D, RootMetadata>) -> Result<Self> {
         {
             let root = signed_root.as_ref();
             signed_root.verify(
@@ -650,6 +650,8 @@ mod test {
         TimestampMetadataBuilder,
     };
     use lazy_static::lazy_static;
+    use matches::assert_matches;
+    use std::iter::once;
 
     lazy_static! {
         static ref KEYS: Vec<PrivateKey> = {
@@ -668,7 +670,7 @@ mod test {
     }
 
     #[test]
-    fn root_pinned_success() {
+    fn root_pinned_keyids_success() {
         let root_key = &KEYS[0];
         let root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
@@ -678,11 +680,14 @@ mod test {
             .signed::<Json>(&root_key)
             .unwrap();
 
-        assert!(Tuf::from_root_keyids_pinned(root, 1, &[root_key.key_id().clone()]).is_ok());
+        assert_matches!(
+            Tuf::with_root_with_pinned_keyids(root, 1, once(root_key.key_id())),
+            Ok(_)
+        );
     }
 
     #[test]
-    fn root_pinned_failure() {
+    fn root_pinned_keyids_failure() {
         let root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[0].public().clone())
@@ -691,7 +696,43 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        assert!(Tuf::from_root_keyids_pinned(root, 1, &[KEYS[1].key_id().clone()]).is_err());
+        assert_matches!(
+            Tuf::with_root_with_pinned_keyids(root, 1, once(KEYS[1].key_id())),
+            Err(Error::VerificationFailure(s)) if s == "Signature threshold not met: 0/1"
+        );
+    }
+
+    #[test]
+    fn root_pinned_keys_success() {
+        let root_key = &KEYS[0];
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[0].public().clone())
+            .targets_key(KEYS[0].public().clone())
+            .timestamp_key(KEYS[0].public().clone())
+            .signed::<Json>(&root_key)
+            .unwrap();
+
+        assert_matches!(
+            Tuf::with_root_with_pinned_keys(root, 1, once(root_key.public())),
+            Ok(_)
+        );
+    }
+
+    #[test]
+    fn root_pinned_keys_failure() {
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[0].public().clone())
+            .targets_key(KEYS[0].public().clone())
+            .timestamp_key(KEYS[0].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap();
+
+        assert_matches!(
+            Tuf::with_root_with_pinned_keys(root, 1, once(KEYS[1].public())),
+            Err(Error::VerificationFailure(s)) if s == "Signature threshold not met: 0/1"
+        );
     }
 
     #[test]
@@ -704,7 +745,7 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::with_root(root).unwrap();
 
         let mut root = RootMetadataBuilder::new()
             .version(2)
@@ -734,7 +775,7 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::with_root(root).unwrap();
 
         let root = RootMetadataBuilder::new()
             .root_key(KEYS[1].public().clone())
@@ -757,7 +798,7 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::with_root(root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .signed::<Json>(&KEYS[1])
@@ -785,7 +826,7 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::with_root(root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .signed::<Json>(&KEYS[1])
@@ -811,7 +852,7 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::with_root(root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new().signed(&KEYS[1]).unwrap();
 
@@ -839,7 +880,7 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::with_root(root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .signed::<Json>(&KEYS[2])
@@ -867,7 +908,7 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::with_root(root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .version(2)
@@ -916,7 +957,7 @@ mod test {
                 .signed::<Json>(&KEYS[3])
                 .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::with_root(root).unwrap();
 
         tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
@@ -937,7 +978,7 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::with_root(root).unwrap();
 
         let targets = TargetsMetadataBuilder::new()
             // sign it with the timestamp key
@@ -972,7 +1013,7 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        let mut tuf = Tuf::from_root(root).unwrap();
+        let mut tuf = Tuf::with_root(root).unwrap();
 
         let targets = TargetsMetadataBuilder::new()
             .version(2)
