@@ -99,7 +99,6 @@ fn rust_tuf_identity_consistent_snapshot_false() {
 }
 
 #[test]
-#[ignore] // FIXME: Blocked on #225
 fn rust_tuf_identity_consistent_snapshot_true() {
     test_key_rotation(
         Path::new("tests")
