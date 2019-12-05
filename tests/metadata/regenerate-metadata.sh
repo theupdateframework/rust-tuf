@@ -5,7 +5,7 @@ set -eu
 cd `dirname $0`
 
 for d in consistent-snapshot-false consistent-snapshot-true; do
-	if [[ -e $d ]]; then
+	if [ -e $d ]; then
 		rm -r $d
 	fi
 done
