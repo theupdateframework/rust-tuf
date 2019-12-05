@@ -36,8 +36,7 @@ struct TestKeyPair {
 impl TestKeyPair {
     fn to_private_key(&self) -> PrivateKey {
         let priv_bytes = HEXLOWER.decode(self.keyval.private.as_bytes()).unwrap();
-        let pk = PrivateKey::from_ed25519(&priv_bytes[..]).unwrap();
-        return pk;
+        PrivateKey::from_ed25519(&priv_bytes[..]).unwrap()
     }
 }
 
@@ -51,8 +50,7 @@ struct TestKeys {
 
 fn init_json_keys(path: &str) -> TestKeys {
     let f = File::open(path).expect("failed to open keys file");
-    let keys: TestKeys = serde_json::from_reader(f).expect("serde failed");
-    return keys;
+    serde_json::from_reader(f).expect("serde failed")
 }
 
 // Map each role to its current key.
