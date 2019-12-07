@@ -354,7 +354,7 @@ pub struct PrivateKey {
 }
 
 impl PrivateKey {
-    /// Generate a new `PrivateKey`.
+    /// Generate a new `PrivateKey` bytes in pkcs8 format.
     ///
     /// Note: For RSA keys, `openssl` needs to the on the `$PATH`.
     pub fn new(key_type: KeyType) -> Result<Vec<u8>> {
