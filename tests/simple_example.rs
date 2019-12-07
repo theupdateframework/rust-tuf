@@ -90,7 +90,15 @@ where
     T: PathTranslator,
 {
     let local = EphemeralRepository::<Json>::new();
-    let mut client = Client::with_root_pinned(&root_key_ids, config, local, remote, 1).await?;
+    let mut client = Client::with_trusted_root_keyids(
+        config,
+        &MetadataVersion::Number(1),
+        1,
+        root_key_ids,
+        local,
+        remote,
+    )
+    .await?;
     let _ = client.update().await?;
     let target_path = TargetPath::new("foo-bar".into())?;
     client.fetch_target(&target_path).await

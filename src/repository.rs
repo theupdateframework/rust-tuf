@@ -615,6 +615,7 @@ where
 type ArcHashMap<K, V> = Arc<RwLock<HashMap<K, V>>>;
 
 /// An ephemeral repository contained solely in memory.
+#[derive(Debug)]
 pub struct EphemeralRepository<D>
 where
     D: DataInterchange,

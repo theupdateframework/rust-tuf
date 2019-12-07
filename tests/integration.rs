@@ -5,6 +5,7 @@ use tuf::metadata::{
     Delegation, Delegations, MetadataDescription, MetadataPath, RootMetadataBuilder,
     SnapshotMetadataBuilder, TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
+use std::iter::once;
 use tuf::Tuf;
 
 const ED25519_1_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-1.pk8.der");
@@ -32,7 +33,8 @@ fn simple_delegation() {
         .signed::<Json>(&root_key)
         .unwrap();
 
-    let mut tuf = Tuf::<Json>::from_root_pinned(root, &[root_key.key_id().clone()]).unwrap();
+    let mut tuf =
+        Tuf::<Json>::from_root_with_trusted_keys(root, 1, once(root_key.public())).unwrap();
 
     //// build the snapshot and timestamp ////
 
@@ -121,7 +123,8 @@ fn nested_delegation() {
         .signed::<Json>(&root_key)
         .unwrap();
 
-    let mut tuf = Tuf::<Json>::from_root_pinned(root, &[root_key.key_id().clone()]).unwrap();
+    let mut tuf =
+        Tuf::<Json>::from_root_with_trusted_keys(root, 1, once(root_key.public())).unwrap();
 
     //// build the snapshot and timestamp ////
 
