@@ -13,7 +13,7 @@
 //! # use tuf::metadata::{RootMetadata, SignedMetadata, Role, MetadataPath,
 //! #     MetadataVersion};
 //! # use tuf::interchange::Json;
-//! # use tuf::repository::{Repository, FileSystemRepository, HttpRepositoryBuilder};
+//! # use tuf::repository::{Repository, FileSystemRepository, HttpRepositoryBuilder2};
 //!
 //! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
 //!     "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
@@ -29,8 +29,8 @@
 //!
 //! let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))?;
 //!
-//! let remote = HttpRepositoryBuilder::new(
-//!     url::Url::parse("https://static.rust-lang.org/").unwrap(),
+//! let remote = HttpRepositoryBuilder2::new(
+//!     "https://static.rust-lang.org/".parse::<http::Uri>().unwrap(),
 //!     HttpClient::new(),
 //! )
 //! .user_agent("rustup/1.4.0")

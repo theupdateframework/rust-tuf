@@ -29,6 +29,7 @@ itoa = "0.4"
 log = "0.4"
 ring = { version = "0.16" }
 parking_lot = "0.9"
+percent-encoding = "2.1"
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
