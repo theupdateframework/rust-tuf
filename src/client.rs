@@ -226,11 +226,7 @@ where
     /// # })
     /// # }
     /// ```
-    pub async fn with_trusted_local(
-        config: Config<T>,
-        local: L,
-        remote: R,
-    ) -> Result<Self> {
+    pub async fn with_trusted_local(config: Config<T>, local: L, remote: R) -> Result<Self> {
         let root_path = MetadataPath::from_role(&Role::Root);
 
         // FIXME should this be MetadataVersion::None so we bootstrap with the latest version?
@@ -513,7 +509,8 @@ where
 
         // FIXME(#253) verify the trusted root version matches the provided version.
 
-        let tuf = Tuf::from_root_with_trusted_keys(root.clone(), root_threshold, trusted_root_keys)?;
+        let tuf =
+            Tuf::from_root_with_trusted_keys(root.clone(), root_threshold, trusted_root_keys)?;
 
         let mut client = Client {
             tuf,
@@ -1185,12 +1182,7 @@ mod test {
             let public_key = private_key.public().clone();
 
             assert_matches!(
-                Client::with_trusted_local(
-                    Config::default(),
-                    &local,
-                    &remote,
-                )
-                .await,
+                Client::with_trusted_local(Config::default(), &local, &remote,).await,
                 Err(Error::NotFound)
             );
 
