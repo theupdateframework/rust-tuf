@@ -1,11 +1,11 @@
 use maplit::hashmap;
+use std::iter::once;
 use tuf::crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
 use tuf::interchange::Json;
 use tuf::metadata::{
     Delegation, Delegations, MetadataDescription, MetadataPath, RootMetadataBuilder,
     SnapshotMetadataBuilder, TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
-use std::iter::once;
 use tuf::Tuf;
 
 const ED25519_1_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-1.pk8.der");
