@@ -848,7 +848,7 @@ struct PublicKeyValue(Vec<u8>);
 impl Debug for PublicKeyValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("PublicKeyValue")
-            .field(&BASE64URL.encode(&self.0))
+            .field(&HEXLOWER.encode(&self.0))
             .finish()
     }
 }
