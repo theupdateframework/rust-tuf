@@ -407,9 +407,6 @@ impl PrivateKey {
     ///
     /// # Generating Keys
     ///
-    /// If you use `cargo install tuf`, you will have access to the TUF CLI tool that will allow
-    /// you to generate keys. If you do not want to do this, the following can be used instead.
-    ///
     /// ## Ed25519
     ///
     /// ```bash
