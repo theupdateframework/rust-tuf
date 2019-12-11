@@ -670,7 +670,8 @@ impl PublicKey {
         )
     }
 
-    fn from_ed25519_with_keyid_hash_algorithms<T: Into<Vec<u8>>>(
+    /// Parse ED25519 bytes as a public key with a custom `keyid_hash_algorithms`.
+    pub fn from_ed25519_with_keyid_hash_algorithms<T: Into<Vec<u8>>>(
         bytes: T,
         keyid_hash_algorithms: Option<Vec<String>>,
     ) -> Result<Self> {
