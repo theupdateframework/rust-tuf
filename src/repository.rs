@@ -265,7 +265,7 @@ where
 
             Ok(())
         }
-        .boxed()
+            .boxed()
     }
 
     /// Fetch signed metadata.
@@ -297,7 +297,7 @@ where
 
             Ok(D::from_slice(&buf)?)
         }
-        .boxed()
+            .boxed()
     }
 
     fn store_target<'a, R>(
@@ -322,7 +322,7 @@ where
 
             Ok(())
         }
-        .boxed()
+            .boxed()
     }
 
     fn fetch_target<'a>(
@@ -349,7 +349,7 @@ where
 
             Ok(reader)
         }
-        .boxed()
+            .boxed()
     }
 }
 
@@ -373,7 +373,7 @@ where
     C: Connect + Sync + 'static,
     D: DataInterchange,
 {
-    url: Url,
+    uri: Uri,
     client: Client<C>,
     interchange: PhantomData<D>,
     user_agent: Option<String>,
@@ -390,7 +390,20 @@ where
     /// Create a new repository with the given `Url` and `Client`.
     pub fn new(url: Url, client: Client<C>) -> Self {
         HttpRepositoryBuilder {
-            url: url,
+            uri: url.to_string().parse::<Uri>().unwrap(), // This is dangerous, but will only exist for a short time as we migrate APIs.
+            client: client,
+            interchange: PhantomData,
+            user_agent: None,
+            metadata_prefix: None,
+            targets_prefix: None,
+            min_bytes_per_second: 4096,
+        }
+    }
+
+    /// Create a new repository with the given `Url` and `Client`.
+    pub fn new_with_uri(uri: Uri, client: Client<C>) -> Self {
+        HttpRepositoryBuilder {
+            uri: uri,
             client: client,
             interchange: PhantomData,
             user_agent: None,
@@ -444,252 +457,6 @@ where
         };
 
         HttpRepository {
-            url: self.url,
-            client: self.client,
-            interchange: self.interchange,
-            user_agent: user_agent,
-            metadata_prefix: self.metadata_prefix,
-            targets_prefix: self.targets_prefix,
-            min_bytes_per_second: self.min_bytes_per_second,
-        }
-    }
-}
-
-/// A repository accessible over HTTP.
-pub struct HttpRepository<C, D>
-where
-    C: Connect + Sync + 'static,
-    D: DataInterchange,
-{
-    url: Url,
-    client: Client<C>,
-    user_agent: String,
-    metadata_prefix: Option<Vec<String>>,
-    targets_prefix: Option<Vec<String>>,
-    min_bytes_per_second: u32,
-    interchange: PhantomData<D>,
-}
-
-impl<C, D> HttpRepository<C, D>
-where
-    C: Connect + Sync + 'static,
-    D: DataInterchange,
-{
-    async fn get<'a>(
-        &'a self,
-        prefix: &'a Option<Vec<String>>,
-        components: &'a [String],
-    ) -> Result<Response<Body>> {
-        let mut url = self.url.clone();
-        {
-            let mut segments = url.path_segments_mut().map_err(|_| {
-                Error::IllegalArgument(format!("URL was 'cannot-be-a-base': {:?}", self.url))
-            })?;
-            if let Some(ref prefix) = prefix {
-                segments.extend(prefix);
-            }
-            segments.extend(components);
-        }
-
-        let uri: Uri = url.into_string().parse().map_err(|_| {
-            Error::IllegalArgument(format!("URL was 'cannot-be-a-base': {:?}", self.url))
-        })?;
-
-        let req = Request::builder()
-            .uri(uri)
-            .header("User-Agent", &*self.user_agent)
-            .body(Body::default())?;
-
-        let resp = self.client.request(req).compat().await?;
-        let status = resp.status();
-
-        if !status.is_success() {
-            if status == StatusCode::NOT_FOUND {
-                Err(Error::NotFound)
-            } else {
-                Err(Error::Opaque(format!(
-                    "Error getting {:?}: {:?}",
-                    self.url, resp
-                )))
-            }
-        } else {
-            Ok(resp)
-        }
-    }
-}
-
-impl<C, D> Repository<D> for HttpRepository<C, D>
-where
-    C: Connect + Sync + 'static,
-    D: DataInterchange + Send + Sync,
-{
-    /// This always returns `Err` as storing over HTTP is not yet supported.
-    fn store_metadata<'a, M>(
-        &'a self,
-        _: &'a MetadataPath,
-        _: &'a MetadataVersion,
-        _: &'a SignedMetadata<D, M>,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        M: Metadata + 'static,
-    {
-        async {
-            Err(Error::Opaque(
-                "Http repo store metadata not implemented".to_string(),
-            ))
-        }
-        .boxed()
-    }
-
-    fn fetch_metadata<'a, M>(
-        &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-        max_length: Option<usize>,
-        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> BoxFuture<'a, Result<SignedMetadata<D, M>>>
-    where
-        M: Metadata + 'static,
-    {
-        async move {
-            Self::check::<M>(meta_path)?;
-
-            let components = meta_path.components::<D>(&version);
-            let resp = self.get(&self.metadata_prefix, &components).await?;
-
-            let stream = resp
-                .into_body()
-                .compat()
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
-
-            let mut reader = SafeReader::new(
-                stream.into_async_read(),
-                max_length.unwrap_or(::std::usize::MAX) as u64,
-                self.min_bytes_per_second,
-                hash_data,
-            )?;
-
-            let mut buf = Vec::new();
-            reader.read_to_end(&mut buf).await?;
-
-            Ok(D::from_slice(&buf)?)
-        }
-        .boxed()
-    }
-
-    /// This always returns `Err` as storing over HTTP is not yet supported.
-    fn store_target<'a, R>(&'a self, _: R, _: &'a TargetPath) -> BoxFuture<'a, Result<()>>
-    where
-        R: AsyncRead + 'a,
-    {
-        async { Err(Error::Opaque("Http repo store not implemented".to_string())) }.boxed()
-    }
-
-    fn fetch_target<'a>(
-        &'a self,
-        target_path: &'a TargetPath,
-        target_description: &'a TargetDescription,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        async move {
-            let (alg, value) = crypto::hash_preference(target_description.hashes())?;
-            let components = target_path.components();
-            let resp = self.get(&self.targets_prefix, &components).await?;
-
-            let stream = resp
-                .into_body()
-                .compat()
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
-
-            let reader = SafeReader::new(
-                stream.into_async_read(),
-                target_description.length(),
-                self.min_bytes_per_second,
-                Some((alg, value.clone())),
-            )?;
-
-            Ok(Box::new(reader) as Box<dyn AsyncRead + Send + Unpin>)
-        }
-        .boxed()
-    }
-}
-
-/// A builder to create a repository accessible over HTTP.
-pub struct HttpRepositoryBuilder2<C, D>
-where
-    C: Connect + Sync + 'static,
-    D: DataInterchange,
-{
-    uri: Uri,
-    client: Client<C>,
-    interchange: PhantomData<D>,
-    user_agent: Option<String>,
-    metadata_prefix: Option<Vec<String>>,
-    targets_prefix: Option<Vec<String>>,
-    min_bytes_per_second: u32,
-}
-
-impl<C, D> HttpRepositoryBuilder2<C, D>
-where
-    C: Connect + Sync + 'static,
-    D: DataInterchange,
-{
-    /// Create a new repository with the given `Uri` and `Client`.
-    pub fn new(uri: Uri, client: Client<C>) -> Self {
-        HttpRepositoryBuilder2 {
-            uri: uri,
-            client: client,
-            interchange: PhantomData,
-            user_agent: None,
-            metadata_prefix: None,
-            targets_prefix: None,
-            min_bytes_per_second: 4096,
-        }
-    }
-
-    /// Set the User-Agent prefix.
-    ///
-    /// Callers *should* include a custom User-Agent prefix to help maintainers of TUF repositories
-    /// keep track of which client versions exist in the field.
-    ///
-    pub fn user_agent<T: Into<String>>(mut self, user_agent: T) -> Self {
-        self.user_agent = Some(user_agent.into());
-        self
-    }
-
-    /// The argument `metadata_prefix` is used to provide an alternate path where metadata is
-    /// stored on the repository. If `None`, this defaults to `/`. For example, if there is a TUF
-    /// repository at `https://tuf.example.com/`, but all metadata is stored at `/meta/`, then
-    /// passing the arg `Some("meta".into())` would cause `root.json` to be fetched from
-    /// `https://tuf.example.com/meta/root.json`.
-    pub fn metadata_prefix(mut self, metadata_prefix: Vec<String>) -> Self {
-        self.metadata_prefix = Some(metadata_prefix);
-        self
-    }
-
-    /// The argument `targets_prefix` is used to provide an alternate path where targets is
-    /// stored on the repository. If `None`, this defaults to `/`. For example, if there is a TUF
-    /// repository at `https://tuf.example.com/`, but all targets are stored at `/targets/`, then
-    /// passing the arg `Some("targets".into())` would cause `hello-world` to be fetched from
-    /// `https://tuf.example.com/targets/hello-world`.
-    pub fn targets_prefix(mut self, targets_prefix: Vec<String>) -> Self {
-        self.targets_prefix = Some(targets_prefix);
-        self
-    }
-
-    /// Set the minimum bytes per second for a read to be considered good.
-    pub fn min_bytes_per_second(mut self, min: u32) -> Self {
-        self.min_bytes_per_second = min;
-        self
-    }
-
-    /// Build a `HttpRepository2`.
-    pub fn build(self) -> HttpRepository2<C, D> {
-        let user_agent = match self.user_agent {
-            Some(user_agent) => user_agent,
-            None => "rust-tuf".into(),
-        };
-
-        HttpRepository2 {
             uri: self.uri,
             client: self.client,
             interchange: self.interchange,
@@ -702,7 +469,7 @@ where
 }
 
 /// A repository accessible over HTTP.
-pub struct HttpRepository2<C, D>
+pub struct HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
     D: DataInterchange,
@@ -724,17 +491,8 @@ const URLENCODE_FRAGMENT: &percent_encoding::AsciiSet = &percent_encoding::CONTR
     .add(b'<')
     .add(b'>')
     .add(b'`');
-const URLENCODE_PATH: &percent_encoding::AsciiSet = &URLENCODE_FRAGMENT
-    .add(b'/')
-    .add(b':')
-    .add(b';')
-    .add(b'=')
-    .add(b'@')
-    .add(b'[')
-    .add(b'\\')
-    .add(b']')
-    .add(b'^')
-    .add(b'|');
+const URLENCODE_PATH: &percent_encoding::AsciiSet =
+    &URLENCODE_FRAGMENT.add(b'#').add(b'?').add(b'{').add(b'}');
 
 fn extend_uri(uri: Uri, prefix: &Option<Vec<String>>, components: &[String]) -> Result<Uri> {
     let mut uri_parts = uri.into_parts();
@@ -758,15 +516,13 @@ fn extend_uri(uri: Uri, prefix: &Option<Vec<String>>, components: &[String]) -> 
     if let Some(ref prefix) = prefix {
         new_path_elements.extend(prefix.iter().cloned());
     }
-    new_path_elements.append(&mut components.to_vec());
+    new_path_elements.extend_from_slice(components);
 
     // Urlencode new items to match behavior of PathSegmentsMut.extend from
     // https://docs.rs/url/2.1.0/url/struct.PathSegmentsMut.html
-    let encoded_new_path_elements: Vec<String> = new_path_elements
+    let encoded_new_path_elements = new_path_elements
         .into_iter()
-        .map(|path_segment| utf8_percent_encode(&path_segment, URLENCODE_PATH).collect())
-        .collect();
-
+        .map(|path_segment| utf8_percent_encode(&path_segment, URLENCODE_PATH).collect());
     path_split.extend(encoded_new_path_elements);
     let constructed_path = path_split.join("/");
 
@@ -793,7 +549,7 @@ fn extend_uri(uri: Uri, prefix: &Option<Vec<String>>, components: &[String]) -> 
     })?)
 }
 
-impl<C, D> HttpRepository2<C, D>
+impl<C, D> HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
     D: DataInterchange,
@@ -829,7 +585,7 @@ where
     }
 }
 
-impl<C, D> Repository<D> for HttpRepository2<C, D>
+impl<C, D> Repository<D> for HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
     D: DataInterchange + Send + Sync,
@@ -849,7 +605,7 @@ where
                 "Http repo store metadata not implemented".to_string(),
             ))
         }
-        .boxed()
+            .boxed()
     }
 
     fn fetch_metadata<'a, M>(
@@ -885,7 +641,7 @@ where
 
             Ok(D::from_slice(&buf)?)
         }
-        .boxed()
+            .boxed()
     }
 
     /// This always returns `Err` as storing over HTTP is not yet supported.
@@ -920,7 +676,7 @@ where
 
             Ok(Box::new(reader) as Box<dyn AsyncRead + Send + Unpin>)
         }
-        .boxed()
+            .boxed()
     }
 }
 
@@ -982,7 +738,7 @@ where
                 .insert((meta_path.clone(), version.clone()), buf);
             Ok(())
         }
-        .boxed()
+            .boxed()
     }
 
     fn fetch_metadata<'a, M>(
@@ -1021,7 +777,7 @@ where
 
             D::from_slice(&buf)
         }
-        .boxed()
+            .boxed()
     }
 
     fn store_target<'a, R>(
@@ -1040,7 +796,7 @@ where
                 .insert(target_path.clone(), Arc::new(buf));
             Ok(())
         }
-        .boxed()
+            .boxed()
     }
 
     fn fetch_target<'a>(
@@ -1075,7 +831,7 @@ where
 
             Ok(reader)
         }
-        .boxed()
+            .boxed()
     }
 }
 
@@ -1105,12 +861,12 @@ mod test {
     }
 
     #[test]
-    fn http_repository2_uri_construction() {
+    fn http_repository_uri_construction() {
         let base_uri = "http://example.com/one";
 
         let prefix = Some(vec![String::from("prefix")]);
         let components = [
-            String::from("componenents_one"),
+            String::from("components_one"),
             String::from("components_two"),
         ];
 
@@ -1121,14 +877,18 @@ mod test {
             http_repository_extend_using_url(Url::parse(base_uri).unwrap(), &prefix, &components);
 
         assert_eq!(url.to_string(), extended_uri.to_string());
+        assert_eq!(
+            extended_uri.to_string(),
+            "http://example.com/one/prefix/components_one/components_two"
+        );
     }
 
     #[test]
-    fn http_repository2_uri_construction_encoded() {
+    fn http_repository_uri_construction_encoded() {
         let base_uri = "http://example.com/one";
 
         let prefix = Some(vec![String::from("prefix")]);
-        let components = [String::from("chars_to_encode<>!")];
+        let components = [String::from("chars to encode#?")];
         let uri = base_uri.parse::<Uri>().unwrap();
         let extended_uri = extend_uri(uri, &prefix, &components)
             .expect("correctly generated a URI with a zone id");
@@ -1137,10 +897,14 @@ mod test {
             http_repository_extend_using_url(Url::parse(base_uri).unwrap(), &prefix, &components);
 
         assert_eq!(url.to_string(), extended_uri.to_string());
+        assert_eq!(
+            extended_uri.to_string(),
+            "http://example.com/one/prefix/chars%20to%20encode%23%3F"
+        );
     }
 
     #[test]
-    fn http_repository2_uri_construction_no_components() {
+    fn http_repository_uri_construction_no_components() {
         let base_uri = "http://example.com/one";
 
         let prefix = Some(vec![String::from("prefix")]);
@@ -1153,10 +917,57 @@ mod test {
             http_repository_extend_using_url(Url::parse(base_uri).unwrap(), &prefix, &components);
 
         assert_eq!(url.to_string(), extended_uri.to_string());
+        assert_eq!(extended_uri.to_string(), "http://example.com/one/prefix");
     }
 
     #[test]
-    fn http_repository2_uri_construction_ipv6_zoneid() {
+    fn http_repository_uri_construction_no_prefix() {
+        let base_uri = "http://example.com/one";
+
+        let prefix = None;
+        let components = [
+            String::from("components_one"),
+            String::from("components_two"),
+        ];
+
+        let uri = base_uri.parse::<Uri>().unwrap();
+        let extended_uri = extend_uri(uri, &prefix, &components).unwrap();
+
+        let url =
+            http_repository_extend_using_url(Url::parse(base_uri).unwrap(), &prefix, &components);
+
+        assert_eq!(url.to_string(), extended_uri.to_string());
+        assert_eq!(
+            extended_uri.to_string(),
+            "http://example.com/one/components_one/components_two"
+        );
+    }
+
+    #[test]
+    fn http_repository_uri_construction_with_query() {
+        let base_uri = "http://example.com/one?test=1";
+
+        let prefix = None;
+        let components = [
+            String::from("components_one"),
+            String::from("components_two"),
+        ];
+
+        let uri = base_uri.parse::<Uri>().unwrap();
+        let extended_uri = extend_uri(uri, &prefix, &components).unwrap();
+
+        let url =
+            http_repository_extend_using_url(Url::parse(base_uri).unwrap(), &prefix, &components);
+
+        assert_eq!(url.to_string(), extended_uri.to_string());
+        assert_eq!(
+            extended_uri.to_string(),
+            "http://example.com/one/components_one/components_two?test=1"
+        );
+    }
+
+    #[test]
+    fn http_repository_uri_construction_ipv6_zoneid() {
         let base_uri = "http://[aaaa::aaaa:aaaa:aaaa:1234%252]:80";
 
         let prefix = Some(vec![String::from("prefix")]);
@@ -1171,44 +982,6 @@ mod test {
             extended_uri.to_string(),
             "http://[aaaa::aaaa:aaaa:aaaa:1234%252]:80/prefix/componenents_one/components_two"
         );
-    }
-
-    #[test]
-    fn http_repository2_uri_construction_no_prefix() {
-        let base_uri = "http://example.com/one";
-
-        let prefix = None;
-        let components = [
-            String::from("componenents_one"),
-            String::from("illegal_characters<>"),
-        ];
-
-        let uri = base_uri.parse::<Uri>().unwrap();
-        let extended_uri = extend_uri(uri, &prefix, &components).unwrap();
-
-        let url =
-            http_repository_extend_using_url(Url::parse(base_uri).unwrap(), &prefix, &components);
-
-        assert_eq!(url.to_string(), extended_uri.to_string());
-    }
-
-    #[test]
-    fn http_repository2_uri_construction_with_query() {
-        let base_uri = "http://example.com/one?test=1";
-
-        let prefix = None;
-        let components = [
-            String::from("componenents_one"),
-            String::from("illegal_characters<>"),
-        ];
-
-        let uri = base_uri.parse::<Uri>().unwrap();
-        let extended_uri = extend_uri(uri, &prefix, &components).unwrap();
-
-        let url =
-            http_repository_extend_using_url(Url::parse(base_uri).unwrap(), &prefix, &components);
-
-        assert_eq!(url.to_string(), extended_uri.to_string());
     }
 
     #[test]
