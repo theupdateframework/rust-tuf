@@ -29,8 +29,8 @@
 //!
 //! let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))?;
 //!
-//! let remote = HttpRepositoryBuilder::new(
-//!     url::Url::parse("https://static.rust-lang.org/").unwrap(),
+//! let remote = HttpRepositoryBuilder::new_with_uri(
+//!     "https://static.rust-lang.org/".parse::<http::Uri>().unwrap(),
 //!     HttpClient::new(),
 //! )
 //! .user_agent("rustup/1.4.0")
