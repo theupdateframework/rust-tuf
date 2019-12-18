@@ -511,12 +511,12 @@ fn extend_uri(uri: Uri, prefix: &Option<Vec<String>>, components: &[String]) -> 
         .split("/")
         .map(String::from)
         .collect::<Vec<_>>();
-    let mut new_path_elements: Vec<String> = vec![];
+    let mut new_path_elements: Vec<&str> = vec![];
 
     if let Some(ref prefix) = prefix {
-        new_path_elements.extend(prefix.iter().cloned());
+        new_path_elements.extend(prefix.iter().map(String::as_str));
     }
-    new_path_elements.extend_from_slice(components);
+    new_path_elements.extend(components.iter().map(String::as_str));
 
     // Urlencode new items to match behavior of PathSegmentsMut.extend from
     // https://docs.rs/url/2.1.0/url/struct.PathSegmentsMut.html
