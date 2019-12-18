@@ -40,11 +40,6 @@ jobs:
         with:
           command: test
 
-      - name: Audit for Security Vulnerabilities
-        uses: actions-rs/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Generate Docs
         uses: actions-rs/cargo@v1
         with:
