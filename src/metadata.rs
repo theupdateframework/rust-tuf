@@ -210,8 +210,6 @@ pub enum MetadataVersion {
     None,
     /// The metadata is addressed by a specific version number.
     Number(u32),
-    /// The metadata is addressed by a hash prefix. Used with TUF's consistent snapshot feature.
-    Hash(HashValue),
 }
 
 impl MetadataVersion {
@@ -220,7 +218,6 @@ impl MetadataVersion {
         match *self {
             MetadataVersion::None => String::new(),
             MetadataVersion::Number(ref x) => format!("{}.", x),
-            MetadataVersion::Hash(ref v) => format!("{}.", v),
         }
     }
 }
@@ -881,9 +878,6 @@ impl MetadataPath {
     ///            ["foo".to_string(), "bar.json".to_string()]);
     /// assert_eq!(path.components::<Json>(&MetadataVersion::Number(1)),
     ///            ["foo".to_string(), "1.bar.json".to_string()]);
-    /// assert_eq!(path.components::<Json>(
-    ///                 &MetadataVersion::Hash(HashValue::new(vec![0x69, 0xb7, 0x1d]))),
-    ///            ["foo".to_string(), "69b71d.bar.json".to_string()]);
     /// ```
     pub fn components<D>(&self, version: &MetadataVersion) -> Vec<String>
     where

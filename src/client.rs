@@ -872,7 +872,7 @@ where
             };
 
             let version = if self.tuf.root().consistent_snapshot() {
-                MetadataVersion::Hash(value.clone())
+                MetadataVersion::Number(role_meta.version())
             } else {
                 MetadataVersion::None
             };
