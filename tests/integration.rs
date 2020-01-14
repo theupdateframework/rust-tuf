@@ -156,7 +156,7 @@ fn nested_delegation() {
 
     let delegations = Delegations::new(
         hashmap! {
-            delegation_b_key.public().key_id().clone() => delegation_a_key.public().clone(),
+            delegation_a_key.public().key_id().clone() => delegation_a_key.public().clone(),
         },
         vec![Delegation::new(
             MetadataPath::new("delegation-a").unwrap(),
