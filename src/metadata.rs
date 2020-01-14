@@ -1739,7 +1739,7 @@ impl TargetsMetadataBuilder {
         self
     }
 
-    /// Add `Delegatiuons` to this target metadata.
+    /// Add `Delegations` to this target metadata.
     pub fn delegations(mut self, delegations: Delegations) -> Self {
         self.delegations = Some(delegations);
         self
