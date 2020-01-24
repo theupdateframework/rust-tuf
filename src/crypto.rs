@@ -370,10 +370,7 @@ impl PrivateKey {
     /// Create a new `PrivateKey` from an ed25519 keypair, a 64 byte slice, where the first 32
     /// bytes are the ed25519 seed, and the second 32 bytes are the public key.
     pub fn from_ed25519(key: &[u8]) -> Result<Self> {
-        Self::from_ed25519_with_keyid_hash_algorithms(
-            key,
-            python_tuf_compatibility_keyid_hash_algorithms(),
-        )
+        Self::from_ed25519_with_keyid_hash_algorithms(key, None)
     }
 
     fn from_ed25519_with_keyid_hash_algorithms(
@@ -661,10 +658,7 @@ impl PublicKey {
 
     /// Parse ED25519 bytes as a public key.
     pub fn from_ed25519<T: Into<Vec<u8>>>(bytes: T) -> Result<Self> {
-        Self::from_ed25519_with_keyid_hash_algorithms(
-            bytes,
-            python_tuf_compatibility_keyid_hash_algorithms(),
-        )
+        Self::from_ed25519_with_keyid_hash_algorithms(bytes, None)
     }
 
     /// Parse ED25519 bytes as a public key with a custom `keyid_hash_algorithms`.
@@ -1024,6 +1018,40 @@ mod test {
     #[test]
     fn parse_public_ed25519() {
         let key = PublicKey::from_ed25519(ED25519_1_PUBLIC_KEY).unwrap();
+        assert_eq!(
+            key.key_id(),
+            &KeyId::from_str("e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554")
+                .unwrap()
+        );
+        assert_eq!(key.typ, KeyType::Ed25519);
+        assert_eq!(key.scheme, SignatureScheme::Ed25519);
+    }
+
+    #[test]
+    fn parse_public_ed25519_without_keyid_hash_algo() {
+        let key =
+            PublicKey::from_ed25519_with_keyid_hash_algorithms(ED25519_1_PUBLIC_KEY, None).unwrap();
+        assert_eq!(
+            key.key_id(),
+            &KeyId::from_str("e0294a3f17cc8563c3ed5fceb3bd8d3f6bfeeaca499b5c9572729ae015566554")
+                .unwrap()
+        );
+        assert_eq!(key.typ, KeyType::Ed25519);
+        assert_eq!(key.scheme, SignatureScheme::Ed25519);
+    }
+
+    #[test]
+    fn parse_public_ed25519_with_keyid_hash_algo() {
+        let key = PublicKey::from_ed25519_with_keyid_hash_algorithms(
+            ED25519_1_PUBLIC_KEY,
+            python_tuf_compatibility_keyid_hash_algorithms(),
+        )
+        .unwrap();
+        assert_eq!(
+            key.key_id(),
+            &KeyId::from_str("a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a")
+                .unwrap(),
+        );
         assert_eq!(key.typ, KeyType::Ed25519);
         assert_eq!(key.scheme, SignatureScheme::Ed25519);
     }
@@ -1095,13 +1123,43 @@ mod test {
     #[test]
     fn ed25519_read_keypair_and_sign() {
         let key = PrivateKey::from_ed25519(ED25519_1_PRIVATE_KEY).unwrap();
+        let pub_key = PublicKey::from_ed25519(ED25519_1_PUBLIC_KEY).unwrap();
+        assert_eq!(key.public(), &pub_key);
+
         let msg = b"test";
-
         let sig = key.sign(msg).unwrap();
+        assert_eq!(pub_key.verify(msg, &sig), Ok(()));
 
-        let pub_key =
-            PublicKey::from_spki(&key.public.as_spki().unwrap(), SignatureScheme::Ed25519).unwrap();
+        // Make sure we match what ring expects.
+        let ring_key = ring::signature::Ed25519KeyPair::from_pkcs8(ED25519_1_PK8).unwrap();
+        assert_eq!(key.public().as_bytes(), ring_key.public_key().as_ref());
+        assert_eq!(sig.value().as_bytes(), ring_key.sign(msg).as_ref());
 
+        // Make sure verification fails with the wrong key.
+        let bad_pub_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
+            .unwrap()
+            .public()
+            .clone();
+
+        assert_eq!(bad_pub_key.verify(msg, &sig), Err(Error::BadSignature));
+    }
+
+    #[test]
+    fn ed25519_read_keypair_and_sign_with_keyid_hash_algorithms() {
+        let key = PrivateKey::from_ed25519_with_keyid_hash_algorithms(
+            ED25519_1_PRIVATE_KEY,
+            python_tuf_compatibility_keyid_hash_algorithms(),
+        )
+        .unwrap();
+        let pub_key = PublicKey::from_ed25519_with_keyid_hash_algorithms(
+            ED25519_1_PUBLIC_KEY,
+            python_tuf_compatibility_keyid_hash_algorithms(),
+        )
+        .unwrap();
+        assert_eq!(key.public(), &pub_key);
+
+        let msg = b"test";
+        let sig = key.sign(msg).unwrap();
         assert_eq!(pub_key.verify(msg, &sig), Ok(()));
 
         // Make sure we match what ring expects.
