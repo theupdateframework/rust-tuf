@@ -136,41 +136,6 @@ where
     R: Repository<D>,
     T: PathTranslator,
 {
-    /// Create a new TUF client. It will attempt to load initial root metadata from the local repo
-    /// and return an error if it cannot do so.
-    ///
-    /// **WARNING**: This method offers weaker security guarantees than the related method
-    /// `with_root_pinned`.
-    ///
-    /// **DEPRECATED**: This has been replaced with [`Client::with_trusted_local`].
-    #[deprecated(note = "use Client::with_trusted_local method instead")]
-    pub async fn new(config: Config<T>, local: L, remote: R) -> Result<Self> {
-        Client::with_trusted_local(config, local, remote).await
-    }
-
-    /// Create a new TUF client. It will attempt to load initial root metadata the local and remote
-    /// repositories using the provided key IDs to pin the verification.
-    ///
-    /// **DEPRECATED**: This has been replaced with [`Client::with_trusted_root_keyids`].
-    #[deprecated(note = "use Client::with_trusted_root_keyids method instead")]
-    pub async fn with_root_pinned(
-        trusted_root_keys: &[KeyId],
-        config: Config<T>,
-        local: L,
-        remote: R,
-        version: u32,
-    ) -> Result<Self> {
-        Client::with_trusted_root_keyids(
-            config,
-            &MetadataVersion::Number(version),
-            1,
-            trusted_root_keys,
-            local,
-            remote,
-        )
-        .await
-    }
-
     /// Create a new TUF client. It will attempt to load the latest root metadata from the local
     /// repo and use it as the initial trusted root metadata, or it will return an error if it
     /// cannot do so.
