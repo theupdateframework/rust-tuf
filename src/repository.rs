@@ -839,6 +839,7 @@ where
 mod test {
     use super::*;
     use crate::interchange::Json;
+    use crate::metadata::{Role, RootMetadata};
     use futures_executor::block_on;
     use tempfile;
 
@@ -1004,6 +1005,30 @@ mod test {
             repo.store_target(bad_data, &path).await.unwrap();
             let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
             assert!(read.read_to_end(&mut buf).await.is_err());
+        })
+    }
+
+    #[test]
+    fn file_system_repo_metadata_not_found_error() {
+        block_on(async {
+            let temp_dir = tempfile::Builder::new()
+                .prefix("rust-tuf")
+                .tempdir()
+                .unwrap();
+            let repo = FileSystemRepositoryBuilder::new(temp_dir.path())
+                .build::<Json>()
+                .unwrap();
+
+            assert_eq!(
+                repo.fetch_metadata::<RootMetadata>(
+                    &MetadataPath::from_role(&Role::Root),
+                    &MetadataVersion::None,
+                    None,
+                    None
+                )
+                .await,
+                Err(Error::NotFound)
+            );
         })
     }
 
