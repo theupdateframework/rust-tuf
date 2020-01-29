@@ -1,7 +1,6 @@
 //! Read-only Repository implementation backed by a web server.
 
 use futures_io::AsyncRead;
-use futures_util::compat::{Future01CompatExt, Stream01CompatExt};
 use futures_util::future::{BoxFuture, FutureExt};
 use futures_util::stream::TryStreamExt;
 use http::{Response, StatusCode, Uri};
@@ -206,7 +205,7 @@ fn extend_uri(uri: Uri, prefix: &Option<Vec<String>>, components: &[String]) -> 
 
 impl<C, D> HttpRepository<C, D>
 where
-    C: Connect + Sync + 'static,
+    C: Connect + Clone + Send + Sync + 'static,
     D: DataInterchange,
 {
     async fn get<'a>(
@@ -222,7 +221,7 @@ where
             .header("User-Agent", &*self.user_agent)
             .body(Body::default())?;
 
-        let resp = self.client.request(req).compat().await?;
+        let resp = self.client.request(req).await?;
         let status = resp.status();
 
         if !status.is_success() {
@@ -242,7 +241,7 @@ where
 
 impl<C, D> RepositoryProvider<D> for HttpRepository<C, D>
 where
-    C: Connect + Sync + 'static,
+    C: Connect + Clone + Send + Sync + 'static,
     D: DataInterchange + Send + Sync,
 {
     fn fetch_metadata<'a>(
@@ -260,7 +259,6 @@ where
 
             let reader = resp
                 .into_body()
-                .compat()
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
                 .into_async_read()
                 .enforce_minimum_bitrate(self.min_bytes_per_second);
@@ -284,7 +282,6 @@ where
 
             let reader = resp
                 .into_body()
-                .compat()
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
                 .into_async_read()
                 .enforce_minimum_bitrate(self.min_bytes_per_second);
