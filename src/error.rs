@@ -86,7 +86,10 @@ impl Error {
 
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Error {
-        Error::Opaque(format!("IO: {:?}", err))
+        match err.kind() {
+            std::io::ErrorKind::NotFound => Error::NotFound,
+            _ => Error::Opaque(format!("IO: {:?}", err)),
+        }
     }
 }
 
