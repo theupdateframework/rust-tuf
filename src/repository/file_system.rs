@@ -15,7 +15,7 @@ use crate::interchange::DataInterchange;
 use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, SignedMetadata, TargetDescription, TargetPath,
 };
-use crate::repository::Repository;
+use crate::repository::{RepositoryProvider, RepositoryStorage};
 use crate::util::SafeReader;
 use crate::Result;
 
@@ -106,39 +106,10 @@ where
     }
 }
 
-impl<D> Repository<D> for FileSystemRepository<D>
+impl<D> RepositoryProvider<D> for FileSystemRepository<D>
 where
     D: DataInterchange + Sync,
 {
-    fn store_metadata<'a, M>(
-        &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-        metadata: &'a SignedMetadata<D, M>,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        M: Metadata + Sync + 'static,
-    {
-        async move {
-            Self::check::<M>(meta_path)?;
-
-            let mut path = self.metadata_path.clone();
-            path.extend(meta_path.components::<D>(version));
-
-            if path.exists() {
-                debug!("Metadata path exists. Overwriting: {:?}", path);
-            }
-
-            let mut temp_file = create_temp_file(&path)?;
-            D::to_writer(&mut temp_file, metadata)?;
-            temp_file.persist(&path)?;
-
-            Ok(())
-        }
-        .boxed()
-    }
-
-    /// Fetch signed metadata.
     fn fetch_metadata<'a, M>(
         &'a self,
         meta_path: &'a MetadataPath,
@@ -150,7 +121,7 @@ where
         M: Metadata + 'static,
     {
         async move {
-            Self::check::<M>(&meta_path)?;
+            <Self as RepositoryProvider<D>>::check::<M>(meta_path)?;
 
             let mut path = self.metadata_path.clone();
             path.extend(meta_path.components::<D>(&version));
@@ -166,31 +137,6 @@ where
             reader.read_to_end(&mut buf).await?;
 
             Ok(D::from_slice(&buf)?)
-        }
-        .boxed()
-    }
-
-    fn store_target<'a, R>(
-        &'a self,
-        read: R,
-        target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        R: AsyncRead + Send + Unpin + 'a,
-    {
-        async move {
-            let mut path = self.targets_path.clone();
-            path.extend(target_path.components());
-
-            if path.exists() {
-                debug!("Target path exists. Overwriting: {:?}", path);
-            }
-
-            let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
-            copy(read, &mut temp_file).await?;
-            temp_file.into_inner().persist(&path)?;
-
-            Ok(())
         }
         .boxed()
     }
@@ -218,6 +164,64 @@ where
             )?);
 
             Ok(reader)
+        }
+        .boxed()
+    }
+}
+
+impl<D> RepositoryStorage<D> for FileSystemRepository<D>
+where
+    D: DataInterchange + Sync,
+{
+    fn store_metadata<'a, M>(
+        &'a self,
+        meta_path: &'a MetadataPath,
+        version: &'a MetadataVersion,
+        metadata: &'a SignedMetadata<D, M>,
+    ) -> BoxFuture<'a, Result<()>>
+    where
+        M: Metadata + Sync + 'static,
+    {
+        async move {
+            <Self as RepositoryStorage<D>>::check::<M>(meta_path)?;
+
+            let mut path = self.metadata_path.clone();
+            path.extend(meta_path.components::<D>(version));
+
+            if path.exists() {
+                debug!("Metadata path exists. Overwriting: {:?}", path);
+            }
+
+            let mut temp_file = create_temp_file(&path)?;
+            D::to_writer(&mut temp_file, metadata)?;
+            temp_file.persist(&path)?;
+
+            Ok(())
+        }
+        .boxed()
+    }
+
+    fn store_target<'a, R>(
+        &'a self,
+        read: R,
+        target_path: &'a TargetPath,
+    ) -> BoxFuture<'a, Result<()>>
+    where
+        R: AsyncRead + Send + Unpin + 'a,
+    {
+        async move {
+            let mut path = self.targets_path.clone();
+            path.extend(target_path.components());
+
+            if path.exists() {
+                debug!("Target path exists. Overwriting: {:?}", path);
+            }
+
+            let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
+            copy(read, &mut temp_file).await?;
+            temp_file.into_inner().persist(&path)?;
+
+            Ok(())
         }
         .boxed()
     }

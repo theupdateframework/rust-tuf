@@ -14,7 +14,7 @@ use crate::interchange::DataInterchange;
 use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, SignedMetadata, TargetDescription, TargetPath,
 };
-use crate::repository::Repository;
+use crate::repository::{RepositoryProvider, RepositoryStorage};
 use crate::util::SafeReader;
 use crate::Result;
 
@@ -54,31 +54,10 @@ where
     }
 }
 
-impl<D> Repository<D> for EphemeralRepository<D>
+impl<D> RepositoryProvider<D> for EphemeralRepository<D>
 where
     D: DataInterchange + Sync,
 {
-    fn store_metadata<'a, M>(
-        &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-        metadata: &'a SignedMetadata<D, M>,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        M: Metadata + Sync + 'static,
-    {
-        async move {
-            Self::check::<M>(meta_path)?;
-            let mut buf = Vec::new();
-            D::to_writer(&mut buf, metadata)?;
-            self.metadata
-                .write()
-                .insert((meta_path.clone(), version.clone()), buf);
-            Ok(())
-        }
-        .boxed()
-    }
-
     fn fetch_metadata<'a, M>(
         &'a self,
         meta_path: &'a MetadataPath,
@@ -90,7 +69,7 @@ where
         M: Metadata + 'static,
     {
         async move {
-            Self::check::<M>(meta_path)?;
+            <Self as RepositoryProvider<D>>::check::<M>(meta_path)?;
 
             let bytes = match self
                 .metadata
@@ -114,25 +93,6 @@ where
             reader.read_to_end(&mut buf).await?;
 
             D::from_slice(&buf)
-        }
-        .boxed()
-    }
-
-    fn store_target<'a, R>(
-        &'a self,
-        mut read: R,
-        target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        R: AsyncRead + Send + Unpin + 'a,
-    {
-        async move {
-            let mut buf = Vec::new();
-            read.read_to_end(&mut buf).await?;
-            self.targets
-                .write()
-                .insert(target_path.clone(), Arc::new(buf));
-            Ok(())
         }
         .boxed()
     }
@@ -168,6 +128,51 @@ where
             )?);
 
             Ok(reader)
+        }
+        .boxed()
+    }
+}
+
+impl<D> RepositoryStorage<D> for EphemeralRepository<D>
+where
+    D: DataInterchange + Sync,
+{
+    fn store_metadata<'a, M>(
+        &'a self,
+        meta_path: &'a MetadataPath,
+        version: &'a MetadataVersion,
+        metadata: &'a SignedMetadata<D, M>,
+    ) -> BoxFuture<'a, Result<()>>
+    where
+        M: Metadata + Sync + 'static,
+    {
+        async move {
+            <Self as RepositoryStorage<D>>::check::<M>(meta_path)?;
+            let mut buf = Vec::new();
+            D::to_writer(&mut buf, metadata)?;
+            self.metadata
+                .write()
+                .insert((meta_path.clone(), version.clone()), buf);
+            Ok(())
+        }
+        .boxed()
+    }
+
+    fn store_target<'a, R>(
+        &'a self,
+        mut read: R,
+        target_path: &'a TargetPath,
+    ) -> BoxFuture<'a, Result<()>>
+    where
+        R: AsyncRead + Send + Unpin + 'a,
+    {
+        async move {
+            let mut buf = Vec::new();
+            read.read_to_end(&mut buf).await?;
+            self.targets
+                .write()
+                .insert(target_path.clone(), Arc::new(buf));
+            Ok(())
         }
         .boxed()
     }

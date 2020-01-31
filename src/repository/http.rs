@@ -21,7 +21,7 @@ use crate::interchange::DataInterchange;
 use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, SignedMetadata, TargetDescription, TargetPath,
 };
-use crate::repository::Repository;
+use crate::repository::{RepositoryProvider, RepositoryStorage};
 use crate::util::SafeReader;
 use crate::Result;
 
@@ -243,29 +243,11 @@ where
     }
 }
 
-impl<C, D> Repository<D> for HttpRepository<C, D>
+impl<C, D> RepositoryProvider<D> for HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
     D: DataInterchange + Send + Sync,
 {
-    /// This always returns `Err` as storing over HTTP is not yet supported.
-    fn store_metadata<'a, M>(
-        &'a self,
-        _: &'a MetadataPath,
-        _: &'a MetadataVersion,
-        _: &'a SignedMetadata<D, M>,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        M: Metadata + 'static,
-    {
-        async {
-            Err(Error::Opaque(
-                "Http repo store metadata not implemented".to_string(),
-            ))
-        }
-        .boxed()
-    }
-
     fn fetch_metadata<'a, M>(
         &'a self,
         meta_path: &'a MetadataPath,
@@ -277,7 +259,7 @@ where
         M: Metadata + 'static,
     {
         async move {
-            Self::check::<M>(meta_path)?;
+            <Self as RepositoryProvider<D>>::check::<M>(meta_path)?;
 
             let components = meta_path.components::<D>(&version);
             let resp = self.get(&self.metadata_prefix, &components).await?;
@@ -300,14 +282,6 @@ where
             Ok(D::from_slice(&buf)?)
         }
         .boxed()
-    }
-
-    /// This always returns `Err` as storing over HTTP is not yet supported.
-    fn store_target<'a, R>(&'a self, _: R, _: &'a TargetPath) -> BoxFuture<'a, Result<()>>
-    where
-        R: AsyncRead + 'a,
-    {
-        async { Err(Error::Opaque("Http repo store not implemented".to_string())) }.boxed()
     }
 
     fn fetch_target<'a>(
@@ -335,6 +309,38 @@ where
             Ok(Box::new(reader) as Box<dyn AsyncRead + Send + Unpin>)
         }
         .boxed()
+    }
+}
+
+impl<C, D> RepositoryStorage<D> for HttpRepository<C, D>
+where
+    C: Connect + Sync + 'static,
+    D: DataInterchange + Send + Sync,
+{
+    /// This always returns `Err` as storing over HTTP is not yet supported.
+    fn store_metadata<'a, M>(
+        &'a self,
+        _: &'a MetadataPath,
+        _: &'a MetadataVersion,
+        _: &'a SignedMetadata<D, M>,
+    ) -> BoxFuture<'a, Result<()>>
+    where
+        M: Metadata + 'static,
+    {
+        async {
+            Err(Error::Opaque(
+                "Http repo store metadata not implemented".to_string(),
+            ))
+        }
+        .boxed()
+    }
+
+    /// This always returns `Err` as storing over HTTP is not yet supported.
+    fn store_target<'a, R>(&'a self, _: R, _: &'a TargetPath) -> BoxFuture<'a, Result<()>>
+    where
+        R: AsyncRead + 'a,
+    {
+        async { Err(Error::Opaque("Http repo store not implemented".to_string())) }.boxed()
     }
 }
 

@@ -44,7 +44,7 @@ use tuf::metadata::{
     MetadataPath, MetadataVersion, Role, RootMetadata, SignedMetadata, TargetPath,
 };
 use tuf::repository::{
-    EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, Repository,
+    EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, RepositoryProvider,
 };
 use tuf::Result;
 

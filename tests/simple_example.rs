@@ -6,7 +6,7 @@ use tuf::metadata::{
     MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder, TargetDescription,
     TargetPath, TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
-use tuf::repository::{EphemeralRepository, Repository};
+use tuf::repository::{EphemeralRepository, RepositoryStorage};
 use tuf::Result;
 
 // Ironically, this is far from simple, but it's as simple as it can be made.

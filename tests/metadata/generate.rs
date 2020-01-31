@@ -12,7 +12,7 @@ use tuf::metadata::{
     MetadataPath, MetadataVersion, Role, RootMetadataBuilder, SnapshotMetadataBuilder, TargetPath,
     TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
-use tuf::repository::{FileSystemRepository, FileSystemRepositoryBuilder, Repository};
+use tuf::repository::{FileSystemRepository, FileSystemRepositoryBuilder, RepositoryStorage};
 
 const KEYS_PATH: &str = "./keys.json";
 // These structs and functions are necessary to parse keys.json, which contains the keys

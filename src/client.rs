@@ -65,7 +65,7 @@ use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, Role, RootMetadata, SignedMetadata, SnapshotMetadata,
     TargetDescription, TargetPath, TargetsMetadata, VirtualTargetPath,
 };
-use crate::repository::Repository;
+use crate::repository::{RepositoryProvider, RepositoryStorage};
 use crate::tuf::Tuf;
 use crate::Result;
 
@@ -119,8 +119,8 @@ impl PathTranslator for DefaultTranslator {
 pub struct Client<D, L, R, T>
 where
     D: DataInterchange + Sync,
-    L: Repository<D>,
-    R: Repository<D>,
+    L: RepositoryProvider<D> + RepositoryStorage<D>,
+    R: RepositoryProvider<D>,
     T: PathTranslator,
 {
     tuf: Tuf<D>,
@@ -132,8 +132,8 @@ where
 impl<D, L, R, T> Client<D, L, R, T>
 where
     D: DataInterchange + Sync,
-    L: Repository<D>,
-    R: Repository<D>,
+    L: RepositoryProvider<D> + RepositoryStorage<D>,
+    R: RepositoryProvider<D>,
     T: PathTranslator,
 {
     /// Create a new TUF client. It will attempt to load the latest root metadata from the local
@@ -155,7 +155,7 @@ where
     /// #     client::{Client, Config},
     /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository, Repository},
+    /// #     repository::{EphemeralRepository, RepositoryStorage},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
@@ -292,7 +292,7 @@ where
     /// #     client::{Client, Config},
     /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository, Repository},
+    /// #     repository::{EphemeralRepository, RepositoryStorage},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
@@ -408,7 +408,7 @@ where
     /// #     client::{Client, Config},
     /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository, Repository},
+    /// #     repository::{EphemeralRepository, RepositoryStorage},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
@@ -940,8 +940,8 @@ async fn fetch_metadata_from_local_or_else_remote<'a, D, L, R, M>(
 ) -> Result<(bool, SignedMetadata<D, M>)>
 where
     D: DataInterchange + Sync,
-    L: Repository<D>,
-    R: Repository<D>,
+    L: RepositoryProvider<D> + RepositoryStorage<D>,
+    R: RepositoryProvider<D>,
     M: Metadata + 'static,
 {
     match local
@@ -1108,7 +1108,7 @@ mod test {
         MetadataPath, MetadataVersion, RootMetadata, RootMetadataBuilder, SnapshotMetadataBuilder,
         TargetsMetadataBuilder, TimestampMetadataBuilder,
     };
-    use crate::repository::EphemeralRepository;
+    use crate::repository::{EphemeralRepository, RepositoryStorage};
     use chrono::prelude::*;
     use futures_executor::block_on;
     use lazy_static::lazy_static;
