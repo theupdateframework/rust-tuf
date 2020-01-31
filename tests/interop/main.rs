@@ -35,13 +35,15 @@
 //! download targets at each step of the test.
 
 use futures_executor::block_on;
+use futures_util::io::AsyncReadExt;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tuf::client::{Client, Config};
 use tuf::crypto::KeyId;
 use tuf::interchange::Json;
 use tuf::metadata::{
-    MetadataPath, MetadataVersion, Role, RootMetadata, SignedMetadata, TargetPath,
+    MetadataPath, MetadataVersion, RawSignedMetadata, Role, RootMetadata, SignedMetadata,
+    TargetPath,
 };
 use tuf::repository::{
     EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, RepositoryProvider,
@@ -120,7 +122,7 @@ struct TestKeyRotation {
     test_steps: Vec<PathBuf>,
 
     /// The local repository used to store the local metadata.
-    local: EphemeralRepository<Json>,
+    local: EphemeralRepository,
 
     /// The targets we expect each step of the repository to contain. It will contain a target for
     /// each step we've processed, named for the first step it appeared in.
@@ -144,7 +146,7 @@ impl TestKeyRotation {
 
         TestKeyRotation {
             test_steps,
-            local: EphemeralRepository::<Json>::new(),
+            local: EphemeralRepository::new(),
             expected_targets: BTreeMap::new(),
         }
     }
@@ -168,7 +170,7 @@ impl TestKeyRotation {
         let remote = init_remote(&dir).unwrap();
 
         // Connect to the client with our initial keys.
-        let mut client = Client::with_trusted_root_keyids(
+        let mut client = Client::<Json, _, _, _>::with_trusted_root_keyids(
             Config::default(),
             &MetadataVersion::Number(1),
             1,
@@ -206,15 +208,20 @@ async fn extract_keys(dir: &Path) -> Vec<KeyId> {
     let remote = init_remote(dir).unwrap();
 
     let root_path = MetadataPath::from_role(&Role::Root);
-    let metadata: SignedMetadata<_, RootMetadata> = remote
-        .fetch_metadata(&root_path, &MetadataVersion::Number(1), None, None)
+
+    let mut reader = remote
+        .fetch_metadata::<Json>(&root_path, &MetadataVersion::Number(1), None, None)
         .await
         .unwrap();
+    let mut buf = Vec::new();
+    reader.read_to_end(&mut buf).await.unwrap();
+
+    let metadata: SignedMetadata<Json, RootMetadata> = RawSignedMetadata::new(buf).parse().unwrap();
 
     metadata.as_ref().root().key_ids().iter().cloned().collect()
 }
 
-fn init_remote(dir: &Path) -> Result<FileSystemRepository<Json>> {
+fn init_remote(dir: &Path) -> Result<FileSystemRepository> {
     FileSystemRepositoryBuilder::new(dir)
         .metadata_prefix(Path::new("repository"))
         .targets_prefix(Path::new("repository").join("targets"))

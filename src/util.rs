@@ -72,7 +72,7 @@ impl<R: AsyncRead + Unpin> AsyncRead for EnforceMinimumBitrate<R> {
         cx: &mut Context,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        // FIXME transfers that stall out completely won't enforce the minimum bit rate.
+        // FIXME(#272) transfers that stall out completely won't enforce the minimum bit rate.
         let read_bytes = ready!(Pin::new(&mut self.inner).poll_read(cx, buf))?;
 
         let start_time = *self.start_time.get_or_insert_with(Instant::now);

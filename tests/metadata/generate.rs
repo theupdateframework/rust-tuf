@@ -12,7 +12,7 @@ use tuf::metadata::{
     MetadataPath, MetadataVersion, Role, RootMetadataBuilder, SnapshotMetadataBuilder, TargetPath,
     TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
-use tuf::repository::{FileSystemRepository, FileSystemRepositoryBuilder, RepositoryStorage};
+use tuf::repository::{FileSystemRepository, FileSystemRepositoryBuilder, Repository};
 
 const KEYS_PATH: &str = "./keys.json";
 // These structs and functions are necessary to parse keys.json, which contains the keys
@@ -82,7 +82,7 @@ fn copy_repo(dir: &str, step: u8) {
 // updates the root metadata. If root_signer is Some, use that to sign the
 // metadata, otherwise use keys["root"].
 async fn update_root(
-    repo: &FileSystemRepository<JsonPretty>,
+    repo: &mut Repository<FileSystemRepository, JsonPretty>,
     keys: &RoleKeys,
     root_signer: Option<&PrivateKey>,
     version: u32,
@@ -113,17 +113,21 @@ async fn update_root(
     };
 
     let root_path = MetadataPath::from_role(&Role::Root);
-    repo.store_metadata(&root_path, &MetadataVersion::Number(version), &root)
-        .await
-        .unwrap();
-    repo.store_metadata(&root_path, &MetadataVersion::None, &root)
+    repo.store_metadata(
+        &root_path,
+        &MetadataVersion::Number(version),
+        &root.to_raw().unwrap(),
+    )
+    .await
+    .unwrap();
+    repo.store_metadata(&root_path, &MetadataVersion::None, &root.to_raw().unwrap())
         .await
         .unwrap();
 }
 
 // adds a target and updates the non-root metadata files.
 async fn add_target(
-    repo: &FileSystemRepository<JsonPretty>,
+    repo: &mut Repository<FileSystemRepository, JsonPretty>,
     keys: &RoleKeys,
     step: u8,
     consistent_snapshot: bool,
@@ -178,7 +182,7 @@ async fn add_target(
         MetadataVersion::None
     };
 
-    repo.store_metadata(&targets_path, &version_prefix, &targets)
+    repo.store_metadata(&targets_path, &version_prefix, &targets.to_raw().unwrap())
         .await
         .unwrap();
 
@@ -191,7 +195,7 @@ async fn add_target(
         .signed::<JsonPretty>(&keys.get("snapshot").unwrap())
         .unwrap();
 
-    repo.store_metadata(&snapshot_path, &version_prefix, &snapshot)
+    repo.store_metadata(&snapshot_path, &version_prefix, &snapshot.to_raw().unwrap())
         .await
         .unwrap();
 
@@ -204,9 +208,13 @@ async fn add_target(
         .unwrap();
 
     // Timestamp doesn't require a version prefix even in consistent_snapshot.
-    repo.store_metadata(&timestamp_path, &MetadataVersion::None, &timestamp)
-        .await
-        .unwrap();
+    repo.store_metadata(
+        &timestamp_path,
+        &MetadataVersion::None,
+        &timestamp.to_raw().unwrap(),
+    )
+    .await
+    .unwrap();
 }
 
 async fn generate_repos(dir: &str, consistent_snapshot: bool) -> tuf::Result<()> {
@@ -218,9 +226,10 @@ async fn generate_repos(dir: &str, consistent_snapshot: bool) -> tuf::Result<()>
         .metadata_prefix(Path::new("repository"))
         .targets_prefix(Path::new("repository").join("targets"))
         .build()?;
+    let mut repo = Repository::<_, JsonPretty>::new(repo);
 
-    update_root(&repo, &keys, None, 1, consistent_snapshot).await;
-    add_target(&repo, &keys, 0, consistent_snapshot).await;
+    update_root(&mut repo, &keys, None, 1, consistent_snapshot).await;
+    add_target(&mut repo, &keys, 0, consistent_snapshot).await;
 
     let mut i: u8 = 1;
     let rotations = vec![
@@ -239,6 +248,7 @@ async fn generate_repos(dir: &str, consistent_snapshot: bool) -> tuf::Result<()>
             .build()
             .unwrap();
         copy_repo(dir, i);
+        let mut repo = Repository::<_, JsonPretty>::new(repo);
 
         let root_signer = match r {
             Some(Role::Root) => keys.insert("root", json_keys.root[1][0].to_private_key()),
@@ -257,14 +267,14 @@ async fn generate_repos(dir: &str, consistent_snapshot: bool) -> tuf::Result<()>
             None => None,
         };
         update_root(
-            &repo,
+            &mut repo,
             &keys,
             root_signer.as_ref(),
             (i + 1).into(),
             consistent_snapshot,
         )
         .await;
-        add_target(&repo, &keys, i, consistent_snapshot).await;
+        add_target(&mut repo, &keys, i, consistent_snapshot).await;
         i = i + 1;
     }
     Ok(())

@@ -3,7 +3,6 @@
 use futures_io::AsyncRead;
 use futures_util::compat::{Future01CompatExt, Stream01CompatExt};
 use futures_util::future::{BoxFuture, FutureExt};
-use futures_util::io::AsyncReadExt;
 use futures_util::stream::TryStreamExt;
 use http::{Response, StatusCode, Uri};
 use hyper::body::Body;
@@ -12,45 +11,38 @@ use hyper::Client;
 use hyper::Request;
 use percent_encoding::utf8_percent_encode;
 use std::io;
-use std::marker::PhantomData;
 use url::Url;
 
-use crate::crypto::{self, HashAlgorithm, HashValue};
+use crate::crypto::{HashAlgorithm, HashValue};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
-use crate::metadata::{
-    Metadata, MetadataPath, MetadataVersion, SignedMetadata, TargetDescription, TargetPath,
-};
+use crate::metadata::{MetadataPath, MetadataVersion, TargetDescription, TargetPath};
 use crate::repository::RepositoryProvider;
 use crate::util::SafeAsyncRead;
 use crate::Result;
 
 /// A builder to create a repository accessible over HTTP.
-pub struct HttpRepositoryBuilder<C, D>
+pub struct HttpRepositoryBuilder<C>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange,
 {
     uri: Uri,
     client: Client<C>,
-    interchange: PhantomData<D>,
     user_agent: Option<String>,
     metadata_prefix: Option<Vec<String>>,
     targets_prefix: Option<Vec<String>>,
     min_bytes_per_second: u32,
 }
 
-impl<C, D> HttpRepositoryBuilder<C, D>
+impl<C> HttpRepositoryBuilder<C>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange,
 {
     /// Create a new repository with the given `Url` and `Client`.
     pub fn new(url: Url, client: Client<C>) -> Self {
         HttpRepositoryBuilder {
             uri: url.to_string().parse::<Uri>().unwrap(), // This is dangerous, but will only exist for a short time as we migrate APIs.
             client: client,
-            interchange: PhantomData,
             user_agent: None,
             metadata_prefix: None,
             targets_prefix: None,
@@ -63,7 +55,6 @@ where
         HttpRepositoryBuilder {
             uri: uri,
             client: client,
-            interchange: PhantomData,
             user_agent: None,
             metadata_prefix: None,
             targets_prefix: None,
@@ -108,7 +99,7 @@ where
     }
 
     /// Build a `HttpRepository`.
-    pub fn build(self) -> HttpRepository<C, D> {
+    pub fn build(self) -> HttpRepository<C> {
         let user_agent = match self.user_agent {
             Some(user_agent) => user_agent,
             None => "rust-tuf".into(),
@@ -117,7 +108,6 @@ where
         HttpRepository {
             uri: self.uri,
             client: self.client,
-            interchange: self.interchange,
             user_agent: user_agent,
             metadata_prefix: self.metadata_prefix,
             targets_prefix: self.targets_prefix,
@@ -127,10 +117,9 @@ where
 }
 
 /// A repository accessible over HTTP.
-pub struct HttpRepository<C, D>
+pub struct HttpRepository<C>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange,
 {
     uri: Uri,
     client: Client<C>,
@@ -138,7 +127,6 @@ where
     metadata_prefix: Option<Vec<String>>,
     targets_prefix: Option<Vec<String>>,
     min_bytes_per_second: u32,
-    interchange: PhantomData<D>,
 }
 
 // Configuration for urlencoding URI path elements.
@@ -207,10 +195,9 @@ fn extend_uri(uri: Uri, prefix: &Option<Vec<String>>, components: &[String]) -> 
     })?)
 }
 
-impl<C, D> HttpRepository<C, D>
+impl<C> HttpRepository<C>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange,
 {
     async fn get<'a>(
         &'a self,
@@ -243,39 +230,35 @@ where
     }
 }
 
-impl<C, D> RepositoryProvider<D> for HttpRepository<C, D>
+impl<C> RepositoryProvider for HttpRepository<C>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange + Send + Sync,
 {
-    fn fetch_metadata<'a, M>(
+    fn fetch_metadata<'a, D>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        max_length: Option<usize>,
-        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> BoxFuture<'a, Result<SignedMetadata<D, M>>>
+        _max_length: Option<usize>,
+        _hash_data: Option<(&'static HashAlgorithm, HashValue)>,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>>
     where
-        M: Metadata + 'static,
+        D: DataInterchange + Sync,
     {
         async move {
-            <Self as RepositoryProvider<D>>::check::<M>(meta_path)?;
-
             let components = meta_path.components::<D>(&version);
             let resp = self.get(&self.metadata_prefix, &components).await?;
 
-            let mut reader = resp
+            // TODO check content length if known and fail early if the payload is too large.
+
+            let reader = resp
                 .into_body()
                 .compat()
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
                 .into_async_read()
-                .enforce_minimum_bitrate(self.min_bytes_per_second)
-                .check_length_and_hash(max_length.unwrap_or(::std::usize::MAX) as u64, hash_data)?;
+                .enforce_minimum_bitrate(self.min_bytes_per_second);
 
-            let mut buf = Vec::new();
-            reader.read_to_end(&mut buf).await?;
-
-            Ok(D::from_slice(&buf)?)
+            let reader: Box<dyn AsyncRead + Send + Unpin> = Box::new(reader);
+            Ok(reader)
         }
         .boxed()
     }
@@ -283,20 +266,20 @@ where
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
-        target_description: &'a TargetDescription,
+        _target_description: &'a TargetDescription,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
-            let (alg, value) = crypto::hash_preference(target_description.hashes())?;
             let components = target_path.components();
             let resp = self.get(&self.targets_prefix, &components).await?;
+
+            // TODO check content length if known and fail early if the payload is too large.
 
             let reader = resp
                 .into_body()
                 .compat()
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
                 .into_async_read()
-                .enforce_minimum_bitrate(self.min_bytes_per_second)
-                .check_length_and_hash(target_description.length(), Some((alg, value.clone())))?;
+                .enforce_minimum_bitrate(self.min_bytes_per_second);
 
             Ok(Box::new(reader) as Box<dyn AsyncRead + Send + Unpin>)
         }
