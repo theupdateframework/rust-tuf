@@ -727,6 +727,10 @@ where
     }
 
     /// Fetch a target from the remote repo and write it to the provided writer.
+    ///
+    /// It is **critical** that none of the bytes written to the `write` are used until this future
+    /// returns `Ok`, as the hash of the target is not verified until all bytes are read from the
+    /// repository.
     pub async fn fetch_target_to_writer<'a, W>(
         &'a mut self,
         target: &'a TargetPath,

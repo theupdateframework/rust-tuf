@@ -16,7 +16,7 @@ use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, SignedMetadata, TargetDescription, TargetPath,
 };
 use crate::repository::{RepositoryProvider, RepositoryStorage};
-use crate::util::SafeReader;
+use crate::util::SafeAsyncRead;
 use crate::Result;
 
 /// A builder to create a repository contained on the local file system.
@@ -126,12 +126,8 @@ where
             let mut path = self.metadata_path.clone();
             path.extend(meta_path.components::<D>(&version));
 
-            let mut reader = SafeReader::new(
-                AllowStdIo::new(File::open(&path)?),
-                max_length.unwrap_or(::std::usize::MAX) as u64,
-                0,
-                hash_data,
-            )?;
+            let mut reader = AllowStdIo::new(File::open(&path)?)
+                .check_length_and_hash(max_length.unwrap_or(::std::usize::MAX) as u64, hash_data)?;
 
             let mut buf = Vec::with_capacity(max_length.unwrap_or(0));
             reader.read_to_end(&mut buf).await?;
@@ -156,13 +152,11 @@ where
 
             let (alg, value) = crypto::hash_preference(target_description.hashes())?;
 
-            let reader: Box<dyn AsyncRead + Send + Unpin> = Box::new(SafeReader::new(
-                AllowStdIo::new(File::open(&path)?),
-                target_description.length(),
-                0,
-                Some((alg, value.clone())),
-            )?);
-
+            let reader: Box<dyn AsyncRead + Send + Unpin> =
+                Box::new(AllowStdIo::new(File::open(&path)?).check_length_and_hash(
+                    target_description.length(),
+                    Some((alg, value.clone())),
+                )?);
             Ok(reader)
         }
         .boxed()
