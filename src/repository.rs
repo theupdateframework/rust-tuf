@@ -198,6 +198,31 @@ where
     where
         M: Metadata,
     {
+        let raw_signed_meta = self
+            .fetch_raw_metadata(meta_path, version, max_length, hash_data)
+            .await?;
+        let signed_meta = raw_signed_meta.parse()?;
+
+        Ok((raw_signed_meta, signed_meta))
+    }
+
+    /// Fetch metadata identified by `meta_path`, `version`, and [`D::extension()`][extension].
+    ///
+    /// If `max_length` is provided, this method will return an error if the metadata exceeds
+    /// `max_length` bytes. If `hash_data` is provided, this method will return and error if the
+    /// hashed bytes of the metadata do not match `hash_data`.
+    ///
+    /// [extension]: crate::interchange::DataInterchange::extension
+    async fn fetch_raw_metadata<'a, M>(
+        &'a self,
+        meta_path: &'a MetadataPath,
+        version: &'a MetadataVersion,
+        max_length: Option<usize>,
+        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
+    ) -> Result<RawSignedMetadata<D, M>>
+    where
+        M: Metadata,
+    {
         Self::check::<M>(meta_path)?;
 
         // Fetch the metadata, verifying max_length and hash_data if provided, as the repository
@@ -212,9 +237,8 @@ where
         reader.read_to_end(&mut buf).await?;
 
         let raw_signed_meta = RawSignedMetadata::new(buf);
-        let signed_meta = raw_signed_meta.parse()?;
 
-        Ok((raw_signed_meta, signed_meta))
+        Ok(raw_signed_meta)
     }
 
     /// Fetch the target identified by `target_path` through the returned `AsyncRead`, verifying
@@ -347,6 +371,109 @@ mod test {
                 Err(Error::IllegalArgument(_))
             );
         });
+    }
+
+    #[test]
+    fn repository_verifies_metadata_hash() {
+        block_on(async {
+            let path = MetadataPath::from_role(&Role::Root);
+            let version = MetadataVersion::None;
+            let data: &[u8] = b"valid metadata";
+            let data_hash = crypto::calculate_hash(data, HashAlgorithm::Sha256);
+
+            let repo = EphemeralRepository::new();
+            repo.store_metadata::<_, Json>(&path, &version, data)
+                .await
+                .unwrap();
+
+            let client = Repository::<_, Json>::new(repo);
+
+            assert_eq!(
+                client
+                    .fetch_raw_metadata::<RootMetadata>(
+                        &path,
+                        &version,
+                        None,
+                        Some((&HashAlgorithm::Sha256, data_hash))
+                    )
+                    .await,
+                Ok(RawSignedMetadata::new(data.to_vec()))
+            );
+        })
+    }
+
+    #[test]
+    fn repository_rejects_corrupt_metadata() {
+        block_on(async {
+            let path = MetadataPath::from_role(&Role::Root);
+            let version = MetadataVersion::None;
+            let data: &[u8] = b"corrupt metadata";
+
+            let repo = EphemeralRepository::new();
+            repo.store_metadata::<_, Json>(&path, &version, data)
+                .await
+                .unwrap();
+
+            let client = Repository::<_, Json>::new(repo);
+
+            assert_matches!(
+                client
+                    .fetch_metadata::<RootMetadata>(
+                        &path,
+                        &version,
+                        None,
+                        Some((&HashAlgorithm::Sha256, HashValue::new(vec![])))
+                    )
+                    .await,
+                Err(_)
+            );
+        })
+    }
+
+    #[test]
+    fn repository_verifies_metadata_size() {
+        block_on(async {
+            let path = MetadataPath::from_role(&Role::Root);
+            let version = MetadataVersion::None;
+            let data: &[u8] = b"reasonably sized metadata";
+
+            let repo = EphemeralRepository::new();
+            repo.store_metadata::<_, Json>(&path, &version, data)
+                .await
+                .unwrap();
+
+            let client = Repository::<_, Json>::new(repo);
+
+            assert_eq!(
+                client
+                    .fetch_raw_metadata::<RootMetadata>(&path, &version, Some(100), None)
+                    .await,
+                Ok(RawSignedMetadata::new(data.to_vec()))
+            );
+        })
+    }
+
+    #[test]
+    fn repository_rejects_oversized_metadata() {
+        block_on(async {
+            let path = MetadataPath::from_role(&Role::Root);
+            let version = MetadataVersion::None;
+            let data: &[u8] = b"very big metadata";
+
+            let repo = EphemeralRepository::new();
+            repo.store_metadata::<_, Json>(&path, &version, data)
+                .await
+                .unwrap();
+
+            let client = Repository::<_, Json>::new(repo);
+
+            assert_matches!(
+                client
+                    .fetch_metadata::<RootMetadata>(&path, &version, Some(4), None)
+                    .await,
+                Err(_)
+            );
+        })
     }
 
     #[test]
