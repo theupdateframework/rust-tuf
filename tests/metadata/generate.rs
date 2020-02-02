@@ -222,11 +222,11 @@ async fn generate_repos(dir: &str, consistent_snapshot: bool) -> tuf::Result<()>
     let json_keys = init_json_keys(KEYS_PATH);
     let mut keys = init_role_keys(&json_keys);
     let dir0 = Path::new(dir).join("0");
-    let repo = FileSystemRepositoryBuilder::new(dir0)
+    let mut repo: Repository<_, JsonPretty> = FileSystemRepositoryBuilder::new(dir0)
         .metadata_prefix(Path::new("repository"))
         .targets_prefix(Path::new("repository").join("targets"))
-        .build()?;
-    let mut repo = Repository::<_, JsonPretty>::new(repo);
+        .build()?
+        .into();
 
     update_root(&mut repo, &keys, None, 1, consistent_snapshot).await;
     add_target(&mut repo, &keys, 0, consistent_snapshot).await;

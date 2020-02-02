@@ -143,7 +143,7 @@ where
 /// A wrapper around an implementation of [`RepositoryProvider`] and/or [`RepositoryStorage`] tied
 /// to a specific [`DataInterchange`](crate::interchange::DataInterchange) that will enforce
 /// provided length limits and hash checks.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Repository<R, D> {
     repository: R,
     _interchange: PhantomData<D>,
@@ -273,6 +273,15 @@ where
         S: AsyncRead + Send + Unpin + 'a,
     {
         self.repository.store_target(target, target_path).await
+    }
+}
+
+impl<R, D> From<R> for Repository<R, D>
+where
+    R: RepositoryProvider + Sync,
+{
+    fn from(r: R) -> Self {
+        Repository::new(r)
     }
 }
 

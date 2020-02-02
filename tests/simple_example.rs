@@ -74,8 +74,8 @@ async fn run_tests<T>(config: Config<T>, consistent_snapshots: bool)
 where
     T: PathTranslator,
 {
-    let remote = EphemeralRepository::new();
-    let root_key_ids = init_server(Repository::new(&remote), &config, consistent_snapshots)
+    let mut remote = Repository::new(EphemeralRepository::new());
+    let root_key_ids = init_server(&mut remote, &config, consistent_snapshots)
         .await
         .unwrap();
     init_client(&root_key_ids, remote, config).await.unwrap();
@@ -83,14 +83,14 @@ where
 
 async fn init_client<T>(
     root_key_ids: &[KeyId],
-    remote: EphemeralRepository,
+    remote: Repository<EphemeralRepository, Json>,
     config: Config<T>,
 ) -> Result<()>
 where
     T: PathTranslator,
 {
     let local = EphemeralRepository::new();
-    let mut client = Client::<Json, _, _, _>::with_trusted_root_keyids(
+    let mut client = Client::with_trusted_root_keyids(
         config,
         &MetadataVersion::Number(1),
         1,
@@ -105,7 +105,7 @@ where
 }
 
 async fn init_server<'a, T>(
-    mut remote: Repository<&'a EphemeralRepository, Json>,
+    remote: &'a mut Repository<EphemeralRepository, Json>,
     config: &'a Config<T>,
     consistent_snapshot: bool,
 ) -> Result<Vec<KeyId>>

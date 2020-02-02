@@ -35,18 +35,16 @@
 //! download targets at each step of the test.
 
 use futures_executor::block_on;
-use futures_util::io::AsyncReadExt;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tuf::client::{Client, Config};
 use tuf::crypto::KeyId;
 use tuf::interchange::Json;
 use tuf::metadata::{
-    MetadataPath, MetadataVersion, RawSignedMetadata, Role, RootMetadata, SignedMetadata,
-    TargetPath,
+    MetadataPath, MetadataVersion, Role, RootMetadata, SignedMetadata, TargetPath,
 };
 use tuf::repository::{
-    EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, RepositoryProvider,
+    EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, Repository,
 };
 use tuf::Result;
 
@@ -170,7 +168,7 @@ impl TestKeyRotation {
         let remote = init_remote(&dir).unwrap();
 
         // Connect to the client with our initial keys.
-        let mut client = Client::<Json, _, _, _>::with_trusted_root_keyids(
+        let mut client = Client::with_trusted_root_keyids(
             Config::default(),
             &MetadataVersion::Number(1),
             1,
@@ -209,21 +207,19 @@ async fn extract_keys(dir: &Path) -> Vec<KeyId> {
 
     let root_path = MetadataPath::from_role(&Role::Root);
 
-    let mut reader = remote
-        .fetch_metadata::<Json>(&root_path, &MetadataVersion::Number(1), None, None)
+    let metadata: SignedMetadata<Json, RootMetadata> = remote
+        .fetch_metadata(&root_path, &MetadataVersion::Number(1), None, None)
         .await
-        .unwrap();
-    let mut buf = Vec::new();
-    reader.read_to_end(&mut buf).await.unwrap();
-
-    let metadata: SignedMetadata<Json, RootMetadata> = RawSignedMetadata::new(buf).parse().unwrap();
+        .unwrap()
+        .1;
 
     metadata.as_ref().root().key_ids().iter().cloned().collect()
 }
 
-fn init_remote(dir: &Path) -> Result<FileSystemRepository> {
+fn init_remote(dir: &Path) -> Result<Repository<FileSystemRepository, Json>> {
     FileSystemRepositoryBuilder::new(dir)
         .metadata_prefix(Path::new("repository"))
         .targets_prefix(Path::new("repository").join("targets"))
         .build()
+        .map(Into::into)
 }

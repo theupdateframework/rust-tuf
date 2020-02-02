@@ -13,7 +13,7 @@
 //! # use tuf::metadata::{RootMetadata, SignedMetadata, Role, MetadataPath,
 //! #     MetadataVersion};
 //! # use tuf::interchange::Json;
-//! # use tuf::repository::{FileSystemRepository, HttpRepositoryBuilder};
+//! # use tuf::repository::{FileSystemRepository, HttpRepositoryBuilder, Repository};
 //!
 //! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
 //!     "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
@@ -36,13 +36,13 @@
 //! .user_agent("rustup/1.4.0")
 //! .build();
 //!
-//! let mut client = Client::<Json, _, _, _>::with_trusted_root_keyids(
+//! let mut client = Client::with_trusted_root_keyids(
 //!     Config::default(),
 //!     &MetadataVersion::Number(1),
 //!     1,
 //!     &key_ids,
 //!     local,
-//!     remote,
+//!     Repository::<_, Json>::new(remote),
 //! ).await?;
 //!
 //! let _ = client.update().await?;
@@ -155,7 +155,7 @@ where
     /// #     client::{Client, Config},
     /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository, RepositoryStorage},
+    /// #     repository::{EphemeralRepository, Repository, RepositoryStorage},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
@@ -164,7 +164,7 @@ where
     /// #     SignatureScheme::Ed25519,
     /// # )?;
     /// # let public_key = private_key.public().clone();
-    /// let local = EphemeralRepository::new();
+    /// let mut local = Repository::<_, Json>::new(EphemeralRepository::new());
     /// let remote = EphemeralRepository::new();
     ///
     /// let root_version = 1;
@@ -180,13 +180,13 @@ where
     /// let root_path = MetadataPath::from_role(&Role::Root);
     /// let root_version = MetadataVersion::Number(root_version);
     ///
-    /// local.store_metadata::<_, Json>(
+    /// local.store_metadata(
     ///     &root_path,
     ///     &root_version,
-    ///     root.to_raw().unwrap().as_bytes()
+    ///     &root.to_raw().unwrap()
     /// ).await?;
     ///
-    /// let client = Client::<Json, _, _, _>::with_trusted_local(
+    /// let client = Client::with_trusted_local(
     ///     Config::default(),
     ///     local,
     ///     remote,
@@ -195,14 +195,16 @@ where
     /// # })
     /// # }
     /// ```
-    pub async fn with_trusted_local(config: Config<T>, local: L, remote: R) -> Result<Self> {
+    pub async fn with_trusted_local(
+        config: Config<T>,
+        local: impl Into<Repository<L, D>>,
+        remote: impl Into<Repository<R, D>>,
+    ) -> Result<Self> {
         let root_path = MetadataPath::from_role(&Role::Root);
+        let (local, remote) = (local.into(), remote.into());
 
         // FIXME should this be MetadataVersion::None so we bootstrap with the latest version?
         let root_version = MetadataVersion::Number(1);
-
-        let local = Repository::new(local);
-        let remote = Repository::new(remote);
 
         let (_, root) = local
             .fetch_metadata(&root_path, &root_version, config.max_root_length, None)
@@ -231,7 +233,7 @@ where
     /// #     client::{Client, Config},
     /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository},
+    /// #     repository::{EphemeralRepository, Repository},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
@@ -241,7 +243,7 @@ where
     /// # )?;
     /// # let public_key = private_key.public().clone();
     /// let local = EphemeralRepository::new();
-    /// let remote = EphemeralRepository::new();
+    /// let remote = Repository::<_, Json>::new(EphemeralRepository::new());
     ///
     /// let root_version = 1;
     /// let root_threshold = 1;
@@ -269,12 +271,11 @@ where
     pub async fn with_trusted_root(
         config: Config<T>,
         trusted_root: SignedMetadata<D, RootMetadata>,
-        local: L,
-        remote: R,
+        local: impl Into<Repository<L, D>>,
+        remote: impl Into<Repository<R, D>>,
     ) -> Result<Self> {
         let tuf = Tuf::from_trusted_root(trusted_root.clone())?;
-        let local = Repository::new(local);
-        let remote = Repository::new(remote);
+        let (local, remote) = (local.into(), remote.into());
 
         Ok(Client {
             tuf,
@@ -301,7 +302,7 @@ where
     /// #     client::{Client, Config},
     /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository, RepositoryStorage},
+    /// #     repository::{EphemeralRepository, Repository, RepositoryStorage},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
@@ -311,7 +312,7 @@ where
     /// # )?;
     /// # let public_key = private_key.public().clone();
     /// let local = EphemeralRepository::new();
-    /// let remote = EphemeralRepository::new();
+    /// let mut remote = Repository::<_, Json>::new(EphemeralRepository::new());
     ///
     /// let root_version = 1;
     /// let root_threshold = 1;
@@ -328,13 +329,13 @@ where
     /// let root_path = MetadataPath::from_role(&Role::Root);
     /// let root_version = MetadataVersion::Number(root_version);
     ///
-    /// remote.store_metadata::<_, Json>(
+    /// remote.store_metadata(
     ///     &root_path,
     ///     &root_version,
-    ///     root.to_raw().unwrap().as_bytes()
+    ///     &root.to_raw().unwrap()
     /// ).await?;
     ///
-    /// let client = Client::<Json, _, _, _>::with_trusted_root_keyids(
+    /// let client = Client::with_trusted_root_keyids(
     ///     Config::default(),
     ///     &root_version,
     ///     root_threshold,
@@ -351,15 +352,14 @@ where
         root_version: &MetadataVersion,
         root_threshold: u32,
         trusted_root_key_ids: I,
-        local: L,
-        remote: R,
+        local: impl Into<Repository<L, D>>,
+        remote: impl Into<Repository<R, D>>,
     ) -> Result<Self>
     where
         I: IntoIterator<Item = &'a KeyId>,
     {
         let root_path = MetadataPath::from_role(&Role::Root);
-        let local = Repository::new(local);
-        let remote = Repository::new(remote);
+        let (local, remote) = (local.into(), remote.into());
 
         let (fetched, raw_trusted_root, trusted_root) = fetch_metadata_from_local_or_else_remote(
             &root_path,
@@ -426,7 +426,7 @@ where
     /// #     client::{Client, Config},
     /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository, RepositoryStorage},
+    /// #     repository::{EphemeralRepository, Repository, RepositoryStorage},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
@@ -436,7 +436,7 @@ where
     /// # )?;
     /// # let public_key = private_key.public().clone();
     /// let local = EphemeralRepository::new();
-    /// let remote = EphemeralRepository::new();
+    /// let mut remote = Repository::<_, Json>::new(EphemeralRepository::new());
     ///
     /// let root_version = 1;
     /// let root_threshold = 1;
@@ -453,13 +453,13 @@ where
     /// let root_path = MetadataPath::from_role(&Role::Root);
     /// let root_version = MetadataVersion::Number(root_version);
     ///
-    /// remote.store_metadata::<_, Json>(
+    /// remote.store_metadata(
     ///     &root_path,
     ///     &root_version,
-    ///     root.to_raw().unwrap().as_bytes()
+    ///     &root.to_raw().unwrap()
     /// ).await?;
     ///
-    /// let client = Client::<Json, _, _, _>::with_trusted_root_keys(
+    /// let client = Client::with_trusted_root_keys(
     ///     Config::default(),
     ///     &root_version,
     ///     root_threshold,
@@ -476,15 +476,14 @@ where
         root_version: &MetadataVersion,
         root_threshold: u32,
         trusted_root_keys: I,
-        local: L,
-        remote: R,
+        local: impl Into<Repository<L, D>>,
+        remote: impl Into<Repository<R, D>>,
     ) -> Result<Self>
     where
         I: IntoIterator<Item = &'a PublicKey>,
     {
         let root_path = MetadataPath::from_role(&Role::Root);
-        let local = Repository::new(local);
-        let remote = Repository::new(remote);
+        let (local, remote) = (local.into(), remote.into());
 
         let (fetched, raw_root, root) = fetch_metadata_from_local_or_else_remote(
             &root_path,
@@ -1160,6 +1159,7 @@ mod test {
         block_on(async {
             let local = EphemeralRepository::new();
             let remote = EphemeralRepository::new();
+            let remote = Repository::<_, Json>::new(&remote);
 
             let private_key = PrivateKey::from_pkcs8(
                 &PrivateKey::new(KeyType::Ed25519).unwrap(),
@@ -1169,32 +1169,31 @@ mod test {
             let public_key = private_key.public().clone();
 
             assert_matches!(
-                Client::<Json, _, _, _>::with_trusted_local(Config::default(), &local, &remote)
-                    .await,
+                Client::with_trusted_local(Config::default(), &local, remote.clone()).await,
                 Err(Error::NotFound)
             );
 
             assert_matches!(
-                Client::<Json, _, _, _>::with_trusted_root_keys(
+                Client::with_trusted_root_keys(
                     Config::default(),
                     &MetadataVersion::Number(1),
                     1,
                     once(&public_key),
                     &local,
-                    &remote,
+                    remote.clone()
                 )
                 .await,
                 Err(Error::NotFound)
             );
 
             assert_matches!(
-                Client::<Json, _, _, _>::with_trusted_root_keyids(
+                Client::with_trusted_root_keyids(
                     Config::default(),
                     &MetadataVersion::Number(1),
                     1,
                     once(public_key.key_id()),
                     &local,
-                    &remote,
+                    remote,
                 )
                 .await,
                 Err(Error::NotFound)
@@ -1206,7 +1205,8 @@ mod test {
     fn client_constructors_err_with_invalid_keys() {
         block_on(async {
             let local = EphemeralRepository::new();
-            let remote = EphemeralRepository::new();
+            let remote_repo = EphemeralRepository::new();
+            let mut remote = Repository::<_, Json>::new(&remote_repo);
 
             let good_private_key = PrivateKey::from_pkcs8(
                 &PrivateKey::new(KeyType::Ed25519).unwrap(),
@@ -1229,7 +1229,7 @@ mod test {
             let root_path = MetadataPath::from_role(&Role::Root);
             let root_version = MetadataVersion::Number(root_version);
 
-            Repository::<_, Json>::new(&remote)
+            remote
                 .store_metadata(&root_path, &root_version, &root.to_raw().unwrap())
                 .await
                 .unwrap();
@@ -1242,26 +1242,26 @@ mod test {
             let bad_public_key = bad_private_key.public().clone();
 
             assert_matches!(
-                Client::<Json, _, _, _>::with_trusted_root_keys(
+                Client::with_trusted_root_keys(
                     Config::default(),
                     &root_version,
                     1,
                     once(&bad_public_key),
                     &local,
-                    &remote,
+                    remote.clone(),
                 )
                 .await,
                 Err(Error::VerificationFailure(_))
             );
 
             assert_matches!(
-                Client::<Json, _, _, _>::with_trusted_root_keyids(
+                Client::with_trusted_root_keyids(
                     Config::default(),
                     &root_version,
                     1,
                     once(bad_public_key.key_id()),
                     &local,
-                    &remote,
+                    remote,
                 )
                 .await,
                 Err(Error::VerificationFailure(_))
@@ -1272,8 +1272,7 @@ mod test {
     #[test]
     fn root_chain_update() {
         block_on(async {
-            let repo = EphemeralRepository::new();
-            let mut remote = Repository::<_, Json>::new(&repo);
+            let mut remote = Repository::<_, Json>::new(EphemeralRepository::new());
 
             //// First, create the root metadata.
             let root1 = RootMetadataBuilder::new()
@@ -1424,7 +1423,7 @@ mod test {
                 1,
                 &key_ids,
                 EphemeralRepository::new(),
-                repo,
+                remote,
             )
             .await
             .unwrap();
@@ -1516,8 +1515,7 @@ mod test {
     }
 
     async fn test_versioned_init(consistent_snapshot: bool) {
-        let repo = EphemeralRepository::new();
-        let mut remote = Repository::<_, Json>::new(&repo);
+        let mut remote = Repository::<_, Json>::new(EphemeralRepository::new());
 
         //// First, create the root metadata.
         let root1 = RootMetadataBuilder::new()
@@ -1643,7 +1641,7 @@ mod test {
             1,
             &key_ids,
             EphemeralRepository::new(),
-            repo,
+            remote,
         )
         .await
         .unwrap();
@@ -1714,8 +1712,7 @@ mod test {
 
     async fn test_fetch_target_description(path: String, expected_description: TargetDescription) {
         // Generate an ephemeral repository with a single target.
-        let repo = EphemeralRepository::new();
-        let mut remote = Repository::<_, Json>::new(&repo);
+        let mut remote = Repository::<_, Json>::new(EphemeralRepository::new());
 
         let root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
@@ -1794,7 +1791,7 @@ mod test {
 
         // Initialize and update client.
         let mut client =
-            Client::with_trusted_root(Config::default(), root, EphemeralRepository::new(), repo)
+            Client::with_trusted_root(Config::default(), root, EphemeralRepository::new(), remote)
                 .await
                 .unwrap();
 
