@@ -11,6 +11,7 @@ use hyper::Client;
 use hyper::Request;
 use percent_encoding::utf8_percent_encode;
 use std::io;
+use std::marker::PhantomData;
 use url::Url;
 
 use crate::crypto::{HashAlgorithm, HashValue};
@@ -22,9 +23,10 @@ use crate::util::SafeAsyncRead;
 use crate::Result;
 
 /// A builder to create a repository accessible over HTTP.
-pub struct HttpRepositoryBuilder<C>
+pub struct HttpRepositoryBuilder<C, D>
 where
     C: Connect + Sync + 'static,
+    D: DataInterchange + Sync,
 {
     uri: Uri,
     client: Client<C>,
@@ -32,11 +34,13 @@ where
     metadata_prefix: Option<Vec<String>>,
     targets_prefix: Option<Vec<String>>,
     min_bytes_per_second: u32,
+    _interchange: PhantomData<D>,
 }
 
-impl<C> HttpRepositoryBuilder<C>
+impl<C, D> HttpRepositoryBuilder<C, D>
 where
     C: Connect + Sync + 'static,
+    D: DataInterchange + Sync,
 {
     /// Create a new repository with the given `Url` and `Client`.
     pub fn new(url: Url, client: Client<C>) -> Self {
@@ -47,6 +51,7 @@ where
             metadata_prefix: None,
             targets_prefix: None,
             min_bytes_per_second: 4096,
+            _interchange: PhantomData,
         }
     }
 
@@ -59,6 +64,7 @@ where
             metadata_prefix: None,
             targets_prefix: None,
             min_bytes_per_second: 4096,
+            _interchange: PhantomData,
         }
     }
 
@@ -99,7 +105,7 @@ where
     }
 
     /// Build a `HttpRepository`.
-    pub fn build(self) -> HttpRepository<C> {
+    pub fn build(self) -> HttpRepository<C, D> {
         let user_agent = match self.user_agent {
             Some(user_agent) => user_agent,
             None => "rust-tuf".into(),
@@ -112,14 +118,16 @@ where
             metadata_prefix: self.metadata_prefix,
             targets_prefix: self.targets_prefix,
             min_bytes_per_second: self.min_bytes_per_second,
+            _interchange: PhantomData,
         }
     }
 }
 
 /// A repository accessible over HTTP.
-pub struct HttpRepository<C>
+pub struct HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
+    D: DataInterchange + Sync,
 {
     uri: Uri,
     client: Client<C>,
@@ -127,6 +135,7 @@ where
     metadata_prefix: Option<Vec<String>>,
     targets_prefix: Option<Vec<String>>,
     min_bytes_per_second: u32,
+    _interchange: PhantomData<D>,
 }
 
 // Configuration for urlencoding URI path elements.
@@ -195,9 +204,10 @@ fn extend_uri(uri: Uri, prefix: &Option<Vec<String>>, components: &[String]) -> 
     })?)
 }
 
-impl<C> HttpRepository<C>
+impl<C, D> HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
+    D: DataInterchange + Sync,
 {
     async fn get<'a>(
         &'a self,
@@ -230,22 +240,20 @@ where
     }
 }
 
-impl<C> RepositoryProvider for HttpRepository<C>
+impl<C, D> RepositoryProvider<D> for HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
+    D: DataInterchange + Send + Sync,
 {
-    fn fetch_metadata<'a, D>(
+    fn fetch_metadata<'a>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
         _max_length: Option<usize>,
         _hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>>
-    where
-        D: DataInterchange + Sync,
-    {
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        let components = meta_path.components::<D>(&version);
         async move {
-            let components = meta_path.components::<D>(&version);
             let resp = self.get(&self.metadata_prefix, &components).await?;
 
             // TODO check content length if known and fail early if the payload is too large.

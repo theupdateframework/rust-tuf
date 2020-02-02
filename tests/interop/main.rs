@@ -35,16 +35,17 @@
 //! download targets at each step of the test.
 
 use futures_executor::block_on;
+use futures_util::io::AsyncReadExt;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tuf::client::{Client, Config};
 use tuf::crypto::KeyId;
 use tuf::interchange::Json;
 use tuf::metadata::{
-    MetadataPath, MetadataVersion, Role, RootMetadata, SignedMetadata, TargetPath,
+    MetadataPath, MetadataVersion, RawSignedMetadata, Role, RootMetadata, TargetPath,
 };
 use tuf::repository::{
-    EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, Repository,
+    EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, RepositoryProvider,
 };
 use tuf::Result;
 
@@ -120,7 +121,7 @@ struct TestKeyRotation {
     test_steps: Vec<PathBuf>,
 
     /// The local repository used to store the local metadata.
-    local: EphemeralRepository,
+    local: EphemeralRepository<Json>,
 
     /// The targets we expect each step of the repository to contain. It will contain a target for
     /// each step we've processed, named for the first step it appeared in.
@@ -207,19 +208,22 @@ async fn extract_keys(dir: &Path) -> Vec<KeyId> {
 
     let root_path = MetadataPath::from_role(&Role::Root);
 
-    let metadata: SignedMetadata<Json, RootMetadata> = remote
+    let mut buf = Vec::new();
+    let mut reader = remote
         .fetch_metadata(&root_path, &MetadataVersion::Number(1), None, None)
         .await
-        .unwrap()
-        .1;
+        .unwrap();
+    reader.read_to_end(&mut buf).await.unwrap();
+    let metadata = RawSignedMetadata::<Json, RootMetadata>::new(buf)
+        .parse()
+        .unwrap();
 
     metadata.as_ref().root().key_ids().iter().cloned().collect()
 }
 
-fn init_remote(dir: &Path) -> Result<Repository<FileSystemRepository, Json>> {
+fn init_remote(dir: &Path) -> Result<FileSystemRepository<Json>> {
     FileSystemRepositoryBuilder::new(dir)
         .metadata_prefix(Path::new("repository"))
         .targets_prefix(Path::new("repository").join("targets"))
         .build()
-        .map(Into::into)
 }

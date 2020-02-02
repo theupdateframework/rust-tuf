@@ -24,7 +24,10 @@ mod ephemeral;
 pub use self::ephemeral::EphemeralRepository;
 
 /// A readable TUF repository.
-pub trait RepositoryProvider {
+pub trait RepositoryProvider<D>
+where
+    D: DataInterchange + Sync,
+{
     /// Fetch signed metadata identified by `meta_path`, `version`, and
     /// [`D::extension()`][extension].
     ///
@@ -34,7 +37,7 @@ pub trait RepositoryProvider {
     /// metadata.
     ///
     /// [extension]: crate::interchange::DataInterchange::extension
-    fn fetch_metadata<'a, D>(
+    fn fetch_metadata<'a>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
@@ -59,20 +62,22 @@ pub trait RepositoryProvider {
 
 /// A writable TUF repository. Most implementors of this trait should also implement
 /// `RepositoryProvider`.
-pub trait RepositoryStorage {
+pub trait RepositoryStorage<D>
+where
+    D: DataInterchange + Sync,
+{
     /// Store the provided `metadata` in a location identified by `meta_path`, `version`, and
     /// [`D::extension()`][extension], overwriting any existing metadata at that location.
     ///
     /// [extension]: crate::interchange::DataInterchange::extension
-    fn store_metadata<'a, R, D>(
+    fn store_metadata<'a, R>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
         metadata: R,
     ) -> BoxFuture<'a, Result<()>>
     where
-        R: AsyncRead + Send + Unpin + 'a,
-        D: DataInterchange + Sync;
+        R: AsyncRead + Send + Unpin + 'a;
 
     /// Store the provided `target` in a location identified by `target_path`, overwriting any
     /// existing target at that location.
@@ -85,21 +90,19 @@ pub trait RepositoryStorage {
         R: AsyncRead + Send + Unpin + 'a;
 }
 
-impl<T> RepositoryProvider for &T
+impl<T, D> RepositoryProvider<D> for &T
 where
-    T: RepositoryProvider,
+    T: RepositoryProvider<D>,
+    D: DataInterchange + Sync,
 {
-    fn fetch_metadata<'a, D>(
+    fn fetch_metadata<'a>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
         max_length: Option<usize>,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>>
-    where
-        D: DataInterchange + Sync,
-    {
-        (**self).fetch_metadata::<D>(meta_path, version, max_length, hash_data)
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        (**self).fetch_metadata(meta_path, version, max_length, hash_data)
     }
 
     fn fetch_target<'a>(
@@ -111,11 +114,12 @@ where
     }
 }
 
-impl<T> RepositoryStorage for &T
+impl<T, D> RepositoryStorage<D> for &T
 where
-    T: RepositoryStorage,
+    T: RepositoryStorage<D>,
+    D: DataInterchange + Sync,
 {
-    fn store_metadata<'a, R, D>(
+    fn store_metadata<'a, R>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
@@ -123,9 +127,8 @@ where
     ) -> BoxFuture<'a, Result<()>>
     where
         R: AsyncRead + Send + Unpin + 'a,
-        D: DataInterchange + Sync,
     {
-        (**self).store_metadata::<_, D>(meta_path, version, metadata)
+        (**self).store_metadata(meta_path, version, metadata)
     }
 
     fn store_target<'a, R>(
@@ -177,7 +180,7 @@ impl<R, D> Repository<R, D> {
 
 impl<R, D> Repository<R, D>
 where
-    R: RepositoryProvider,
+    R: RepositoryProvider<D>,
     D: DataInterchange + Sync,
 {
     /// Fetch and parse metadata identified by `meta_path`, `version`, and
@@ -229,7 +232,7 @@ where
         // implementation should only be trusted to use those as hints to fail early.
         let mut reader = self
             .repository
-            .fetch_metadata::<D>(meta_path, version, max_length, hash_data.clone())
+            .fetch_metadata(meta_path, version, max_length, hash_data.clone())
             .await?
             .check_length_and_hash(max_length.unwrap_or(::std::usize::MAX) as u64, hash_data)?;
 
@@ -264,7 +267,7 @@ where
 
 impl<R, D> Repository<R, D>
 where
-    R: RepositoryStorage,
+    R: RepositoryStorage<D>,
     D: DataInterchange + Sync,
 {
     /// Store the provided `metadata` in a location identified by `meta_path`, `version`, and
@@ -283,7 +286,7 @@ where
         Self::check::<M>(path)?;
 
         self.repository
-            .store_metadata::<_, D>(path, version, metadata.as_bytes())
+            .store_metadata(path, version, metadata.as_bytes())
             .await
     }
 
@@ -302,7 +305,8 @@ where
 
 impl<R, D> From<R> for Repository<R, D>
 where
-    R: RepositoryProvider + Sync,
+    R: RepositoryProvider<D> + Sync,
+    D: DataInterchange + Sync,
 {
     fn from(r: R) -> Self {
         Repository::new(r)
@@ -382,9 +386,7 @@ mod test {
             let data_hash = crypto::calculate_hash(data, HashAlgorithm::Sha256);
 
             let repo = EphemeralRepository::new();
-            repo.store_metadata::<_, Json>(&path, &version, data)
-                .await
-                .unwrap();
+            repo.store_metadata(&path, &version, data).await.unwrap();
 
             let client = Repository::<_, Json>::new(repo);
 
@@ -410,9 +412,7 @@ mod test {
             let data: &[u8] = b"corrupt metadata";
 
             let repo = EphemeralRepository::new();
-            repo.store_metadata::<_, Json>(&path, &version, data)
-                .await
-                .unwrap();
+            repo.store_metadata(&path, &version, data).await.unwrap();
 
             let client = Repository::<_, Json>::new(repo);
 
@@ -438,9 +438,7 @@ mod test {
             let data: &[u8] = b"reasonably sized metadata";
 
             let repo = EphemeralRepository::new();
-            repo.store_metadata::<_, Json>(&path, &version, data)
-                .await
-                .unwrap();
+            repo.store_metadata(&path, &version, data).await.unwrap();
 
             let client = Repository::<_, Json>::new(repo);
 
@@ -461,9 +459,7 @@ mod test {
             let data: &[u8] = b"very big metadata";
 
             let repo = EphemeralRepository::new();
-            repo.store_metadata::<_, Json>(&path, &version, data)
-                .await
-                .unwrap();
+            repo.store_metadata(&path, &version, data).await.unwrap();
 
             let client = Repository::<_, Json>::new(repo);
 

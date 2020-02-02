@@ -5,6 +5,7 @@ use futures_util::future::{BoxFuture, FutureExt};
 use futures_util::io::{AsyncReadExt, Cursor};
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::crypto::{HashAlgorithm, HashValue};
@@ -18,38 +19,46 @@ type ArcHashMap<K, V> = Arc<RwLock<HashMap<K, V>>>;
 
 /// An ephemeral repository contained solely in memory.
 #[derive(Debug)]
-pub struct EphemeralRepository {
+pub struct EphemeralRepository<D> {
     metadata: ArcHashMap<(MetadataPath, MetadataVersion, &'static str), Arc<[u8]>>,
     targets: ArcHashMap<TargetPath, Arc<[u8]>>,
+    _interchange: PhantomData<D>,
 }
 
-impl EphemeralRepository {
+impl<D> EphemeralRepository<D>
+where
+    D: DataInterchange + Sync,
+{
     /// Create a new ephemercal repository.
     pub fn new() -> Self {
-        EphemeralRepository {
+        Self {
             metadata: Arc::new(RwLock::new(HashMap::new())),
             targets: Arc::new(RwLock::new(HashMap::new())),
+            _interchange: PhantomData,
         }
     }
 }
 
-impl Default for EphemeralRepository {
+impl<D> Default for EphemeralRepository<D>
+where
+    D: DataInterchange + Sync,
+{
     fn default() -> Self {
         EphemeralRepository::new()
     }
 }
 
-impl RepositoryProvider for EphemeralRepository {
-    fn fetch_metadata<'a, D>(
+impl<D> RepositoryProvider<D> for EphemeralRepository<D>
+where
+    D: DataInterchange + Sync,
+{
+    fn fetch_metadata<'a>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
         _max_length: Option<usize>,
         _hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>>
-    where
-        D: DataInterchange + Sync,
-    {
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
             let bytes = match self.metadata.read().get(&(
                 meta_path.clone(),
@@ -88,8 +97,11 @@ impl RepositoryProvider for EphemeralRepository {
     }
 }
 
-impl RepositoryStorage for EphemeralRepository {
-    fn store_metadata<'a, R, D>(
+impl<D> RepositoryStorage<D> for EphemeralRepository<D>
+where
+    D: DataInterchange + Sync,
+{
+    fn store_metadata<'a, R>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
@@ -97,7 +109,6 @@ impl RepositoryStorage for EphemeralRepository {
     ) -> BoxFuture<'a, Result<()>>
     where
         R: AsyncRead + Send + Unpin + 'a,
-        D: DataInterchange + Sync,
     {
         async move {
             let mut buf = Vec::new();
@@ -134,12 +145,13 @@ impl RepositoryStorage for EphemeralRepository {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::interchange::Json;
     use futures_executor::block_on;
 
     #[test]
     fn ephemeral_repo_targets() {
         block_on(async {
-            let repo = EphemeralRepository::new();
+            let repo = EphemeralRepository::<Json>::new();
 
             let data: &[u8] = b"like tears in the rain";
             let target_description =

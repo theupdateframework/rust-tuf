@@ -5,6 +5,7 @@ use futures_util::future::{BoxFuture, FutureExt};
 use futures_util::io::{copy, AllowStdIo};
 use log::debug;
 use std::fs::{DirBuilder, File};
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
@@ -16,19 +17,27 @@ use crate::repository::{RepositoryProvider, RepositoryStorage};
 use crate::Result;
 
 /// A builder to create a repository contained on the local file system.
-pub struct FileSystemRepositoryBuilder {
+pub struct FileSystemRepositoryBuilder<D>
+where
+    D: DataInterchange + Sync,
+{
     local_path: PathBuf,
     metadata_prefix: Option<PathBuf>,
     targets_prefix: Option<PathBuf>,
+    _interchange: PhantomData<D>,
 }
 
-impl FileSystemRepositoryBuilder {
+impl<D> FileSystemRepositoryBuilder<D>
+where
+    D: DataInterchange + Sync,
+{
     /// Create a new repository with the given `local_path` prefix.
     pub fn new<P: Into<PathBuf>>(local_path: P) -> Self {
         FileSystemRepositoryBuilder {
             local_path: local_path.into(),
             metadata_prefix: None,
             targets_prefix: None,
+            _interchange: PhantomData,
         }
     }
 
@@ -53,7 +62,7 @@ impl FileSystemRepositoryBuilder {
     }
 
     /// Build a `FileSystemRepository`.
-    pub fn build(self) -> Result<FileSystemRepository> {
+    pub fn build(self) -> Result<FileSystemRepository<D>> {
         let metadata_path = if let Some(metadata_prefix) = self.metadata_prefix {
             self.local_path.join(metadata_prefix)
         } else {
@@ -71,17 +80,25 @@ impl FileSystemRepositoryBuilder {
         Ok(FileSystemRepository {
             metadata_path,
             targets_path,
+            _interchange: PhantomData,
         })
     }
 }
 
 /// A repository contained on the local file system.
-pub struct FileSystemRepository {
+pub struct FileSystemRepository<D>
+where
+    D: DataInterchange + Sync,
+{
     metadata_path: PathBuf,
     targets_path: PathBuf,
+    _interchange: PhantomData<D>,
 }
 
-impl FileSystemRepository {
+impl<D> FileSystemRepository<D>
+where
+    D: DataInterchange + Sync,
+{
     /// Create a new repository on the local file system.
     pub fn new(local_path: PathBuf) -> Result<Self> {
         FileSystemRepositoryBuilder::new(local_path)
@@ -91,8 +108,11 @@ impl FileSystemRepository {
     }
 }
 
-impl RepositoryProvider for FileSystemRepository {
-    fn fetch_metadata<'a, D>(
+impl<D> RepositoryProvider<D> for FileSystemRepository<D>
+where
+    D: DataInterchange + Sync,
+{
+    fn fetch_metadata<'a>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
@@ -134,8 +154,11 @@ impl RepositoryProvider for FileSystemRepository {
     }
 }
 
-impl RepositoryStorage for FileSystemRepository {
-    fn store_metadata<'a, R, D>(
+impl<D> RepositoryStorage<D> for FileSystemRepository<D>
+where
+    D: DataInterchange + Sync,
+{
+    fn store_metadata<'a, R>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
@@ -143,7 +166,6 @@ impl RepositoryStorage for FileSystemRepository {
     ) -> BoxFuture<'a, Result<()>>
     where
         R: AsyncRead + Send + Unpin + 'a,
-        D: DataInterchange + Sync,
     {
         async move {
             let mut path = self.metadata_path.clone();
@@ -219,7 +241,7 @@ mod test {
                 .prefix("rust-tuf")
                 .tempdir()
                 .unwrap();
-            let repo = FileSystemRepositoryBuilder::new(temp_dir.path())
+            let repo = FileSystemRepositoryBuilder::<Json>::new(temp_dir.path())
                 .build()
                 .unwrap();
 
@@ -244,7 +266,7 @@ mod test {
                 .prefix("rust-tuf")
                 .tempdir()
                 .unwrap();
-            let repo = FileSystemRepositoryBuilder::new(temp_dir.path().to_path_buf())
+            let repo = FileSystemRepositoryBuilder::<Json>::new(temp_dir.path().to_path_buf())
                 .metadata_prefix("meta")
                 .targets_prefix("targs")
                 .build()

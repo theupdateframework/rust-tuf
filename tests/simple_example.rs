@@ -6,7 +6,7 @@ use tuf::metadata::{
     MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder, TargetDescription,
     TargetPath, TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
-use tuf::repository::{EphemeralRepository, Repository};
+use tuf::repository::{EphemeralRepository, RepositoryStorage};
 use tuf::Result;
 
 // Ironically, this is far from simple, but it's as simple as it can be made.
@@ -74,8 +74,8 @@ async fn run_tests<T>(config: Config<T>, consistent_snapshots: bool)
 where
     T: PathTranslator,
 {
-    let mut remote = Repository::new(EphemeralRepository::new());
-    let root_key_ids = init_server(&mut remote, &config, consistent_snapshots)
+    let remote = EphemeralRepository::new();
+    let root_key_ids = init_server(&remote, &config, consistent_snapshots)
         .await
         .unwrap();
     init_client(&root_key_ids, remote, config).await.unwrap();
@@ -83,7 +83,7 @@ where
 
 async fn init_client<T>(
     root_key_ids: &[KeyId],
-    remote: Repository<EphemeralRepository, Json>,
+    remote: EphemeralRepository<Json>,
     config: Config<T>,
 ) -> Result<()>
 where
@@ -105,7 +105,7 @@ where
 }
 
 async fn init_server<'a, T>(
-    remote: &'a mut Repository<EphemeralRepository, Json>,
+    remote: &'a EphemeralRepository<Json>,
     config: &'a Config<T>,
     consistent_snapshot: bool,
 ) -> Result<Vec<KeyId>>
@@ -133,14 +133,14 @@ where
         .store_metadata(
             &root_path,
             &MetadataVersion::Number(1),
-            &signed.to_raw().unwrap(),
+            signed.to_raw().unwrap().as_bytes(),
         )
         .await?;
     remote
         .store_metadata(
             &root_path,
             &MetadataVersion::None,
-            &signed.to_raw().unwrap(),
+            signed.to_raw().unwrap().as_bytes(),
         )
         .await?;
 
@@ -173,14 +173,14 @@ where
         .store_metadata(
             &targets_path,
             &MetadataVersion::Number(1),
-            &targets.to_raw().unwrap(),
+            targets.to_raw().unwrap().as_bytes(),
         )
         .await?;
     remote
         .store_metadata(
             &targets_path,
             &MetadataVersion::None,
-            &targets.to_raw().unwrap(),
+            targets.to_raw().unwrap().as_bytes(),
         )
         .await?;
 
@@ -195,14 +195,14 @@ where
         .store_metadata(
             &snapshot_path,
             &MetadataVersion::Number(1),
-            &snapshot.to_raw().unwrap(),
+            snapshot.to_raw().unwrap().as_bytes(),
         )
         .await?;
     remote
         .store_metadata(
             &snapshot_path,
             &MetadataVersion::None,
-            &snapshot.to_raw().unwrap(),
+            snapshot.to_raw().unwrap().as_bytes(),
         )
         .await?;
 
@@ -216,14 +216,14 @@ where
         .store_metadata(
             &timestamp_path,
             &MetadataVersion::Number(1),
-            &timestamp.to_raw().unwrap(),
+            timestamp.to_raw().unwrap().as_bytes(),
         )
         .await?;
     remote
         .store_metadata(
             &timestamp_path,
             &MetadataVersion::None,
-            &timestamp.to_raw().unwrap(),
+            timestamp.to_raw().unwrap().as_bytes(),
         )
         .await?;
 
