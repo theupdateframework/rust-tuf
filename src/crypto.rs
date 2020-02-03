@@ -89,18 +89,7 @@ pub fn calculate_hashes<R: Read>(
     let mut size = 0;
     let mut hashes = HashMap::new();
     for alg in hash_algs {
-        let context = match *alg {
-            HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
-            HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
-            HashAlgorithm::Unknown(ref s) => {
-                return Err(Error::IllegalArgument(format!(
-                    "Unknown hash algorithm: {}",
-                    s
-                )));
-            }
-        };
-
-        let _ = hashes.insert(alg, context);
+        let _ = hashes.insert(alg, alg.digest_context()?);
     }
 
     let mut buf = vec![0; 1024];
@@ -877,6 +866,21 @@ pub enum HashAlgorithm {
     Sha512,
     /// Placeholder for an unknown hash algorithm.
     Unknown(String),
+}
+
+impl HashAlgorithm {
+    /// Create a new `digest::Context` suitable for computing the hash of some data using this hash
+    /// algorithm.
+    pub(crate) fn digest_context(&self) -> Result<digest::Context> {
+        match self {
+            HashAlgorithm::Sha256 => Ok(digest::Context::new(&SHA256)),
+            HashAlgorithm::Sha512 => Ok(digest::Context::new(&SHA512)),
+            HashAlgorithm::Unknown(ref s) => Err(Error::IllegalArgument(format!(
+                "Unknown hash algorithm: {}",
+                s
+            ))),
+        }
+    }
 }
 
 /// Wrapper for the value of a hash digest.

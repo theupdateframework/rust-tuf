@@ -2,14 +2,13 @@ use chrono::offset::Utc;
 use chrono::DateTime;
 use futures_io::AsyncRead;
 use futures_util::ready;
-use ring::digest::{self, SHA256, SHA512};
+use ring::digest;
 use std::io::{self, ErrorKind};
 use std::marker::Unpin;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::crypto::{HashAlgorithm, HashValue};
-use crate::error::Error;
 use crate::Result;
 
 /// Wrapper to verify a byte stream as it is read.
@@ -45,19 +44,7 @@ impl<R: AsyncRead> SafeReader<R> {
         hash_data: Option<(&HashAlgorithm, HashValue)>,
     ) -> Result<Self> {
         let hasher = match hash_data {
-            Some((alg, value)) => {
-                let ctx = match *alg {
-                    HashAlgorithm::Sha256 => digest::Context::new(&SHA256),
-                    HashAlgorithm::Sha512 => digest::Context::new(&SHA512),
-                    HashAlgorithm::Unknown(ref s) => {
-                        return Err(Error::IllegalArgument(format!(
-                            "Unknown hash algorithm: {}",
-                            s
-                        )));
-                    }
-                };
-                Some((ctx, value))
-            }
+            Some((alg, value)) => Some((alg.digest_context()?, value)),
             None => None,
         };
 
@@ -134,6 +121,7 @@ mod test {
     use super::*;
     use futures_executor::block_on;
     use futures_util::io::AsyncReadExt;
+    use ring::digest::SHA256;
 
     #[test]
     fn valid_read() {
