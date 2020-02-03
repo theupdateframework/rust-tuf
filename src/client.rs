@@ -927,7 +927,7 @@ where
                             current_depth + 1,
                             target,
                             snapshot,
-                            Some((meta.as_ref(), delegation.role().clone())),
+                            Some((&meta, delegation.role().clone())),
                         ));
                     let (term, res) = f.await;
 

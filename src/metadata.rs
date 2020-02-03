@@ -399,6 +399,11 @@ where
         Ok(())
     }
 
+    /// Unwraps the inner metadata, discarding the signatures.
+    pub fn into_inner(self) -> M {
+        self.metadata
+    }
+
     /// An immutable reference to the signatures.
     pub fn signatures(&self) -> &[Signature] {
         &self.signatures
