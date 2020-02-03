@@ -269,14 +269,17 @@ where
     }
 }
 
-/// A piece of metadata with attached signatures.
+/// Serialized metadata with attached unverified signatures.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SignedMetadata<D, M> {
+pub struct SignedMetadata<D, M>
+where
+    D: DataInterchange,
+{
     signatures: Vec<Signature>,
     #[serde(rename = "signed")]
-    metadata: M,
+    metadata: D::RawData,
     #[serde(skip_serializing, skip_deserializing)]
-    _interchage: PhantomData<D>,
+    _marker: PhantomData<M>,
 }
 
 impl<D, M> SignedMetadata<D, M>
@@ -298,17 +301,17 @@ where
     /// let key = PrivateKey::from_pkcs8(&key, SignatureScheme::Ed25519).unwrap();
     ///
     /// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
-    /// SignedMetadata::<Json, _>::new(snapshot, &key).unwrap();
+    /// SignedMetadata::<Json, _>::new(&snapshot, &key).unwrap();
     /// # }
     /// ```
-    pub fn new(metadata: M, private_key: &PrivateKey) -> Result<SignedMetadata<D, M>> {
-        let raw = D::serialize(&metadata)?;
+    pub fn new(metadata: &M, private_key: &PrivateKey) -> Result<Self> {
+        let raw = D::serialize(metadata)?;
         let bytes = D::canonicalize(&raw)?;
         let sig = private_key.sign(&bytes)?;
-        Ok(SignedMetadata {
+        Ok(Self {
             signatures: vec![sig],
-            metadata,
-            _interchage: PhantomData,
+            metadata: raw,
+            _marker: PhantomData,
         })
     }
 
@@ -353,7 +356,7 @@ where
     /// let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
     ///
     /// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
-    /// let mut snapshot = SignedMetadata::<Json, _>::new(snapshot, &key_1).unwrap();
+    /// let mut snapshot = SignedMetadata::<Json, _>::new(&snapshot, &key_1).unwrap();
     ///
     /// snapshot.add_signature(&key_2).unwrap();
     /// assert_eq!(snapshot.signatures().len(), 2);
@@ -363,8 +366,7 @@ where
     /// # }
     /// ```
     pub fn add_signature(&mut self, private_key: &PrivateKey) -> Result<()> {
-        let raw = D::serialize(&self.metadata)?;
-        let bytes = D::canonicalize(&raw)?;
+        let bytes = D::canonicalize(&self.metadata)?;
         let sig = private_key.sign(&bytes)?;
         self.signatures
             .retain(|s| s.key_id() != private_key.key_id());
@@ -399,19 +401,22 @@ where
         Ok(())
     }
 
-    /// Unwraps the inner metadata, discarding the signatures.
-    pub fn into_inner(self) -> M {
-        self.metadata
-    }
-
     /// An immutable reference to the signatures.
     pub fn signatures(&self) -> &[Signature] {
         &self.signatures
     }
 
-    /// A mutable reference to the signatures.
-    pub fn signatures_mut(&mut self) -> &mut Vec<Signature> {
-        &mut self.signatures
+    // Unexported method to allow the builders to determine the version of signed metadata.
+    fn parse_version_untrusted(&self) -> Result<u32> {
+        let meta: MetadataMetadata<M> = D::deserialize(&self.metadata)?;
+        Ok(meta.version)
+    }
+
+    /// Parse this metadata without verifying signatures.
+    ///
+    /// This operation is not safe to do with metadata obtained from an untrusted source.
+    pub fn assume_valid(&self) -> Result<M> {
+        D::deserialize(&self.metadata)
     }
 
     /// Verify this metadata.
@@ -430,7 +435,7 @@ where
     /// let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
     ///
     /// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
-    /// let snapshot = SignedMetadata::<Json, _>::new(snapshot, &key_1).unwrap();
+    /// let snapshot = SignedMetadata::<Json, _>::new(&snapshot, &key_1).unwrap();
     ///
     /// assert!(snapshot.verify(
     ///     1,
@@ -455,7 +460,7 @@ where
     ///     &[],
     /// ).is_err());
     /// # }
-    pub fn verify<'a, I>(&self, threshold: u32, authorized_keys: I) -> Result<()>
+    pub fn verify<'a, I>(&self, threshold: u32, authorized_keys: I) -> Result<M>
     where
         I: IntoIterator<Item = &'a PublicKey>,
     {
@@ -476,7 +481,7 @@ where
             .map(|k| (k.key_id(), k))
             .collect::<HashMap<&KeyId, &PublicKey>>();
 
-        let canonical_bytes = D::canonicalize(&D::serialize(&self.metadata)?)?;
+        let canonical_bytes = D::canonicalize(&self.metadata)?;
 
         let mut signatures_needed = threshold;
         for sig in &self.signatures {
@@ -501,38 +506,54 @@ where
                 break;
             }
         }
-
-        if signatures_needed == 0 {
-            Ok(())
-        } else {
-            Err(Error::VerificationFailure(format!(
+        if signatures_needed > 0 {
+            return Err(Error::VerificationFailure(format!(
                 "Signature threshold not met: {}/{}",
                 threshold - signatures_needed,
                 threshold
-            )))
+            )));
         }
+
+        // "assume" the metadata is valid because we just verified that it is.
+        self.assume_valid()
     }
 }
 
-impl<D, M> AsRef<M> for SignedMetadata<D, M> {
-    fn as_ref(&self) -> &M {
-        &self.metadata
-    }
-}
-
-impl<D, M> Metadata for SignedMetadata<D, M>
+impl<D> SignedMetadata<D, RootMetadata>
 where
-    D: Debug + PartialEq,
+    D: DataInterchange,
+{
+    /// Parse common metadata fields from this metadata without verifying signatures.
+    ///
+    /// This operation is generally unsafe to do with metadata obtained from an untrusted source,
+    /// but rolling forward to the most recent root.json requires using the version number of the
+    /// latest root.json.
+    pub fn untrusted_info(&self) -> Result<MetadataMetadata<RootMetadata>> {
+        D::deserialize(&self.metadata)
+    }
+}
+
+/// Metadata common to all signed metadata files.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MetadataMetadata<M> {
+    version: u32,
+    expires: DateTime<Utc>,
+    #[serde(skip_serializing, skip_deserializing)]
+    _metadata: PhantomData<M>,
+}
+
+impl<M> Metadata for MetadataMetadata<M>
+where
     M: Metadata,
 {
     const ROLE: Role = M::ROLE;
 
     fn version(&self) -> u32 {
-        self.metadata.version()
+        self.version
     }
 
     fn expires(&self) -> &DateTime<Utc> {
-        self.metadata.expires()
+        &self.expires
     }
 }
 
@@ -669,7 +690,7 @@ impl RootMetadataBuilder {
     where
         D: DataInterchange,
     {
-        Ok(SignedMetadata::new(self.build()?, private_key)?)
+        SignedMetadata::new(&self.build()?, private_key)
     }
 }
 
@@ -985,7 +1006,11 @@ impl TimestampMetadataBuilder {
     {
         let mut bytes = Vec::new();
         D::to_writer(&mut bytes, &snapshot)?;
-        let description = MetadataDescription::from_reader(&*bytes, snapshot.version(), hash_algs)?;
+        let description = MetadataDescription::from_reader(
+            &*bytes,
+            snapshot.parse_version_untrusted()?,
+            hash_algs,
+        )?;
 
         Ok(Self::from_metadata_description(description))
     }
@@ -1025,7 +1050,7 @@ impl TimestampMetadataBuilder {
     where
         D: DataInterchange,
     {
-        Ok(SignedMetadata::new(self.build()?, private_key)?)
+        SignedMetadata::new(&self.build()?, private_key)
     }
 }
 
@@ -1242,7 +1267,11 @@ impl SnapshotMetadataBuilder {
     {
         let mut bytes = Vec::new();
         D::to_writer(&mut bytes, metadata)?;
-        let description = MetadataDescription::from_reader(&*bytes, metadata.version(), hash_algs)?;
+        let description = MetadataDescription::from_reader(
+            &*bytes,
+            metadata.parse_version_untrusted()?,
+            hash_algs,
+        )?;
         let path = MetadataPath::new(path)?;
         Ok(self.insert_metadata_description(path, description))
     }
@@ -1267,7 +1296,7 @@ impl SnapshotMetadataBuilder {
     where
         D: DataInterchange,
     {
-        Ok(SignedMetadata::new(self.build()?, private_key)?)
+        SignedMetadata::new(&self.build()?, private_key)
     }
 }
 
@@ -1809,7 +1838,7 @@ impl TargetsMetadataBuilder {
     where
         D: DataInterchange,
     {
-        Ok(SignedMetadata::new(self.build()?, private_key)?)
+        SignedMetadata::new(&self.build()?, private_key)
     }
 }
 
@@ -2295,7 +2324,7 @@ mod test {
         let decoded: RootMetadata = serde_json::from_value(jsn).unwrap();
 
         let signed: SignedMetadata<crate::interchange::cjson::Json, _> =
-            SignedMetadata::new(decoded, &root_key).unwrap();
+            SignedMetadata::new(&decoded, &root_key).unwrap();
         signed.verify(1, &[root_key.public().clone()]).unwrap();
     }
 
@@ -2586,7 +2615,7 @@ mod test {
 
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
 
-        let signed = SignedMetadata::<Json, _>::new(snapshot, &key).unwrap();
+        let signed = SignedMetadata::<Json, _>::new(&snapshot, &key).unwrap();
 
         let jsn = json!({
             "signatures": [
