@@ -9,8 +9,8 @@ use crate::crypto::PublicKey;
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
-    Delegations, Metadata, MetadataPath, Role, RootMetadata, SignedMetadata, SnapshotMetadata,
-    TargetDescription, TargetsMetadata, TimestampMetadata, VirtualTargetPath,
+    Delegation, Delegations, Metadata, MetadataPath, Role, RootMetadata, SignedMetadata,
+    SnapshotMetadata, TargetDescription, TargetsMetadata, TimestampMetadata, VirtualTargetPath,
 };
 use crate::Result;
 
@@ -395,6 +395,50 @@ impl<D: DataInterchange> Tuf<D> {
         Ok(true)
     }
 
+    /// Walk the base targets delegations and any known nested delegations for the authorized
+    /// signing keys and metadata for the delegation given by `role`.
+    fn find_delegation(&self, role: &MetadataPath) -> Vec<(Vec<&PublicKey>, &Delegation)> {
+        let mut res = vec![];
+        let mut search_stack = vec![];
+
+        if let Some(targets) = self.targets() {
+            search_stack.push(targets);
+        }
+
+        while let Some(targets) = search_stack.pop() {
+            // Only consider targets metadata that define delegations.
+            let delegations = match targets.delegations() {
+                Some(d) => d,
+                None => continue,
+            };
+
+            for delegation in delegations.roles() {
+                if delegation.role() == role {
+                    // Filter the delegations keys to just the ones for this delegation.
+                    let authorized_keys = delegations
+                        .keys()
+                        .iter()
+                        .filter_map(|(k, v)| {
+                            if delegation.key_ids().contains(k) {
+                                Some(v)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    res.push((authorized_keys, delegation));
+                }
+
+                if let Some(nested) = self.delegations.get(delegation.role()) {
+                    search_stack.push(nested.as_ref());
+                }
+            }
+        }
+
+        res
+    }
+
     /// Verify and update a delegation metadata.
     pub fn update_delegation(
         &mut self,
@@ -405,13 +449,10 @@ impl<D: DataInterchange> Tuf<D> {
             let _ = self.safe_root_ref()?;
             let snapshot = self.safe_snapshot_ref()?;
             let targets = self.safe_targets_ref()?;
-            let targets_delegations = match targets.delegations() {
-                Some(d) => d,
-                None => {
-                    return Err(Error::VerificationFailure(
-                        "Delegations not authorized".into(),
-                    ));
-                }
+            if targets.delegations().is_none() {
+                return Err(Error::VerificationFailure(
+                    "Delegations not authorized".into(),
+                ));
             };
 
             let delegation_description = match snapshot.meta().get(role) {
@@ -438,27 +479,23 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
-            for delegated_targets in self.delegations.values() {
-                let parent = match delegated_targets.as_ref().delegations() {
-                    Some(d) => d,
-                    None => &targets_delegations,
-                };
+            // FIXME Since the delegating targets defines the valid keys a delegated targets can be
+            // signed by, it is possible for delegated targets to be valid when accessed via one
+            // target path and invalid when accessed via another. Instead of verifying all known
+            // references to this delegation, this verification step should be choosing just the
+            // one for the target path the outer tuf::Client is trying to resolve, but that
+            // currently depends on state in tuf::Client to do so.
 
-                let delegation = match parent.roles().iter().find(|r| r.role() == role) {
-                    Some(d) => d,
-                    None => continue,
-                };
-
-                signed_delegation.verify(
-                    delegation.threshold(),
-                    parent.keys().iter().filter_map(|(k, v)| {
-                        if delegation.key_ids().contains(k) {
-                            Some(v)
-                        } else {
-                            None
-                        }
-                    }),
-                )?;
+            let found_delegation = self.find_delegation(role);
+            if found_delegation.is_empty() {
+                return Err(Error::VerificationFailure(format!(
+                    "The delegated role {:?} is not known to the base \
+                        targets metadata or any known delegated targets metadata",
+                    role
+                )));
+            }
+            for (keys, delegation) in found_delegation {
+                signed_delegation.verify(delegation.threshold(), keys)?;
             }
 
             let delegation = signed_delegation.as_ref();
