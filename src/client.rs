@@ -367,11 +367,8 @@ where
         )
         .await?;
 
-        // FIXME why does with_trusted_root_keyids store using the metadata version but
-        // with_trusted_root_keys use the version from the caller?
-        let root_version = MetadataVersion::Number(trusted_root.version());
-
         // FIXME(#253) verify the trusted root version matches the provided version.
+        let root_version = MetadataVersion::Number(trusted_root.version());
 
         let tuf = {
             let root: &RootMetadata = trusted_root.as_ref();
@@ -492,6 +489,7 @@ where
         .await?;
 
         // FIXME(#253) verify the trusted root version matches the provided version.
+        let root_version = MetadataVersion::Number(root.version());
 
         let tuf = Tuf::from_root_with_trusted_keys(root, root_threshold, trusted_root_keys)?;
 
