@@ -395,53 +395,64 @@ impl<D: DataInterchange> Tuf<D> {
         Ok(true)
     }
 
-    /// Walk the base targets delegations and any known nested delegations for the authorized
-    /// signing keys and metadata for the delegation given by `role`.
-    fn find_delegation(&self, role: &MetadataPath) -> Vec<(Vec<&PublicKey>, &Delegation)> {
-        let mut res = vec![];
-        let mut search_stack = vec![];
-
-        if let Some(targets) = self.targets() {
-            search_stack.push(targets);
-        }
-
-        while let Some(targets) = search_stack.pop() {
-            // Only consider targets metadata that define delegations.
-            let delegations = match targets.delegations() {
-                Some(d) => d,
-                None => continue,
-            };
-
-            for delegation in delegations.roles() {
-                if delegation.role() == role {
-                    // Filter the delegations keys to just the ones for this delegation.
-                    let authorized_keys = delegations
-                        .keys()
-                        .iter()
-                        .filter_map(|(k, v)| {
-                            if delegation.key_ids().contains(k) {
-                                Some(v)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-
-                    res.push((authorized_keys, delegation));
+    /// Find the signing keys and metadata for the delegation given by `role`, as seen from the
+    /// point of view of `parent_role`.
+    fn find_delegation(
+        &self,
+        parent_role: &MetadataPath,
+        role: &MetadataPath,
+    ) -> Option<(Vec<&PublicKey>, &Delegation)> {
+        // Find the parent TargetsMetadata that is expected to refer to `role`.
+        let parent = {
+            if parent_role == &MetadataPath::from_role(&Role::Targets) {
+                if let Some(targets) = self.signed_targets() {
+                    targets
+                } else {
+                    return None;
                 }
-
-                if let Some(nested) = self.delegations.get(delegation.role()) {
-                    search_stack.push(nested.as_ref());
+            } else {
+                if let Some(targets) = self.delegations.get(parent_role) {
+                    targets
+                } else {
+                    return None;
                 }
             }
+        };
+
+        // Only consider targets metadata that define delegations.
+        let delegations = match parent.as_ref().delegations() {
+            Some(d) => d,
+            None => return None,
+        };
+
+        for delegation in delegations.roles() {
+            if delegation.role() != role {
+                continue;
+            }
+
+            // Filter the delegations keys to just the ones for this delegation.
+            let authorized_keys = delegations
+                .keys()
+                .iter()
+                .filter_map(|(k, v)| {
+                    if delegation.key_ids().contains(k) {
+                        Some(v)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            return Some((authorized_keys, delegation));
         }
 
-        res
+        None
     }
 
     /// Verify and update a delegation metadata.
     pub fn update_delegation(
         &mut self,
+        parent_role: &MetadataPath,
         role: &MetadataPath,
         signed_delegation: SignedMetadata<D, TargetsMetadata>,
     ) -> Result<bool> {
@@ -475,27 +486,22 @@ impl<D: DataInterchange> Tuf<D> {
                     delegation_description.version(),
                     current_version
                 )));
-            } else if current_version == delegation_description.version() {
-                return Ok(false);
             }
 
-            // FIXME Since the delegating targets defines the valid keys a delegated targets can be
-            // signed by, it is possible for delegated targets to be valid when accessed via one
-            // target path and invalid when accessed via another. Instead of verifying all known
-            // references to this delegation, this verification step should be choosing just the
-            // one for the target path the outer tuf::Client is trying to resolve, but that
-            // currently depends on state in tuf::Client to do so.
+            // FIXME(#279) update_delegation trusts tuf::Client to provide too much information,
+            // making this difficult to verify as correct.
 
-            let found_delegation = self.find_delegation(role);
-            if found_delegation.is_empty() {
-                return Err(Error::VerificationFailure(format!(
-                    "The delegated role {:?} is not known to the base \
+            let (keys, delegation) =
+                self.find_delegation(parent_role, role)
+                    .ok_or(Error::VerificationFailure(format!(
+                        "The delegated role {:?} is not known to the base \
                         targets metadata or any known delegated targets metadata",
-                    role
-                )));
-            }
-            for (keys, delegation) in found_delegation {
-                signed_delegation.verify(delegation.threshold(), keys)?;
+                        role
+                    )))?;
+            signed_delegation.verify(delegation.threshold(), keys)?;
+
+            if current_version == delegation_description.version() {
+                return Ok(false);
             }
 
             let delegation = signed_delegation.as_ref();
