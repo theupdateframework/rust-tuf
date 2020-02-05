@@ -20,7 +20,7 @@ type ArcHashMap<K, V> = Arc<RwLock<HashMap<K, V>>>;
 /// An ephemeral repository contained solely in memory.
 #[derive(Debug)]
 pub struct EphemeralRepository<D> {
-    metadata: ArcHashMap<(MetadataPath, MetadataVersion, &'static str), Arc<[u8]>>,
+    metadata: ArcHashMap<(MetadataPath, MetadataVersion), Arc<[u8]>>,
     targets: ArcHashMap<TargetPath, Arc<[u8]>>,
     _interchange: PhantomData<D>,
 }
@@ -60,11 +60,11 @@ where
         _hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
-            let bytes = match self.metadata.read().get(&(
-                meta_path.clone(),
-                version.clone(),
-                D::extension(),
-            )) {
+            let bytes = match self
+                .metadata
+                .read()
+                .get(&(meta_path.clone(), version.clone()))
+            {
                 Some(bytes) => Arc::clone(&bytes),
                 None => {
                     return Err(Error::NotFound);
@@ -113,10 +113,9 @@ where
         async move {
             let mut buf = Vec::new();
             metadata.read_to_end(&mut buf).await?;
-            self.metadata.write().insert(
-                (meta_path.clone(), version.clone(), D::extension()),
-                Arc::from(buf),
-            );
+            self.metadata
+                .write()
+                .insert((meta_path.clone(), version.clone()), Arc::from(buf));
             Ok(())
         }
         .boxed()
