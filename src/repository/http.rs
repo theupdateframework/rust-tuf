@@ -256,7 +256,7 @@ where
         async move {
             let resp = self.get(&self.metadata_prefix, &components).await?;
 
-            // TODO check content length if known and fail early if the payload is too large.
+            // TODO(#278) check content length if known and fail early if the payload is too large.
 
             let reader = resp
                 .into_body()
@@ -280,7 +280,7 @@ where
             let components = target_path.components();
             let resp = self.get(&self.targets_prefix, &components).await?;
 
-            // TODO check content length if known and fail early if the payload is too large.
+            // TODO(#278) check content length if known and fail early if the payload is too large.
 
             let reader = resp
                 .into_body()
