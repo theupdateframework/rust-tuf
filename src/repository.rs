@@ -301,16 +301,6 @@ where
     }
 }
 
-impl<R, D> From<R> for Repository<R, D>
-where
-    R: RepositoryProvider<D> + Sync,
-    D: DataInterchange + Sync,
-{
-    fn from(r: R) -> Self {
-        Repository::new(r)
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
