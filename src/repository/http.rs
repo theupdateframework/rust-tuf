@@ -26,7 +26,7 @@ use crate::Result;
 pub struct HttpRepositoryBuilder<C, D>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     uri: Uri,
     client: Client<C>,
@@ -40,7 +40,7 @@ where
 impl<C, D> HttpRepositoryBuilder<C, D>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     /// Create a new repository with the given `Url` and `Client`.
     pub fn new(url: Url, client: Client<C>) -> Self {
@@ -127,7 +127,7 @@ where
 pub struct HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     uri: Uri,
     client: Client<C>,
@@ -207,7 +207,7 @@ fn extend_uri(uri: Uri, prefix: &Option<Vec<String>>, components: &[String]) -> 
 impl<C, D> HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     async fn get<'a>(
         &'a self,

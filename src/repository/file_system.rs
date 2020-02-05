@@ -17,10 +17,7 @@ use crate::repository::{RepositoryProvider, RepositoryStorage};
 use crate::Result;
 
 /// A builder to create a repository contained on the local file system.
-pub struct FileSystemRepositoryBuilder<D>
-where
-    D: DataInterchange + Sync,
-{
+pub struct FileSystemRepositoryBuilder<D> {
     local_path: PathBuf,
     metadata_prefix: Option<PathBuf>,
     targets_prefix: Option<PathBuf>,
@@ -29,7 +26,7 @@ where
 
 impl<D> FileSystemRepositoryBuilder<D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     /// Create a new repository with the given `local_path` prefix.
     pub fn new<P: Into<PathBuf>>(local_path: P) -> Self {
@@ -88,7 +85,7 @@ where
 /// A repository contained on the local file system.
 pub struct FileSystemRepository<D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     metadata_path: PathBuf,
     targets_path: PathBuf,
@@ -97,7 +94,7 @@ where
 
 impl<D> FileSystemRepository<D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     /// Create a new repository on the local file system.
     pub fn new(local_path: PathBuf) -> Result<Self> {
@@ -118,10 +115,7 @@ where
         version: &'a MetadataVersion,
         _max_length: Option<usize>,
         _hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>>
-    where
-        D: DataInterchange + Sync,
-    {
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
             let mut path = self.metadata_path.clone();
             path.extend(meta_path.components::<D>(&version));
@@ -241,7 +235,7 @@ mod test {
                 .prefix("rust-tuf")
                 .tempdir()
                 .unwrap();
-            let repo = FileSystemRepositoryBuilder::<Json>::new(temp_dir.path())
+            let repo = FileSystemRepositoryBuilder::new(temp_dir.path())
                 .build()
                 .unwrap();
 

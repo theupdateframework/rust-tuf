@@ -43,9 +43,7 @@ where
         version: &'a MetadataVersion,
         max_length: Option<usize>,
         hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>>
-    where
-        D: DataInterchange + Sync;
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>>;
 
     /// Fetch the given target.
     ///

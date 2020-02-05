@@ -27,7 +27,7 @@ pub struct EphemeralRepository<D> {
 
 impl<D> EphemeralRepository<D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     /// Create a new ephemercal repository.
     pub fn new() -> Self {
@@ -41,7 +41,7 @@ where
 
 impl<D> Default for EphemeralRepository<D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     fn default() -> Self {
         EphemeralRepository::new()
