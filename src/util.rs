@@ -66,6 +66,11 @@ impl<R: AsyncRead> EnforceMinimumBitrate<R> {
     }
 }
 
+#[cfg(not(test))]
+const BITRATE_GRACE_PERIOD: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const BITRATE_GRACE_PERIOD: Duration = Duration::from_secs(1);
+
 impl<R: AsyncRead + Unpin> AsyncRead for EnforceMinimumBitrate<R> {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -83,9 +88,9 @@ impl<R: AsyncRead + Unpin> AsyncRead for EnforceMinimumBitrate<R> {
 
         self.bytes_read += read_bytes as u64;
 
-        // 30 second grace period before we start checking the bitrate
+        // allow a grace period before we start checking the bitrate
         let duration = start_time.elapsed();
-        if duration >= Duration::from_secs(30) {
+        if duration >= BITRATE_GRACE_PERIOD {
             if (self.bytes_read as f32) / duration.as_secs_f32() < self.min_bytes_per_second as f32
             {
                 return Poll::Ready(Err(io::Error::new(
@@ -314,6 +319,37 @@ mod test {
             )
             .unwrap();
             let mut buf = Vec::new();
+            assert!(reader.read_to_end(&mut buf).await.is_err());
+        })
+    }
+
+    #[test]
+    fn enforce_minimum_bitrate_is_identity_for_fast_transfers() {
+        block_on(async {
+            let bytes: &[u8] = &[0x42; 64 * 1024];
+
+            let mut reader = EnforceMinimumBitrate::new(bytes, 100);
+
+            let mut buf = Vec::new();
+            assert!(reader.read_to_end(&mut buf).await.is_ok());
+            assert_eq!(bytes, &buf[..]);
+        })
+    }
+
+    #[test]
+    fn enforce_minimum_bitrate_is_fails_when_reader_is_too_slow() {
+        block_on(async {
+            let bytes: &[u8] = &[0x42; 64 * 1024];
+
+            let mut reader = EnforceMinimumBitrate::new(bytes, 100);
+
+            let mut buf = vec![0; 50];
+
+            assert!(reader.read_exact(&mut buf).await.is_ok());
+            assert_eq!(buf, &[0x42; 50][..]);
+
+            std::thread::sleep(BITRATE_GRACE_PERIOD);
+
             assert!(reader.read_to_end(&mut buf).await.is_err());
         })
     }
