@@ -269,6 +269,73 @@ where
     }
 }
 
+/// Helper to construct `SignedMetadata`.
+#[derive(Debug, Clone)]
+pub struct SignedMetadataBuilder<D, M>
+where
+    D: DataInterchange,
+{
+    signatures: HashMap<KeyId, Signature>,
+    metadata: D::RawData,
+    metadata_bytes: Vec<u8>,
+    _marker: PhantomData<M>,
+}
+
+impl<D, M> SignedMetadataBuilder<D, M>
+where
+    D: DataInterchange,
+    M: Metadata,
+{
+    /// Create a new `SignedMetadataBuilder` from a given `Metadata`.
+    pub fn from_metadata(metadata: &M) -> Result<Self> {
+        let metadata = D::serialize(metadata)?;
+        Self::from_raw_metadata(metadata)
+    }
+
+    /// Create a new `SignedMetadataBuilder` from manually serialized metadata to be signed.
+    /// Returns an error if `metadata` cannot be parsed into `M`.
+    pub fn from_raw_metadata(metadata: D::RawData) -> Result<Self> {
+        let _ensure_metadata_parses: M = D::deserialize(&metadata)?;
+        let metadata_bytes = D::canonicalize(&metadata)?;
+        Ok(Self {
+            signatures: HashMap::new(),
+            metadata,
+            metadata_bytes,
+            _marker: PhantomData,
+        })
+    }
+
+    /// Sign the metadata using the given `private_key`, replacing any existing signatures with the
+    /// same `KeyId`.
+    ///
+    /// **WARNING**: You should never have multiple TUF private keys on the same machine, so if
+    /// you're using this to append several signatures at once, you are doing something wrong. The
+    /// preferred method is to generate your copy of the metadata locally and use
+    /// `SignedMetadata::merge_signatures` to perform the "append" operations.
+    pub fn sign(mut self, private_key: &PrivateKey) -> Result<Self> {
+        let sig = private_key.sign(&self.metadata_bytes)?;
+        let _ = self.signatures.insert(sig.key_id().clone(), sig);
+        Ok(self)
+    }
+
+    /// Construct a new `SignedMetadata` using the included signatures, sorting the signatures by
+    /// `KeyId`.
+    pub fn build(self) -> SignedMetadata<D, M> {
+        let mut signatures = self
+            .signatures
+            .into_iter()
+            .map(|(_k, v)| v)
+            .collect::<Vec<_>>();
+        signatures.sort_unstable_by(|a, b| a.key_id().cmp(b.key_id()));
+
+        SignedMetadata {
+            signatures,
+            metadata: self.metadata,
+            _marker: PhantomData,
+        }
+    }
+}
+
 /// Serialized metadata with attached unverified signatures.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SignedMetadata<D, M>
@@ -2342,6 +2409,78 @@ mod test {
             serde_json::from_value(jsn).unwrap();
 
         decoded.verify(1, &[root_key.public().clone()]).unwrap();
+    }
+
+    fn verify_signature_with_unknown_fields<M>(mut metadata: serde_json::Value)
+    where
+        M: Metadata,
+    {
+        let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+
+        let mut standard = SignedMetadataBuilder::<Json, M>::from_raw_metadata(metadata.clone())
+            .unwrap()
+            .sign(&key)
+            .unwrap()
+            .build()
+            .to_raw()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        metadata.as_object_mut().unwrap().insert(
+            "custom".into(),
+            json!({
+                "metadata": ["please", "sign", "me"],
+                "this-too": 42,
+            }),
+        );
+        let mut custom = SignedMetadataBuilder::<Json, M>::from_raw_metadata(metadata)
+            .unwrap()
+            .sign(&key)
+            .unwrap()
+            .build()
+            .to_raw()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        // Ensure the signatures are valid as-is.
+        assert_matches!(standard.verify(1, std::iter::once(key.public())), Ok(_));
+        assert_matches!(custom.verify(1, std::iter::once(key.public())), Ok(_));
+
+        // But not if the metadata was signed with custom fields and they are now missing or
+        // unexpected new fields appear.
+        std::mem::swap(&mut standard.metadata, &mut custom.metadata);
+        assert_matches!(
+            standard.verify(1, std::iter::once(key.public())),
+            Err(Error::VerificationFailure(_))
+        );
+        assert_matches!(
+            custom.verify(1, std::iter::once(key.public())),
+            Err(Error::VerificationFailure(_))
+        );
+    }
+
+    #[test]
+    fn unknown_fields_included_in_root_metadata_signature() {
+        verify_signature_with_unknown_fields::<RootMetadata>(
+            jsn_root_metadata_without_keyid_hash_algos(),
+        );
+    }
+
+    #[test]
+    fn unknown_fields_included_in_timestamp_metadata_signature() {
+        verify_signature_with_unknown_fields::<TimestampMetadata>(make_timestamp());
+    }
+
+    #[test]
+    fn unknown_fields_included_in_snapshot_metadata_signature() {
+        verify_signature_with_unknown_fields::<SnapshotMetadata>(make_snapshot());
+    }
+
+    #[test]
+    fn unknown_fields_included_in_targets_metadata_signature() {
+        verify_signature_with_unknown_fields::<TargetsMetadata>(make_targets());
     }
 
     #[test]
