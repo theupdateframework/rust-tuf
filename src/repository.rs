@@ -147,14 +147,14 @@ where
 /// to a specific [`DataInterchange`](crate::interchange::DataInterchange) that will enforce
 /// provided length limits and hash checks.
 #[derive(Debug, Clone)]
-pub struct Repository<R, D> {
+pub(crate) struct Repository<R, D> {
     repository: R,
     _interchange: PhantomData<D>,
 }
 
 impl<R, D> Repository<R, D> {
     /// Creates a new [`Repository`] wrapping `repository`.
-    pub fn new(repository: R) -> Self {
+    pub(crate) fn new(repository: R) -> Self {
         Self {
             repository,
             _interchange: PhantomData,
@@ -191,7 +191,7 @@ where
     /// hashed bytes of the metadata do not match `hash_data`.
     ///
     /// [extension]: crate::interchange::DataInterchange::extension
-    pub async fn fetch_metadata<'a, M>(
+    pub(crate) async fn fetch_metadata<'a, M>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
@@ -251,7 +251,7 @@ where
     ///
     /// It is **critical** that none of the bytes from the returned `AsyncRead` are used until it
     /// has been fully consumed as the data is untrusted.
-    pub async fn fetch_target<'a>(
+    pub(crate) async fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
         target_description: &'a TargetDescription,

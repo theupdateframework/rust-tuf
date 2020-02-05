@@ -13,7 +13,7 @@
 //! # use tuf::metadata::{RootMetadata, SignedMetadata, Role, MetadataPath,
 //! #     MetadataVersion};
 //! # use tuf::interchange::Json;
-//! # use tuf::repository::{FileSystemRepository, HttpRepositoryBuilder, Repository};
+//! # use tuf::repository::{FileSystemRepository, HttpRepositoryBuilder};
 //!
 //! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
 //!     "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
@@ -42,7 +42,7 @@
 //!     1,
 //!     &key_ids,
 //!     local,
-//!     Repository::<_, Json>::new(remote),
+//!     remote,
 //! ).await?;
 //!
 //! let _ = client.update().await?;
@@ -155,7 +155,7 @@ where
     /// #     client::{Client, Config},
     /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository, Repository, RepositoryStorage},
+    /// #     repository::{EphemeralRepository, RepositoryStorage},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
@@ -195,13 +195,9 @@ where
     /// # })
     /// # }
     /// ```
-    pub async fn with_trusted_local(
-        config: Config<T>,
-        local: impl Into<Repository<L, D>>,
-        remote: impl Into<Repository<R, D>>,
-    ) -> Result<Self> {
+    pub async fn with_trusted_local(config: Config<T>, local: L, remote: R) -> Result<Self> {
+        let (local, remote) = (Repository::new(local), Repository::new(remote));
         let root_path = MetadataPath::from_role(&Role::Root);
-        let (local, remote) = (local.into(), remote.into());
 
         // FIXME should this be MetadataVersion::None so we bootstrap with the latest version?
         let root_version = MetadataVersion::Number(1);
@@ -233,7 +229,7 @@ where
     /// #     client::{Client, Config},
     /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository, Repository},
+    /// #     repository::{EphemeralRepository},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
@@ -271,11 +267,11 @@ where
     pub async fn with_trusted_root(
         config: Config<T>,
         trusted_root: SignedMetadata<D, RootMetadata>,
-        local: impl Into<Repository<L, D>>,
-        remote: impl Into<Repository<R, D>>,
+        local: L,
+        remote: R,
     ) -> Result<Self> {
+        let (local, remote) = (Repository::new(local), Repository::new(remote));
         let tuf = Tuf::from_trusted_root(trusted_root.clone())?;
-        let (local, remote) = (local.into(), remote.into());
 
         Ok(Client {
             tuf,
@@ -302,7 +298,7 @@ where
     /// #     client::{Client, Config},
     /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository, Repository, RepositoryStorage},
+    /// #     repository::{EphemeralRepository, RepositoryStorage},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
@@ -352,15 +348,15 @@ where
         root_version: &MetadataVersion,
         root_threshold: u32,
         trusted_root_key_ids: I,
-        local: impl Into<Repository<L, D>>,
-        remote: impl Into<Repository<R, D>>,
+        local: L,
+        remote: R,
     ) -> Result<Self>
     where
         I: IntoIterator<Item = &'a KeyId>,
     {
-        let root_path = MetadataPath::from_role(&Role::Root);
-        let (local, remote) = (local.into(), remote.into());
+        let (local, remote) = (Repository::new(local), Repository::new(remote));
 
+        let root_path = MetadataPath::from_role(&Role::Root);
         let (fetched, raw_trusted_root, trusted_root) = fetch_metadata_from_local_or_else_remote(
             &root_path,
             &root_version,
@@ -426,7 +422,7 @@ where
     /// #     client::{Client, Config},
     /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository, Repository, RepositoryStorage},
+    /// #     repository::{EphemeralRepository, RepositoryStorage},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
@@ -476,15 +472,15 @@ where
         root_version: &MetadataVersion,
         root_threshold: u32,
         trusted_root_keys: I,
-        local: impl Into<Repository<L, D>>,
-        remote: impl Into<Repository<R, D>>,
+        local: L,
+        remote: R,
     ) -> Result<Self>
     where
         I: IntoIterator<Item = &'a PublicKey>,
     {
-        let root_path = MetadataPath::from_role(&Role::Root);
-        let (local, remote) = (local.into(), remote.into());
+        let (local, remote) = (Repository::new(local), Repository::new(remote));
 
+        let root_path = MetadataPath::from_role(&Role::Root);
         let (fetched, raw_root, root) = fetch_metadata_from_local_or_else_remote(
             &root_path,
             root_version,
@@ -1422,7 +1418,7 @@ mod test {
                 1,
                 &key_ids,
                 EphemeralRepository::new(),
-                remote,
+                repo,
             )
             .await
             .unwrap();
@@ -1641,7 +1637,7 @@ mod test {
             1,
             &key_ids,
             EphemeralRepository::new(),
-            remote,
+            repo,
         )
         .await
         .unwrap();
@@ -1792,7 +1788,7 @@ mod test {
 
         // Initialize and update client.
         let mut client =
-            Client::with_trusted_root(Config::default(), root, EphemeralRepository::new(), remote)
+            Client::with_trusted_root(Config::default(), root, EphemeralRepository::new(), repo)
                 .await
                 .unwrap();
 
