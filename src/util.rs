@@ -1,5 +1,3 @@
-use chrono::offset::Utc;
-use chrono::DateTime;
 use futures_io::AsyncRead;
 use futures_util::ready;
 use ring::digest;
@@ -7,26 +5,114 @@ use std::io::{self, ErrorKind};
 use std::marker::Unpin;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 use crate::crypto::{HashAlgorithm, HashValue};
 use crate::Result;
 
+pub(crate) trait SafeAsyncRead: Sized {
+    /// Creates an `AsyncRead` adapter which will fail transfers slower than
+    /// `min_bytes_per_second`.
+    fn enforce_minimum_bitrate(self, min_bytes_per_second: u32) -> EnforceMinimumBitrate<Self>;
+
+    /// Creates an `AsyncRead` adapter that ensures the consumer can't read more than `max_length`
+    /// bytes. Also, when the underlying `AsyncRead` is fully consumed, the hash of the data is
+    /// optionally calculated and checked against `hash_data`. Consumers should purge and untrust
+    /// all read bytes if the returned `AsyncRead` ever returns an `Err`.
+    ///
+    /// It is **critical** that none of the bytes from this struct are used until it has been fully
+    /// consumed as the data is untrusted.
+    fn check_length_and_hash(
+        self,
+        max_length: u64,
+        hash_data: Option<(&HashAlgorithm, HashValue)>,
+    ) -> Result<SafeReader<Self>>;
+}
+
+impl<R> SafeAsyncRead for R
+where
+    R: AsyncRead + Unpin,
+{
+    fn enforce_minimum_bitrate(self, min_bytes_per_second: u32) -> EnforceMinimumBitrate<Self> {
+        EnforceMinimumBitrate::new(self, min_bytes_per_second)
+    }
+
+    fn check_length_and_hash(
+        self,
+        max_length: u64,
+        hash_data: Option<(&HashAlgorithm, HashValue)>,
+    ) -> Result<SafeReader<Self>> {
+        SafeReader::new(self, max_length, hash_data)
+    }
+}
+
+/// Wraps an `AsyncRead` to detect and fail transfers slower than a minimum bitrate.
+pub(crate) struct EnforceMinimumBitrate<R> {
+    inner: R,
+    min_bytes_per_second: u32,
+    start_time: Option<Instant>,
+    bytes_read: u64,
+}
+
+impl<R: AsyncRead> EnforceMinimumBitrate<R> {
+    /// Create a new `EnforceMinimumBitrate`.
+    pub(crate) fn new(read: R, min_bytes_per_second: u32) -> Self {
+        Self {
+            inner: read,
+            min_bytes_per_second,
+            start_time: None,
+            bytes_read: 0,
+        }
+    }
+}
+
+impl<R: AsyncRead + Unpin> AsyncRead for EnforceMinimumBitrate<R> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        // FIXME(#272) transfers that stall out completely won't enforce the minimum bit rate.
+        let read_bytes = ready!(Pin::new(&mut self.inner).poll_read(cx, buf))?;
+
+        let start_time = *self.start_time.get_or_insert_with(Instant::now);
+
+        if read_bytes == 0 {
+            return Poll::Ready(Ok(0));
+        }
+
+        self.bytes_read += read_bytes as u64;
+
+        // 30 second grace period before we start checking the bitrate
+        let duration = start_time.elapsed();
+        if duration >= Duration::from_secs(30) {
+            if (self.bytes_read as f32) / duration.as_secs_f32() < self.min_bytes_per_second as f32
+            {
+                return Poll::Ready(Err(io::Error::new(
+                    ErrorKind::TimedOut,
+                    "Read aborted. Bitrate too low.",
+                )));
+            }
+        }
+
+        Poll::Ready(Ok(read_bytes))
+    }
+}
+
 /// Wrapper to verify a byte stream as it is read.
 ///
-/// Wraps a `Read` to ensure that the consumer can't read more than a capped maximum number of
-/// bytes. Also, this ensures that a minimum bitrate and returns an `Err` if it is not. Finally,
-/// when the underlying `Read` is fully consumed, the hash of the data is optionally calculated. If
-/// the calculated hash does not match the given hash, it will return an `Err`. Consumers of a
-/// `SafeReader` should purge and untrust all read bytes if this ever returns an `Err`.
+/// Wraps an `AsyncRead` to ensure that the consumer can't read more than a capped maximum number of
+/// bytes. Also, when the underlying `AsyncRead` is fully consumed, the hash of the data is
+/// optionally calculated. If the calculated hash does not match the given hash, it will return an
+/// `Err`. Consumers of a `SafeReader` should purge and untrust all read bytes if this ever returns
+/// an `Err`.
 ///
 /// It is **critical** that none of the bytes from this struct are used until it has been fully
 /// consumed as the data is untrusted.
-pub struct SafeReader<R> {
+pub(crate) struct SafeReader<R> {
     inner: R,
     max_size: u64,
-    min_bytes_per_second: u32,
     hasher: Option<(digest::Context, HashValue)>,
-    start_time: Option<DateTime<Utc>>,
     bytes_read: u64,
 }
 
@@ -36,11 +122,10 @@ impl<R: AsyncRead> SafeReader<R> {
     /// The argument `hash_data` takes a `HashAlgorithm` and expected `HashValue`. The given
     /// algorithm is used to hash the data as it is read. At the end of the stream, the digest is
     /// calculated and compared against `HashValue`. If the two are not equal, it means the data
-    /// stream has been tampered with in some way.
-    pub fn new(
+    /// stream has been corrupted or tampered with in some way.
+    pub(crate) fn new(
         read: R,
         max_size: u64,
-        min_bytes_per_second: u32,
         hash_data: Option<(&HashAlgorithm, HashValue)>,
     ) -> Result<Self> {
         let hasher = match hash_data {
@@ -51,9 +136,7 @@ impl<R: AsyncRead> SafeReader<R> {
         Ok(SafeReader {
             inner: read,
             max_size,
-            min_bytes_per_second,
             hasher,
-            start_time: None,
             bytes_read: 0,
         })
     }
@@ -66,10 +149,6 @@ impl<R: AsyncRead + Unpin> AsyncRead for SafeReader<R> {
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         let read_bytes = ready!(Pin::new(&mut self.inner).poll_read(cx, buf))?;
-
-        if self.start_time.is_none() {
-            self.start_time = Some(Utc::now())
-        }
 
         if read_bytes == 0 {
             if let Some((context, expected_hash)) = self.hasher.take() {
@@ -95,19 +174,6 @@ impl<R: AsyncRead + Unpin> AsyncRead for SafeReader<R> {
             }
         }
 
-        let duration = Utc::now().signed_duration_since(self.start_time.unwrap());
-        // 30 second grace period before we start checking the bitrate
-        if duration.num_seconds() >= 30 {
-            if (self.bytes_read as f32) / (duration.num_seconds() as f32)
-                < self.min_bytes_per_second as f32
-            {
-                return Poll::Ready(Err(io::Error::new(
-                    ErrorKind::TimedOut,
-                    "Read aborted. Bitrate too low.",
-                )));
-            }
-        }
-
         if let Some((ref mut context, _)) = self.hasher {
             context.update(&buf[..(read_bytes)]);
         }
@@ -127,7 +193,7 @@ mod test {
     fn valid_read() {
         block_on(async {
             let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
-            let mut reader = SafeReader::new(bytes, bytes.len() as u64, 0, None).unwrap();
+            let mut reader = SafeReader::new(bytes, bytes.len() as u64, None).unwrap();
             let mut buf = Vec::new();
             assert!(reader.read_to_end(&mut buf).await.is_ok());
             assert_eq!(buf, bytes);
@@ -138,7 +204,7 @@ mod test {
     fn valid_read_large_data() {
         block_on(async {
             let bytes: &[u8] = &[0x00; 64 * 1024];
-            let mut reader = SafeReader::new(bytes, bytes.len() as u64, 0, None).unwrap();
+            let mut reader = SafeReader::new(bytes, bytes.len() as u64, None).unwrap();
             let mut buf = Vec::new();
             assert!(reader.read_to_end(&mut buf).await.is_ok());
             assert_eq!(buf, bytes);
@@ -149,7 +215,7 @@ mod test {
     fn valid_read_below_max_size() {
         block_on(async {
             let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
-            let mut reader = SafeReader::new(bytes, (bytes.len() as u64) + 1, 0, None).unwrap();
+            let mut reader = SafeReader::new(bytes, (bytes.len() as u64) + 1, None).unwrap();
             let mut buf = Vec::new();
             assert!(reader.read_to_end(&mut buf).await.is_ok());
             assert_eq!(buf, bytes);
@@ -160,7 +226,7 @@ mod test {
     fn invalid_read_above_max_size() {
         block_on(async {
             let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
-            let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, 0, None).unwrap();
+            let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, None).unwrap();
             let mut buf = Vec::new();
             assert!(reader.read_to_end(&mut buf).await.is_err());
         })
@@ -170,7 +236,7 @@ mod test {
     fn invalid_read_above_max_size_large_data() {
         block_on(async {
             let bytes: &[u8] = &[0x00; 64 * 1024];
-            let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, 0, None).unwrap();
+            let mut reader = SafeReader::new(bytes, (bytes.len() as u64) - 1, None).unwrap();
             let mut buf = Vec::new();
             assert!(reader.read_to_end(&mut buf).await.is_err());
         })
@@ -186,7 +252,6 @@ mod test {
             let mut reader = SafeReader::new(
                 bytes,
                 bytes.len() as u64,
-                0,
                 Some((&HashAlgorithm::Sha256, hash_value)),
             )
             .unwrap();
@@ -207,7 +272,6 @@ mod test {
             let mut reader = SafeReader::new(
                 bytes,
                 bytes.len() as u64,
-                0,
                 Some((&HashAlgorithm::Sha256, hash_value)),
             )
             .unwrap();
@@ -226,7 +290,6 @@ mod test {
             let mut reader = SafeReader::new(
                 bytes,
                 bytes.len() as u64,
-                0,
                 Some((&HashAlgorithm::Sha256, hash_value)),
             )
             .unwrap();
@@ -247,7 +310,6 @@ mod test {
             let mut reader = SafeReader::new(
                 bytes,
                 bytes.len() as u64,
-                0,
                 Some((&HashAlgorithm::Sha256, hash_value)),
             )
             .unwrap();

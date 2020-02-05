@@ -22,7 +22,7 @@ use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, SignedMetadata, TargetDescription, TargetPath,
 };
 use crate::repository::Repository;
-use crate::util::SafeReader;
+use crate::util::SafeAsyncRead;
 use crate::Result;
 
 /// A builder to create a repository accessible over HTTP.
@@ -282,17 +282,13 @@ where
             let components = meta_path.components::<D>(&version);
             let resp = self.get(&self.metadata_prefix, &components).await?;
 
-            let stream = resp
+            let mut reader = resp
                 .into_body()
                 .compat()
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
-
-            let mut reader = SafeReader::new(
-                stream.into_async_read(),
-                max_length.unwrap_or(::std::usize::MAX) as u64,
-                self.min_bytes_per_second,
-                hash_data,
-            )?;
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+                .into_async_read()
+                .enforce_minimum_bitrate(self.min_bytes_per_second)
+                .check_length_and_hash(max_length.unwrap_or(::std::usize::MAX) as u64, hash_data)?;
 
             let mut buf = Vec::new();
             reader.read_to_end(&mut buf).await?;
@@ -320,17 +316,13 @@ where
             let components = target_path.components();
             let resp = self.get(&self.targets_prefix, &components).await?;
 
-            let stream = resp
+            let reader = resp
                 .into_body()
                 .compat()
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err));
-
-            let reader = SafeReader::new(
-                stream.into_async_read(),
-                target_description.length(),
-                self.min_bytes_per_second,
-                Some((alg, value.clone())),
-            )?;
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+                .into_async_read()
+                .enforce_minimum_bitrate(self.min_bytes_per_second)
+                .check_length_and_hash(target_description.length(), Some((alg, value.clone())))?;
 
             Ok(Box::new(reader) as Box<dyn AsyncRead + Send + Unpin>)
         }
