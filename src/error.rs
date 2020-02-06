@@ -1,74 +1,68 @@
 //! Error types and converters.
 
 use data_encoding::DecodeError;
-use derp;
-use http;
-use hyper;
-use serde_json;
-use std::fmt;
 use std::io;
 use std::path::Path;
-use tempfile;
+use thiserror::Error;
 
 use crate::metadata::Role;
 
 /// Error type for all TUF related errors.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
     /// The metadata had a bad signature.
+    #[error("bad signature")]
     BadSignature,
+
     /// There was a problem encoding or decoding.
+    #[error("encoding: {0}")]
     Encoding(String),
+
     /// Metadata was expired.
+    #[error("expired {0} metadata")]
     ExpiredMetadata(Role),
+
     /// An illegal argument was passed into a function.
+    #[error("illegal argument: {0}")]
     IllegalArgument(String),
+
     /// The metadata was missing, so an operation could not be completed.
+    #[error("missing {0} metadata")]
     MissingMetadata(Role),
+
     /// There were no available hash algorithms.
+    #[error("no supported hash algorithm")]
     NoSupportedHashAlgorithm,
+
     /// The metadata or target was not found.
+    #[error("not found")]
     NotFound,
+
     /// Opaque error type, to be interpreted similar to HTTP 500. Something went wrong, and you may
     /// or may not be able to do anything about it.
+    #[error("opaque: {0}")]
     Opaque(String),
+
     /// There was a library internal error. These errors are *ALWAYS* bugs and should be reported.
+    #[error("programming: {0}")]
     Programming(String),
+
     /// The target is unavailable. This may mean it is either not in the metadata or the metadata
     /// chain to the target cannot be fully verified.
+    #[error("target unavailable")]
     TargetUnavailable,
+
     /// There is no known or available hash algorithm.
+    #[error("unknown hash algorithm: {0}")]
     UnkonwnHashAlgorithm(String),
+
     /// There is no known or available key type.
+    #[error("unknown key type: {0}")]
     UnknownKeyType(String),
+
     /// The metadata or target failed to verify.
+    #[error("verification failure: {0}")]
     VerificationFailure(String),
-}
-
-impl ::std::error::Error for Error {
-    fn description(&self) -> &str {
-        match *self {
-            Error::BadSignature => "bad signature",
-            Error::Encoding(_) => "encoding",
-            Error::ExpiredMetadata(_) => "expired metadata",
-            Error::IllegalArgument(_) => "illegal argument",
-            Error::MissingMetadata(_) => "missing metadata",
-            Error::NoSupportedHashAlgorithm => "no supported hash algorithm",
-            Error::NotFound => "not found",
-            Error::Opaque(_) => "opaque",
-            Error::Programming(_) => "programming",
-            Error::TargetUnavailable => "target unavailable",
-            Error::UnkonwnHashAlgorithm(_) => "unknown hash algorithm",
-            Error::UnknownKeyType(_) => "unknown key type",
-            Error::VerificationFailure(_) => "verification failure",
-        }
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(self, f)
-    }
 }
 
 impl From<serde_json::error::Error> for Error {
@@ -120,5 +114,20 @@ impl From<derp::Error> for Error {
 impl From<tempfile::PersistError> for Error {
     fn from(err: tempfile::PersistError) -> Error {
         Error::Opaque(format!("Error persisting temp file: {:?}", err))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_io_error_display_string() {
+        let err = Error::from(io::Error::from(std::io::ErrorKind::NotFound));
+        assert_eq!(err.to_string(), "not found");
+        assert_eq!(Error::NotFound.to_string(), "not found");
+
+        let err = Error::from(io::Error::from(std::io::ErrorKind::PermissionDenied));
+        assert_eq!(err.to_string(), "opaque: IO: Kind(PermissionDenied)");
     }
 }
