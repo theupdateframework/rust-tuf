@@ -800,7 +800,7 @@ where
         current_depth: u32,
         target: &'a VirtualTargetPath,
         snapshot: &'a SnapshotMetadata,
-        targets: Option<&'a TargetsMetadata>,
+        targets: Option<(&'a TargetsMetadata, MetadataPath)>,
     ) -> (bool, Result<TargetDescription>) {
         if current_depth > self.config.max_delegation_depth {
             warn!(
@@ -812,10 +812,10 @@ where
 
         // these clones are dumb, but we need immutable values and not references for update
         // tuf in the loop below
-        let targets = match targets {
-            Some(t) => t.clone(),
+        let (targets, targets_role) = match targets {
+            Some((t, role)) => (t.clone(), role),
             None => match self.tuf.targets() {
-                Some(t) => t.clone(),
+                Some(t) => (t.clone(), MetadataPath::from_role(&Role::Targets)),
                 None => {
                     return (
                         default_terminate,
@@ -897,7 +897,10 @@ where
                 }
             };
 
-            match self.tuf.update_delegation(delegation.role(), signed_meta) {
+            match self
+                .tuf
+                .update_delegation(&targets_role, delegation.role(), signed_meta)
+            {
                 Ok(_) => {
                     match self
                         .local
@@ -924,7 +927,7 @@ where
                             current_depth + 1,
                             target,
                             snapshot,
-                            Some(meta.as_ref()),
+                            Some((meta.as_ref(), delegation.role().clone())),
                         ));
                     let (term, res) = f.await;
 
