@@ -36,6 +36,7 @@ serde_json = "1"
 tempfile = "3"
 untrusted = "0.7"
 url = "2"
+thiserror = "1.0"
 
 [dev-dependencies]
 lazy_static = "1"
