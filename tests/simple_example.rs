@@ -6,7 +6,7 @@ use tuf::metadata::{
     MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder, TargetDescription,
     TargetPath, TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
-use tuf::repository::{EphemeralRepository, Repository};
+use tuf::repository::{EphemeralRepository, RepositoryStorage};
 use tuf::Result;
 
 // Ironically, this is far from simple, but it's as simple as it can be made.
@@ -74,8 +74,8 @@ async fn run_tests<T>(config: Config<T>, consistent_snapshots: bool)
 where
     T: PathTranslator,
 {
-    let mut remote = EphemeralRepository::<Json>::new();
-    let root_key_ids = init_server(&mut remote, &config, consistent_snapshots)
+    let remote = EphemeralRepository::new();
+    let root_key_ids = init_server(&remote, &config, consistent_snapshots)
         .await
         .unwrap();
     init_client(&root_key_ids, remote, config).await.unwrap();
@@ -89,7 +89,7 @@ async fn init_client<T>(
 where
     T: PathTranslator,
 {
-    let local = EphemeralRepository::<Json>::new();
+    let local = EphemeralRepository::new();
     let mut client = Client::with_trusted_root_keyids(
         config,
         &MetadataVersion::Number(1),
@@ -105,7 +105,7 @@ where
 }
 
 async fn init_server<'a, T>(
-    remote: &'a mut EphemeralRepository<Json>,
+    remote: &'a EphemeralRepository<Json>,
     config: &'a Config<T>,
     consistent_snapshot: bool,
 ) -> Result<Vec<KeyId>>
@@ -130,10 +130,18 @@ where
 
     let root_path = MetadataPath::new("root")?;
     remote
-        .store_metadata(&root_path, &MetadataVersion::Number(1), &signed)
+        .store_metadata(
+            &root_path,
+            &MetadataVersion::Number(1),
+            signed.to_raw().unwrap().as_bytes(),
+        )
         .await?;
     remote
-        .store_metadata(&root_path, &MetadataVersion::None, &signed)
+        .store_metadata(
+            &root_path,
+            &MetadataVersion::None,
+            signed.to_raw().unwrap().as_bytes(),
+        )
         .await?;
 
     //// build the targets ////
@@ -162,10 +170,18 @@ where
 
     let targets_path = &MetadataPath::new("targets")?;
     remote
-        .store_metadata(&targets_path, &MetadataVersion::Number(1), &targets)
+        .store_metadata(
+            &targets_path,
+            &MetadataVersion::Number(1),
+            targets.to_raw().unwrap().as_bytes(),
+        )
         .await?;
     remote
-        .store_metadata(&targets_path, &MetadataVersion::None, &targets)
+        .store_metadata(
+            &targets_path,
+            &MetadataVersion::None,
+            targets.to_raw().unwrap().as_bytes(),
+        )
         .await?;
 
     //// build the snapshot ////
@@ -176,10 +192,18 @@ where
 
     let snapshot_path = MetadataPath::new("snapshot")?;
     remote
-        .store_metadata(&snapshot_path, &MetadataVersion::Number(1), &snapshot)
+        .store_metadata(
+            &snapshot_path,
+            &MetadataVersion::Number(1),
+            snapshot.to_raw().unwrap().as_bytes(),
+        )
         .await?;
     remote
-        .store_metadata(&snapshot_path, &MetadataVersion::None, &snapshot)
+        .store_metadata(
+            &snapshot_path,
+            &MetadataVersion::None,
+            snapshot.to_raw().unwrap().as_bytes(),
+        )
         .await?;
 
     //// build the timestamp ////
@@ -189,10 +213,18 @@ where
 
     let timestamp_path = MetadataPath::new("timestamp")?;
     remote
-        .store_metadata(&timestamp_path, &MetadataVersion::Number(1), &timestamp)
+        .store_metadata(
+            &timestamp_path,
+            &MetadataVersion::Number(1),
+            timestamp.to_raw().unwrap().as_bytes(),
+        )
         .await?;
     remote
-        .store_metadata(&timestamp_path, &MetadataVersion::None, &timestamp)
+        .store_metadata(
+            &timestamp_path,
+            &MetadataVersion::None,
+            timestamp.to_raw().unwrap().as_bytes(),
+        )
         .await?;
 
     Ok(vec![root_key.key_id().clone()])

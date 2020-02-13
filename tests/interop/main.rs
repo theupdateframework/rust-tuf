@@ -35,16 +35,17 @@
 //! download targets at each step of the test.
 
 use futures_executor::block_on;
+use futures_util::io::AsyncReadExt;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tuf::client::{Client, Config};
 use tuf::crypto::KeyId;
 use tuf::interchange::Json;
 use tuf::metadata::{
-    MetadataPath, MetadataVersion, Role, RootMetadata, SignedMetadata, TargetPath,
+    MetadataPath, MetadataVersion, RawSignedMetadata, Role, RootMetadata, TargetPath,
 };
 use tuf::repository::{
-    EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, Repository,
+    EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, RepositoryProvider,
 };
 use tuf::Result;
 
@@ -144,7 +145,7 @@ impl TestKeyRotation {
 
         TestKeyRotation {
             test_steps,
-            local: EphemeralRepository::<Json>::new(),
+            local: EphemeralRepository::new(),
             expected_targets: BTreeMap::new(),
         }
     }
@@ -206,9 +207,15 @@ async fn extract_keys(dir: &Path) -> Vec<KeyId> {
     let remote = init_remote(dir).unwrap();
 
     let root_path = MetadataPath::from_role(&Role::Root);
-    let metadata: SignedMetadata<_, RootMetadata> = remote
+
+    let mut buf = Vec::new();
+    let mut reader = remote
         .fetch_metadata(&root_path, &MetadataVersion::Number(1), None, None)
         .await
+        .unwrap();
+    reader.read_to_end(&mut buf).await.unwrap();
+    let metadata = RawSignedMetadata::<Json, RootMetadata>::new(buf)
+        .parse()
         .unwrap();
 
     metadata.as_ref().root().key_ids().iter().cloned().collect()

@@ -2,37 +2,39 @@
 
 use futures_io::AsyncRead;
 use futures_util::future::{BoxFuture, FutureExt};
-use futures_util::io::{copy, AllowStdIo, AsyncReadExt};
+use futures_util::io::{copy, AllowStdIo};
 use log::debug;
 use std::fs::{DirBuilder, File};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
-use crate::crypto::{self, HashAlgorithm, HashValue};
+use crate::crypto::{HashAlgorithm, HashValue};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
-use crate::metadata::{
-    Metadata, MetadataPath, MetadataVersion, SignedMetadata, TargetDescription, TargetPath,
-};
-use crate::repository::Repository;
-use crate::util::SafeAsyncRead;
+use crate::metadata::{MetadataPath, MetadataVersion, TargetDescription, TargetPath};
+use crate::repository::{RepositoryProvider, RepositoryStorage};
 use crate::Result;
 
 /// A builder to create a repository contained on the local file system.
-pub struct FileSystemRepositoryBuilder {
+pub struct FileSystemRepositoryBuilder<D> {
     local_path: PathBuf,
     metadata_prefix: Option<PathBuf>,
     targets_prefix: Option<PathBuf>,
+    _interchange: PhantomData<D>,
 }
 
-impl FileSystemRepositoryBuilder {
+impl<D> FileSystemRepositoryBuilder<D>
+where
+    D: DataInterchange,
+{
     /// Create a new repository with the given `local_path` prefix.
     pub fn new<P: Into<PathBuf>>(local_path: P) -> Self {
         FileSystemRepositoryBuilder {
             local_path: local_path.into(),
             metadata_prefix: None,
             targets_prefix: None,
+            _interchange: PhantomData,
         }
     }
 
@@ -57,10 +59,7 @@ impl FileSystemRepositoryBuilder {
     }
 
     /// Build a `FileSystemRepository`.
-    pub fn build<D>(self) -> Result<FileSystemRepository<D>>
-    where
-        D: DataInterchange,
-    {
+    pub fn build(self) -> Result<FileSystemRepository<D>> {
         let metadata_path = if let Some(metadata_prefix) = self.metadata_prefix {
             self.local_path.join(metadata_prefix)
         } else {
@@ -78,7 +77,7 @@ impl FileSystemRepositoryBuilder {
         Ok(FileSystemRepository {
             metadata_path,
             targets_path,
-            interchange: PhantomData,
+            _interchange: PhantomData,
         })
     }
 }
@@ -90,7 +89,7 @@ where
 {
     metadata_path: PathBuf,
     targets_path: PathBuf,
-    interchange: PhantomData<D>,
+    _interchange: PhantomData<D>,
 }
 
 impl<D> FileSystemRepository<D>
@@ -106,22 +105,63 @@ where
     }
 }
 
-impl<D> Repository<D> for FileSystemRepository<D>
+impl<D> RepositoryProvider<D> for FileSystemRepository<D>
 where
     D: DataInterchange + Sync,
 {
-    fn store_metadata<'a, M>(
+    fn fetch_metadata<'a>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        metadata: &'a SignedMetadata<D, M>,
+        _max_length: Option<usize>,
+        _hash_data: Option<(&'static HashAlgorithm, HashValue)>,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        async move {
+            let mut path = self.metadata_path.clone();
+            path.extend(meta_path.components::<D>(&version));
+
+            let reader: Box<dyn AsyncRead + Send + Unpin> =
+                Box::new(AllowStdIo::new(File::open(&path)?));
+            Ok(reader)
+        }
+        .boxed()
+    }
+
+    fn fetch_target<'a>(
+        &'a self,
+        target_path: &'a TargetPath,
+        _target_description: &'a TargetDescription,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        async move {
+            let mut path = self.targets_path.clone();
+            path.extend(target_path.components());
+
+            if !path.exists() {
+                return Err(Error::NotFound);
+            }
+
+            let reader: Box<dyn AsyncRead + Send + Unpin> =
+                Box::new(AllowStdIo::new(File::open(&path)?));
+            Ok(reader)
+        }
+        .boxed()
+    }
+}
+
+impl<D> RepositoryStorage<D> for FileSystemRepository<D>
+where
+    D: DataInterchange + Sync,
+{
+    fn store_metadata<'a, R>(
+        &'a self,
+        meta_path: &'a MetadataPath,
+        version: &'a MetadataVersion,
+        metadata: R,
     ) -> BoxFuture<'a, Result<()>>
     where
-        M: Metadata + Sync + 'static,
+        R: AsyncRead + Send + Unpin + 'a,
     {
         async move {
-            Self::check::<M>(meta_path)?;
-
             let mut path = self.metadata_path.clone();
             path.extend(meta_path.components::<D>(version));
 
@@ -129,39 +169,11 @@ where
                 debug!("Metadata path exists. Overwriting: {:?}", path);
             }
 
-            let mut temp_file = create_temp_file(&path)?;
-            D::to_writer(&mut temp_file, metadata)?;
-            temp_file.persist(&path)?;
+            let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
+            copy(metadata, &mut temp_file).await?;
+            temp_file.into_inner().persist(&path)?;
 
             Ok(())
-        }
-        .boxed()
-    }
-
-    /// Fetch signed metadata.
-    fn fetch_metadata<'a, M>(
-        &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-        max_length: Option<usize>,
-        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> BoxFuture<'a, Result<SignedMetadata<D, M>>>
-    where
-        M: Metadata + 'static,
-    {
-        async move {
-            Self::check::<M>(&meta_path)?;
-
-            let mut path = self.metadata_path.clone();
-            path.extend(meta_path.components::<D>(&version));
-
-            let mut reader = AllowStdIo::new(File::open(&path)?)
-                .check_length_and_hash(max_length.unwrap_or(::std::usize::MAX) as u64, hash_data)?;
-
-            let mut buf = Vec::with_capacity(max_length.unwrap_or(0));
-            reader.read_to_end(&mut buf).await?;
-
-            Ok(D::from_slice(&buf)?)
         }
         .boxed()
     }
@@ -190,32 +202,6 @@ where
         }
         .boxed()
     }
-
-    fn fetch_target<'a>(
-        &'a self,
-        target_path: &'a TargetPath,
-        target_description: &'a TargetDescription,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        async move {
-            let mut path = self.targets_path.clone();
-            path.extend(target_path.components());
-
-            if !path.exists() {
-                return Err(Error::NotFound);
-            }
-
-            let (alg, value) = crypto::hash_preference(target_description.hashes())?;
-
-            let reader: Box<dyn AsyncRead + Send + Unpin> =
-                Box::new(AllowStdIo::new(File::open(&path)?).check_length_and_hash(
-                    target_description.length(),
-                    Some((alg, value.clone())),
-                )?);
-
-            Ok(reader)
-        }
-        .boxed()
-    }
 }
 
 fn create_temp_file(path: &Path) -> Result<NamedTempFile> {
@@ -237,7 +223,9 @@ mod test {
     use super::*;
     use crate::interchange::Json;
     use crate::metadata::{Role, RootMetadata};
+    use crate::repository::Repository;
     use futures_executor::block_on;
+    use futures_util::io::AsyncReadExt;
     use tempfile;
 
     #[test]
@@ -248,17 +236,18 @@ mod test {
                 .tempdir()
                 .unwrap();
             let repo = FileSystemRepositoryBuilder::new(temp_dir.path())
-                .build::<Json>()
+                .build()
                 .unwrap();
 
             assert_eq!(
-                repo.fetch_metadata::<RootMetadata>(
-                    &MetadataPath::from_role(&Role::Root),
-                    &MetadataVersion::None,
-                    None,
-                    None
-                )
-                .await,
+                Repository::<_, Json>::new(repo)
+                    .fetch_metadata::<RootMetadata>(
+                        &MetadataPath::from_role(&Role::Root),
+                        &MetadataVersion::None,
+                        None,
+                        None
+                    )
+                    .await,
                 Err(Error::NotFound)
             );
         })
@@ -271,10 +260,10 @@ mod test {
                 .prefix("rust-tuf")
                 .tempdir()
                 .unwrap();
-            let repo = FileSystemRepositoryBuilder::new(temp_dir.path().to_path_buf())
+            let repo = FileSystemRepositoryBuilder::<Json>::new(temp_dir.path().to_path_buf())
                 .metadata_prefix("meta")
                 .targets_prefix("targs")
-                .build::<Json>()
+                .build()
                 .unwrap();
 
             // test that init worked
@@ -305,10 +294,13 @@ mod test {
                 assert_eq!(buf.as_slice(), data);
             }
 
+            // RepositoryProvider implementations do not guarantee data is not corrupt.
             let bad_data: &[u8] = b"you're in a desert";
             repo.store_target(bad_data, &path).await.unwrap();
             let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
-            assert!(read.read_to_end(&mut buf).await.is_err());
+            buf.clear();
+            read.read_to_end(&mut buf).await.unwrap();
+            assert_eq!(buf.as_slice(), bad_data);
         })
     }
 }

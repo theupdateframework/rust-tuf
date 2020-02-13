@@ -12,7 +12,7 @@ use tuf::metadata::{
     MetadataPath, MetadataVersion, Role, RootMetadataBuilder, SnapshotMetadataBuilder, TargetPath,
     TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
-use tuf::repository::{FileSystemRepository, FileSystemRepositoryBuilder, Repository};
+use tuf::repository::{FileSystemRepository, FileSystemRepositoryBuilder, RepositoryStorage};
 
 const KEYS_PATH: &str = "./keys.json";
 // These structs and functions are necessary to parse keys.json, which contains the keys
@@ -113,12 +113,20 @@ async fn update_root(
     };
 
     let root_path = MetadataPath::from_role(&Role::Root);
-    repo.store_metadata(&root_path, &MetadataVersion::Number(version), &root)
-        .await
-        .unwrap();
-    repo.store_metadata(&root_path, &MetadataVersion::None, &root)
-        .await
-        .unwrap();
+    repo.store_metadata(
+        &root_path,
+        &MetadataVersion::Number(version),
+        root.to_raw().unwrap().as_bytes(),
+    )
+    .await
+    .unwrap();
+    repo.store_metadata(
+        &root_path,
+        &MetadataVersion::None,
+        root.to_raw().unwrap().as_bytes(),
+    )
+    .await
+    .unwrap();
 }
 
 // adds a target and updates the non-root metadata files.
@@ -178,9 +186,13 @@ async fn add_target(
         MetadataVersion::None
     };
 
-    repo.store_metadata(&targets_path, &version_prefix, &targets)
-        .await
-        .unwrap();
+    repo.store_metadata(
+        &targets_path,
+        &version_prefix,
+        targets.to_raw().unwrap().as_bytes(),
+    )
+    .await
+    .unwrap();
 
     let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
     let snapshot = SnapshotMetadataBuilder::new()
@@ -191,9 +203,13 @@ async fn add_target(
         .signed::<JsonPretty>(&keys.get("snapshot").unwrap())
         .unwrap();
 
-    repo.store_metadata(&snapshot_path, &version_prefix, &snapshot)
-        .await
-        .unwrap();
+    repo.store_metadata(
+        &snapshot_path,
+        &version_prefix,
+        snapshot.to_raw().unwrap().as_bytes(),
+    )
+    .await
+    .unwrap();
 
     let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
     let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
@@ -204,9 +220,13 @@ async fn add_target(
         .unwrap();
 
     // Timestamp doesn't require a version prefix even in consistent_snapshot.
-    repo.store_metadata(&timestamp_path, &MetadataVersion::None, &timestamp)
-        .await
-        .unwrap();
+    repo.store_metadata(
+        &timestamp_path,
+        &MetadataVersion::None,
+        timestamp.to_raw().unwrap().as_bytes(),
+    )
+    .await
+    .unwrap();
 }
 
 async fn generate_repos(dir: &str, consistent_snapshot: bool) -> tuf::Result<()> {

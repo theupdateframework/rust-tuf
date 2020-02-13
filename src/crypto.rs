@@ -75,6 +75,13 @@ pub fn hash_preference<'a>(
     Err(Error::NoSupportedHashAlgorithm)
 }
 
+#[cfg(test)]
+pub(crate) fn calculate_hash(data: &[u8], hash_alg: HashAlgorithm) -> HashValue {
+    let mut context = hash_alg.digest_context().unwrap();
+    context.update(data);
+    HashValue::new(context.finish().as_ref().to_vec())
+}
+
 /// Calculate the size and hash digest from a given `Read`.
 pub fn calculate_hashes<R: Read>(
     mut read: R,
