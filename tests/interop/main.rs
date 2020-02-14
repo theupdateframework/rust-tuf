@@ -216,9 +216,11 @@ async fn extract_keys(dir: &Path) -> Vec<KeyId> {
     reader.read_to_end(&mut buf).await.unwrap();
     let metadata = RawSignedMetadata::<Json, RootMetadata>::new(buf)
         .parse()
+        .unwrap()
+        .assume_valid()
         .unwrap();
 
-    metadata.as_ref().root().key_ids().iter().cloned().collect()
+    metadata.root().key_ids().iter().cloned().collect()
 }
 
 fn init_remote(dir: &Path) -> Result<FileSystemRepository<Json>> {

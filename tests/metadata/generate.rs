@@ -159,12 +159,12 @@ async fn add_target(
     let step_str = format!("{}", step);
     let target_data = step_str.as_bytes();
 
-    let targets = targets_builder
+    let signed_targets = targets_builder
         .signed::<JsonPretty>(&keys.get("targets").unwrap())
         .unwrap();
+    let targets = signed_targets.assume_valid().unwrap();
 
     let hash = targets
-        .as_ref()
         .targets()
         .get(&VirtualTargetPath::new(step.to_string().into()).unwrap())
         .unwrap()
@@ -189,7 +189,7 @@ async fn add_target(
     repo.store_metadata(
         &targets_path,
         &version_prefix,
-        targets.to_raw().unwrap().as_bytes(),
+        signed_targets.to_raw().unwrap().as_bytes(),
     )
     .await
     .unwrap();
@@ -198,7 +198,7 @@ async fn add_target(
     let snapshot = SnapshotMetadataBuilder::new()
         .expires(expiration)
         .version(version)
-        .insert_metadata(&targets, &[HashAlgorithm::Sha256])
+        .insert_metadata(&signed_targets, &[HashAlgorithm::Sha256])
         .unwrap()
         .signed::<JsonPretty>(&keys.get("snapshot").unwrap())
         .unwrap();

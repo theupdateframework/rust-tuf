@@ -46,8 +46,9 @@ impl<D: DataInterchange> Tuf<D> {
     /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
     /// the related method [`Tuf::from_root_with_trusted_keys`].
     pub fn from_trusted_root(signed_root: SignedMetadata<D, RootMetadata>) -> Result<Self> {
-        {
-            let root = signed_root.as_ref();
+        let verified = {
+            let root = signed_root.assume_valid()?;
+
             signed_root.verify(
                 root.root().threshold(),
                 root.keys().iter().filter_map(|(k, v)| {
@@ -57,10 +58,11 @@ impl<D: DataInterchange> Tuf<D> {
                         None
                     }
                 }),
-            )?;
-        }
+            )?
+        };
+
         Ok(Tuf {
-            root: signed_root.into_inner(),
+            root: verified,
             snapshot: None,
             targets: None,
             timestamp: None,
@@ -112,12 +114,11 @@ impl<D: DataInterchange> Tuf<D> {
 
     /// Verify and update the root metadata.
     pub fn update_root(&mut self, signed_root: SignedMetadata<D, RootMetadata>) -> Result<bool> {
-        {
+        let verified = {
             let old_root = &self.root;
-            let new_root = signed_root.as_ref();
 
             // First, check that the new root was signed by the old root.
-            signed_root.verify(
+            let new_root = signed_root.verify(
                 old_root.root().threshold(),
                 old_root.keys().iter().filter_map(|(k, v)| {
                     if old_root.root().key_ids().contains(k) {
@@ -153,26 +154,27 @@ impl<D: DataInterchange> Tuf<D> {
                         None
                     }
                 }),
-            )?;
-        }
+            )?
+        };
 
         self.purge_metadata();
 
-        self.root = signed_root.into_inner();
+        self.root = verified;
         Ok(true)
     }
 
     /// Verify and update the timestamp metadata.
+    ///
+    /// Returns a reference to the parsed metadata if the metadata was newer.
     pub fn update_timestamp(
         &mut self,
         signed_timestamp: SignedMetadata<D, TimestampMetadata>,
-    ) -> Result<bool> {
-        {
+    ) -> Result<Option<&TimestampMetadata>> {
+        let verified = {
             let root = &self.root;
-            let timestamp = signed_timestamp.as_ref();
 
             // First, make sure the root signed the metadata.
-            signed_timestamp.verify(
+            let timestamp = signed_timestamp.verify(
                 root.timestamp().threshold(),
                 root.keys().iter().filter_map(|(k, v)| {
                     if root.timestamp().key_ids().contains(k) {
@@ -198,16 +200,18 @@ impl<D: DataInterchange> Tuf<D> {
                     timestamp.version()
                 )));
             } else if timestamp.version() == current_version {
-                return Ok(false);
+                return Ok(None);
             }
 
             if self.current_snapshot_version() != timestamp.snapshot().version() {
                 self.snapshot = None;
             }
-        }
 
-        self.timestamp = Some(signed_timestamp.into_inner());
-        Ok(true)
+            timestamp
+        };
+
+        self.timestamp = Some(verified);
+        Ok(self.timestamp.as_ref())
     }
 
     /// Verify and update the snapshot metadata.
@@ -215,7 +219,7 @@ impl<D: DataInterchange> Tuf<D> {
         &mut self,
         signed_snapshot: SignedMetadata<D, SnapshotMetadata>,
     ) -> Result<bool> {
-        {
+        let verified = {
             let root = self.safe_root_ref()?;
             let timestamp = self.safe_timestamp_ref()?;
             let current_version = self.current_snapshot_version();
@@ -230,7 +234,7 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
-            signed_snapshot.verify(
+            let snapshot = signed_snapshot.verify(
                 root.snapshot().threshold(),
                 self.root.keys().iter().filter_map(|(k, v)| {
                     if root.snapshot().key_ids().contains(k) {
@@ -240,8 +244,6 @@ impl<D: DataInterchange> Tuf<D> {
                     }
                 }),
             )?;
-
-            let snapshot = signed_snapshot.as_ref();
 
             if snapshot.version() != timestamp.snapshot().version() {
                 return Err(Error::VerificationFailure(format!(
@@ -254,11 +256,11 @@ impl<D: DataInterchange> Tuf<D> {
 
             // Note: this doesn't check the expiration because we need to be able to update it
             // regardless so we can prevent rollback attacks againsts targets/delegations.
+            snapshot
         };
 
         if self.targets.as_ref().map(|s| s.version()).unwrap_or(0)
-            != signed_snapshot
-                .as_ref()
+            != verified
                 .meta()
                 .get(&MetadataPath::from_role(&Role::Targets))
                 .map(|m| m.version())
@@ -267,7 +269,7 @@ impl<D: DataInterchange> Tuf<D> {
             self.targets = None;
         }
 
-        self.snapshot = Some(signed_snapshot.into_inner());
+        self.snapshot = Some(verified);
         self.purge_delegations();
         Ok(true)
     }
@@ -304,7 +306,7 @@ impl<D: DataInterchange> Tuf<D> {
         &mut self,
         signed_targets: SignedMetadata<D, TargetsMetadata>,
     ) -> Result<bool> {
-        {
+        let verified = {
             let root = self.safe_root_ref()?;
             let snapshot = self.safe_snapshot_ref()?;
             let targets_description = snapshot
@@ -328,7 +330,7 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
-            signed_targets.verify(
+            let targets = signed_targets.verify(
                 root.targets().threshold(),
                 root.keys().iter().filter_map(|(k, v)| {
                     if root.targets().key_ids().contains(k) {
@@ -338,8 +340,6 @@ impl<D: DataInterchange> Tuf<D> {
                     }
                 }),
             )?;
-
-            let targets = signed_targets.as_ref();
 
             if targets.version() != targets_description.version() {
                 return Err(Error::VerificationFailure(format!(
@@ -353,9 +353,11 @@ impl<D: DataInterchange> Tuf<D> {
             if targets.expires() <= &Utc::now() {
                 return Err(Error::ExpiredMetadata(Role::Snapshot));
             }
-        }
 
-        self.targets = Some(signed_targets.into_inner());
+            targets
+        };
+
+        self.targets = Some(verified);
         Ok(true)
     }
 
@@ -420,7 +422,7 @@ impl<D: DataInterchange> Tuf<D> {
         role: &MetadataPath,
         signed_delegation: SignedMetadata<D, TargetsMetadata>,
     ) -> Result<bool> {
-        {
+        let verified = {
             let _ = self.safe_root_ref()?;
             let snapshot = self.safe_snapshot_ref()?;
             let targets = self.safe_targets_ref()?;
@@ -462,31 +464,31 @@ impl<D: DataInterchange> Tuf<D> {
                         targets metadata or any known delegated targets metadata",
                         role
                     )))?;
-            signed_delegation.verify(delegation.threshold(), keys)?;
+            let delegation = signed_delegation.verify(delegation.threshold(), keys)?;
 
             if current_version == delegation_description.version() {
                 return Ok(false);
             }
 
-            if signed_delegation.version() != delegation_description.version() {
+            if delegation.version() != delegation_description.version() {
                 return Err(Error::VerificationFailure(format!(
                     "The snapshot metadata reported that the delegation {:?} should be at \
                      version {} but version {} was found instead.",
                     role,
                     delegation_description.version(),
-                    signed_delegation.version(),
+                    delegation.version(),
                 )));
             }
 
-            if signed_delegation.expires() <= &Utc::now() {
+            if delegation.expires() <= &Utc::now() {
                 // TODO this needs to be chagned to accept a MetadataPath and not Role
                 return Err(Error::ExpiredMetadata(Role::Targets));
             }
-        }
 
-        let _ = self
-            .delegations
-            .insert(role.clone(), signed_delegation.into_inner());
+            delegation
+        };
+
+        let _ = self.delegations.insert(role.clone(), verified);
 
         Ok(true)
     }
@@ -759,11 +761,15 @@ mod test {
                 .unwrap()
                 .signed::<Json>(&KEYS[1])
                 .unwrap();
+        let parsed_timestamp = timestamp.assume_valid().unwrap();
 
-        assert_eq!(tuf.update_timestamp(timestamp.clone()), Ok(true));
+        assert_eq!(
+            tuf.update_timestamp(timestamp.clone()),
+            Ok(Some(&parsed_timestamp))
+        );
 
         // second update should do nothing
-        assert_eq!(tuf.update_timestamp(timestamp), Ok(false))
+        assert_eq!(tuf.update_timestamp(timestamp), Ok(None))
     }
 
     #[test]
@@ -891,12 +897,12 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
-        let targets = TargetsMetadataBuilder::new()
+        let signed_targets = TargetsMetadataBuilder::new()
             .signed::<Json>(&KEYS[2])
             .unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
-            .insert_metadata(&targets, &[HashAlgorithm::Sha256])
+            .insert_metadata(&signed_targets, &[HashAlgorithm::Sha256])
             .unwrap()
             .signed::<Json>(&KEYS[1])
             .unwrap();
@@ -912,10 +918,10 @@ mod test {
         tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
 
-        assert_eq!(tuf.update_targets(targets.clone()), Ok(true));
+        assert_eq!(tuf.update_targets(signed_targets.clone()), Ok(true));
 
         // second update should do nothing
-        assert_eq!(tuf.update_targets(targets), Ok(false));
+        assert_eq!(tuf.update_targets(signed_targets), Ok(false));
     }
 
     #[test]
@@ -930,13 +936,13 @@ mod test {
 
         let mut tuf = Tuf::from_trusted_root(root).unwrap();
 
-        let targets = TargetsMetadataBuilder::new()
+        let signed_targets = TargetsMetadataBuilder::new()
             // sign it with the timestamp key
             .signed::<Json>(&KEYS[3])
             .unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
-            .insert_metadata(&targets, &[HashAlgorithm::Sha256])
+            .insert_metadata(&signed_targets, &[HashAlgorithm::Sha256])
             .unwrap()
             .signed::<Json>(&KEYS[1])
             .unwrap();
@@ -950,7 +956,7 @@ mod test {
         tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
 
-        assert!(tuf.update_targets(targets).is_err());
+        assert!(tuf.update_targets(signed_targets).is_err());
     }
 
     #[test]
@@ -965,13 +971,13 @@ mod test {
 
         let mut tuf = Tuf::from_trusted_root(root).unwrap();
 
-        let targets = TargetsMetadataBuilder::new()
+        let signed_targets = TargetsMetadataBuilder::new()
             .version(2)
             .signed::<Json>(&KEYS[2])
             .unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
-            .insert_metadata(&targets, &[HashAlgorithm::Sha256])
+            .insert_metadata(&signed_targets, &[HashAlgorithm::Sha256])
             .unwrap()
             .signed::<Json>(&KEYS[1])
             .unwrap();
@@ -985,11 +991,11 @@ mod test {
         tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
 
-        let targets = TargetsMetadataBuilder::new()
+        let signed_targets = TargetsMetadataBuilder::new()
             .version(1)
             .signed::<Json>(&KEYS[2])
             .unwrap();
 
-        assert!(tuf.update_targets(targets).is_err());
+        assert!(tuf.update_targets(signed_targets).is_err());
     }
 }

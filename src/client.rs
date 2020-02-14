@@ -10,8 +10,7 @@
 //! # use tuf::{Result, Tuf};
 //! # use tuf::crypto::KeyId;
 //! # use tuf::client::{Client, Config};
-//! # use tuf::metadata::{RootMetadata, SignedMetadata, Role, MetadataPath,
-//! #     MetadataVersion};
+//! # use tuf::metadata::{RootMetadata, Role, MetadataPath, MetadataVersion};
 //! # use tuf::interchange::Json;
 //! # use tuf::repository::{FileSystemRepository, HttpRepositoryBuilder};
 //!
@@ -271,7 +270,7 @@ where
         remote: R,
     ) -> Result<Self> {
         let (local, remote) = (Repository::new(local), Repository::new(remote));
-        let tuf = Tuf::from_trusted_root(trusted_root.clone())?;
+        let tuf = Tuf::from_trusted_root(trusted_root)?;
 
         Ok(Client {
             tuf,
@@ -367,23 +366,19 @@ where
         )
         .await?;
 
-        // FIXME(#253) verify the trusted root version matches the provided version.
-        let root_version = MetadataVersion::Number(trusted_root.version());
-
         let tuf = {
-            let root: &RootMetadata = trusted_root.as_ref();
-
-            // Extract out the keys that correspond by the provided key ids.
+            // Extract the necessary information from the not-yet-verified root metadata to verify
+            // it is signed by the trusted root key_ids.
+            let root: RootMetadata = trusted_root.assume_valid()?;
             let trusted_root_keys = trusted_root_key_ids
                 .into_iter()
                 .filter_map(|key_id| root.keys().get(key_id));
 
-            Tuf::from_root_with_trusted_keys(
-                trusted_root.clone(),
-                root_threshold,
-                trusted_root_keys,
-            )?
+            Tuf::from_root_with_trusted_keys(trusted_root, root_threshold, trusted_root_keys)?
         };
+
+        // FIXME(#253) verify the trusted root version matches the provided version.
+        let root_version = MetadataVersion::Number(tuf.root().version());
 
         let mut client = Client {
             tuf,
@@ -488,10 +483,10 @@ where
         )
         .await?;
 
-        // FIXME(#253) verify the trusted root version matches the provided version.
-        let root_version = MetadataVersion::Number(root.version());
-
         let tuf = Tuf::from_root_with_trusted_keys(root, root_threshold, trusted_root_keys)?;
+
+        // FIXME(#253) verify the trusted root version matches the provided version.
+        let root_version = MetadataVersion::Number(tuf.root().version());
 
         let mut client = Client {
             tuf,
@@ -560,7 +555,11 @@ where
                 None,
             )
             .await?;
-        let latest_version = latest_root.version();
+
+        // Root metadata is signed by its own keys, but we should only trust it if it is also
+        // signed by the previous root metadata, which we can't check without knowing what version
+        // this root metadata claims to be.
+        let latest_version = latest_root.parse_version_untrusted()?;
 
         if latest_version < self.tuf.root().version() {
             return Err(Error::VerificationFailure(format!(
@@ -625,10 +624,9 @@ where
                 None,
             )
             .await?;
-        let latest_version = signed_timestamp.version();
-        let latest_version = MetadataVersion::Number(latest_version);
 
-        if self.tuf.update_timestamp(signed_timestamp)? {
+        if let Some(updated_timestamp) = self.tuf.update_timestamp(signed_timestamp)? {
+            let latest_version = MetadataVersion::Number(updated_timestamp.version());
             self.store_metadata(&timestamp_path, &latest_version, &raw_signed_timestamp)
                 .await;
 
