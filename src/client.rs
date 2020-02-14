@@ -559,10 +559,7 @@ where
         // Root metadata is signed by its own keys, but we should only trust it if it is also
         // signed by the previous root metadata, which we can't check without knowing what version
         // this root metadata claims to be.
-        let latest_version = {
-            let untrusted_latest_info = latest_root.untrusted_info()?;
-            untrusted_latest_info.version()
-        };
+        let latest_version = latest_root.parse_version_untrusted()?;
 
         if latest_version < self.tuf.root().version() {
             return Err(Error::VerificationFailure(format!(

@@ -473,9 +473,18 @@ where
         &self.signatures
     }
 
-    // Unexported method to allow the builders to determine the version of signed metadata.
-    fn parse_version_untrusted(&self) -> Result<u32> {
-        let meta: MetadataMetadata<M> = D::deserialize(&self.metadata)?;
+    /// Parse the version number of this metadata without verifying signatures.
+    ///
+    /// This operation is generally unsafe to do with metadata obtained from an untrusted source,
+    /// but rolling forward to the most recent root.json requires using the version number of the
+    /// latest root.json.
+    pub(crate) fn parse_version_untrusted(&self) -> Result<u32> {
+        #[derive(Deserialize)]
+        pub struct MetadataVersion {
+            version: u32,
+        }
+
+        let meta: MetadataVersion = D::deserialize(&self.metadata)?;
         Ok(meta.version)
     }
 
@@ -583,44 +592,6 @@ where
 
         // "assume" the metadata is valid because we just verified that it is.
         self.assume_valid()
-    }
-}
-
-impl<D> SignedMetadata<D, RootMetadata>
-where
-    D: DataInterchange,
-{
-    /// Parse common metadata fields from this metadata without verifying signatures.
-    ///
-    /// This operation is generally unsafe to do with metadata obtained from an untrusted source,
-    /// but rolling forward to the most recent root.json requires using the version number of the
-    /// latest root.json.
-    pub fn untrusted_info(&self) -> Result<MetadataMetadata<RootMetadata>> {
-        D::deserialize(&self.metadata)
-    }
-}
-
-/// Metadata common to all signed metadata files.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MetadataMetadata<M> {
-    version: u32,
-    expires: DateTime<Utc>,
-    #[serde(skip_serializing, skip_deserializing)]
-    _metadata: PhantomData<M>,
-}
-
-impl<M> Metadata for MetadataMetadata<M>
-where
-    M: Metadata,
-{
-    const ROLE: Role = M::ROLE;
-
-    fn version(&self) -> u32 {
-        self.version
-    }
-
-    fn expires(&self) -> &DateTime<Utc> {
-        &self.expires
     }
 }
 
