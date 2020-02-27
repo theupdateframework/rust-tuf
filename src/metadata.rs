@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display};
 use std::io::Read;
 use std::marker::PhantomData;
+use std::str;
 
 use crate::crypto::{self, HashAlgorithm, HashValue, KeyId, PrivateKey, PublicKey, Signature};
 use crate::error::Error;
@@ -2362,6 +2363,21 @@ mod test {
     }
 
     #[test]
+    fn de_ser_root_metadata_wrong_key_id() {
+        let jsn = jsn_root_metadata_without_keyid_hash_algos();
+        let mut jsn_str = str::from_utf8(&Json::canonicalize(&jsn).unwrap())
+            .unwrap()
+            .to_owned();
+        // Replace the key id to something else.
+        jsn_str = jsn_str.replace(
+            "12435b260b6172bd750aeb102f54a347c56b109e0524ab1f144593c07af66356",
+            "00435b260b6172bd750aeb102f54a347c56b109e0524ab1f144593c07af66356",
+        );
+        let decoded: RootMetadata = serde_json::from_str(&jsn_str).unwrap();
+        assert_eq!(3, decoded.keys.len());
+    }
+
+    #[test]
     fn sign_and_verify_root_metadata() {
         let jsn = jsn_root_metadata_without_keyid_hash_algos();
         let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
@@ -2404,7 +2420,10 @@ mod test {
         let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let decoded: SignedMetadata<crate::interchange::cjson::Json, RootMetadata> =
             serde_json::from_value(jsn).unwrap();
-        assert_matches!(decoded.verify(2, &[root_key.public().clone()]), Err(Error::VerificationFailure(_)));
+        assert_matches!(
+            decoded.verify(2, &[root_key.public().clone()]),
+            Err(Error::VerificationFailure(_))
+        );
         decoded.verify(1, &[root_key.public().clone()]).unwrap();
     }
 
