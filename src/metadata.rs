@@ -560,9 +560,15 @@ where
         let canonical_bytes = D::canonicalize(&self.metadata)?;
 
         let mut signatures_needed = threshold;
-        for sig in &self.signatures {
-            match authorized_keys.get(sig.key_id()) {
-                Some(ref pub_key) => match pub_key.verify(&canonical_bytes, &sig) {
+        // Create a key_id->signature map to deduplicate the key_ids.
+        let signatures = self
+            .signatures
+            .iter()
+            .map(|sig| (sig.key_id(), sig))
+            .collect::<HashMap<&KeyId, &Signature>>();
+        for (key_id, sig) in signatures {
+            match authorized_keys.get(key_id) {
+                Some(ref pub_key) => match pub_key.verify(&canonical_bytes, sig) {
                     Ok(()) => {
                         debug!("Good signature from key ID {:?}", pub_key.key_id());
                         signatures_needed -= 1;
@@ -2379,6 +2385,26 @@ mod test {
         let decoded: SignedMetadata<crate::interchange::cjson::Json, RootMetadata> =
             serde_json::from_value(jsn).unwrap();
 
+        decoded.verify(1, &[root_key.public().clone()]).unwrap();
+    }
+
+    #[test]
+    fn verify_signed_serialized_root_metadata_with_duplicate_sig() {
+        let jsn = json!({
+            "signatures": [{
+                "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
+                "sig": "c4ba838e0d3f783716393a4d691f568f840733ff488bb79ac68287e97e0b31d63fcef392dbc978e878c2103ba231905af634cc651d6f0e63a35782d051ac6e00"
+            },
+            {
+                "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
+                "sig": "c4ba838e0d3f783716393a4d691f568f840733ff488bb79ac68287e97e0b31d63fcef392dbc978e878c2103ba231905af634cc651d6f0e63a35782d051ac6e00"
+            }],
+            "signed": jsn_root_metadata_without_keyid_hash_algos()
+        });
+        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let decoded: SignedMetadata<crate::interchange::cjson::Json, RootMetadata> =
+            serde_json::from_value(jsn).unwrap();
+        assert_matches!(decoded.verify(2, &[root_key.public().clone()]), Err(Error::VerificationFailure(_)));
         decoded.verify(1, &[root_key.public().clone()]).unwrap();
     }
 
