@@ -1614,4 +1614,131 @@ mod test {
 
         assert_eq!(description, expected_description);
     }
+
+    #[test]
+    fn test_versions() {
+        block_on(async {
+            let delegation_path = MetadataPath::new("delegation").unwrap();
+            let target_path = TargetPath::new("foo/bar".into()).unwrap();
+
+            // Generate an ephemeral repository with a single target.
+            let repo_keys = RepoKeys {
+                root_keys: vec![&KEYS[0]],
+                snapshot_keys: vec![&KEYS[0]],
+                targets_keys: vec![&KEYS[0]],
+                timestamp_keys: vec![&KEYS[0]],
+            };
+
+            let delegated_target = TargetsMetadataBuilder::new()
+                .insert_target_from_reader(
+                    VirtualTargetPath::new("foo/bar".into()).unwrap(),
+                    "".as_bytes(),
+                    &[HashAlgorithm::Sha256],
+                )
+                .unwrap()
+                .signed::<Json>(&KEYS[0])
+                .unwrap();
+
+            let delegations = Delegations::new(
+                hashmap! { KEYS[0].public().key_id().clone() => KEYS[0].public().clone() },
+                vec![Delegation::new(
+                    delegation_path.clone(),
+                    false,
+                    1,
+                    vec![KEYS[0].key_id().clone()].iter().cloned().collect(),
+                    vec![VirtualTargetPath::new("foo/".into()).unwrap()]
+                        .iter()
+                        .cloned()
+                        .collect(),
+                )
+                .unwrap()],
+            )
+            .unwrap();
+
+            let repo = EphemeralRepository::<Json>::new();
+            let root = RepoBuilder::new(repo_keys, &repo)
+                .delegations(delegations.clone())
+                .insert_delegated_target(delegation_path.clone(), delegated_target)
+                .commit()
+                .await
+                .unwrap();
+
+            // Initialize and update client.
+            let mut client = Client::with_trusted_root(
+                Config::default(),
+                root,
+                EphemeralRepository::new(),
+                &repo,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(client.update().await, Ok(true));
+            assert_eq!(client.root_version(), 1);
+            assert_eq!(client.timestamp_version(), Some(1));
+            assert_eq!(client.targets_version(), Some(1));
+            assert_eq!(client.snapshot_version(), Some(1));
+
+            // Delegation isn't fetched until we resolve a delegated target.
+            assert_eq!(client.delegations_version(&delegation_path), None);
+            let _ = client.fetch_target_description(&target_path).await.unwrap();
+            assert_eq!(client.delegations_version(&delegation_path), Some(1));
+
+            ////
+            // Increment the version numbers and make sure we get the new metadata.
+            let delegated_target = TargetsMetadataBuilder::new()
+                .version(2)
+                .insert_target_from_reader(
+                    VirtualTargetPath::new("foo/bar".into()).unwrap(),
+                    "".as_bytes(),
+                    &[HashAlgorithm::Sha256],
+                )
+                .unwrap()
+                .signed::<Json>(&KEYS[0])
+                .unwrap();
+
+            let delegations = Delegations::new(
+                hashmap! { KEYS[0].public().key_id().clone() => KEYS[0].public().clone() },
+                vec![Delegation::new(
+                    delegation_path.clone(),
+                    false,
+                    1,
+                    vec![KEYS[0].key_id().clone()].iter().cloned().collect(),
+                    vec![VirtualTargetPath::new("foo/".into()).unwrap()]
+                        .iter()
+                        .cloned()
+                        .collect(),
+                )
+                .unwrap()],
+            )
+            .unwrap();
+
+            let repo_keys = RepoKeys {
+                root_keys: vec![&KEYS[0]],
+                snapshot_keys: vec![&KEYS[0]],
+                targets_keys: vec![&KEYS[0]],
+                timestamp_keys: vec![&KEYS[0]],
+            };
+            let _ = RepoBuilder::new(repo_keys, &repo)
+                .delegations(delegations)
+                .insert_delegated_target(delegation_path.clone(), delegated_target)
+                .set_root_version(2)
+                .set_timestamp_version(2)
+                .set_targets_version(2)
+                .set_snapshot_version(2)
+                .commit()
+                .await
+                .unwrap();
+
+            assert_eq!(client.update().await, Ok(true));
+            assert_eq!(client.root_version(), 2);
+            assert_eq!(client.timestamp_version(), Some(2));
+            assert_eq!(client.targets_version(), Some(2));
+            assert_eq!(client.snapshot_version(), Some(2));
+
+            assert_eq!(client.delegations_version(&delegation_path), None);
+            let _ = client.fetch_target_description(&target_path).await.unwrap();
+            assert_eq!(client.delegations_version(&delegation_path), Some(2));
+        })
+    }
 }

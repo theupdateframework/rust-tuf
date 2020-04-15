@@ -34,6 +34,8 @@ where
     repo: Repository<R, D>,
     root_builder: RootMetadataBuilder,
     targets_builder: TargetsMetadataBuilder,
+    snapshot_version: u32,
+    timestamp_version: u32,
     delegated_targets: HashMap<MetadataPath, SignedMetadata<D, TargetsMetadata>>,
 }
 
@@ -68,6 +70,8 @@ where
             repo,
             root_builder,
             targets_builder: TargetsMetadataBuilder::new(),
+            snapshot_version: 1,
+            timestamp_version: 1,
             delegated_targets: HashMap::new(),
         }
     }
@@ -77,6 +81,26 @@ where
         F: FnOnce(RootMetadataBuilder) -> RootMetadataBuilder,
     {
         self.root_builder = f(self.root_builder);
+        self
+    }
+
+    pub(crate) fn set_root_version(mut self, version: u32) -> Self {
+        self.root_builder = self.root_builder.version(version);
+        self
+    }
+
+    pub(crate) fn set_targets_version(mut self, version: u32) -> Self {
+        self.targets_builder = self.targets_builder.version(version);
+        self
+    }
+
+    pub(crate) fn set_snapshot_version(mut self, version: u32) -> Self {
+        self.snapshot_version = version;
+        self
+    }
+
+    pub(crate) fn set_timestamp_version(mut self, version: u32) -> Self {
+        self.timestamp_version = version;
         self
     }
 
@@ -125,6 +149,7 @@ where
 
         // Construct and sign the snapshot metadata.
         let mut snapshot_builder = SnapshotMetadataBuilder::new()
+            .version(self.snapshot_version)
             .insert_metadata(&targets, &[HashAlgorithm::Sha256])?;
 
         for (path, delegated_target) in &self.delegated_targets {
@@ -141,6 +166,7 @@ where
         // Construct and sign the timestamp metadata.
         let timestamp_metadata =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])?
+                .version(self.timestamp_version)
                 .build()?;
         let timestamp = sign(&timestamp_metadata, &self.repo_keys.timestamp_keys)?;
 
