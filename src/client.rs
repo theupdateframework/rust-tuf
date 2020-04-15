@@ -542,6 +542,31 @@ where
         }
     }
 
+    /// Returns the current trusted root version.
+    pub fn root_version(&self) -> u32 {
+        self.tuf.root().version()
+    }
+
+    /// Returns the current trusted timestamp version.
+    pub fn timestamp_version(&self) -> Option<u32> {
+        Some(self.tuf.timestamp()?.version())
+    }
+
+    /// Returns the current trusted snapshot version.
+    pub fn snapshot_version(&self) -> Option<u32> {
+        Some(self.tuf.snapshot()?.version())
+    }
+
+    /// Returns the current trusted targets version.
+    pub fn targets_version(&self) -> Option<u32> {
+        Some(self.tuf.targets()?.version())
+    }
+
+    /// Returns the current trusted delegations version for a given role.
+    pub fn delegations_version(&self, role: &MetadataPath) -> Option<u32> {
+        Some(self.tuf.delegations().get(role)?.version())
+    }
+
     /// Returns `true` if an update occurred and `false` otherwise.
     async fn update_root(&mut self) -> Result<bool> {
         let root_path = MetadataPath::from_role(&Role::Root);
@@ -1645,6 +1670,12 @@ mod test {
         // Ensure client doesn't fetch previous version (1).
         assert_eq!(client.update().await, Ok(true));
         assert_eq!(client.tuf.root().version(), 2);
+
+        assert_eq!(client.root_version(), 2);
+        assert_eq!(client.timestamp_version(), Some(1));
+        assert_eq!(client.snapshot_version(), Some(1));
+        assert_eq!(client.targets_version(), Some(1));
+        assert_eq!(client.delegations_version(&snapshot_path), None);
 
         assert_eq!(
             root2.to_raw().unwrap(),

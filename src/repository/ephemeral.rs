@@ -29,7 +29,7 @@ impl<D> EphemeralRepository<D>
 where
     D: DataInterchange,
 {
-    /// Create a new ephemercal repository.
+    /// Create a new ephemeral repository.
     pub fn new() -> Self {
         Self {
             metadata: Arc::new(RwLock::new(HashMap::new())),
