@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
 use crate::crypto::{HashAlgorithm, PrivateKey};
 use crate::interchange::DataInterchange;
 use crate::metadata::{
-    Metadata, MetadataPath, MetadataVersion, Role, RootMetadata, RootMetadataBuilder,
-    SignedMetadata, SnapshotMetadataBuilder, TargetDescription, TargetsMetadataBuilder,
-    TimestampMetadataBuilder, VirtualTargetPath,
+    Delegations, Metadata, MetadataPath, MetadataVersion, Role, RootMetadata, RootMetadataBuilder,
+    SignedMetadata, SnapshotMetadataBuilder, TargetDescription, TargetsMetadata,
+    TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
 use crate::repository::{Repository, RepositoryProvider, RepositoryStorage};
 use crate::Result;
@@ -32,6 +34,7 @@ where
     repo: Repository<R, D>,
     root_builder: RootMetadataBuilder,
     targets_builder: TargetsMetadataBuilder,
+    delegated_targets: HashMap<MetadataPath, SignedMetadata<D, TargetsMetadata>>,
 }
 
 impl<'a, R, D> RepoBuilder<'a, R, D>
@@ -65,6 +68,7 @@ where
             repo,
             root_builder,
             targets_builder: TargetsMetadataBuilder::new(),
+            delegated_targets: HashMap::new(),
         }
     }
 
@@ -73,6 +77,20 @@ where
         F: FnOnce(RootMetadataBuilder) -> RootMetadataBuilder,
     {
         self.root_builder = f(self.root_builder);
+        self
+    }
+
+    pub(crate) fn delegations(mut self, delegations: Delegations) -> Self {
+        self.targets_builder = self.targets_builder.delegations(delegations);
+        self
+    }
+
+    pub(crate) fn insert_delegated_target(
+        mut self,
+        path: MetadataPath,
+        targets: SignedMetadata<D, TargetsMetadata>,
+    ) -> Self {
+        self.delegated_targets.insert(path, targets);
         self
     }
 
@@ -106,9 +124,17 @@ where
         let targets = sign(&targets_metadata, &self.repo_keys.targets_keys)?;
 
         // Construct and sign the snapshot metadata.
-        let snapshot_metadata = SnapshotMetadataBuilder::new()
-            .insert_metadata(&targets, &[HashAlgorithm::Sha256])?
-            .build()?;
+        let mut snapshot_builder = SnapshotMetadataBuilder::new()
+            .insert_metadata(&targets, &[HashAlgorithm::Sha256])?;
+
+        for (path, delegated_target) in &self.delegated_targets {
+            snapshot_builder = snapshot_builder.insert_metadata_with_path(
+                path.to_string(),
+                &delegated_target,
+                &[HashAlgorithm::Sha256],
+            )?;
+        }
+        let snapshot_metadata = snapshot_builder.build()?;
 
         let snapshot = sign(&snapshot_metadata, &self.repo_keys.snapshot_keys)?;
 
@@ -130,6 +156,13 @@ where
         self.repo
             .store_metadata(&root_path, &MetadataVersion::None, &root.to_raw()?)
             .await?;
+
+        // Commit the delegated targets metadata.
+        for (path, delegated_targets) in self.delegated_targets {
+            self.repo
+                .store_metadata(&path, &MetadataVersion::None, &delegated_targets.to_raw()?)
+                .await?;
+        }
 
         // Commit the target metadata.
         if root_metadata.consistent_snapshot() {

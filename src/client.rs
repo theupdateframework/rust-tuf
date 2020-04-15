@@ -952,13 +952,15 @@ where
                             snapshot,
                             Some((&meta, delegation.role().clone())),
                         ));
-                    let (term, res) = f.await;
 
-                    if term && res.is_err() {
-                        return (true, res);
+                    match f.await {
+                        (term, res @ Ok(_)) => return (term, res),
+                        (true, res @ Err(_)) => return (true, res),
+                        (false, Err(Error::NotFound)) => {
+                            // Don't log that we couldn't find the target.
+                        }
+                        (false, Err(e)) => warn!("Failed to lookup target description: {:?}", e),
                     }
-
-                    // TODO end recursion early
                 }
                 Err(_) if !delegation.terminating() => continue,
                 Err(e) => return (true, Err(e)),
@@ -1145,7 +1147,10 @@ mod test {
     use super::*;
     use crate::crypto::{HashAlgorithm, KeyType, PrivateKey, SignatureScheme};
     use crate::interchange::Json;
-    use crate::metadata::{MetadataPath, MetadataVersion, RootMetadata, RootMetadataBuilder};
+    use crate::metadata::{
+        Delegation, Delegations, MetadataPath, MetadataVersion, RootMetadata, RootMetadataBuilder,
+        TargetsMetadataBuilder,
+    };
     use crate::repo_builder::{RepoBuilder, RepoKeys};
     use crate::repository::EphemeralRepository;
     use chrono::prelude::*;
@@ -1487,6 +1492,20 @@ mod test {
                 &[HashAlgorithm::Sha256],
             )
             .unwrap(),
+            None,
+        ));
+    }
+
+    #[test]
+    fn test_fetch_delegated_target_description_standard() {
+        block_on(test_fetch_target_description(
+            "standard/metadata".to_string(),
+            TargetDescription::from_reader(
+                "target with no custom metadata".as_bytes(),
+                &[HashAlgorithm::Sha256],
+            )
+            .unwrap(),
+            Some("standard/".to_string()),
         ));
     }
 
@@ -1500,6 +1519,7 @@ mod test {
                 hashmap!(),
             )
             .unwrap(),
+            None,
         ));
     }
 
@@ -1523,10 +1543,15 @@ mod test {
                 ),
             )
             .unwrap(),
+            None,
         ));
     }
 
-    async fn test_fetch_target_description(path: String, expected_description: TargetDescription) {
+    async fn test_fetch_target_description(
+        path: String,
+        expected_description: TargetDescription,
+        delegated_path: Option<String>,
+    ) {
         // Generate an ephemeral repository with a single target.
         let repo_keys = RepoKeys {
             root_keys: vec![&KEYS[0]],
@@ -1535,15 +1560,43 @@ mod test {
             timestamp_keys: vec![&KEYS[0]],
         };
         let repo = EphemeralRepository::<Json>::new();
+        let repo_builder = RepoBuilder::new(repo_keys, &repo);
 
-        let root = RepoBuilder::new(repo_keys, &repo)
-            .insert_target_description(
+        let repo_builder = if let Some(delegated_path) = delegated_path {
+            let delegated_path = VirtualTargetPath::new(delegated_path).unwrap();
+            let delegation_path = MetadataPath::new("delegation").unwrap();
+            let delegated_target = TargetsMetadataBuilder::new()
+                .insert_target_description(
+                    VirtualTargetPath::new(path.clone()).unwrap(),
+                    expected_description.clone(),
+                )
+                .signed::<Json>(&KEYS[0])
+                .unwrap();
+
+            let delegations = Delegations::new(
+                hashmap! { KEYS[0].public().key_id().clone() => KEYS[0].public().clone() },
+                vec![Delegation::new(
+                    delegation_path.clone(),
+                    false,
+                    1,
+                    vec![KEYS[0].key_id().clone()].iter().cloned().collect(),
+                    vec![delegated_path].iter().cloned().collect(),
+                )
+                .unwrap()],
+            )
+            .unwrap();
+
+            repo_builder
+                .delegations(delegations)
+                .insert_delegated_target(delegation_path, delegated_target)
+        } else {
+            repo_builder.insert_target_description(
                 VirtualTargetPath::new(path.clone()).unwrap(),
                 expected_description.clone(),
             )
-            .commit()
-            .await
-            .unwrap();
+        };
+
+        let root = repo_builder.commit().await.unwrap();
 
         // Initialize and update client.
         let mut client =
