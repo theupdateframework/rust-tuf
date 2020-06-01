@@ -9,7 +9,7 @@ use crate::metadata::Role;
 
 /// Error type for all TUF related errors.
 #[non_exhaustive]
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum Error {
     /// The metadata had a bad signature.
     #[error("bad signature")]

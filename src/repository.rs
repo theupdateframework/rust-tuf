@@ -12,6 +12,7 @@ use crate::{Error, Result};
 use futures_io::AsyncRead;
 use futures_util::future::BoxFuture;
 use futures_util::io::AsyncReadExt;
+use matches::assert_matches;
 use std::marker::PhantomData;
 
 mod file_system;
@@ -308,14 +309,13 @@ mod test {
     use crate::metadata::{MetadataPath, MetadataVersion, Role, RootMetadata, SnapshotMetadata};
     use crate::repository::EphemeralRepository;
     use futures_executor::block_on;
-    use matches::assert_matches;
 
     #[test]
     fn repository_forwards_not_found_error() {
         block_on(async {
             let repo = Repository::<_, Json>::new(EphemeralRepository::new());
 
-            assert_eq!(
+            assert_matches!(
                 repo.fetch_metadata::<RootMetadata>(
                     &MetadataPath::from_role(&Role::Root),
                     &MetadataVersion::None,
@@ -378,7 +378,7 @@ mod test {
 
             let client = Repository::<_, Json>::new(repo);
 
-            assert_eq!(
+            assert_matches!(
                 client
                     .fetch_raw_metadata::<RootMetadata>(
                         &path,
@@ -430,7 +430,7 @@ mod test {
 
             let client = Repository::<_, Json>::new(repo);
 
-            assert_eq!(
+            assert_matches!(
                 client
                     .fetch_raw_metadata::<RootMetadata>(&path, &version, Some(100), None)
                     .await,
