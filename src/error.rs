@@ -26,6 +26,14 @@ pub enum Error {
     #[error("illegal argument: {0}")]
     IllegalArgument(String),
 
+    /// Generic error for HTTP connections.
+    #[error("http: {0}")]
+    Http(String),
+
+    /// Errors that can occur parsing HTTP streams.
+    #[error("hyper: {0}")]
+    Hyper(String),
+
     /// The metadata was missing, so an operation could not be completed.
     #[error("missing {0} metadata")]
     MissingMetadata(Role),
@@ -54,7 +62,7 @@ pub enum Error {
 
     /// There is no known or available hash algorithm.
     #[error("unknown hash algorithm: {0}")]
-    UnkonwnHashAlgorithm(String),
+    UnknownHashAlgorithm(String),
 
     /// There is no known or available key type.
     #[error("unknown key type: {0}")]
@@ -89,13 +97,13 @@ impl From<io::Error> for Error {
 
 impl From<http::Error> for Error {
     fn from(err: http::Error) -> Error {
-        Error::Opaque(format!("Http: {:?}", err))
+        Error::Http(format!("Http: {:?}", err))
     }
 }
 
 impl From<hyper::Error> for Error {
     fn from(err: hyper::Error) -> Error {
-        Error::Opaque(format!("Hyper: {:?}", err))
+        Error::Hyper(format!("Hyper: {:?}", err))
     }
 }
 
