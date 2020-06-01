@@ -29,11 +29,11 @@ pub enum Error {
 
     /// Generic error for HTTP connections.
     #[error("http: {0}")]
-    Http(http::Error),
+    Http(String),
 
     /// Errors that can occur parsing HTTP streams.
     #[error("hyper: {0}")]
-    Hyper(hyper::Error),
+    Hyper(String),
 
     /// The metadata was missing, so an operation could not be completed.
     #[error("missing {0} metadata")]
@@ -94,13 +94,13 @@ impl From<io::Error> for Error {
 
 impl From<http::Error> for Error {
     fn from(err: http::Error) -> Error {
-        Error::Http(err)
+        Error::Http(format!("Http: {:?}", err))
     }
 }
 
 impl From<hyper::Error> for Error {
     fn from(err: hyper::Error) -> Error {
-        Error::Hyper(err)
+        Error::Hyper(format!("Hyper: {:?}", err))
     }
 }
 
