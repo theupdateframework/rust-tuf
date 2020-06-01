@@ -12,7 +12,6 @@ use crate::{Error, Result};
 use futures_io::AsyncRead;
 use futures_util::future::BoxFuture;
 use futures_util::io::AsyncReadExt;
-use matches::assert_matches;
 use std::marker::PhantomData;
 
 mod file_system;
@@ -306,6 +305,7 @@ where
 mod test {
     use super::*;
     use crate::interchange::Json;
+    use matches::assert_matches;
     use crate::metadata::{MetadataPath, MetadataVersion, Role, RootMetadata, SnapshotMetadata};
     use crate::repository::EphemeralRepository;
     use futures_executor::block_on;
@@ -378,7 +378,7 @@ mod test {
 
             let client = Repository::<_, Json>::new(repo);
 
-            assert_matches!(
+            assert_eq!(
                 client
                     .fetch_raw_metadata::<RootMetadata>(
                         &path,
@@ -430,7 +430,7 @@ mod test {
 
             let client = Repository::<_, Json>::new(repo);
 
-            assert_matches!(
+            assert_eq!(
                 client
                     .fetch_raw_metadata::<RootMetadata>(&path, &version, Some(100), None)
                     .await,
