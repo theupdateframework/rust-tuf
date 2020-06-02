@@ -8,7 +8,7 @@ use thiserror::Error;
 use crate::metadata::Role;
 
 /// Error type for all TUF related errors.
-#[derive(Error, Debug, PartialEq, Eq)]
+#[derive(Error, Debug)]
 pub enum Error {
     /// The metadata had a bad signature.
     #[error("bad signature")]
@@ -28,11 +28,11 @@ pub enum Error {
 
     /// Generic error for HTTP connections.
     #[error("http: {0}")]
-    Http(String),
+    Http(http::Error),
 
     /// Errors that can occur parsing HTTP streams.
     #[error("hyper: {0}")]
-    Hyper(String),
+    Hyper(hyper::Error),
 
     /// The metadata was missing, so an operation could not be completed.
     #[error("missing {0} metadata")]
@@ -93,13 +93,13 @@ impl From<io::Error> for Error {
 
 impl From<http::Error> for Error {
     fn from(err: http::Error) -> Error {
-        Error::Http(format!("Http: {:?}", err))
+        Error::Http(err)
     }
 }
 
 impl From<hyper::Error> for Error {
     fn from(err: hyper::Error) -> Error {
-        Error::Hyper(format!("Hyper: {:?}", err))
+        Error::Hyper(err)
     }
 }
 

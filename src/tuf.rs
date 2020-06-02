@@ -711,10 +711,10 @@ mod test {
         // add the original key's signature to make it cross signed
         root.add_signature(&KEYS[0]).unwrap();
 
-        assert_eq!(tuf.update_root(root.clone()), Ok(true));
+        assert_matches!(tuf.update_root(root.clone()), Ok(true));
 
         // second update should do nothing
-        assert_eq!(tuf.update_root(root), Ok(false));
+        assert_matches!(tuf.update_root(root), Ok(false));
     }
 
     #[test]
@@ -761,15 +761,15 @@ mod test {
                 .unwrap()
                 .signed::<Json>(&KEYS[1])
                 .unwrap();
-        let parsed_timestamp = timestamp.assume_valid().unwrap();
+        let _parsed_timestamp = timestamp.assume_valid().unwrap();
 
-        assert_eq!(
+        assert_matches!(
             tuf.update_timestamp(timestamp.clone()),
-            Ok(Some(&parsed_timestamp))
+            Ok(Some(_parsed_timestamp))
         );
 
         // second update should do nothing
-        assert_eq!(tuf.update_timestamp(timestamp), Ok(None))
+        assert_matches!(tuf.update_timestamp(timestamp), Ok(None))
     }
 
     #[test]
@@ -820,10 +820,10 @@ mod test {
 
         tuf.update_timestamp(timestamp).unwrap();
 
-        assert_eq!(tuf.update_snapshot(snapshot.clone()), Ok(true));
+        assert_matches!(tuf.update_snapshot(snapshot.clone()), Ok(true));
 
         // second update should do nothing
-        assert_eq!(tuf.update_snapshot(snapshot), Ok(false));
+        assert_matches!(tuf.update_snapshot(snapshot), Ok(false));
     }
 
     #[test]
@@ -918,10 +918,10 @@ mod test {
         tuf.update_timestamp(timestamp).unwrap();
         tuf.update_snapshot(snapshot).unwrap();
 
-        assert_eq!(tuf.update_targets(signed_targets.clone()), Ok(true));
+        assert_matches!(tuf.update_targets(signed_targets.clone()), Ok(true));
 
         // second update should do nothing
-        assert_eq!(tuf.update_targets(signed_targets), Ok(false));
+        assert_matches!(tuf.update_targets(signed_targets), Ok(false));
     }
 
     #[test]

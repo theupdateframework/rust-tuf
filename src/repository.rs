@@ -371,6 +371,7 @@ mod test {
             let path = MetadataPath::from_role(&Role::Root);
             let version = MetadataVersion::None;
             let data: &[u8] = b"valid metadata";
+            let _metadata = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
             let data_hash = crypto::calculate_hash(data, HashAlgorithm::Sha256);
 
             let repo = EphemeralRepository::new();
@@ -378,7 +379,7 @@ mod test {
 
             let client = Repository::<_, Json>::new(repo);
 
-            assert_eq!(
+            assert_matches!(
                 client
                     .fetch_raw_metadata::<RootMetadata>(
                         &path,
@@ -387,7 +388,7 @@ mod test {
                         Some((&HashAlgorithm::Sha256, data_hash))
                     )
                     .await,
-                Ok(RawSignedMetadata::new(data.to_vec()))
+                Ok(_metadata)
             );
         })
     }
@@ -424,17 +425,18 @@ mod test {
             let path = MetadataPath::from_role(&Role::Root);
             let version = MetadataVersion::None;
             let data: &[u8] = b"reasonably sized metadata";
+            let _metadata  = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
 
             let repo = EphemeralRepository::new();
             repo.store_metadata(&path, &version, data).await.unwrap();
 
             let client = Repository::<_, Json>::new(repo);
 
-            assert_eq!(
+            assert_matches!(
                 client
                     .fetch_raw_metadata::<RootMetadata>(&path, &version, Some(100), None)
                     .await,
-                Ok(RawSignedMetadata::new(data.to_vec()))
+                Ok(_metadata)
             );
         })
     }
