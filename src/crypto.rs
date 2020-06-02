@@ -988,6 +988,7 @@ fn write_pkcs1(n: &[u8], e: &[u8]) -> ::std::result::Result<Vec<u8>, derp::Error
 #[cfg(test)]
 mod test {
     use super::*;
+    use matches::assert_matches;
     use pretty_assertions::assert_eq;
     use serde_json::{self, json};
 
@@ -1115,7 +1116,7 @@ mod test {
         let pub_key =
             PublicKey::from_spki(&key.public.as_spki().unwrap(), SignatureScheme::Ed25519).unwrap();
 
-        assert_eq!(pub_key.verify(msg, &sig), Ok(()));
+        assert_matches!(pub_key.verify(msg, &sig), Ok(()));
 
         // Make sure we match what ring expects.
         let ring_key = ring::signature::Ed25519KeyPair::from_pkcs8(ED25519_1_PK8).unwrap();
@@ -1128,7 +1129,7 @@ mod test {
             .public()
             .clone();
 
-        assert_eq!(bad_pub_key.verify(msg, &sig), Err(Error::BadSignature));
+        assert_matches!(bad_pub_key.verify(msg, &sig), Err(Error::BadSignature));
     }
 
     #[test]
@@ -1139,7 +1140,7 @@ mod test {
 
         let msg = b"test";
         let sig = key.sign(msg).unwrap();
-        assert_eq!(pub_key.verify(msg, &sig), Ok(()));
+        assert_matches!(pub_key.verify(msg, &sig), Ok(()));
 
         // Make sure we match what ring expects.
         let ring_key = ring::signature::Ed25519KeyPair::from_pkcs8(ED25519_1_PK8).unwrap();
@@ -1152,7 +1153,7 @@ mod test {
             .public()
             .clone();
 
-        assert_eq!(bad_pub_key.verify(msg, &sig), Err(Error::BadSignature));
+        assert_matches!(bad_pub_key.verify(msg, &sig), Err(Error::BadSignature));
     }
 
     #[test]
@@ -1171,7 +1172,7 @@ mod test {
 
         let msg = b"test";
         let sig = key.sign(msg).unwrap();
-        assert_eq!(pub_key.verify(msg, &sig), Ok(()));
+        assert_matches!(pub_key.verify(msg, &sig), Ok(()));
 
         // Make sure we match what ring expects.
         let ring_key = ring::signature::Ed25519KeyPair::from_pkcs8(ED25519_1_PK8).unwrap();
@@ -1184,7 +1185,7 @@ mod test {
             .public()
             .clone();
 
-        assert_eq!(bad_pub_key.verify(msg, &sig), Err(Error::BadSignature));
+        assert_matches!(bad_pub_key.verify(msg, &sig), Err(Error::BadSignature));
     }
 
     #[test]

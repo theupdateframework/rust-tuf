@@ -36,6 +36,7 @@
 
 use futures_executor::block_on;
 use futures_util::io::AsyncReadExt;
+use matches::assert_matches;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tuf::client::{Client, Config};
@@ -182,8 +183,8 @@ impl TestKeyRotation {
 
         // Update our TUF metadata. The first time should report there is new metadata, the second
         // time should not.
-        assert_eq!(client.update().await, Ok(true));
-        assert_eq!(client.update().await, Ok(false));
+        assert_matches!(client.update().await, Ok(true));
+        assert_matches!(client.update().await, Ok(false));
 
         // Add the expected target to our target list.
         let file_name = dir.file_name().unwrap().to_str().unwrap().to_string();
@@ -193,7 +194,7 @@ impl TestKeyRotation {
         // fetch all the targets and check they have the correct content
         for (target_path, expected) in self.expected_targets.iter() {
             let mut buf = Vec::new();
-            assert_eq!(
+            assert_matches!(
                 client.fetch_target_to_writer(&target_path, &mut buf).await,
                 Ok(())
             );

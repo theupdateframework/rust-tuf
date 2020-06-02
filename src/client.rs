@@ -1447,7 +1447,7 @@ mod test {
             .await
             .unwrap();
 
-            assert_eq!(client.update().await, Ok(true));
+            assert_matches!(client.update().await, Ok(true));
             assert_eq!(client.tuf.root().version(), 1);
 
             assert_eq!(
@@ -1503,7 +1503,7 @@ mod test {
             ////
             // Finally, check that the update brings us to version 3.
 
-            assert_eq!(client.update().await, Ok(true));
+            assert_matches!(client.update().await, Ok(true));
             assert_eq!(client.tuf.root().version(), 3);
 
             assert_eq!(
@@ -1668,7 +1668,7 @@ mod test {
 
         ////
         // Ensure client doesn't fetch previous version (1).
-        assert_eq!(client.update().await, Ok(true));
+        assert_matches!(client.update().await, Ok(true));
         assert_eq!(client.tuf.root().version(), 2);
 
         assert_eq!(client.root_version(), 2);
@@ -1822,7 +1822,7 @@ mod test {
                 .await
                 .unwrap();
 
-        assert_eq!(client.update().await, Ok(true));
+        assert_matches!(client.update().await, Ok(true));
 
         // Verify fetch_target_description returns expected target metadata
         let description = client
