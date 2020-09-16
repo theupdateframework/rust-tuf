@@ -34,9 +34,10 @@ fn simple_delegation() {
         .timestamp_key(timestamp_key.public().clone())
         .signed::<Json>(&root_key)
         .unwrap();
+    let raw_root = root.to_raw().unwrap();
 
     let mut tuf =
-        Tuf::<Json>::from_root_with_trusted_keys(root, 1, once(root_key.public())).unwrap();
+        Tuf::<Json>::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public())).unwrap();
 
     //// build the snapshot and timestamp ////
 
@@ -51,14 +52,16 @@ fn simple_delegation() {
         )
         .signed::<Json>(&snapshot_key)
         .unwrap();
+    let raw_snapshot = snapshot.to_raw().unwrap();
 
     let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
         .unwrap()
         .signed::<Json>(&timestamp_key)
         .unwrap();
+    let raw_timestamp = timestamp.to_raw().unwrap();
 
-    tuf.update_timestamp(timestamp).unwrap();
-    tuf.update_snapshot(snapshot).unwrap();
+    tuf.update_timestamp(&raw_timestamp).unwrap();
+    tuf.update_snapshot(&raw_snapshot).unwrap();
 
     //// build the targets ////
     let delegations = Delegations::new(
@@ -83,8 +86,9 @@ fn simple_delegation() {
         .delegations(delegations)
         .signed::<Json>(&targets_key)
         .unwrap();
+    let raw_targets = targets.to_raw().unwrap();
 
-    tuf.update_targets(targets).unwrap();
+    tuf.update_targets(&raw_targets).unwrap();
 
     //// build the delegation ////
     let target_file: &[u8] = b"bar";
@@ -97,11 +101,12 @@ fn simple_delegation() {
         .unwrap()
         .signed::<Json>(&delegation_key)
         .unwrap();
+    let raw_delegation = delegation.to_raw().unwrap();
 
     tuf.update_delegation(
         &MetadataPath::from_role(&Role::Targets),
         &MetadataPath::new("delegation").unwrap(),
-        delegation,
+        &raw_delegation,
     )
     .unwrap();
 
@@ -128,9 +133,10 @@ fn nested_delegation() {
         .timestamp_key(timestamp_key.public().clone())
         .signed::<Json>(&root_key)
         .unwrap();
+    let raw_root = root.to_raw().unwrap();
 
     let mut tuf =
-        Tuf::<Json>::from_root_with_trusted_keys(root, 1, once(root_key.public())).unwrap();
+        Tuf::<Json>::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public())).unwrap();
 
     //// build the snapshot and timestamp ////
 
@@ -149,14 +155,16 @@ fn nested_delegation() {
         )
         .signed::<Json>(&snapshot_key)
         .unwrap();
+    let raw_snapshot = snapshot.to_raw().unwrap();
 
     let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
         .unwrap()
         .signed::<Json>(&timestamp_key)
         .unwrap();
+    let raw_timestamp = timestamp.to_raw().unwrap();
 
-    tuf.update_timestamp(timestamp).unwrap();
-    tuf.update_snapshot(snapshot).unwrap();
+    tuf.update_timestamp(&raw_timestamp).unwrap();
+    tuf.update_snapshot(&raw_snapshot).unwrap();
 
     //// build the targets ////
 
@@ -184,8 +192,9 @@ fn nested_delegation() {
         .delegations(delegations)
         .signed::<Json>(&targets_key)
         .unwrap();
+    let raw_targets = targets.to_raw().unwrap();
 
-    tuf.update_targets(targets).unwrap();
+    tuf.update_targets(&raw_targets).unwrap();
 
     //// build delegation A ////
 
@@ -206,11 +215,12 @@ fn nested_delegation() {
         .delegations(delegations)
         .signed::<Json>(&delegation_a_key)
         .unwrap();
+    let raw_delegation = delegation.to_raw().unwrap();
 
     tuf.update_delegation(
         &MetadataPath::from_role(&Role::Targets),
         &MetadataPath::new("delegation-a").unwrap(),
-        delegation,
+        &raw_delegation,
     )
     .unwrap();
 
@@ -227,11 +237,12 @@ fn nested_delegation() {
         .unwrap()
         .signed::<Json>(&delegation_b_key)
         .unwrap();
+    let raw_delegation = delegation.to_raw().unwrap();
 
     tuf.update_delegation(
         &MetadataPath::new("delegation-a").unwrap(),
         &MetadataPath::new("delegation-b").unwrap(),
-        delegation,
+        &raw_delegation,
     )
     .unwrap();
 
@@ -259,9 +270,10 @@ fn rejects_bad_delegation_signatures() {
         .timestamp_key(timestamp_key.public().clone())
         .signed::<Json>(&root_key)
         .unwrap();
+    let raw_root = root.to_raw().unwrap();
 
     let mut tuf =
-        Tuf::<Json>::from_root_with_trusted_keys(root, 1, once(root_key.public())).unwrap();
+        Tuf::<Json>::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public())).unwrap();
 
     //// build the snapshot and timestamp ////
 
@@ -276,14 +288,16 @@ fn rejects_bad_delegation_signatures() {
         )
         .signed::<Json>(&snapshot_key)
         .unwrap();
+    let raw_snapshot = snapshot.to_raw().unwrap();
 
     let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
         .unwrap()
         .signed::<Json>(&timestamp_key)
         .unwrap();
+    let raw_timestamp = timestamp.to_raw().unwrap();
 
-    tuf.update_timestamp(timestamp).unwrap();
-    tuf.update_snapshot(snapshot).unwrap();
+    tuf.update_timestamp(&raw_timestamp).unwrap();
+    tuf.update_snapshot(&raw_snapshot).unwrap();
 
     //// build the targets ////
     let delegations = Delegations::new(
@@ -308,8 +322,9 @@ fn rejects_bad_delegation_signatures() {
         .delegations(delegations)
         .signed::<Json>(&targets_key)
         .unwrap();
+    let raw_targets = targets.to_raw().unwrap();
 
-    tuf.update_targets(targets).unwrap();
+    tuf.update_targets(&raw_targets).unwrap();
 
     //// build the delegation ////
     let target_file: &[u8] = b"bar";
@@ -322,12 +337,13 @@ fn rejects_bad_delegation_signatures() {
         .unwrap()
         .signed::<Json>(&bad_delegation_key)
         .unwrap();
+    let raw_delegation = delegation.to_raw().unwrap();
 
     assert_matches!(
         tuf.update_delegation(
             &MetadataPath::from_role(&Role::Targets),
             &MetadataPath::new("delegation").unwrap(),
-            delegation
+            &raw_delegation
         ),
         Err(Error::VerificationFailure(_))
     );
@@ -371,9 +387,10 @@ fn diamond_delegation() {
         .timestamp_key(etc_key.public().clone())
         .signed::<Json>(&etc_key)
         .unwrap();
+    let raw_root = root.to_raw().unwrap();
 
     let mut tuf =
-        Tuf::<Json>::from_root_with_trusted_keys(root, 1, once(etc_key.public())).unwrap();
+        Tuf::<Json>::from_root_with_trusted_keys(&raw_root, 1, once(etc_key.public())).unwrap();
 
     //// build the snapshot and timestamp ////
 
@@ -396,14 +413,16 @@ fn diamond_delegation() {
         )
         .signed::<Json>(&etc_key)
         .unwrap();
+    let raw_snapshot = snapshot.to_raw().unwrap();
 
     let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
         .unwrap()
         .signed::<Json>(&etc_key)
         .unwrap();
+    let raw_timestamp = timestamp.to_raw().unwrap();
 
-    tuf.update_timestamp(timestamp).unwrap();
-    tuf.update_snapshot(snapshot).unwrap();
+    tuf.update_timestamp(&raw_timestamp).unwrap();
+    tuf.update_snapshot(&raw_snapshot).unwrap();
 
     //// build the targets ////
 
@@ -448,8 +467,9 @@ fn diamond_delegation() {
         .delegations(delegations)
         .signed::<Json>(&targets_key)
         .unwrap();
+    let raw_targets = targets.to_raw().unwrap();
 
-    tuf.update_targets(targets).unwrap();
+    tuf.update_targets(&raw_targets).unwrap();
 
     //// build delegation A ////
 
@@ -470,11 +490,12 @@ fn diamond_delegation() {
         .delegations(delegations)
         .signed::<Json>(&delegation_a_key)
         .unwrap();
+    let raw_delegation = delegation.to_raw().unwrap();
 
     tuf.update_delegation(
         &MetadataPath::from_role(&Role::Targets),
         &MetadataPath::new("delegation-a").unwrap(),
-        delegation,
+        &raw_delegation,
     )
     .unwrap();
 
@@ -498,11 +519,12 @@ fn diamond_delegation() {
         .delegations(delegations)
         .signed::<Json>(&delegation_b_key)
         .unwrap();
+    let raw_delegation = delegation.to_raw().unwrap();
 
     tuf.update_delegation(
         &MetadataPath::from_role(&Role::Targets),
         &MetadataPath::new("delegation-b").unwrap(),
-        delegation,
+        &raw_delegation,
     )
     .unwrap();
 
@@ -526,13 +548,14 @@ fn diamond_delegation() {
         .unwrap()
         .signed::<Json>(&delegation_c_key)
         .unwrap();
+    let raw_delegation = delegation.to_raw().unwrap();
 
     //// Verify delegation-c is valid, but only when updated through delegation-a.
 
     tuf.update_delegation(
         &MetadataPath::new("delegation-a").unwrap(),
         &MetadataPath::new("delegation-c").unwrap(),
-        delegation.clone(),
+        &raw_delegation,
     )
     .unwrap();
 
@@ -540,7 +563,7 @@ fn diamond_delegation() {
         tuf.update_delegation(
             &MetadataPath::new("delegation-b").unwrap(),
             &MetadataPath::new("delegation-c").unwrap(),
-            delegation
+            &raw_delegation
         ),
         Err(Error::VerificationFailure(_))
     );

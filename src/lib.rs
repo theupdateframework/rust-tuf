@@ -120,6 +120,7 @@ pub mod tuf;
 
 mod format_hex;
 mod util;
+mod verify;
 
 pub use crate::error::*;
 pub use crate::tuf::*;

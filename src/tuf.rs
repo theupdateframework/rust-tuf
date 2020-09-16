@@ -9,19 +9,20 @@ use crate::crypto::PublicKey;
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
-    Delegations, Metadata, MetadataPath, Role, RootMetadata, SignedMetadata, SnapshotMetadata,
-    TargetDescription, TargetsMetadata, TimestampMetadata, VirtualTargetPath,
+    Delegations, Metadata, MetadataPath, RawSignedMetadata, Role, RootMetadata, SignedMetadata,
+    SnapshotMetadata, TargetDescription, TargetsMetadata, TimestampMetadata, VirtualTargetPath,
 };
+use crate::verify::{self, Verified};
 use crate::Result;
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
 pub struct Tuf<D: DataInterchange> {
-    trusted_root: RootMetadata,
-    trusted_snapshot: Option<SnapshotMetadata>,
-    trusted_targets: Option<TargetsMetadata>,
-    trusted_timestamp: Option<TimestampMetadata>,
-    trusted_delegations: HashMap<MetadataPath, TargetsMetadata>,
+    trusted_root: Verified<RootMetadata>,
+    trusted_snapshot: Option<Verified<SnapshotMetadata>>,
+    trusted_targets: Option<Verified<TargetsMetadata>>,
+    trusted_timestamp: Option<Verified<TimestampMetadata>>,
+    trusted_delegations: HashMap<MetadataPath, Verified<TargetsMetadata>>,
     interchange: PhantomData<D>,
 }
 
@@ -30,15 +31,41 @@ impl<D: DataInterchange> Tuf<D> {
     /// signed metadata. The signed root metadata must be signed with at least a `root_threshold`
     /// of the provided root_keys. It is not necessary for the root metadata to contain these keys.
     pub fn from_root_with_trusted_keys<'a, I>(
-        signed_root: SignedMetadata<D, RootMetadata>,
+        raw_root: &RawSignedMetadata<D, RootMetadata>,
         root_threshold: u32,
         root_keys: I,
     ) -> Result<Self>
     where
         I: IntoIterator<Item = &'a PublicKey>,
     {
-        signed_root.verify(root_threshold, root_keys)?;
-        Self::from_trusted_root(signed_root)
+        let verified_root = {
+            // Make sure the keys signed the root.
+            let new_root = verify::verify_signatures(raw_root, root_threshold, root_keys)?;
+
+            // Make sure the root signed itself.
+            let verified_root = verify::verify_signatures(
+                raw_root,
+                new_root.root().threshold(),
+                new_root.keys().iter().filter_map(|(k, v)| {
+                    if new_root.root().key_ids().contains(k) {
+                        Some(v)
+                    } else {
+                        None
+                    }
+                }),
+            )?;
+
+            verified_root
+        };
+
+        Ok(Tuf {
+            trusted_root: verified_root,
+            trusted_snapshot: None,
+            trusted_targets: None,
+            trusted_timestamp: None,
+            trusted_delegations: HashMap::new(),
+            interchange: PhantomData,
+        })
     }
 
     /// Create a new [`Tuf`] struct from a piece of metadata that is assumed to be trusted.
@@ -46,14 +73,21 @@ impl<D: DataInterchange> Tuf<D> {
     /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
     /// the related method [`Tuf::from_root_with_trusted_keys`].
     pub fn from_trusted_root(signed_root: SignedMetadata<D, RootMetadata>) -> Result<Self> {
-        let verified = {
+        let verified_root = {
             let root = signed_root.assume_valid()?;
 
-            signed_root.verify(root.root().threshold(), root.root_keys())?
+            // Make sure the root signed itself.
+            let verified_root = verify::verify_signatures(
+                &signed_root.to_raw()?,
+                root.root().threshold(),
+                root.root_keys(),
+            )?;
+
+            verified_root
         };
 
         Ok(Tuf {
-            trusted_root: verified,
+            trusted_root: verified_root,
             trusted_snapshot: None,
             trusted_targets: None,
             trusted_timestamp: None,
@@ -63,27 +97,27 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// An immutable reference to the root metadata.
-    pub fn trusted_root(&self) -> &RootMetadata {
+    pub fn trusted_root(&self) -> &Verified<RootMetadata> {
         &self.trusted_root
     }
 
     /// An immutable reference to the optional snapshot metadata.
-    pub fn trusted_snapshot(&self) -> Option<&SnapshotMetadata> {
+    pub fn trusted_snapshot(&self) -> Option<&Verified<SnapshotMetadata>> {
         self.trusted_snapshot.as_ref()
     }
 
     /// An immutable reference to the optional targets metadata.
-    pub fn trusted_targets(&self) -> Option<&TargetsMetadata> {
+    pub fn trusted_targets(&self) -> Option<&Verified<TargetsMetadata>> {
         self.trusted_targets.as_ref()
     }
 
     /// An immutable reference to the optional timestamp metadata.
-    pub fn trusted_timestamp(&self) -> Option<&TimestampMetadata> {
+    pub fn trusted_timestamp(&self) -> Option<&Verified<TimestampMetadata>> {
         self.trusted_timestamp.as_ref()
     }
 
     /// An immutable reference to the delegated metadata.
-    pub fn trusted_delegations(&self) -> &HashMap<MetadataPath, TargetsMetadata> {
+    pub fn trusted_delegations(&self) -> &HashMap<MetadataPath, Verified<TargetsMetadata>> {
         &self.trusted_delegations
     }
 
@@ -116,16 +150,32 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// Verify and update the root metadata.
-    pub fn update_root(
-        &mut self,
-        new_signed_root: SignedMetadata<D, RootMetadata>,
-    ) -> Result<bool> {
+    pub fn update_root(&mut self, raw_root: &RawSignedMetadata<D, RootMetadata>) -> Result<bool> {
         let verified = {
             let trusted_root = &self.trusted_root;
 
-            // First, check that the new root was signed by the old root.
-            let new_root = new_signed_root
-                .verify(trusted_root.root().threshold(), trusted_root.root_keys())?;
+            // TUF-1.0.5 §5.1.3:
+            //
+            //     1.3. Check signatures. Version N+1 of the root metadata file MUST have been
+            //       signed by: (1) a threshold of keys specified in the trusted root metadata file
+            //       (version N), and (2) a threshold of keys specified in the new root metadata
+            //       file being validated (version N+1). If version N+1 is not signed as required,
+            //       discard it, abort the update cycle, and report the signature failure. On the
+            //       next update cycle, begin at step 0 and version N of the root metadata file.
+
+            // Verify the trusted root signed the new root.
+            let new_root = verify::verify_signatures(
+                raw_root,
+                trusted_root.root().threshold(),
+                trusted_root.root_keys(),
+            )?;
+
+            // Verify the new root signed itself.
+            let new_root = verify::verify_signatures(
+                raw_root,
+                new_root.root().threshold(),
+                new_root.root_keys(),
+            )?;
 
             // Next, make sure the new root has a higher version than the old root.
             if new_root.version() == trusted_root.version() {
@@ -142,8 +192,7 @@ impl<D: DataInterchange> Tuf<D> {
                 )));
             }
 
-            // Finally, make sure the new root was signed by the keys in the new root.
-            new_signed_root.verify(new_root.root().threshold(), new_root.root_keys())?
+            new_root
         };
 
         self.purge_metadata();
@@ -157,16 +206,22 @@ impl<D: DataInterchange> Tuf<D> {
     /// Returns a reference to the parsed metadata if the metadata was newer.
     pub fn update_timestamp(
         &mut self,
-        new_signed_timestamp: SignedMetadata<D, TimestampMetadata>,
-    ) -> Result<Option<&TimestampMetadata>> {
+        raw_timestamp: &RawSignedMetadata<D, TimestampMetadata>,
+    ) -> Result<Option<&Verified<TimestampMetadata>>> {
         let verified = {
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Should we
             // check if the root metadata is expired here? We do that in the other `Tuf::update_*`
             // methods, but not here.
             let trusted_root = &self.trusted_root;
 
-            // First, make sure the root signed the metadata.
-            let new_timestamp = new_signed_timestamp.verify(
+            // TUF-1.0.5 §5.2.1:
+            //
+            //     Check signatures. The new timestamp metadata file must have been signed by a
+            //     threshold of keys specified in the trusted root metadata file. If the new
+            //     timestamp metadata file is not properly signed, discard it, abort the update
+            //     cycle, and report the signature failure.
+            let new_timestamp = verify::verify_signatures(
+                raw_timestamp,
                 trusted_root.timestamp().threshold(),
                 trusted_root.timestamp_keys(),
             )?;
@@ -203,7 +258,7 @@ impl<D: DataInterchange> Tuf<D> {
     /// Verify and update the snapshot metadata.
     pub fn update_snapshot(
         &mut self,
-        new_signed_snapshot: SignedMetadata<D, SnapshotMetadata>,
+        raw_snapshot: &RawSignedMetadata<D, SnapshotMetadata>,
     ) -> Result<bool> {
         let verified = {
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
@@ -222,7 +277,30 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
-            let new_snapshot = new_signed_snapshot.verify(
+            // TUF-1.0.5 §5.3.1:
+            //
+            //     Check against timestamp metadata. The hashes and version number of the new
+            //     snapshot metadata file MUST match the hashes (if any) and version number listed
+            //     in the trusted timestamp metadata. If hashes and version do not match, discard
+            //     the new snapshot metadata, abort the update cycle, and report the failure.
+
+            // FIXME: rust-tuf checks the hash during download, but it would be better if we
+            // checked the hash here to make it easier to validate we've correctly implemented the
+            // spec.
+
+            // NOTE(https://github.com/theupdateframework/specification/pull/112): Technically
+            // we're supposed to check the version before checking the signature, but we do it
+            // afterwards. That PR proposes formally moving the version check to after signature
+            // verification.
+
+            // TUF-1.0.5 §5.3.2:
+            //
+            //     The new snapshot metadata file MUST have been signed by a threshold of keys
+            //     specified in the trusted root metadata file. If the new snapshot metadata file
+            //     is not signed as required, discard it, abort the update cycle, and report the
+            //     signature failure.
+            let new_snapshot = verify::verify_signatures(
+                raw_snapshot,
                 trusted_root.snapshot().threshold(),
                 trusted_root.snapshot_keys(),
             )?;
@@ -290,7 +368,7 @@ impl<D: DataInterchange> Tuf<D> {
     /// Verify and update the targets metadata.
     pub fn update_targets(
         &mut self,
-        new_signed_targets: SignedMetadata<D, TargetsMetadata>,
+        raw_targets: &RawSignedMetadata<D, TargetsMetadata>,
     ) -> Result<bool> {
         let verified = {
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
@@ -319,7 +397,32 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
-            let new_targets = new_signed_targets.verify(
+            // TUF-1.0.5 §5.4.1:
+            //
+            //     Check against snapshot metadata. The hashes and version number of the new
+            //     targets metadata file MUST match the hashes (if any) and version number listed
+            //     in the trusted snapshot metadata. This is done, in part, to prevent a
+            //     mix-and-match attack by man-in-the-middle attackers. If the new targets metadata
+            //     file does not match, discard it, abort the update cycle, and report the failure.
+
+            // FIXME: rust-tuf checks the hash during download, but it would be better if we
+            // checked the hash here to make it easier to validate we've correctly implemented the
+            // spec.
+
+            // NOTE(https://github.com/theupdateframework/specification/pull/112): Technically
+            // we're supposed to check the version before checking the signature, but we do it
+            // afterwards. That PR proposes formally moving the version check to after signature
+            // verification.
+
+            // TUF-1.0.5 §5.4.2:
+            //
+            //     Check for an arbitrary software attack. The new targets metadata file MUST have
+            //     been signed by a threshold of keys specified in the trusted root metadata file.
+            //     If the new targets metadata file is not signed as required, discard it, abort
+            //     the update cycle, and report the failure.
+
+            let new_targets = verify::verify_signatures(
+                raw_targets,
                 trusted_root.targets().threshold(),
                 trusted_root.targets_keys(),
             )?;
@@ -403,7 +506,7 @@ impl<D: DataInterchange> Tuf<D> {
         &mut self,
         parent_role: &MetadataPath,
         role: &MetadataPath,
-        new_signed_delegation: SignedMetadata<D, TargetsMetadata>,
+        raw_delegation: &RawSignedMetadata<D, TargetsMetadata>,
     ) -> Result<bool> {
         let verified = {
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
@@ -443,6 +546,14 @@ impl<D: DataInterchange> Tuf<D> {
             // FIXME(#279) update_delegation trusts tuf::Client to provide too much information,
             // making this difficult to verify as correct.
 
+            // TUF-1.0.5 §5.4.1:
+            //
+            //     Check against snapshot metadata. The hashes and version number of the new
+            //     targets metadata file MUST match the hashes (if any) and version number listed
+            //     in the trusted snapshot metadata. This is done, in part, to prevent a
+            //     mix-and-match attack by man-in-the-middle attackers. If the new targets metadata
+            //     file does not match, discard it, abort the update cycle, and report the failure.
+
             let (threshold, keys) = self
                 .find_delegation_threshold_and_keys(parent_role, role)
                 .ok_or(Error::VerificationFailure(format!(
@@ -451,7 +562,7 @@ impl<D: DataInterchange> Tuf<D> {
                     role
                 )))?;
 
-            let new_delegation = new_signed_delegation.verify(threshold, keys)?;
+            let new_delegation = verify::verify_signatures(raw_delegation, threshold, keys)?;
 
             if trusted_delegation_version == trusted_delegation_description.version() {
                 return Ok(false);
@@ -651,9 +762,10 @@ mod test {
             .timestamp_key(KEYS[0].public().clone())
             .signed::<Json>(&root_key)
             .unwrap();
+        let raw_root = root.to_raw().unwrap();
 
         assert_matches!(
-            Tuf::from_root_with_trusted_keys(root, 1, once(root_key.public())),
+            Tuf::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public())),
             Ok(_)
         );
     }
@@ -667,9 +779,10 @@ mod test {
             .timestamp_key(KEYS[0].public().clone())
             .signed::<Json>(&KEYS[0])
             .unwrap();
+        let raw_root = root.to_raw().unwrap();
 
         assert_matches!(
-            Tuf::from_root_with_trusted_keys(root, 1, once(KEYS[1].public())),
+            Tuf::from_root_with_trusted_keys(&raw_root, 1, once(KEYS[1].public())),
             Err(Error::VerificationFailure(s)) if s == "Signature threshold not met: 0/1"
         );
     }
@@ -697,11 +810,12 @@ mod test {
 
         // add the original key's signature to make it cross signed
         root.add_signature(&KEYS[0]).unwrap();
+        let raw_root = root.to_raw().unwrap();
 
-        assert_matches!(tuf.update_root(root.clone()), Ok(true));
+        assert_matches!(tuf.update_root(&raw_root), Ok(true));
 
         // second update should do nothing
-        assert_matches!(tuf.update_root(root), Ok(false));
+        assert_matches!(tuf.update_root(&raw_root), Ok(false));
     }
 
     #[test]
@@ -723,8 +837,9 @@ mod test {
             .timestamp_key(KEYS[1].public().clone())
             .signed::<Json>(&KEYS[1])
             .unwrap();
+        let raw_root = root.to_raw().unwrap();
 
-        assert!(tuf.update_root(root).is_err());
+        assert!(tuf.update_root(&raw_root).is_err());
     }
 
     #[test]
@@ -748,15 +863,15 @@ mod test {
                 .unwrap()
                 .signed::<Json>(&KEYS[1])
                 .unwrap();
-        let _parsed_timestamp = timestamp.assume_valid().unwrap();
+        let raw_timestamp = timestamp.to_raw().unwrap();
 
         assert_matches!(
-            tuf.update_timestamp(timestamp.clone()),
+            tuf.update_timestamp(&raw_timestamp),
             Ok(Some(_parsed_timestamp))
         );
 
         // second update should do nothing
-        assert_matches!(tuf.update_timestamp(timestamp), Ok(None))
+        assert_matches!(tuf.update_timestamp(&raw_timestamp), Ok(None))
     }
 
     #[test]
@@ -782,7 +897,9 @@ mod test {
                 .signed::<Json>(&KEYS[0])
                 .unwrap();
 
-        assert!(tuf.update_timestamp(timestamp).is_err())
+        let raw_timestamp = timestamp.to_raw().unwrap();
+
+        assert!(tuf.update_timestamp(&raw_timestamp).is_err())
     }
 
     #[test]
@@ -798,19 +915,21 @@ mod test {
         let mut tuf = Tuf::from_trusted_root(root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new().signed(&KEYS[1]).unwrap();
+        let raw_snapshot = snapshot.to_raw().unwrap();
 
         let timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 .signed::<Json>(&KEYS[2])
                 .unwrap();
+        let raw_timestamp = timestamp.to_raw().unwrap();
 
-        tuf.update_timestamp(timestamp).unwrap();
+        tuf.update_timestamp(&raw_timestamp).unwrap();
 
-        assert_matches!(tuf.update_snapshot(snapshot.clone()), Ok(true));
+        assert_matches!(tuf.update_snapshot(&raw_snapshot), Ok(true));
 
         // second update should do nothing
-        assert_matches!(tuf.update_snapshot(snapshot), Ok(false));
+        assert_matches!(tuf.update_snapshot(&raw_snapshot), Ok(false));
     }
 
     #[test]
@@ -828,6 +947,7 @@ mod test {
         let snapshot = SnapshotMetadataBuilder::new()
             .signed::<Json>(&KEYS[2])
             .unwrap();
+        let raw_snapshot = snapshot.to_raw().unwrap();
 
         let timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
@@ -835,10 +955,11 @@ mod test {
                 // sign it with the targets key
                 .signed::<Json>(&KEYS[2])
                 .unwrap();
+        let raw_timestamp = timestamp.to_raw().unwrap();
 
-        tuf.update_timestamp(timestamp).unwrap();
+        tuf.update_timestamp(&raw_timestamp).unwrap();
 
-        assert!(tuf.update_snapshot(snapshot).is_err());
+        assert!(tuf.update_snapshot(&raw_snapshot).is_err());
     }
 
     #[test]
@@ -863,15 +984,17 @@ mod test {
                 .unwrap()
                 .signed::<Json>(&KEYS[2])
                 .unwrap();
+        let raw_timestamp = timestamp.to_raw().unwrap();
 
-        tuf.update_timestamp(timestamp).unwrap();
+        tuf.update_timestamp(&raw_timestamp).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .version(1)
             .signed::<Json>(&KEYS[1])
             .unwrap();
+        let raw_snapshot = snapshot.to_raw().unwrap();
 
-        assert!(tuf.update_snapshot(snapshot).is_err());
+        assert!(tuf.update_snapshot(&raw_snapshot).is_err());
     }
 
     #[test]
@@ -884,31 +1007,34 @@ mod test {
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
+        let mut tuf = Tuf::from_trusted_root(root).unwrap();
+
         let signed_targets = TargetsMetadataBuilder::new()
             .signed::<Json>(&KEYS[2])
             .unwrap();
+        let raw_targets = signed_targets.to_raw().unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .insert_metadata(&signed_targets, &[HashAlgorithm::Sha256])
             .unwrap()
             .signed::<Json>(&KEYS[1])
             .unwrap();
+        let raw_snapshot = snapshot.to_raw().unwrap();
 
         let timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 .signed::<Json>(&KEYS[3])
                 .unwrap();
+        let raw_timestamp = timestamp.to_raw().unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(root).unwrap();
+        tuf.update_timestamp(&raw_timestamp).unwrap();
+        tuf.update_snapshot(&raw_snapshot).unwrap();
 
-        tuf.update_timestamp(timestamp).unwrap();
-        tuf.update_snapshot(snapshot).unwrap();
-
-        assert_matches!(tuf.update_targets(signed_targets.clone()), Ok(true));
+        assert_matches!(tuf.update_targets(&raw_targets), Ok(true));
 
         // second update should do nothing
-        assert_matches!(tuf.update_targets(signed_targets), Ok(false));
+        assert_matches!(tuf.update_targets(&raw_targets), Ok(false));
     }
 
     #[test]
@@ -927,23 +1053,26 @@ mod test {
             // sign it with the timestamp key
             .signed::<Json>(&KEYS[3])
             .unwrap();
+        let raw_targets = signed_targets.to_raw().unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .insert_metadata(&signed_targets, &[HashAlgorithm::Sha256])
             .unwrap()
             .signed::<Json>(&KEYS[1])
             .unwrap();
+        let raw_snapshot = snapshot.to_raw().unwrap();
 
         let timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 .signed::<Json>(&KEYS[3])
                 .unwrap();
+        let raw_timestamp = timestamp.to_raw().unwrap();
 
-        tuf.update_timestamp(timestamp).unwrap();
-        tuf.update_snapshot(snapshot).unwrap();
+        tuf.update_timestamp(&raw_timestamp).unwrap();
+        tuf.update_snapshot(&raw_snapshot).unwrap();
 
-        assert!(tuf.update_targets(signed_targets).is_err());
+        assert!(tuf.update_targets(&raw_targets).is_err());
     }
 
     #[test]
@@ -968,21 +1097,24 @@ mod test {
             .unwrap()
             .signed::<Json>(&KEYS[1])
             .unwrap();
+        let raw_snapshot = snapshot.to_raw().unwrap();
 
         let timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 .signed::<Json>(&KEYS[3])
                 .unwrap();
+        let raw_timestamp = timestamp.to_raw().unwrap();
 
-        tuf.update_timestamp(timestamp).unwrap();
-        tuf.update_snapshot(snapshot).unwrap();
+        tuf.update_timestamp(&raw_timestamp).unwrap();
+        tuf.update_snapshot(&raw_snapshot).unwrap();
 
         let signed_targets = TargetsMetadataBuilder::new()
             .version(1)
             .signed::<Json>(&KEYS[2])
             .unwrap();
+        let raw_targets = signed_targets.to_raw().unwrap();
 
-        assert!(tuf.update_targets(signed_targets).is_err());
+        assert!(tuf.update_targets(&raw_targets).is_err());
     }
 }

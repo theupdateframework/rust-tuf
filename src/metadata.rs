@@ -265,7 +265,10 @@ where
     }
 
     /// Parse this metadata.
-    pub fn parse(&self) -> Result<SignedMetadata<D, M>> {
+    ///
+    /// **WARNING**: This does not verify signatures, so it exposes users to potential parser
+    /// exploits.
+    pub fn parse_untrusted(&self) -> Result<SignedMetadata<D, M>> {
         D::from_slice(&self.bytes)
     }
 }
@@ -2484,7 +2487,7 @@ mod test {
             .build()
             .to_raw()
             .unwrap()
-            .parse()
+            .parse_untrusted()
             .unwrap();
 
         metadata.as_object_mut().unwrap().insert(
@@ -2501,7 +2504,7 @@ mod test {
             .build()
             .to_raw()
             .unwrap()
-            .parse()
+            .parse_untrusted()
             .unwrap();
 
         // Ensure the signatures are valid as-is.

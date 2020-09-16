@@ -3,8 +3,7 @@
 use crate::crypto::{self, HashAlgorithm, HashValue};
 use crate::interchange::DataInterchange;
 use crate::metadata::{
-    Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, SignedMetadata, TargetDescription,
-    TargetPath,
+    Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, TargetDescription, TargetPath,
 };
 use crate::util::SafeAsyncRead;
 use crate::{Error, Result};
@@ -181,32 +180,6 @@ where
     R: RepositoryProvider<D>,
     D: DataInterchange + Sync,
 {
-    /// Fetch and parse metadata identified by `meta_path`, `version`, and
-    /// [`D::extension()`][extension].
-    ///
-    /// If `max_length` is provided, this method will return an error if the metadata exceeds
-    /// `max_length` bytes. If `hash_data` is provided, this method will return and error if the
-    /// hashed bytes of the metadata do not match `hash_data`.
-    ///
-    /// [extension]: crate::interchange::DataInterchange::extension
-    pub(crate) async fn fetch_metadata<'a, M>(
-        &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-        max_length: Option<usize>,
-        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
-    ) -> Result<(RawSignedMetadata<D, M>, SignedMetadata<D, M>)>
-    where
-        M: Metadata,
-    {
-        let raw_signed_meta = self
-            .fetch_raw_metadata(meta_path, version, max_length, hash_data)
-            .await?;
-        let signed_meta = raw_signed_meta.parse()?;
-
-        Ok((raw_signed_meta, signed_meta))
-    }
-
     /// Fetch metadata identified by `meta_path`, `version`, and [`D::extension()`][extension].
     ///
     /// If `max_length` is provided, this method will return an error if the metadata exceeds
@@ -214,7 +187,7 @@ where
     /// hashed bytes of the metadata do not match `hash_data`.
     ///
     /// [extension]: crate::interchange::DataInterchange::extension
-    async fn fetch_raw_metadata<'a, M>(
+    pub(crate) async fn fetch_metadata<'a, M>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
@@ -381,7 +354,7 @@ mod test {
 
             assert_matches!(
                 client
-                    .fetch_raw_metadata::<RootMetadata>(
+                    .fetch_metadata::<RootMetadata>(
                         &path,
                         &version,
                         None,
@@ -434,7 +407,7 @@ mod test {
 
             assert_matches!(
                 client
-                    .fetch_raw_metadata::<RootMetadata>(&path, &version, Some(100), None)
+                    .fetch_metadata::<RootMetadata>(&path, &version, Some(100), None)
                     .await,
                 Ok(_metadata)
             );
