@@ -305,10 +305,10 @@ where
 mod test {
     use super::*;
     use crate::interchange::Json;
-    use matches::assert_matches;
     use crate::metadata::{MetadataPath, MetadataVersion, Role, RootMetadata, SnapshotMetadata};
     use crate::repository::EphemeralRepository;
     use futures_executor::block_on;
+    use matches::assert_matches;
 
     #[test]
     fn repository_forwards_not_found_error() {
@@ -425,7 +425,7 @@ mod test {
             let path = MetadataPath::from_role(&Role::Root);
             let version = MetadataVersion::None;
             let data: &[u8] = b"reasonably sized metadata";
-            let _metadata  = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
+            let _metadata = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
 
             let repo = EphemeralRepository::new();
             repo.store_metadata(&path, &version, data).await.unwrap();
