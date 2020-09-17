@@ -378,7 +378,7 @@ where
         };
 
         // FIXME(#253) verify the trusted root version matches the provided version.
-        let root_version = MetadataVersion::Number(tuf.root().version());
+        let root_version = MetadataVersion::Number(tuf.trusted_root().version());
 
         let mut client = Client {
             tuf,
@@ -486,7 +486,7 @@ where
         let tuf = Tuf::from_root_with_trusted_keys(root, root_threshold, trusted_root_keys)?;
 
         // FIXME(#253) verify the trusted root version matches the provided version.
-        let root_version = MetadataVersion::Number(tuf.root().version());
+        let root_version = MetadataVersion::Number(tuf.trusted_root().version());
 
         let mut client = Client {
             tuf,
@@ -544,27 +544,27 @@ where
 
     /// Returns the current trusted root version.
     pub fn root_version(&self) -> u32 {
-        self.tuf.root().version()
+        self.tuf.trusted_root().version()
     }
 
     /// Returns the current trusted timestamp version.
     pub fn timestamp_version(&self) -> Option<u32> {
-        Some(self.tuf.timestamp()?.version())
+        Some(self.tuf.trusted_timestamp()?.version())
     }
 
     /// Returns the current trusted snapshot version.
     pub fn snapshot_version(&self) -> Option<u32> {
-        Some(self.tuf.snapshot()?.version())
+        Some(self.tuf.trusted_snapshot()?.version())
     }
 
     /// Returns the current trusted targets version.
     pub fn targets_version(&self) -> Option<u32> {
-        Some(self.tuf.targets()?.version())
+        Some(self.tuf.trusted_targets()?.version())
     }
 
     /// Returns the current trusted delegations version for a given role.
     pub fn delegations_version(&self, role: &MetadataPath) -> Option<u32> {
-        Some(self.tuf.delegations().get(role)?.version())
+        Some(self.tuf.trusted_delegations().get(role)?.version())
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -586,20 +586,20 @@ where
         // this root metadata claims to be.
         let latest_version = latest_root.parse_version_untrusted()?;
 
-        if latest_version < self.tuf.root().version() {
+        if latest_version < self.tuf.trusted_root().version() {
             return Err(Error::VerificationFailure(format!(
                 "Latest root version is lower than current root version: {} < {}",
                 latest_version,
-                self.tuf.root().version()
+                self.tuf.trusted_root().version()
             )));
-        } else if latest_version == self.tuf.root().version() {
+        } else if latest_version == self.tuf.trusted_root().version() {
             return Ok(false);
         }
 
         let err_msg = "TUF claimed no update occurred when one should have. \
                        This is a programming error. Please report this as a bug.";
 
-        for i in (self.tuf.root().version() + 1)..latest_version {
+        for i in (self.tuf.trusted_root().version() + 1)..latest_version {
             let version = MetadataVersion::Number(i);
 
             let (raw_signed_root, signed_root) = self
@@ -628,7 +628,7 @@ where
         self.store_metadata(&root_path, &MetadataVersion::None, &raw_latest_root)
             .await;
 
-        if self.tuf.root().expires() <= &Utc::now() {
+        if self.tuf.trusted_root().expires() <= &Utc::now() {
             error!("Root metadata expired, potential freeze attack");
             return Err(Error::ExpiredMetadata(Role::Root));
         }
@@ -666,19 +666,25 @@ where
         // 5.3.1 Check against timestamp metadata. The hashes and version number listed in the
         // timestamp metadata. If hashes and version do not match, discard the new snapshot
         // metadata, abort the update cycle, and report the failure.
-        let snapshot_description = match self.tuf.timestamp() {
+        let snapshot_description = match self.tuf.trusted_timestamp() {
             Some(ts) => Ok(ts.snapshot()),
             None => Err(Error::MissingMetadata(Role::Timestamp)),
         }?
         .clone();
 
-        if snapshot_description.version() <= self.tuf.snapshot().map(|s| s.version()).unwrap_or(0) {
+        if snapshot_description.version()
+            <= self
+                .tuf
+                .trusted_snapshot()
+                .map(|s| s.version())
+                .unwrap_or(0)
+        {
             return Ok(false);
         }
 
         let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
 
-        let version = if self.tuf.root().consistent_snapshot() {
+        let version = if self.tuf.trusted_root().consistent_snapshot() {
             MetadataVersion::Number(snapshot_description.version())
         } else {
             MetadataVersion::None
@@ -709,7 +715,7 @@ where
 
     /// Returns `true` if an update occurred and `false` otherwise.
     async fn update_targets(&mut self) -> Result<bool> {
-        let targets_description = match self.tuf.snapshot() {
+        let targets_description = match self.tuf.trusted_snapshot() {
             Some(sn) => match sn.meta().get(&MetadataPath::from_role(&Role::Targets)) {
                 Some(d) => Ok(d),
                 None => Err(Error::VerificationFailure(
@@ -722,13 +728,15 @@ where
         }?
         .clone();
 
-        if targets_description.version() <= self.tuf.targets().map(|t| t.version()).unwrap_or(0) {
+        if targets_description.version()
+            <= self.tuf.trusted_targets().map(|t| t.version()).unwrap_or(0)
+        {
             return Ok(false);
         }
 
         let (alg, value) = crypto::hash_preference(targets_description.hashes())?;
 
-        let version = if self.tuf.root().consistent_snapshot() {
+        let version = if self.tuf.trusted_root().consistent_snapshot() {
             MetadataVersion::Number(targets_description.version())
         } else {
             MetadataVersion::None
@@ -790,7 +798,7 @@ where
 
         let snapshot = self
             .tuf
-            .snapshot()
+            .trusted_snapshot()
             .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
             .clone();
         let (_, target_description) = self
@@ -808,7 +816,7 @@ where
 
         // According to TUF section 5.5.2, when consistent snapshot is enabled, target files should
         // be found at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.
-        if self.tuf.root().consistent_snapshot() {
+        if self.tuf.trusted_root().consistent_snapshot() {
             let (_, value) = crypto::hash_preference(target_description.hashes())?;
             let target = target.with_hash_prefix(value)?;
             self.remote.fetch_target(&target, &target_description).await
@@ -837,7 +845,7 @@ where
         // tuf in the loop below
         let (targets, targets_role) = match targets {
             Some((t, role)) => (t.clone(), role),
-            None => match self.tuf.targets() {
+            None => match self.tuf.trusted_targets() {
                 Some(t) => (t.clone(), MetadataPath::from_role(&Role::Targets)),
                 None => {
                     return (
@@ -877,7 +885,7 @@ where
                 Err(e) => return (delegation.terminating(), Err(e)),
             };
 
-            let version = if self.tuf.root().consistent_snapshot() {
+            let version = if self.tuf.trusted_root().consistent_snapshot() {
                 MetadataVersion::Hash(value.clone())
             } else {
                 MetadataVersion::None
@@ -940,7 +948,7 @@ where
 
                     let meta = self
                         .tuf
-                        .delegations()
+                        .trusted_delegations()
                         .get(delegation.role())
                         .unwrap()
                         .clone();
@@ -1448,7 +1456,7 @@ mod test {
             .unwrap();
 
             assert_matches!(client.update().await, Ok(true));
-            assert_eq!(client.tuf.root().version(), 1);
+            assert_eq!(client.tuf.trusted_root().version(), 1);
 
             assert_eq!(
                 root1.to_raw().unwrap(),
@@ -1504,7 +1512,7 @@ mod test {
             // Finally, check that the update brings us to version 3.
 
             assert_matches!(client.update().await, Ok(true));
-            assert_eq!(client.tuf.root().version(), 3);
+            assert_eq!(client.tuf.trusted_root().version(), 3);
 
             assert_eq!(
                 root3.to_raw().unwrap(),
@@ -1669,7 +1677,7 @@ mod test {
         ////
         // Ensure client doesn't fetch previous version (1).
         assert_matches!(client.update().await, Ok(true));
-        assert_eq!(client.tuf.root().version(), 2);
+        assert_eq!(client.tuf.trusted_root().version(), 2);
 
         assert_eq!(client.root_version(), 2);
         assert_eq!(client.timestamp_version(), Some(1));
