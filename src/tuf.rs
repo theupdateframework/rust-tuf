@@ -180,7 +180,7 @@ impl<D: DataInterchange> Tuf<D> {
     /// Returns a reference to the parsed metadata if the metadata was newer.
     pub fn update_timestamp(
         &mut self,
-        signed_timestamp: SignedMetadata<D, TimestampMetadata>,
+        new_signed_timestamp: SignedMetadata<D, TimestampMetadata>,
     ) -> Result<Option<&TimestampMetadata>> {
         let verified = {
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Should we
@@ -189,7 +189,7 @@ impl<D: DataInterchange> Tuf<D> {
             let trusted_root = &self.trusted_root;
 
             // First, make sure the root signed the metadata.
-            let new_timestamp = signed_timestamp.verify(
+            let new_timestamp = new_signed_timestamp.verify(
                 trusted_root.timestamp().threshold(),
                 trusted_root.keys().iter().filter_map(|(k, v)| {
                     if trusted_root.timestamp().key_ids().contains(k) {
@@ -232,7 +232,7 @@ impl<D: DataInterchange> Tuf<D> {
     /// Verify and update the snapshot metadata.
     pub fn update_snapshot(
         &mut self,
-        signed_snapshot: SignedMetadata<D, SnapshotMetadata>,
+        new_signed_snapshot: SignedMetadata<D, SnapshotMetadata>,
     ) -> Result<bool> {
         let verified = {
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
@@ -251,7 +251,7 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
-            let new_snapshot = signed_snapshot.verify(
+            let new_snapshot = new_signed_snapshot.verify(
                 trusted_root.snapshot().threshold(),
                 trusted_root.keys().iter().filter_map(|(k, v)| {
                     if trusted_root.snapshot().key_ids().contains(k) {
@@ -325,7 +325,7 @@ impl<D: DataInterchange> Tuf<D> {
     /// Verify and update the targets metadata.
     pub fn update_targets(
         &mut self,
-        signed_targets: SignedMetadata<D, TargetsMetadata>,
+        new_signed_targets: SignedMetadata<D, TargetsMetadata>,
     ) -> Result<bool> {
         let verified = {
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
@@ -354,7 +354,7 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
-            let new_targets = signed_targets.verify(
+            let new_targets = new_signed_targets.verify(
                 trusted_root.targets().threshold(),
                 trusted_root.keys().iter().filter_map(|(k, v)| {
                     if trusted_root.targets().key_ids().contains(k) {
@@ -444,7 +444,7 @@ impl<D: DataInterchange> Tuf<D> {
         &mut self,
         parent_role: &MetadataPath,
         role: &MetadataPath,
-        signed_delegation: SignedMetadata<D, TargetsMetadata>,
+        new_signed_delegation: SignedMetadata<D, TargetsMetadata>,
     ) -> Result<bool> {
         let verified = {
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
@@ -492,7 +492,7 @@ impl<D: DataInterchange> Tuf<D> {
                     role
                 )))?;
 
-            let new_delegation = signed_delegation.verify(threshold, keys)?;
+            let new_delegation = new_signed_delegation.verify(threshold, keys)?;
 
             if trusted_delegation_version == trusted_delegation_description.version() {
                 return Ok(false);
