@@ -8,24 +8,21 @@
 //! # use std::path::PathBuf;
 //! # use std::str::FromStr;
 //! # use tuf::{Result, Tuf};
-//! # use tuf::crypto::KeyId;
+//! # use tuf::crypto::PublicKey;
 //! # use tuf::client::{Client, Config};
 //! # use tuf::metadata::{RootMetadata, Role, MetadataPath, MetadataVersion};
 //! # use tuf::interchange::Json;
 //! # use tuf::repository::{FileSystemRepository, HttpRepositoryBuilder};
-//!
-//! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
-//!     "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
-//!     "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
-//!     "0823260c29956d0b64baa19a64c49c87922ba2bc532d09a6965aef044da490bd",
-//! ];
-//!
+//! #
+//! # const PUBLIC_KEY: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pub");
+//! #
+//! # fn load_root_public_keys() -> Vec<PublicKey> {
+//! #      vec![PublicKey::from_ed25519(PUBLIC_KEY).unwrap()]
+//! # }
+//! #
 //! # fn main() -> Result<()> {
 //! # block_on(async {
-//! let key_ids: Vec<KeyId> = TRUSTED_ROOT_KEY_IDS.iter()
-//!     .map(|k| KeyId::from_str(k).unwrap())
-//!     .collect();
-//!
+//! let root_public_keys = load_root_public_keys();
 //! let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))?;
 //!
 //! let remote = HttpRepositoryBuilder::new_with_uri(
@@ -35,11 +32,11 @@
 //! .user_agent("rustup/1.4.0")
 //! .build();
 //!
-//! let mut client = Client::with_trusted_root_keyids(
+//! let mut client = Client::with_trusted_root_keys(
 //!     Config::default(),
 //!     &MetadataVersion::Number(1),
 //!     1,
-//!     &key_ids,
+//!     &root_public_keys,
 //!     local,
 //!     remote,
 //! ).await?;
@@ -57,7 +54,7 @@ use log::{error, warn};
 use std::future::Future;
 use std::pin::Pin;
 
-use crate::crypto::{self, HashAlgorithm, HashValue, KeyId, PublicKey};
+use crate::crypto::{self, HashAlgorithm, HashValue, PublicKey};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
@@ -140,8 +137,7 @@ where
     /// cannot do so.
     ///
     /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
-    /// the related methods [`Client::with_trusted_root`], [`Client::with_trusted_root_keys`] and
-    /// [`Client::with_trusted_root_keyids`].
+    /// the related methods [`Client::with_trusted_root`], [`Client::with_trusted_root_keys`].
     ///
     /// # Examples
     ///
@@ -278,125 +274,6 @@ where
             local,
             remote,
         })
-    }
-
-    /// Create a new TUF client. It will attempt to load initial root metadata the local and remote
-    /// repositories, then extract out the public keys from this metadata that correspond to the
-    /// provided key ids, and finally establish trust by verifying the root metadata was signed
-    /// with these keys.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use chrono::offset::{Utc, TimeZone};
-    /// # use futures_executor::block_on;
-    /// # use std::iter::once;
-    /// # use tuf::{
-    /// #     Error,
-    /// #     interchange::Json,
-    /// #     client::{Client, Config},
-    /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
-    /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository, RepositoryStorage},
-    /// # };
-    /// # fn main() -> Result<(), Error> {
-    /// # block_on(async {
-    /// # let private_key = PrivateKey::from_pkcs8(
-    /// #     &PrivateKey::new(KeyType::Ed25519)?,
-    /// #     SignatureScheme::Ed25519,
-    /// # )?;
-    /// # let public_key = private_key.public().clone();
-    /// let local = EphemeralRepository::<Json>::new();
-    /// let remote = EphemeralRepository::<Json>::new();
-    ///
-    /// let root_version = 1;
-    /// let root_threshold = 1;
-    /// let root = RootMetadataBuilder::new()
-    ///     .version(root_version)
-    ///     .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
-    ///     .root_key(public_key.clone())
-    ///     .root_threshold(root_threshold)
-    ///     .snapshot_key(public_key.clone())
-    ///     .targets_key(public_key.clone())
-    ///     .timestamp_key(public_key.clone())
-    ///     .signed::<Json>(&private_key)?;
-    ///
-    /// let root_path = MetadataPath::from_role(&Role::Root);
-    /// let root_version = MetadataVersion::Number(root_version);
-    ///
-    /// remote.store_metadata(
-    ///     &root_path,
-    ///     &root_version,
-    ///     root.to_raw().unwrap().as_bytes()
-    /// ).await?;
-    ///
-    /// let client = Client::with_trusted_root_keyids(
-    ///     Config::default(),
-    ///     &root_version,
-    ///     root_threshold,
-    ///     once(public_key.key_id()),
-    ///     local,
-    ///     remote,
-    /// ).await?;
-    /// # Ok(())
-    /// # })
-    /// # }
-    /// ```
-    pub async fn with_trusted_root_keyids<'a, I>(
-        config: Config<T>,
-        root_version: &MetadataVersion,
-        root_threshold: u32,
-        trusted_root_key_ids: I,
-        local: L,
-        remote: R,
-    ) -> Result<Self>
-    where
-        I: IntoIterator<Item = &'a KeyId>,
-    {
-        let (local, remote) = (Repository::new(local), Repository::new(remote));
-
-        let root_path = MetadataPath::from_role(&Role::Root);
-        let (fetched, raw_trusted_root, trusted_root) = fetch_metadata_from_local_or_else_remote(
-            &root_path,
-            &root_version,
-            config.max_root_length,
-            None,
-            &local,
-            &remote,
-        )
-        .await?;
-
-        let tuf = {
-            // Extract the necessary information from the not-yet-verified root metadata to verify
-            // it is signed by the trusted root key_ids.
-            let root: RootMetadata = trusted_root.assume_valid()?;
-            let trusted_root_keys = trusted_root_key_ids
-                .into_iter()
-                .filter_map(|key_id| root.keys().get(key_id));
-
-            Tuf::from_root_with_trusted_keys(trusted_root, root_threshold, trusted_root_keys)?
-        };
-
-        // FIXME(#253) verify the trusted root version matches the provided version.
-        let root_version = MetadataVersion::Number(tuf.trusted_root().version());
-
-        let mut client = Client {
-            tuf,
-            config,
-            local,
-            remote,
-        };
-
-        // Only store the metadata after we have validated it.
-        if fetched {
-            client
-                .store_metadata(&root_path, &root_version, &raw_trusted_root)
-                .await;
-
-            // FIXME: should we also store the root as `MetadataVersion::None`?
-        }
-
-        Ok(client)
     }
 
     /// Create a new TUF client. It will attempt to load initial root metadata from the local and remote
@@ -1212,19 +1089,6 @@ mod test {
                 .await,
                 Err(Error::NotFound)
             );
-
-            assert_matches!(
-                Client::with_trusted_root_keyids(
-                    Config::default(),
-                    &MetadataVersion::Number(1),
-                    1,
-                    once(public_key.key_id()),
-                    &local,
-                    &remote,
-                )
-                .await,
-                Err(Error::NotFound)
-            );
         })
     }
 
@@ -1273,19 +1137,6 @@ mod test {
                     &root_version,
                     1,
                     once(&bad_public_key),
-                    &local,
-                    &remote,
-                )
-                .await,
-                Err(Error::VerificationFailure(_))
-            );
-
-            assert_matches!(
-                Client::with_trusted_root_keyids(
-                    Config::default(),
-                    &root_version,
-                    1,
-                    once(bad_public_key.key_id()),
                     &local,
                     &remote,
                 )
@@ -1443,12 +1294,11 @@ mod test {
 
             ////
             // Now, make sure that the local metadata got version 1.
-            let key_ids = [KEYS[0].public().key_id().clone()];
-            let mut client = Client::with_trusted_root_keyids(
+            let mut client = Client::with_trusted_root_keys(
                 Config::default(),
                 &MetadataVersion::Number(1),
                 1,
-                &key_ids,
+                once(&KEYS[0].public().clone()),
                 EphemeralRepository::new(),
                 repo,
             )
@@ -1659,15 +1509,12 @@ mod test {
 
         ////
         // Initialize with root metadata version 2.
-        let key_ids = [
-            KEYS[0].public().key_id().clone(),
-            KEYS[1].public().key_id().clone(),
-        ];
-        let mut client = Client::with_trusted_root_keyids(
+        let public_keys = [KEYS[0].public().clone(), KEYS[1].public().clone()];
+        let mut client = Client::with_trusted_root_keys(
             Config::build().finish().unwrap(),
             &MetadataVersion::Number(2),
             1,
-            &key_ids,
+            &public_keys,
             EphemeralRepository::new(),
             repo,
         )
