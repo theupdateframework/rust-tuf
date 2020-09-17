@@ -819,6 +819,50 @@ impl RootMetadata {
         &self.keys
     }
 
+    /// An iterator over all the trusted root public keys.
+    pub fn root_keys(&self) -> impl Iterator<Item = &PublicKey> {
+        self.keys().iter().filter_map(move |(k, v)| {
+            if self.root.key_ids().contains(k) {
+                Some(v)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// An iterator over all the trusted snapshot public keys.
+    pub fn snapshot_keys(&self) -> impl Iterator<Item = &PublicKey> {
+        self.keys().iter().filter_map(move |(k, v)| {
+            if self.snapshot.key_ids().contains(k) {
+                Some(v)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// An iterator over all the trusted targets public keys.
+    pub fn targets_keys(&self) -> impl Iterator<Item = &PublicKey> {
+        self.keys().iter().filter_map(move |(k, v)| {
+            if self.targets.key_ids().contains(k) {
+                Some(v)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// An iterator over all the trusted timestamp public keys.
+    pub fn timestamp_keys(&self) -> impl Iterator<Item = &PublicKey> {
+        self.keys().iter().filter_map(move |(k, v)| {
+            if self.timestamp.key_ids().contains(k) {
+                Some(v)
+            } else {
+                None
+            }
+        })
+    }
+
     /// An immutable reference to the root role's definition.
     pub fn root(&self) -> &RoleDefinition {
         &self.root

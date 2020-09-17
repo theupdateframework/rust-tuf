@@ -49,16 +49,7 @@ impl<D: DataInterchange> Tuf<D> {
         let verified = {
             let root = signed_root.assume_valid()?;
 
-            signed_root.verify(
-                root.root().threshold(),
-                root.keys().iter().filter_map(|(k, v)| {
-                    if root.root().key_ids().contains(k) {
-                        Some(v)
-                    } else {
-                        None
-                    }
-                }),
-            )?
+            signed_root.verify(root.root().threshold(), root.root_keys())?
         };
 
         Ok(Tuf {
@@ -125,21 +116,16 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// Verify and update the root metadata.
-    pub fn update_root(&mut self, signed_root: SignedMetadata<D, RootMetadata>) -> Result<bool> {
+    pub fn update_root(
+        &mut self,
+        new_signed_root: SignedMetadata<D, RootMetadata>,
+    ) -> Result<bool> {
         let verified = {
             let trusted_root = &self.trusted_root;
 
             // First, check that the new root was signed by the old root.
-            let new_root = signed_root.verify(
-                trusted_root.root().threshold(),
-                trusted_root.keys().iter().filter_map(|(k, v)| {
-                    if trusted_root.root().key_ids().contains(k) {
-                        Some(v)
-                    } else {
-                        None
-                    }
-                }),
-            )?;
+            let new_root = new_signed_root
+                .verify(trusted_root.root().threshold(), trusted_root.root_keys())?;
 
             // Next, make sure the new root has a higher version than the old root.
             if new_root.version() == trusted_root.version() {
@@ -157,16 +143,7 @@ impl<D: DataInterchange> Tuf<D> {
             }
 
             // Finally, make sure the new root was signed by the keys in the new root.
-            signed_root.verify(
-                new_root.root().threshold(),
-                new_root.keys().iter().filter_map(|(k, v)| {
-                    if new_root.root().key_ids().contains(k) {
-                        Some(v)
-                    } else {
-                        None
-                    }
-                }),
-            )?
+            new_signed_root.verify(new_root.root().threshold(), new_root.root_keys())?
         };
 
         self.purge_metadata();
@@ -191,13 +168,7 @@ impl<D: DataInterchange> Tuf<D> {
             // First, make sure the root signed the metadata.
             let new_timestamp = new_signed_timestamp.verify(
                 trusted_root.timestamp().threshold(),
-                trusted_root.keys().iter().filter_map(|(k, v)| {
-                    if trusted_root.timestamp().key_ids().contains(k) {
-                        Some(v)
-                    } else {
-                        None
-                    }
-                }),
+                trusted_root.timestamp_keys(),
             )?;
 
             // Next, make sure the timestamp hasn't expired.
@@ -253,13 +224,7 @@ impl<D: DataInterchange> Tuf<D> {
 
             let new_snapshot = new_signed_snapshot.verify(
                 trusted_root.snapshot().threshold(),
-                trusted_root.keys().iter().filter_map(|(k, v)| {
-                    if trusted_root.snapshot().key_ids().contains(k) {
-                        Some(v)
-                    } else {
-                        None
-                    }
-                }),
+                trusted_root.snapshot_keys(),
             )?;
 
             if new_snapshot.version() != trusted_timestamp.snapshot().version() {
@@ -356,13 +321,7 @@ impl<D: DataInterchange> Tuf<D> {
 
             let new_targets = new_signed_targets.verify(
                 trusted_root.targets().threshold(),
-                trusted_root.keys().iter().filter_map(|(k, v)| {
-                    if trusted_root.targets().key_ids().contains(k) {
-                        Some(v)
-                    } else {
-                        None
-                    }
-                }),
+                trusted_root.targets_keys(),
             )?;
 
             if new_targets.version() != trusted_targets_description.version() {
