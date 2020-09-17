@@ -145,7 +145,6 @@ where
     }
 }
 
-
 impl<T, D> RepositoryStorage<D> for Box<T>
 where
     T: RepositoryStorage<D> + ?Sized,

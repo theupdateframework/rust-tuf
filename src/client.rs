@@ -363,10 +363,9 @@ where
         )
         .await?;
 
-        let tuf = Tuf::from_root_with_trusted_keys(&raw_root, root_threshold, trusted_root_keys)?;
-
         // FIXME(#253) verify the trusted root version matches the provided version.
-        let root_version = MetadataVersion::Number(tuf.trusted_root().version());
+
+        let tuf = Tuf::from_root_with_trusted_keys(&raw_root, root_threshold, trusted_root_keys)?;
 
         let mut client = Client {
             tuf,
@@ -378,10 +377,14 @@ where
         // Only store the metadata after we have validated it.
         if fetched {
             client
-                .store_metadata(&root_path, &root_version, &raw_root)
+                .store_metadata(&root_path, &MetadataVersion::None, &raw_root)
                 .await;
 
-            // FIXME: should we also store the root as `MetadataVersion::None`?
+            // FIXME: This isn't a part of the spec, but we also store the versioned metadata. This
+            // allows us to initialize a repository from the local emtadata.
+            client
+                .store_metadata(&root_path, &root_version, &raw_root)
+                .await;
         }
 
         Ok(client)
@@ -490,6 +493,18 @@ where
         for i in (self.tuf.trusted_root().version() + 1)..latest_version {
             let version = MetadataVersion::Number(i);
 
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.1.2:
+            //
+            //     Try downloading version N+1 of the root metadata file, up to some W number of
+            //     bytes (because the size is unknown). The value for W is set by the authors of
+            //     the application using TUF. For example, W may be tens of kilobytes. The filename
+            //     used to download the root metadata file is of the fixed form
+            //     VERSION_NUMBER.FILENAME.EXT (e.g., 42.root.json). If this file is not available,
+            //     or we have downloaded more than Y number of root metadata files (because the
+            //     exact number is as yet unknown), then go to step 5.1.9. The value for Y is set
+            //     by the authors of the application using TUF. For example, Y may be 2^10.
+
             let raw_signed_root = self
                 .remote
                 .fetch_metadata(&root_path, &version, self.config.max_root_length, None)
@@ -500,8 +515,24 @@ where
                 return Err(Error::Programming(err_msg.into()));
             }
 
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.1.7:
+            //
+            //     Persist root metadata. The client MUST write the file to non-volatile storage as
+            //     FILENAME.EXT (e.g. root.json).
+
+            self.store_metadata(&root_path, &MetadataVersion::None, &raw_signed_root)
+                .await;
+
+            // FIXME: This isn't a part of the spec, but we also store the versioned metadata. This
+            // allows us to initialize a repository from the local emtadata.
             self.store_metadata(&root_path, &version, &raw_signed_root)
                 .await;
+
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.1.8:
+            //
+            //     Repeat steps 5.1.1 to 5.1.8.
         }
 
         if !self.tuf.update_root(&raw_latest_root)? {
@@ -509,17 +540,48 @@ where
             return Err(Error::Programming(err_msg.into()));
         }
 
-        let latest_version = MetadataVersion::Number(latest_version);
+        /////////////////////////////////////////
+        // TUF-1.0.9 §5.1.7:
+        //
+        //     Persist root metadata. The client MUST write the file to non-volatile storage as
+        //     FILENAME.EXT (e.g. root.json).
 
-        self.store_metadata(&root_path, &latest_version, &raw_latest_root)
-            .await;
         self.store_metadata(&root_path, &MetadataVersion::None, &raw_latest_root)
             .await;
+
+        // FIXME: This isn't a part of the spec, but we also store the versioned metadata. This
+        // allows us to initialize a repository from the local emtadata.
+        self.store_metadata(
+            &root_path,
+            &MetadataVersion::Number(latest_version),
+            &raw_latest_root,
+        )
+        .await;
+
+        /////////////////////////////////////////
+        // TUF-1.0.9 §5.1.9:
+        //
+        //     Check for a freeze attack. The latest known time MUST be lower than the expiration
+        //     timestamp in the trusted root metadata file (version N). If the trusted root
+        //     metadata file has expired, abort the update cycle, report the potential freeze
+        //     attack. On the next update cycle, begin at step 5.0 and version N of the root
+        //     metadata file.
+
+        // FIXME: we should move this logic into TUF to make it easier to review we implement the
+        // TUF spec.
 
         if self.tuf.trusted_root().expires() <= &Utc::now() {
             error!("Root metadata expired, potential freeze attack");
             return Err(Error::ExpiredMetadata(Role::Root));
         }
+
+        /////////////////////////////////////////
+        // TUF-1.0.5 §5.1.10:
+        //
+        //     Set whether consistent snapshots are used as per the trusted root metadata file (see
+        //     Section 4.3).
+
+        // FIXME: validate we are properly setting the consistent snapshot.
 
         Ok(true)
     }
@@ -527,6 +589,14 @@ where
     /// Returns `true` if an update occurred and `false` otherwise.
     async fn update_timestamp(&mut self) -> Result<bool> {
         let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
+
+        /////////////////////////////////////////
+        // TUF-1.0.9 §5.2:
+        //
+        //     Download the timestamp metadata file, up to X number of bytes (because the size is
+        //     unknown). The value for X is set by the authors of the application using TUF. For
+        //     example, X may be tens of kilobytes. The filename used to download the timestamp
+        //     metadata file is of the fixed form FILENAME.EXT (e.g., timestamp.json).
 
         let raw_signed_timestamp = self
             .remote
@@ -538,10 +608,19 @@ where
             )
             .await?;
 
-        if let Some(updated_timestamp) = self.tuf.update_timestamp(&raw_signed_timestamp)? {
-            let latest_version = MetadataVersion::Number(updated_timestamp.version());
-            self.store_metadata(&timestamp_path, &latest_version, &raw_signed_timestamp)
-                .await;
+        if self.tuf.update_timestamp(&raw_signed_timestamp)?.is_some() {
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.2.4:
+            //
+            //     Persist timestamp metadata. The client MUST write the file to non-volatile
+            //     storage as FILENAME.EXT (e.g. timestamp.json).
+
+            self.store_metadata(
+                &timestamp_path,
+                &MetadataVersion::None,
+                &raw_signed_timestamp,
+            )
+            .await;
 
             Ok(true)
         } else {
@@ -592,7 +671,13 @@ where
             .await?;
 
         if self.tuf.update_snapshot(&raw_signed_snapshot)? {
-            self.store_metadata(&snapshot_path, &version, &raw_signed_snapshot)
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.3.5:
+            //
+            //     Persist snapshot metadata. The client MUST write the file to non-volatile
+            //     storage as FILENAME.EXT (e.g. snapshot.json).
+
+            self.store_metadata(&snapshot_path, &MetadataVersion::None, &raw_signed_snapshot)
                 .await;
 
             Ok(true)
@@ -644,7 +729,13 @@ where
             .await?;
 
         if self.tuf.update_targets(&raw_signed_targets)? {
-            self.store_metadata(&targets_path, &version, &raw_signed_targets)
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.4.4:
+            //
+            //     Persist targets metadata. The client MUST write the file to non-volatile storage
+            //     as FILENAME.EXT (e.g. targets.json).
+
+            self.store_metadata(&targets_path, &MetadataVersion::None, &raw_signed_targets)
                 .await;
 
             Ok(true)
@@ -823,6 +914,12 @@ where
                 .update_delegation(&targets_role, delegation.role(), &raw_signed_meta)
             {
                 Ok(_) => {
+                    /////////////////////////////////////////
+                    // TUF-1.0.9 §5.2.4:
+                    //
+                    //     Persist timestamp metadata. The client MUST write the file to
+                    //     non-volatile storage as FILENAME.EXT (e.g. timestamp.json).
+
                     match self
                         .local
                         .store_metadata(delegation.role(), &MetadataVersion::None, &raw_signed_meta)
@@ -1045,7 +1142,7 @@ mod test {
     use crate::interchange::Json;
     use crate::metadata::{
         MetadataPath, MetadataVersion, RootMetadata, RootMetadataBuilder, SnapshotMetadataBuilder,
-        TargetsMetadataBuilder, TimestampMetadataBuilder,
+        TargetsMetadataBuilder, TimestampMetadata, TimestampMetadataBuilder,
     };
     use crate::repository::EphemeralRepository;
     use chrono::prelude::*;
@@ -1325,12 +1422,7 @@ mod test {
                 root1.to_raw().unwrap(),
                 client
                     .local
-                    .fetch_metadata::<RootMetadata>(
-                        &root_path,
-                        &MetadataVersion::Number(1),
-                        None,
-                        None
-                    )
+                    .fetch_metadata::<RootMetadata>(&root_path, &MetadataVersion::None, None, None)
                     .await
                     .unwrap()
             );
@@ -1380,12 +1472,7 @@ mod test {
                 root3.to_raw().unwrap(),
                 client
                     .local
-                    .fetch_metadata::<RootMetadata>(
-                        &root_path,
-                        &MetadataVersion::Number(3),
-                        None,
-                        None
-                    )
+                    .fetch_metadata::<RootMetadata>(&root_path, &MetadataVersion::None, None, None)
                     .await
                     .unwrap()
             );
@@ -1547,10 +1634,72 @@ mod test {
             root2.to_raw().unwrap(),
             client
                 .local
+                .fetch_metadata::<RootMetadata>(&root_path, &MetadataVersion::None, None, None)
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            root2.to_raw().unwrap(),
+            client
+                .local
                 .fetch_metadata::<RootMetadata>(&root_path, &MetadataVersion::Number(2), None, None)
                 .await
                 .unwrap()
         );
+        assert_eq!(
+            timestamp.to_raw().unwrap(),
+            client
+                .local
+                .fetch_metadata::<TimestampMetadata>(
+                    &timestamp_path,
+                    &MetadataVersion::None,
+                    None,
+                    None
+                )
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            snapshot.to_raw().unwrap(),
+            client
+                .local
+                .fetch_metadata::<SnapshotMetadata>(
+                    &snapshot_path,
+                    &MetadataVersion::None,
+                    None,
+                    None
+                )
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            targets.to_raw().unwrap(),
+            client
+                .local
+                .fetch_metadata::<TargetsMetadata>(
+                    &targets_path,
+                    &MetadataVersion::None,
+                    None,
+                    None
+                )
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            targets.to_raw().unwrap(),
+            client
+                .local
+                .fetch_metadata::<TargetsMetadata>(
+                    &targets_path,
+                    &MetadataVersion::None,
+                    None,
+                    None
+                )
+                .await
+                .unwrap()
+        );
+
+        // FIXME: make sure we persist delegations correctly.
     }
 
     #[test]
