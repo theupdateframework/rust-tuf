@@ -6,6 +6,7 @@ use log::{debug, warn};
 use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
 use serde::ser::{Error as SerializeError, Serialize, Serializer};
 use serde_derive::{Deserialize, Serialize};
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display};
 use std::io::Read;
@@ -1579,6 +1580,12 @@ impl<'de> Deserialize<'de> for VirtualTargetPath {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let s: String = Deserialize::deserialize(de)?;
         VirtualTargetPath::new(s).map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+    }
+}
+
+impl Borrow<str> for VirtualTargetPath {
+    fn borrow(&self) -> &str {
+        self.value()
     }
 }
 
