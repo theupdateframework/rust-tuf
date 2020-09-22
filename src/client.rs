@@ -58,7 +58,7 @@ use crate::crypto::{self, HashAlgorithm, HashValue, PublicKey};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
-    Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, Role, RootMetadata, SignedMetadata,
+    Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, Role, RootMetadata,
     SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata, VirtualTargetPath,
 };
 use crate::repository::{Repository, RepositoryProvider, RepositoryStorage};
@@ -202,11 +202,7 @@ where
             .fetch_metadata(&root_path, &root_version, config.max_root_length, None)
             .await?;
 
-        // **WARNING**: By deserializing the metadata before verification, we are exposing us to
-        // parser exploits.
-        let root = raw_root.parse_untrusted()?;
-
-        let tuf = Tuf::from_trusted_root(root)?;
+        let tuf = Tuf::from_trusted_root(&raw_root)?;
 
         Ok(Client {
             tuf,
@@ -243,7 +239,7 @@ where
     ///
     /// let root_version = 1;
     /// let root_threshold = 1;
-    /// let root = RootMetadataBuilder::new()
+    /// let raw_root = RootMetadataBuilder::new()
     ///     .version(root_version)
     ///     .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
     ///     .root_key(public_key.clone())
@@ -252,11 +248,13 @@ where
     ///     .targets_key(public_key.clone())
     ///     .timestamp_key(public_key.clone())
     ///     .signed::<Json>(&private_key)
+    ///     .unwrap()
+    ///     .to_raw()
     ///     .unwrap();
     ///
     /// let client = Client::with_trusted_root(
     ///     Config::default(),
-    ///     root,
+    ///     &raw_root,
     ///     local,
     ///     remote,
     /// ).await?;
@@ -266,7 +264,7 @@ where
     /// ```
     pub async fn with_trusted_root(
         config: Config<T>,
-        trusted_root: SignedMetadata<D, RootMetadata>,
+        trusted_root: &RawSignedMetadata<D, RootMetadata>,
         local: L,
         remote: R,
     ) -> Result<Self> {
@@ -1608,12 +1606,14 @@ mod test {
         let repo = EphemeralRepository::<Json>::new();
         let mut remote = Repository::new(&repo);
 
-        let root = RootMetadataBuilder::new()
+        let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
             .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
             .unwrap();
 
         let targets = TargetsMetadataBuilder::new()
@@ -1643,16 +1643,12 @@ mod test {
         let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
 
         remote
-            .store_metadata(
-                &root_path,
-                &MetadataVersion::Number(1),
-                &root.to_raw().unwrap(),
-            )
+            .store_metadata(&root_path, &MetadataVersion::Number(1), &raw_root)
             .await
             .unwrap();
 
         remote
-            .store_metadata(&root_path, &MetadataVersion::None, &root.to_raw().unwrap())
+            .store_metadata(&root_path, &MetadataVersion::None, &raw_root)
             .await
             .unwrap();
 
@@ -1684,10 +1680,14 @@ mod test {
             .unwrap();
 
         // Initialize and update client.
-        let mut client =
-            Client::with_trusted_root(Config::default(), root, EphemeralRepository::new(), repo)
-                .await
-                .unwrap();
+        let mut client = Client::with_trusted_root(
+            Config::default(),
+            &raw_root,
+            EphemeralRepository::new(),
+            repo,
+        )
+        .await
+        .unwrap();
 
         assert_matches!(client.update().await, Ok(true));
 

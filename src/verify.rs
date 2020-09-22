@@ -1,3 +1,5 @@
+//! The `verify` module performs signature verification.
+
 use log::{debug, warn};
 use serde_derive::Deserialize;
 use std::collections::HashMap;
@@ -8,12 +10,15 @@ use crate::interchange::DataInterchange;
 use crate::metadata::{Metadata, RawSignedMetadata};
 use crate::Result;
 
-#[derive(Clone, Debug)]
+/// `Verified` is a wrapper type that signifies the inner type has had it's signature verified.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Verified<T> {
     value: T,
 }
 
 impl<T> Verified<T> {
+    // Create a new `Verified` around some type. This must be kept private to this module in order
+    // to guarantee the `V` can only be created through signature verification.
     fn new(value: T) -> Self {
         Verified { value }
     }
@@ -34,6 +39,7 @@ impl<T> std::ops::Deref for Verified<T> {
 /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
 /// # use tuf::interchange::Json;
 /// # use tuf::metadata::{SnapshotMetadataBuilder, SignedMetadata};
+/// # use tuf::verify::verify_signatures;
 ///
 /// # fn main() {
 /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
@@ -42,33 +48,24 @@ impl<T> std::ops::Deref for Verified<T> {
 /// let key_2: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
 /// let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
 ///
-/// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
-/// let snapshot = SignedMetadata::<Json, _>::new(&snapshot, &key_1).unwrap();
+/// let raw_snapshot = SnapshotMetadataBuilder::new()
+///     .signed::<Json>(&key_1)
+///     .unwrap()
+///     .to_raw()
+///     .unwrap();
 ///
-/// assert!(snapshot.verify(
-///     1,
-///     vec![key_1.public()],
-/// ).is_ok());
+/// assert!(verify_signatures(&raw_snapshot, 1, vec![key_1.public()]).is_ok());
 ///
 /// // fail with increased threshold
-/// assert!(snapshot.verify(
-///     2,
-///     vec![key_1.public()],
-/// ).is_err());
+/// assert!(verify_signatures(&raw_snapshot, 2, vec![key_1.public()]).is_err());
 ///
 /// // fail when the keys aren't authorized
-/// assert!(snapshot.verify(
-///     1,
-///     vec![key_2.public()],
-/// ).is_err());
+/// assert!(verify_signatures(&raw_snapshot, 1, vec![key_2.public()]).is_err());
 ///
 /// // fail when the keys don't exist
-/// assert!(snapshot.verify(
-///     1,
-///     &[],
-/// ).is_err());
+/// assert!(verify_signatures(&raw_snapshot, 1, &[]).is_err());
 /// # }
-pub(crate) fn verify_signatures<'a, D, M, I>(
+pub fn verify_signatures<'a, D, M, I>(
     raw_metadata: &RawSignedMetadata<D, M>,
     threshold: u32,
     authorized_keys: I,

@@ -9,8 +9,8 @@ use crate::crypto::PublicKey;
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
-    Delegations, Metadata, MetadataPath, RawSignedMetadata, Role, RootMetadata, SignedMetadata,
-    SnapshotMetadata, TargetDescription, TargetsMetadata, TimestampMetadata, VirtualTargetPath,
+    Delegations, Metadata, MetadataPath, RawSignedMetadata, Role, RootMetadata, SnapshotMetadata,
+    TargetDescription, TargetsMetadata, TimestampMetadata, VirtualTargetPath,
 };
 use crate::verify::{self, Verified};
 use crate::Result;
@@ -72,15 +72,17 @@ impl<D: DataInterchange> Tuf<D> {
     ///
     /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
     /// the related method [`Tuf::from_root_with_trusted_keys`].
-    pub fn from_trusted_root(signed_root: SignedMetadata<D, RootMetadata>) -> Result<Self> {
+    pub fn from_trusted_root(raw_root: &RawSignedMetadata<D, RootMetadata>) -> Result<Self> {
         let verified_root = {
-            let root = signed_root.assume_valid()?;
+            // **WARNING**: By deserializing the metadata before verification, we are exposing us
+            // to parser exploits.
+            let unverified_root = raw_root.parse_untrusted()?.assume_valid()?;
 
             // Make sure the root signed itself.
             let verified_root = verify::verify_signatures(
-                &signed_root.to_raw()?,
-                root.root().threshold(),
-                root.root_keys(),
+                &raw_root,
+                unverified_root.root().threshold(),
+                unverified_root.root_keys(),
             )?;
 
             verified_root
@@ -789,15 +791,17 @@ mod test {
 
     #[test]
     fn good_root_rotation() {
-        let root = RootMetadataBuilder::new()
+        let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
             .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(root).unwrap();
+        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
 
         let mut root = RootMetadataBuilder::new()
             .version(2)
@@ -820,39 +824,44 @@ mod test {
 
     #[test]
     fn no_cross_sign_root_rotation() {
-        let root = RootMetadataBuilder::new()
+        let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
             .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(root).unwrap();
+        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
 
-        let root = RootMetadataBuilder::new()
+        let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[1].public().clone())
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[1].public().clone())
             .timestamp_key(KEYS[1].public().clone())
             .signed::<Json>(&KEYS[1])
+            .unwrap()
+            .to_raw()
             .unwrap();
-        let raw_root = root.to_raw().unwrap();
 
         assert!(tuf.update_root(&raw_root).is_err());
     }
 
     #[test]
     fn good_timestamp_update() {
-        let root = RootMetadataBuilder::new()
+        let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[1].public().clone())
             .timestamp_key(KEYS[1].public().clone())
             .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(root).unwrap();
+        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .signed::<Json>(&KEYS[1])
@@ -876,53 +885,58 @@ mod test {
 
     #[test]
     fn bad_timestamp_update_wrong_key() {
-        let root = RootMetadataBuilder::new()
+        let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[1].public().clone())
             .timestamp_key(KEYS[1].public().clone())
             .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(root).unwrap();
+        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
-        let timestamp =
+        let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 // sign it with the root key
                 .signed::<Json>(&KEYS[0])
+                .unwrap()
+                .to_raw()
                 .unwrap();
-
-        let raw_timestamp = timestamp.to_raw().unwrap();
 
         assert!(tuf.update_timestamp(&raw_timestamp).is_err())
     }
 
     #[test]
     fn good_snapshot_update() {
-        let root = RootMetadataBuilder::new()
+        let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[2].public().clone())
             .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(root).unwrap();
+        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new().signed(&KEYS[1]).unwrap();
         let raw_snapshot = snapshot.to_raw().unwrap();
 
-        let timestamp =
+        let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 .signed::<Json>(&KEYS[2])
+                .unwrap()
+                .to_raw()
                 .unwrap();
-        let raw_timestamp = timestamp.to_raw().unwrap();
 
         tuf.update_timestamp(&raw_timestamp).unwrap();
 
@@ -934,28 +948,31 @@ mod test {
 
     #[test]
     fn bad_snapshot_update_wrong_key() {
-        let root = RootMetadataBuilder::new()
+        let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[2].public().clone())
             .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(root).unwrap();
+        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .signed::<Json>(&KEYS[2])
             .unwrap();
         let raw_snapshot = snapshot.to_raw().unwrap();
 
-        let timestamp =
+        let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 // sign it with the targets key
                 .signed::<Json>(&KEYS[2])
+                .unwrap()
+                .to_raw()
                 .unwrap();
-        let raw_timestamp = timestamp.to_raw().unwrap();
 
         tuf.update_timestamp(&raw_timestamp).unwrap();
 
@@ -964,50 +981,56 @@ mod test {
 
     #[test]
     fn bad_snapshot_update_wrong_version() {
-        let root = RootMetadataBuilder::new()
+        let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[2].public().clone())
             .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(root).unwrap();
+        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .version(2)
             .signed::<Json>(&KEYS[2])
             .unwrap();
 
-        let timestamp =
+        let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 .signed::<Json>(&KEYS[2])
+                .unwrap()
+                .to_raw()
                 .unwrap();
-        let raw_timestamp = timestamp.to_raw().unwrap();
 
         tuf.update_timestamp(&raw_timestamp).unwrap();
 
-        let snapshot = SnapshotMetadataBuilder::new()
+        let raw_snapshot = SnapshotMetadataBuilder::new()
             .version(1)
             .signed::<Json>(&KEYS[1])
+            .unwrap()
+            .to_raw()
             .unwrap();
-        let raw_snapshot = snapshot.to_raw().unwrap();
 
         assert!(tuf.update_snapshot(&raw_snapshot).is_err());
     }
 
     #[test]
     fn good_targets_update() {
-        let root = RootMetadataBuilder::new()
+        let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[3].public().clone())
             .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(root).unwrap();
+        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
 
         let signed_targets = TargetsMetadataBuilder::new()
             .signed::<Json>(&KEYS[2])
@@ -1021,12 +1044,13 @@ mod test {
             .unwrap();
         let raw_snapshot = snapshot.to_raw().unwrap();
 
-        let timestamp =
+        let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 .signed::<Json>(&KEYS[3])
+                .unwrap()
+                .to_raw()
                 .unwrap();
-        let raw_timestamp = timestamp.to_raw().unwrap();
 
         tuf.update_timestamp(&raw_timestamp).unwrap();
         tuf.update_snapshot(&raw_snapshot).unwrap();
@@ -1039,15 +1063,17 @@ mod test {
 
     #[test]
     fn bad_targets_update_wrong_key() {
-        let root = RootMetadataBuilder::new()
+        let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[3].public().clone())
             .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(root).unwrap();
+        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
 
         let signed_targets = TargetsMetadataBuilder::new()
             // sign it with the timestamp key
@@ -1062,12 +1088,13 @@ mod test {
             .unwrap();
         let raw_snapshot = snapshot.to_raw().unwrap();
 
-        let timestamp =
+        let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 .signed::<Json>(&KEYS[3])
+                .unwrap()
+                .to_raw()
                 .unwrap();
-        let raw_timestamp = timestamp.to_raw().unwrap();
 
         tuf.update_timestamp(&raw_timestamp).unwrap();
         tuf.update_snapshot(&raw_snapshot).unwrap();
@@ -1077,15 +1104,17 @@ mod test {
 
     #[test]
     fn bad_targets_update_wrong_version() {
-        let root = RootMetadataBuilder::new()
+        let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[3].public().clone())
             .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(root).unwrap();
+        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
 
         let signed_targets = TargetsMetadataBuilder::new()
             .version(2)
@@ -1099,21 +1128,23 @@ mod test {
             .unwrap();
         let raw_snapshot = snapshot.to_raw().unwrap();
 
-        let timestamp =
+        let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 .signed::<Json>(&KEYS[3])
+                .unwrap()
+                .to_raw()
                 .unwrap();
-        let raw_timestamp = timestamp.to_raw().unwrap();
 
         tuf.update_timestamp(&raw_timestamp).unwrap();
         tuf.update_snapshot(&raw_snapshot).unwrap();
 
-        let signed_targets = TargetsMetadataBuilder::new()
+        let raw_targets = TargetsMetadataBuilder::new()
             .version(1)
             .signed::<Json>(&KEYS[2])
+            .unwrap()
+            .to_raw()
             .unwrap();
-        let raw_targets = signed_targets.to_raw().unwrap();
 
         assert!(tuf.update_targets(&raw_targets).is_err());
     }
