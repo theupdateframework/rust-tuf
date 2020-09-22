@@ -15,10 +15,10 @@ use crate::Result;
 // FIXME: This is not ready yet for public use, it is only intended for internal testing until the
 // design is complete.
 pub(crate) struct RepoKeys<'a> {
-    pub(crate) root_keys: Vec<&'a PrivateKey>,
-    pub(crate) targets_keys: Vec<&'a PrivateKey>,
-    pub(crate) snapshot_keys: Vec<&'a PrivateKey>,
-    pub(crate) timestamp_keys: Vec<&'a PrivateKey>,
+    pub(crate) root: Vec<&'a PrivateKey>,
+    pub(crate) targets: Vec<&'a PrivateKey>,
+    pub(crate) snapshot: Vec<&'a PrivateKey>,
+    pub(crate) timestamp: Vec<&'a PrivateKey>,
 }
 
 // This helper builder simplifies the process of creating new metadata.
@@ -49,19 +49,19 @@ where
 
         let mut root_builder = RootMetadataBuilder::new();
 
-        for key in &repo_keys.root_keys {
+        for key in &repo_keys.root {
             root_builder = root_builder.root_key(key.public().clone());
         }
 
-        for key in &repo_keys.targets_keys {
+        for key in &repo_keys.targets {
             root_builder = root_builder.targets_key(key.public().clone());
         }
 
-        for key in &repo_keys.snapshot_keys {
+        for key in &repo_keys.snapshot {
             root_builder = root_builder.snapshot_key(key.public().clone());
         }
 
-        for key in &repo_keys.timestamp_keys {
+        for key in &repo_keys.timestamp {
             root_builder = root_builder.timestamp_key(key.public().clone());
         }
 
@@ -141,11 +141,11 @@ where
 
         // Construct and sign the root metadata.
         let root_metadata = self.root_builder.build()?;
-        let root = sign::<D, _>(&root_metadata, &self.repo_keys.root_keys)?;
+        let root = sign::<D, _>(&root_metadata, &self.repo_keys.root)?;
 
         // Sign the targets metadata.
         let targets_metadata = self.targets_builder.build()?;
-        let targets = sign(&targets_metadata, &self.repo_keys.targets_keys)?;
+        let targets = sign(&targets_metadata, &self.repo_keys.targets)?;
 
         // Construct and sign the snapshot metadata.
         let mut snapshot_builder = SnapshotMetadataBuilder::new()
@@ -161,64 +161,80 @@ where
         }
         let snapshot_metadata = snapshot_builder.build()?;
 
-        let snapshot = sign(&snapshot_metadata, &self.repo_keys.snapshot_keys)?;
+        let snapshot = sign(&snapshot_metadata, &self.repo_keys.snapshot)?;
 
         // Construct and sign the timestamp metadata.
         let timestamp_metadata =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])?
                 .version(self.timestamp_version)
                 .build()?;
-        let timestamp = sign(&timestamp_metadata, &self.repo_keys.timestamp_keys)?;
+        let timestamp = sign(&timestamp_metadata, &self.repo_keys.timestamp)?;
 
         // Commit the root metadata.
+        let raw_root = root.to_raw()?;
         self.repo
             .store_metadata(
                 &root_path,
                 &MetadataVersion::Number(root_metadata.version()),
-                &root.to_raw()?,
+                &raw_root,
             )
             .await?;
 
         self.repo
-            .store_metadata(&root_path, &MetadataVersion::None, &root.to_raw()?)
+            .store_metadata(&root_path, &MetadataVersion::None, &raw_root)
             .await?;
 
         // Commit the delegated targets metadata.
         for (path, delegated_targets) in self.delegated_targets {
-            self.repo
-                .store_metadata(&path, &MetadataVersion::None, &delegated_targets.to_raw()?)
-                .await?;
+            let raw_delegated_targets = delegated_targets.to_raw()?;
+
+            if root_metadata.consistent_snapshot() {
+                let version = delegated_targets.parse_version_untrusted()?;
+                self.repo
+                    .store_metadata(
+                        &path,
+                        &MetadataVersion::Number(version),
+                        &raw_delegated_targets,
+                    )
+                    .await?;
+            } else {
+                self.repo
+                    .store_metadata(&path, &MetadataVersion::None, &raw_delegated_targets)
+                    .await?;
+            }
         }
 
         // Commit the target metadata.
+        let raw_targets = targets.to_raw()?;
         if root_metadata.consistent_snapshot() {
             self.repo
                 .store_metadata(
                     &targets_path,
                     &MetadataVersion::Number(targets_metadata.version()),
-                    &targets.to_raw()?,
+                    &raw_targets,
                 )
+                .await?;
+        } else {
+            self.repo
+                .store_metadata(&targets_path, &MetadataVersion::None, &raw_targets)
                 .await?;
         }
 
-        self.repo
-            .store_metadata(&targets_path, &MetadataVersion::None, &targets.to_raw()?)
-            .await?;
-
         // Commit the snapshot metadata.
+        let raw_snapshot = snapshot.to_raw()?;
         if root_metadata.consistent_snapshot() {
             self.repo
                 .store_metadata(
                     &snapshot_path,
                     &MetadataVersion::Number(snapshot_metadata.version()),
-                    &snapshot.to_raw()?,
+                    &raw_snapshot,
                 )
                 .await?;
+        } else {
+            self.repo
+                .store_metadata(&snapshot_path, &MetadataVersion::None, &raw_snapshot)
+                .await?;
         }
-
-        self.repo
-            .store_metadata(&snapshot_path, &MetadataVersion::None, &snapshot.to_raw()?)
-            .await?;
 
         // Commit the timestamp metadata.
         self.repo

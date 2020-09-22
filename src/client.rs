@@ -839,7 +839,8 @@ where
                         ));
 
                     match f.await {
-                        (term, res @ Ok(_)) => return (term, res),
+                        // exit early if we found our target.
+                        (_, res @ Ok(_)) => return (true, res),
                         (true, res @ Err(_)) => return (true, res),
                         (false, Err(Error::NotFound)) => {
                             // Don't log that we couldn't find the target.
@@ -1158,10 +1159,10 @@ mod test {
 
             //// First, create the root metadata version 1.
             let repo_keys1 = RepoKeys {
-                root_keys: vec![&KEYS[0]],
-                snapshot_keys: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
-                targets_keys: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
-                timestamp_keys: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
+                root: vec![&KEYS[0]],
+                snapshot: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
+                targets: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
+                timestamp: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
             };
             let root1 = RepoBuilder::new(repo_keys1, &repo)
                 .with_root(|b| b.version(1).expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0)))
@@ -1205,10 +1206,10 @@ mod test {
 
             // Make sure the version 2 is signed by version 1's keys.
             let repo_keys2 = RepoKeys {
-                root_keys: vec![&KEYS[0], &KEYS[1]],
-                snapshot_keys: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
-                targets_keys: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
-                timestamp_keys: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
+                root: vec![&KEYS[0], &KEYS[1]],
+                snapshot: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
+                targets: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
+                timestamp: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
             };
             let _root2 = RepoBuilder::new(repo_keys2, &repo)
                 .with_root(|b| b.version(2).expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0)))
@@ -1218,10 +1219,10 @@ mod test {
 
             // Make sure the version 3 is signed by version 2's keys.
             let repo_keys3 = RepoKeys {
-                root_keys: vec![&KEYS[0], &KEYS[1]],
-                snapshot_keys: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
-                targets_keys: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
-                timestamp_keys: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
+                root: vec![&KEYS[1], &KEYS[2]],
+                snapshot: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
+                targets: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
+                timestamp: vec![&KEYS[0], &KEYS[1], &KEYS[2]],
             };
             let root3 = RepoBuilder::new(repo_keys3, &repo)
                 .with_root(|b| b.version(3).expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0)))
@@ -1267,10 +1268,10 @@ mod test {
 
         //// First, create and register the root metadata.
         let repo_keys1 = RepoKeys {
-            root_keys: vec![&KEYS[0]],
-            snapshot_keys: vec![&KEYS[0], &KEYS[1]],
-            targets_keys: vec![&KEYS[0], &KEYS[1]],
-            timestamp_keys: vec![&KEYS[0], &KEYS[1]],
+            root: vec![&KEYS[0]],
+            snapshot: vec![&KEYS[0], &KEYS[1]],
+            targets: vec![&KEYS[0], &KEYS[1]],
+            timestamp: vec![&KEYS[0], &KEYS[1]],
         };
         let _root1 = RepoBuilder::new(repo_keys1, &repo)
             .with_root(|b| {
@@ -1285,10 +1286,10 @@ mod test {
         ////
         // Next, create and register version 2 of the root metadata.
         let repo_keys2 = RepoKeys {
-            root_keys: vec![&KEYS[0], &KEYS[1]],
-            snapshot_keys: vec![&KEYS[0], &KEYS[1]],
-            targets_keys: vec![&KEYS[0], &KEYS[1]],
-            timestamp_keys: vec![&KEYS[0], &KEYS[1]],
+            root: vec![&KEYS[0], &KEYS[1]],
+            snapshot: vec![&KEYS[0], &KEYS[1]],
+            targets: vec![&KEYS[0], &KEYS[1]],
+            timestamp: vec![&KEYS[0], &KEYS[1]],
         };
         let root2 = RepoBuilder::new(repo_keys2, &repo)
             .with_root(|b| b.version(2).expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0)))
@@ -1411,10 +1412,10 @@ mod test {
     ) {
         // Generate an ephemeral repository with a single target.
         let repo_keys = RepoKeys {
-            root_keys: vec![&KEYS[0]],
-            snapshot_keys: vec![&KEYS[0]],
-            targets_keys: vec![&KEYS[0]],
-            timestamp_keys: vec![&KEYS[0]],
+            root: vec![&KEYS[0]],
+            snapshot: vec![&KEYS[0]],
+            targets: vec![&KEYS[0]],
+            timestamp: vec![&KEYS[0]],
         };
         let repo = EphemeralRepository::<Json>::new();
         let repo_builder = RepoBuilder::new(repo_keys, &repo);
@@ -1480,10 +1481,10 @@ mod test {
 
             // Generate an ephemeral repository with a single target.
             let repo_keys = RepoKeys {
-                root_keys: vec![&KEYS[0]],
-                snapshot_keys: vec![&KEYS[0]],
-                targets_keys: vec![&KEYS[0]],
-                timestamp_keys: vec![&KEYS[0]],
+                root: vec![&KEYS[0]],
+                snapshot: vec![&KEYS[0]],
+                targets: vec![&KEYS[0]],
+                timestamp: vec![&KEYS[0]],
             };
 
             let delegated_target = TargetsMetadataBuilder::new()
@@ -1571,10 +1572,10 @@ mod test {
             .unwrap();
 
             let repo_keys = RepoKeys {
-                root_keys: vec![&KEYS[0]],
-                snapshot_keys: vec![&KEYS[0]],
-                targets_keys: vec![&KEYS[0]],
-                timestamp_keys: vec![&KEYS[0]],
+                root: vec![&KEYS[0]],
+                snapshot: vec![&KEYS[0]],
+                targets: vec![&KEYS[0]],
+                timestamp: vec![&KEYS[0]],
             };
             let _ = RepoBuilder::new(repo_keys, &repo)
                 .delegations(delegations)
