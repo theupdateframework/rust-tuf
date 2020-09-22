@@ -226,6 +226,7 @@ mod test {
     use crate::repository::Repository;
     use futures_executor::block_on;
     use futures_util::io::AsyncReadExt;
+    use matches::assert_matches;
     use tempfile;
 
     #[test]
@@ -239,7 +240,7 @@ mod test {
                 .build()
                 .unwrap();
 
-            assert_eq!(
+            assert_matches!(
                 Repository::<_, Json>::new(repo)
                     .fetch_metadata::<RootMetadata>(
                         &MetadataPath::from_role(&Role::Root),

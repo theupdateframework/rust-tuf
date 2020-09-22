@@ -36,10 +36,11 @@
 
 use futures_executor::block_on;
 use futures_util::io::AsyncReadExt;
+use matches::assert_matches;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tuf::client::{Client, Config};
-use tuf::crypto::KeyId;
+use tuf::crypto::PublicKey;
 use tuf::interchange::Json;
 use tuf::metadata::{
     MetadataPath, MetadataVersion, RawSignedMetadata, Role, RootMetadata, TargetPath,
@@ -152,28 +153,28 @@ impl TestKeyRotation {
 
     async fn run_tests(&mut self) {
         let mut init = true;
-        let mut key_ids = Vec::new();
+        let mut public_keys = Vec::new();
 
         for step_dir in self.test_steps.clone() {
             // Extract the keys from the first step.
             if init {
                 init = false;
-                key_ids = extract_keys(&step_dir).await;
+                public_keys = extract_keys(&step_dir).await;
             }
 
-            self.run_test_step(&key_ids, step_dir).await;
+            self.run_test_step(&public_keys, step_dir).await;
         }
     }
 
-    async fn run_test_step(&mut self, key_ids: &[KeyId], dir: PathBuf) {
+    async fn run_test_step(&mut self, public_keys: &[PublicKey], dir: PathBuf) {
         let remote = init_remote(&dir).unwrap();
 
         // Connect to the client with our initial keys.
-        let mut client = Client::with_trusted_root_keyids(
+        let mut client = Client::with_trusted_root_keys(
             Config::default(),
             &MetadataVersion::Number(1),
             1,
-            key_ids,
+            public_keys,
             &self.local,
             remote,
         )
@@ -182,8 +183,8 @@ impl TestKeyRotation {
 
         // Update our TUF metadata. The first time should report there is new metadata, the second
         // time should not.
-        assert_eq!(client.update().await, Ok(true));
-        assert_eq!(client.update().await, Ok(false));
+        assert_matches!(client.update().await, Ok(true));
+        assert_matches!(client.update().await, Ok(false));
 
         // Add the expected target to our target list.
         let file_name = dir.file_name().unwrap().to_str().unwrap().to_string();
@@ -193,7 +194,7 @@ impl TestKeyRotation {
         // fetch all the targets and check they have the correct content
         for (target_path, expected) in self.expected_targets.iter() {
             let mut buf = Vec::new();
-            assert_eq!(
+            assert_matches!(
                 client.fetch_target_to_writer(&target_path, &mut buf).await,
                 Ok(())
             );
@@ -203,7 +204,7 @@ impl TestKeyRotation {
 }
 
 /// Extract the initial key ids from the first step.
-async fn extract_keys(dir: &Path) -> Vec<KeyId> {
+async fn extract_keys(dir: &Path) -> Vec<PublicKey> {
     let remote = init_remote(dir).unwrap();
 
     let root_path = MetadataPath::from_role(&Role::Root);
@@ -220,7 +221,7 @@ async fn extract_keys(dir: &Path) -> Vec<KeyId> {
         .assume_valid()
         .unwrap();
 
-    metadata.root().key_ids().iter().cloned().collect()
+    metadata.root_keys().cloned().collect()
 }
 
 fn init_remote(dir: &Path) -> Result<FileSystemRepository<Json>> {

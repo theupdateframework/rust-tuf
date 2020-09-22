@@ -1,6 +1,6 @@
 use futures_executor::block_on;
 use tuf::client::{Client, Config, PathTranslator};
-use tuf::crypto::{self, HashAlgorithm, KeyId, PrivateKey, SignatureScheme};
+use tuf::crypto::{self, HashAlgorithm, PrivateKey, PublicKey, SignatureScheme};
 use tuf::interchange::Json;
 use tuf::metadata::{
     MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder, TargetDescription,
@@ -75,14 +75,16 @@ where
     T: PathTranslator,
 {
     let remote = EphemeralRepository::new();
-    let root_key_ids = init_server(&remote, &config, consistent_snapshots)
+    let root_public_keys = init_server(&remote, &config, consistent_snapshots)
         .await
         .unwrap();
-    init_client(&root_key_ids, remote, config).await.unwrap();
+    init_client(&root_public_keys, remote, config)
+        .await
+        .unwrap();
 }
 
 async fn init_client<T>(
-    root_key_ids: &[KeyId],
+    root_public_keys: &[PublicKey],
     remote: EphemeralRepository<Json>,
     config: Config<T>,
 ) -> Result<()>
@@ -90,11 +92,11 @@ where
     T: PathTranslator,
 {
     let local = EphemeralRepository::new();
-    let mut client = Client::with_trusted_root_keyids(
+    let mut client = Client::with_trusted_root_keys(
         config,
         &MetadataVersion::Number(1),
         1,
-        root_key_ids,
+        root_public_keys,
         local,
         remote,
     )
@@ -108,7 +110,7 @@ async fn init_server<'a, T>(
     remote: &'a EphemeralRepository<Json>,
     config: &'a Config<T>,
     consistent_snapshot: bool,
-) -> Result<Vec<KeyId>>
+) -> Result<Vec<PublicKey>>
 where
     T: PathTranslator,
 {
@@ -227,5 +229,5 @@ where
         )
         .await?;
 
-    Ok(vec![root_key.key_id().clone()])
+    Ok(vec![root_key.public().clone()])
 }

@@ -8,7 +8,8 @@ use thiserror::Error;
 use crate::metadata::Role;
 
 /// Error type for all TUF related errors.
-#[derive(Error, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+#[derive(Error, Debug)]
 pub enum Error {
     /// The metadata had a bad signature.
     #[error("bad signature")]
@@ -25,6 +26,14 @@ pub enum Error {
     /// An illegal argument was passed into a function.
     #[error("illegal argument: {0}")]
     IllegalArgument(String),
+
+    /// Generic error for HTTP connections.
+    #[error("http: {0}")]
+    Http(http::Error),
+
+    /// Errors that can occur parsing HTTP streams.
+    #[error("hyper: {0}")]
+    Hyper(hyper::Error),
 
     /// The metadata was missing, so an operation could not be completed.
     #[error("missing {0} metadata")]
@@ -51,10 +60,6 @@ pub enum Error {
     /// chain to the target cannot be fully verified.
     #[error("target unavailable")]
     TargetUnavailable,
-
-    /// There is no known or available hash algorithm.
-    #[error("unknown hash algorithm: {0}")]
-    UnkonwnHashAlgorithm(String),
 
     /// There is no known or available key type.
     #[error("unknown key type: {0}")]
@@ -89,13 +94,13 @@ impl From<io::Error> for Error {
 
 impl From<http::Error> for Error {
     fn from(err: http::Error) -> Error {
-        Error::Opaque(format!("Http: {:?}", err))
+        Error::Http(err)
     }
 }
 
 impl From<hyper::Error> for Error {
     fn from(err: hyper::Error) -> Error {
-        Error::Opaque(format!("Hyper: {:?}", err))
+        Error::Hyper(err)
     }
 }
 

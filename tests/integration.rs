@@ -332,7 +332,7 @@ fn rejects_bad_delegation_signatures() {
         Err(Error::VerificationFailure(_))
     );
 
-    assert_eq!(
+    assert_matches!(
         tuf.target_description(&VirtualTargetPath::new("foo".into()).unwrap()),
         Err(Error::TargetUnavailable)
     );

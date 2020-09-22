@@ -8,24 +8,21 @@
 //! # use std::path::PathBuf;
 //! # use std::str::FromStr;
 //! # use tuf::{Result, Tuf};
-//! # use tuf::crypto::KeyId;
+//! # use tuf::crypto::PublicKey;
 //! # use tuf::client::{Client, Config};
 //! # use tuf::metadata::{RootMetadata, Role, MetadataPath, MetadataVersion};
 //! # use tuf::interchange::Json;
 //! # use tuf::repository::{FileSystemRepository, HttpRepositoryBuilder};
-//!
-//! static TRUSTED_ROOT_KEY_IDS: &'static [&str] = &[
-//!     "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
-//!     "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
-//!     "0823260c29956d0b64baa19a64c49c87922ba2bc532d09a6965aef044da490bd",
-//! ];
-//!
+//! #
+//! # const PUBLIC_KEY: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pub");
+//! #
+//! # fn load_root_public_keys() -> Vec<PublicKey> {
+//! #      vec![PublicKey::from_ed25519(PUBLIC_KEY).unwrap()]
+//! # }
+//! #
 //! # fn main() -> Result<()> {
 //! # block_on(async {
-//! let key_ids: Vec<KeyId> = TRUSTED_ROOT_KEY_IDS.iter()
-//!     .map(|k| KeyId::from_str(k).unwrap())
-//!     .collect();
-//!
+//! let root_public_keys = load_root_public_keys();
 //! let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))?;
 //!
 //! let remote = HttpRepositoryBuilder::new_with_uri(
@@ -35,11 +32,11 @@
 //! .user_agent("rustup/1.4.0")
 //! .build();
 //!
-//! let mut client = Client::with_trusted_root_keyids(
+//! let mut client = Client::with_trusted_root_keys(
 //!     Config::default(),
 //!     &MetadataVersion::Number(1),
 //!     1,
-//!     &key_ids,
+//!     &root_public_keys,
 //!     local,
 //!     remote,
 //! ).await?;
@@ -57,7 +54,7 @@ use log::{error, warn};
 use std::future::Future;
 use std::pin::Pin;
 
-use crate::crypto::{self, HashAlgorithm, HashValue, KeyId, PublicKey};
+use crate::crypto::{self, HashAlgorithm, HashValue, PublicKey};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
@@ -140,8 +137,7 @@ where
     /// cannot do so.
     ///
     /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
-    /// the related methods [`Client::with_trusted_root`], [`Client::with_trusted_root_keys`] and
-    /// [`Client::with_trusted_root_keyids`].
+    /// the related methods [`Client::with_trusted_root`], [`Client::with_trusted_root_keys`].
     ///
     /// # Examples
     ///
@@ -280,125 +276,6 @@ where
         })
     }
 
-    /// Create a new TUF client. It will attempt to load initial root metadata the local and remote
-    /// repositories, then extract out the public keys from this metadata that correspond to the
-    /// provided key ids, and finally establish trust by verifying the root metadata was signed
-    /// with these keys.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use chrono::offset::{Utc, TimeZone};
-    /// # use futures_executor::block_on;
-    /// # use std::iter::once;
-    /// # use tuf::{
-    /// #     Error,
-    /// #     interchange::Json,
-    /// #     client::{Client, Config},
-    /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
-    /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
-    /// #     repository::{EphemeralRepository, RepositoryStorage},
-    /// # };
-    /// # fn main() -> Result<(), Error> {
-    /// # block_on(async {
-    /// # let private_key = PrivateKey::from_pkcs8(
-    /// #     &PrivateKey::new(KeyType::Ed25519)?,
-    /// #     SignatureScheme::Ed25519,
-    /// # )?;
-    /// # let public_key = private_key.public().clone();
-    /// let local = EphemeralRepository::<Json>::new();
-    /// let remote = EphemeralRepository::<Json>::new();
-    ///
-    /// let root_version = 1;
-    /// let root_threshold = 1;
-    /// let root = RootMetadataBuilder::new()
-    ///     .version(root_version)
-    ///     .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
-    ///     .root_key(public_key.clone())
-    ///     .root_threshold(root_threshold)
-    ///     .snapshot_key(public_key.clone())
-    ///     .targets_key(public_key.clone())
-    ///     .timestamp_key(public_key.clone())
-    ///     .signed::<Json>(&private_key)?;
-    ///
-    /// let root_path = MetadataPath::from_role(&Role::Root);
-    /// let root_version = MetadataVersion::Number(root_version);
-    ///
-    /// remote.store_metadata(
-    ///     &root_path,
-    ///     &root_version,
-    ///     root.to_raw().unwrap().as_bytes()
-    /// ).await?;
-    ///
-    /// let client = Client::with_trusted_root_keyids(
-    ///     Config::default(),
-    ///     &root_version,
-    ///     root_threshold,
-    ///     once(public_key.key_id()),
-    ///     local,
-    ///     remote,
-    /// ).await?;
-    /// # Ok(())
-    /// # })
-    /// # }
-    /// ```
-    pub async fn with_trusted_root_keyids<'a, I>(
-        config: Config<T>,
-        root_version: &MetadataVersion,
-        root_threshold: u32,
-        trusted_root_key_ids: I,
-        local: L,
-        remote: R,
-    ) -> Result<Self>
-    where
-        I: IntoIterator<Item = &'a KeyId>,
-    {
-        let (local, remote) = (Repository::new(local), Repository::new(remote));
-
-        let root_path = MetadataPath::from_role(&Role::Root);
-        let (fetched, raw_trusted_root, trusted_root) = fetch_metadata_from_local_or_else_remote(
-            &root_path,
-            &root_version,
-            config.max_root_length,
-            None,
-            &local,
-            &remote,
-        )
-        .await?;
-
-        let tuf = {
-            // Extract the necessary information from the not-yet-verified root metadata to verify
-            // it is signed by the trusted root key_ids.
-            let root: RootMetadata = trusted_root.assume_valid()?;
-            let trusted_root_keys = trusted_root_key_ids
-                .into_iter()
-                .filter_map(|key_id| root.keys().get(key_id));
-
-            Tuf::from_root_with_trusted_keys(trusted_root, root_threshold, trusted_root_keys)?
-        };
-
-        // FIXME(#253) verify the trusted root version matches the provided version.
-        let root_version = MetadataVersion::Number(tuf.root().version());
-
-        let mut client = Client {
-            tuf,
-            config,
-            local,
-            remote,
-        };
-
-        // Only store the metadata after we have validated it.
-        if fetched {
-            client
-                .store_metadata(&root_path, &root_version, &raw_trusted_root)
-                .await;
-
-            // FIXME: should we also store the root as `MetadataVersion::None`?
-        }
-
-        Ok(client)
-    }
-
     /// Create a new TUF client. It will attempt to load initial root metadata from the local and remote
     /// repositories using the provided keys to pin the verification.
     ///
@@ -486,7 +363,7 @@ where
         let tuf = Tuf::from_root_with_trusted_keys(root, root_threshold, trusted_root_keys)?;
 
         // FIXME(#253) verify the trusted root version matches the provided version.
-        let root_version = MetadataVersion::Number(tuf.root().version());
+        let root_version = MetadataVersion::Number(tuf.trusted_root().version());
 
         let mut client = Client {
             tuf,
@@ -544,27 +421,27 @@ where
 
     /// Returns the current trusted root version.
     pub fn root_version(&self) -> u32 {
-        self.tuf.root().version()
+        self.tuf.trusted_root().version()
     }
 
     /// Returns the current trusted timestamp version.
     pub fn timestamp_version(&self) -> Option<u32> {
-        Some(self.tuf.timestamp()?.version())
+        Some(self.tuf.trusted_timestamp()?.version())
     }
 
     /// Returns the current trusted snapshot version.
     pub fn snapshot_version(&self) -> Option<u32> {
-        Some(self.tuf.snapshot()?.version())
+        Some(self.tuf.trusted_snapshot()?.version())
     }
 
     /// Returns the current trusted targets version.
     pub fn targets_version(&self) -> Option<u32> {
-        Some(self.tuf.targets()?.version())
+        Some(self.tuf.trusted_targets()?.version())
     }
 
     /// Returns the current trusted delegations version for a given role.
     pub fn delegations_version(&self, role: &MetadataPath) -> Option<u32> {
-        Some(self.tuf.delegations().get(role)?.version())
+        Some(self.tuf.trusted_delegations().get(role)?.version())
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -586,20 +463,20 @@ where
         // this root metadata claims to be.
         let latest_version = latest_root.parse_version_untrusted()?;
 
-        if latest_version < self.tuf.root().version() {
+        if latest_version < self.tuf.trusted_root().version() {
             return Err(Error::VerificationFailure(format!(
                 "Latest root version is lower than current root version: {} < {}",
                 latest_version,
-                self.tuf.root().version()
+                self.tuf.trusted_root().version()
             )));
-        } else if latest_version == self.tuf.root().version() {
+        } else if latest_version == self.tuf.trusted_root().version() {
             return Ok(false);
         }
 
         let err_msg = "TUF claimed no update occurred when one should have. \
                        This is a programming error. Please report this as a bug.";
 
-        for i in (self.tuf.root().version() + 1)..latest_version {
+        for i in (self.tuf.trusted_root().version() + 1)..latest_version {
             let version = MetadataVersion::Number(i);
 
             let (raw_signed_root, signed_root) = self
@@ -628,7 +505,7 @@ where
         self.store_metadata(&root_path, &MetadataVersion::None, &raw_latest_root)
             .await;
 
-        if self.tuf.root().expires() <= &Utc::now() {
+        if self.tuf.trusted_root().expires() <= &Utc::now() {
             error!("Root metadata expired, potential freeze attack");
             return Err(Error::ExpiredMetadata(Role::Root));
         }
@@ -666,19 +543,25 @@ where
         // 5.3.1 Check against timestamp metadata. The hashes and version number listed in the
         // timestamp metadata. If hashes and version do not match, discard the new snapshot
         // metadata, abort the update cycle, and report the failure.
-        let snapshot_description = match self.tuf.timestamp() {
+        let snapshot_description = match self.tuf.trusted_timestamp() {
             Some(ts) => Ok(ts.snapshot()),
             None => Err(Error::MissingMetadata(Role::Timestamp)),
         }?
         .clone();
 
-        if snapshot_description.version() <= self.tuf.snapshot().map(|s| s.version()).unwrap_or(0) {
+        if snapshot_description.version()
+            <= self
+                .tuf
+                .trusted_snapshot()
+                .map(|s| s.version())
+                .unwrap_or(0)
+        {
             return Ok(false);
         }
 
         let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
 
-        let version = if self.tuf.root().consistent_snapshot() {
+        let version = if self.tuf.trusted_root().consistent_snapshot() {
             MetadataVersion::Number(snapshot_description.version())
         } else {
             MetadataVersion::None
@@ -709,7 +592,7 @@ where
 
     /// Returns `true` if an update occurred and `false` otherwise.
     async fn update_targets(&mut self) -> Result<bool> {
-        let targets_description = match self.tuf.snapshot() {
+        let targets_description = match self.tuf.trusted_snapshot() {
             Some(sn) => match sn.meta().get(&MetadataPath::from_role(&Role::Targets)) {
                 Some(d) => Ok(d),
                 None => Err(Error::VerificationFailure(
@@ -722,13 +605,15 @@ where
         }?
         .clone();
 
-        if targets_description.version() <= self.tuf.targets().map(|t| t.version()).unwrap_or(0) {
+        if targets_description.version()
+            <= self.tuf.trusted_targets().map(|t| t.version()).unwrap_or(0)
+        {
             return Ok(false);
         }
 
         let (alg, value) = crypto::hash_preference(targets_description.hashes())?;
 
-        let version = if self.tuf.root().consistent_snapshot() {
+        let version = if self.tuf.trusted_root().consistent_snapshot() {
             MetadataVersion::Number(targets_description.version())
         } else {
             MetadataVersion::None
@@ -790,7 +675,7 @@ where
 
         let snapshot = self
             .tuf
-            .snapshot()
+            .trusted_snapshot()
             .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
             .clone();
         let (_, target_description) = self
@@ -808,7 +693,7 @@ where
 
         // According to TUF section 5.5.2, when consistent snapshot is enabled, target files should
         // be found at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.
-        if self.tuf.root().consistent_snapshot() {
+        if self.tuf.trusted_root().consistent_snapshot() {
             let (_, value) = crypto::hash_preference(target_description.hashes())?;
             let target = target.with_hash_prefix(value)?;
             self.remote.fetch_target(&target, &target_description).await
@@ -837,7 +722,7 @@ where
         // tuf in the loop below
         let (targets, targets_role) = match targets {
             Some((t, role)) => (t.clone(), role),
-            None => match self.tuf.targets() {
+            None => match self.tuf.trusted_targets() {
                 Some(t) => (t.clone(), MetadataPath::from_role(&Role::Targets)),
                 None => {
                     return (
@@ -877,7 +762,7 @@ where
                 Err(e) => return (delegation.terminating(), Err(e)),
             };
 
-            let version = if self.tuf.root().consistent_snapshot() {
+            let version = if self.tuf.trusted_root().consistent_snapshot() {
                 MetadataVersion::Hash(value.clone())
             } else {
                 MetadataVersion::None
@@ -940,7 +825,7 @@ where
 
                     let meta = self
                         .tuf
-                        .delegations()
+                        .trusted_delegations()
                         .get(delegation.role())
                         .unwrap()
                         .clone();
@@ -1207,19 +1092,6 @@ mod test {
                 .await,
                 Err(Error::NotFound)
             );
-
-            assert_matches!(
-                Client::with_trusted_root_keyids(
-                    Config::default(),
-                    &MetadataVersion::Number(1),
-                    1,
-                    once(public_key.key_id()),
-                    &local,
-                    &remote,
-                )
-                .await,
-                Err(Error::NotFound)
-            );
         })
     }
 
@@ -1274,19 +1146,6 @@ mod test {
                 .await,
                 Err(Error::VerificationFailure(_))
             );
-
-            assert_matches!(
-                Client::with_trusted_root_keyids(
-                    Config::default(),
-                    &root_version,
-                    1,
-                    once(bad_public_key.key_id()),
-                    &local,
-                    &remote,
-                )
-                .await,
-                Err(Error::VerificationFailure(_))
-            );
         })
     }
 
@@ -1312,20 +1171,19 @@ mod test {
 
             ////
             // Now, make sure that the local metadata got version 1.
-            let key_ids = [KEYS[0].public().key_id().clone()];
-            let mut client = Client::with_trusted_root_keyids(
+            let mut client = Client::with_trusted_root_keys(
                 Config::default(),
                 &MetadataVersion::Number(1),
                 1,
-                &key_ids,
+                once(&KEYS[0].public().clone()),
                 EphemeralRepository::new(),
                 &repo,
             )
             .await
             .unwrap();
 
-            assert_eq!(client.update().await, Ok(true));
-            assert_eq!(client.tuf.root().version(), 1);
+            assert_matches!(client.update().await, Ok(true));
+            assert_eq!(client.tuf.trusted_root().version(), 1);
 
             assert_eq!(
                 root1.to_raw().unwrap(),
@@ -1374,8 +1232,8 @@ mod test {
             ////
             // Finally, check that the update brings us to version 3.
 
-            assert_eq!(client.update().await, Ok(true));
-            assert_eq!(client.tuf.root().version(), 3);
+            assert_matches!(client.update().await, Ok(true));
+            assert_eq!(client.tuf.trusted_root().version(), 3);
 
             assert_eq!(
                 root3.to_raw().unwrap(),
@@ -1440,15 +1298,12 @@ mod test {
 
         ////
         // Initialize with root metadata version 2.
-        let key_ids = [
-            KEYS[0].public().key_id().clone(),
-            KEYS[1].public().key_id().clone(),
-        ];
-        let mut client = Client::with_trusted_root_keyids(
+        let public_keys = [KEYS[0].public().clone(), KEYS[1].public().clone()];
+        let mut client = Client::with_trusted_root_keys(
             Config::build().finish().unwrap(),
             &MetadataVersion::Number(2),
             1,
-            &key_ids,
+            &public_keys,
             EphemeralRepository::new(),
             repo,
         )
@@ -1457,7 +1312,9 @@ mod test {
 
         ////
         // Ensure client doesn't fetch previous version (1).
-        assert_eq!(client.update().await, Ok(true));
+        assert_matches!(client.update().await, Ok(true));
+        assert_eq!(client.tuf.trusted_root().version(), 2);
+
         assert_eq!(client.root_version(), 2);
         assert_eq!(client.timestamp_version(), Some(1));
         assert_eq!(client.snapshot_version(), Some(1));
@@ -1604,7 +1461,7 @@ mod test {
                 .await
                 .unwrap();
 
-        assert_eq!(client.update().await, Ok(true));
+        assert_matches!(client.update().await, Ok(true));
 
         // Verify fetch_target_description returns expected target metadata
         let description = client
@@ -1673,7 +1530,7 @@ mod test {
             .await
             .unwrap();
 
-            assert_eq!(client.update().await, Ok(true));
+            assert_matches!(client.update().await, Ok(true));
             assert_eq!(client.root_version(), 1);
             assert_eq!(client.timestamp_version(), Some(1));
             assert_eq!(client.targets_version(), Some(1));
@@ -1730,7 +1587,7 @@ mod test {
                 .await
                 .unwrap();
 
-            assert_eq!(client.update().await, Ok(true));
+            assert_matches!(client.update().await, Ok(true));
             assert_eq!(client.root_version(), 2);
             assert_eq!(client.timestamp_version(), Some(2));
             assert_eq!(client.targets_version(), Some(2));
