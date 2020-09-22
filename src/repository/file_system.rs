@@ -13,7 +13,7 @@ use crate::crypto::{HashAlgorithm, HashValue};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{MetadataPath, MetadataVersion, TargetDescription, TargetPath};
-use crate::repository::{RepositoryProvider, RepositoryStorage};
+use crate::repository::{RepositoryProvider, RepositoryStorage, RepositoryStorageProvider};
 use crate::Result;
 
 /// A builder to create a repository contained on the local file system.
@@ -152,15 +152,12 @@ impl<D> RepositoryStorage<D> for FileSystemRepository<D>
 where
     D: DataInterchange + Sync,
 {
-    fn store_metadata<'a, R>(
+    fn store_metadata<'a>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        metadata: R,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        R: AsyncRead + Send + Unpin + 'a,
-    {
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+    ) -> BoxFuture<'a, Result<()>> {
         async move {
             let mut path = self.metadata_path.clone();
             path.extend(meta_path.components::<D>(version));
@@ -178,14 +175,11 @@ where
         .boxed()
     }
 
-    fn store_target<'a, R>(
+    fn store_target<'a>(
         &'a self,
-        read: R,
+        read: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        R: AsyncRead + Send + Unpin + 'a,
-    {
+    ) -> BoxFuture<'a, Result<()>> {
         async move {
             let mut path = self.targets_path.clone();
             path.extend(target_path.components());
@@ -203,6 +197,8 @@ where
         .boxed()
     }
 }
+
+impl<D> RepositoryStorageProvider<D> for FileSystemRepository<D> where D: DataInterchange + Sync {}
 
 fn create_temp_file(path: &Path) -> Result<NamedTempFile> {
     // We want to atomically write the file to make sure clients can never see a partially written
@@ -275,7 +271,7 @@ mod test {
             let target_description =
                 TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
             let path = TargetPath::new("foo/bar/baz".into()).unwrap();
-            repo.store_target(data, &path).await.unwrap();
+            repo.store_target(&mut &*data, &path).await.unwrap();
             assert!(temp_dir
                 .path()
                 .join("targs")
@@ -297,7 +293,7 @@ mod test {
 
             // RepositoryProvider implementations do not guarantee data is not corrupt.
             let bad_data: &[u8] = b"you're in a desert";
-            repo.store_target(bad_data, &path).await.unwrap();
+            repo.store_target(&mut &*bad_data, &path).await.unwrap();
             let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
             buf.clear();
             read.read_to_end(&mut buf).await.unwrap();

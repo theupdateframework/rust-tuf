@@ -116,14 +116,14 @@ async fn update_root(
     repo.store_metadata(
         &root_path,
         &MetadataVersion::Number(version),
-        root.to_raw().unwrap().as_bytes(),
+        &mut root.to_raw().unwrap().as_bytes(),
     )
     .await
     .unwrap();
     repo.store_metadata(
         &root_path,
         &MetadataVersion::None,
-        root.to_raw().unwrap().as_bytes(),
+        &mut root.to_raw().unwrap().as_bytes(),
     )
     .await
     .unwrap();
@@ -178,7 +178,9 @@ async fn add_target(
         step.to_string()
     };
     let target_path = TargetPath::new(target_str.into()).unwrap();
-    repo.store_target(target_data, &target_path).await.unwrap();
+    repo.store_target(&mut &*target_data, &target_path)
+        .await
+        .unwrap();
 
     let version_prefix = if consistent_snapshot {
         MetadataVersion::Number(version)
@@ -189,7 +191,7 @@ async fn add_target(
     repo.store_metadata(
         &targets_path,
         &version_prefix,
-        signed_targets.to_raw().unwrap().as_bytes(),
+        &mut signed_targets.to_raw().unwrap().as_bytes(),
     )
     .await
     .unwrap();
@@ -206,7 +208,7 @@ async fn add_target(
     repo.store_metadata(
         &snapshot_path,
         &version_prefix,
-        snapshot.to_raw().unwrap().as_bytes(),
+        &mut snapshot.to_raw().unwrap().as_bytes(),
     )
     .await
     .unwrap();
@@ -223,7 +225,7 @@ async fn add_target(
     repo.store_metadata(
         &timestamp_path,
         &MetadataVersion::None,
-        timestamp.to_raw().unwrap().as_bytes(),
+        &mut timestamp.to_raw().unwrap().as_bytes(),
     )
     .await
     .unwrap();

@@ -68,24 +68,28 @@ where
     /// [`D::extension()`][extension], overwriting any existing metadata at that location.
     ///
     /// [extension]: crate::interchange::DataInterchange::extension
-    fn store_metadata<'a, R>(
+    fn store_metadata<'a>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        metadata: R,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        R: AsyncRead + Send + Unpin + 'a;
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+    ) -> BoxFuture<'a, Result<()>>;
 
     /// Store the provided `target` in a location identified by `target_path`, overwriting any
     /// existing target at that location.
-    fn store_target<'a, R>(
+    fn store_target<'a>(
         &'a self,
-        target: R,
+        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        R: AsyncRead + Send + Unpin + 'a;
+    ) -> BoxFuture<'a, Result<()>>;
+}
+
+/// A subtrait of both RepositoryStorage and RepositoryProvider. This is useful to create
+/// trait objects that implement both traits.
+pub trait RepositoryStorageProvider<D>: RepositoryStorage<D> + RepositoryProvider<D>
+where
+    D: DataInterchange + Sync,
+{
 }
 
 impl<T, D> RepositoryProvider<D> for &T
@@ -117,28 +121,83 @@ where
     T: RepositoryStorage<D>,
     D: DataInterchange + Sync,
 {
-    fn store_metadata<'a, R>(
+    fn store_metadata<'a>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        metadata: R,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        R: AsyncRead + Send + Unpin + 'a,
-    {
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+    ) -> BoxFuture<'a, Result<()>> {
         (**self).store_metadata(meta_path, version, metadata)
     }
 
-    fn store_target<'a, R>(
+    fn store_target<'a>(
         &'a self,
-        target: R,
+        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        R: AsyncRead + Send + Unpin + 'a,
-    {
+    ) -> BoxFuture<'a, Result<()>> {
         (**self).store_target(target, target_path)
     }
+}
+
+impl<T, D> RepositoryStorageProvider<D> for &T
+where
+    T: RepositoryStorage<D> + RepositoryProvider<D>,
+    D: DataInterchange + Sync,
+{
+}
+
+impl<T, D> RepositoryStorage<D> for Box<T>
+where
+    T: RepositoryStorage<D> + ?Sized,
+    D: DataInterchange + Sync,
+{
+    fn store_metadata<'a>(
+        &'a self,
+        meta_path: &'a MetadataPath,
+        version: &'a MetadataVersion,
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+    ) -> BoxFuture<'a, Result<()>> {
+        (**self).store_metadata(meta_path, version, metadata)
+    }
+
+    fn store_target<'a>(
+        &'a self,
+        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        target_path: &'a TargetPath,
+    ) -> BoxFuture<'a, Result<()>> {
+        (**self).store_target(target, target_path)
+    }
+}
+
+impl<T, D> RepositoryProvider<D> for Box<T>
+where
+    T: RepositoryProvider<D> + ?Sized,
+    D: DataInterchange + Sync,
+{
+    fn fetch_metadata<'a>(
+        &'a self,
+        meta_path: &'a MetadataPath,
+        version: &'a MetadataVersion,
+        max_length: Option<usize>,
+        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        (**self).fetch_metadata(meta_path, version, max_length, hash_data)
+    }
+
+    fn fetch_target<'a>(
+        &'a self,
+        target_path: &'a TargetPath,
+        target_description: &'a TargetDescription,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        (**self).fetch_target(target_path, target_description)
+    }
+}
+
+impl<T, D> RepositoryStorageProvider<D> for Box<T>
+where
+    T: RepositoryStorage<D> + RepositoryProvider<D> + ?Sized,
+    D: DataInterchange + Sync,
+{
 }
 
 /// A wrapper around an implementation of [`RepositoryProvider`] and/or [`RepositoryStorage`] tied
@@ -284,19 +343,16 @@ where
         Self::check::<M>(path)?;
 
         self.repository
-            .store_metadata(path, version, metadata.as_bytes())
+            .store_metadata(path, version, &mut metadata.as_bytes())
             .await
     }
 
     /// Store the provided `target` in a location identified by `target_path`.
-    pub async fn store_target<'a, S>(
+    pub async fn store_target<'a>(
         &'a mut self,
-        target: S,
+        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
-    ) -> Result<()>
-    where
-        S: AsyncRead + Send + Unpin + 'a,
-    {
+    ) -> Result<()> {
         self.repository.store_target(target, target_path).await
     }
 }
@@ -375,7 +431,9 @@ mod test {
             let data_hash = crypto::calculate_hash(data, HashAlgorithm::Sha256);
 
             let repo = EphemeralRepository::new();
-            repo.store_metadata(&path, &version, data).await.unwrap();
+            repo.store_metadata(&path, &version, &mut &*data)
+                .await
+                .unwrap();
 
             let client = Repository::<_, Json>::new(repo);
 
@@ -401,7 +459,9 @@ mod test {
             let data: &[u8] = b"corrupt metadata";
 
             let repo = EphemeralRepository::new();
-            repo.store_metadata(&path, &version, data).await.unwrap();
+            repo.store_metadata(&path, &version, &mut &*data)
+                .await
+                .unwrap();
 
             let client = Repository::<_, Json>::new(repo);
 
@@ -428,7 +488,9 @@ mod test {
             let _metadata = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
 
             let repo = EphemeralRepository::new();
-            repo.store_metadata(&path, &version, data).await.unwrap();
+            repo.store_metadata(&path, &version, &mut &*data)
+                .await
+                .unwrap();
 
             let client = Repository::<_, Json>::new(repo);
 
@@ -449,7 +511,9 @@ mod test {
             let data: &[u8] = b"very big metadata";
 
             let repo = EphemeralRepository::new();
-            repo.store_metadata(&path, &version, data).await.unwrap();
+            repo.store_metadata(&path, &version, &mut &*data)
+                .await
+                .unwrap();
 
             let client = Repository::<_, Json>::new(repo);
 
@@ -472,7 +536,7 @@ mod test {
             let target_description =
                 TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
             let path = TargetPath::new("batty".into()).unwrap();
-            client.store_target(data, &path).await.unwrap();
+            client.store_target(&mut &*data, &path).await.unwrap();
 
             let mut read = client
                 .fetch_target(&path, &target_description)
@@ -483,12 +547,35 @@ mod test {
             assert_eq!(buf.as_slice(), data);
 
             let bad_data: &[u8] = b"you're in a desert";
-            client.store_target(bad_data, &path).await.unwrap();
+            client.store_target(&mut &*bad_data, &path).await.unwrap();
             let mut read = client
                 .fetch_target(&path, &target_description)
                 .await
                 .unwrap();
             assert!(read.read_to_end(&mut buf).await.is_err());
+        })
+    }
+
+    #[test]
+    fn repository_takes_trait_objects() {
+        block_on(async {
+            let repo: Box<dyn RepositoryStorageProvider<Json>> =
+                Box::new(EphemeralRepository::new());
+            let mut client = Repository::<_, Json>::new(Box::new(repo));
+
+            let data: &[u8] = b"like tears in the rain";
+            let target_description =
+                TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
+            let path = TargetPath::new("batty".into()).unwrap();
+            client.store_target(&mut &*data, &path).await.unwrap();
+
+            let mut read = client
+                .fetch_target(&path, &target_description)
+                .await
+                .unwrap();
+            let mut buf = Vec::new();
+            read.read_to_end(&mut buf).await.unwrap();
+            assert_eq!(buf.as_slice(), data);
         })
     }
 }

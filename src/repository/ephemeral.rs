@@ -12,7 +12,7 @@ use crate::crypto::{HashAlgorithm, HashValue};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{MetadataPath, MetadataVersion, TargetDescription, TargetPath};
-use crate::repository::{RepositoryProvider, RepositoryStorage};
+use crate::repository::{RepositoryProvider, RepositoryStorage, RepositoryStorageProvider};
 use crate::Result;
 
 type ArcHashMap<K, V> = Arc<RwLock<HashMap<K, V>>>;
@@ -101,15 +101,12 @@ impl<D> RepositoryStorage<D> for EphemeralRepository<D>
 where
     D: DataInterchange + Sync,
 {
-    fn store_metadata<'a, R>(
+    fn store_metadata<'a>(
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        mut metadata: R,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        R: AsyncRead + Send + Unpin + 'a,
-    {
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+    ) -> BoxFuture<'a, Result<()>> {
         async move {
             let mut buf = Vec::new();
             metadata.read_to_end(&mut buf).await?;
@@ -121,14 +118,11 @@ where
         .boxed()
     }
 
-    fn store_target<'a, R>(
+    fn store_target<'a>(
         &'a self,
-        mut read: R,
+        read: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<()>>
-    where
-        R: AsyncRead + Send + Unpin + 'a,
-    {
+    ) -> BoxFuture<'a, Result<()>> {
         async move {
             let mut buf = Vec::new();
             read.read_to_end(&mut buf).await?;
@@ -141,6 +135,8 @@ where
     }
 }
 
+impl<D> RepositoryStorageProvider<D> for EphemeralRepository<D> where D: DataInterchange + Sync {}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -151,12 +147,11 @@ mod test {
     fn ephemeral_repo_targets() {
         block_on(async {
             let repo = EphemeralRepository::<Json>::new();
-
             let data: &[u8] = b"like tears in the rain";
             let target_description =
                 TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
             let path = TargetPath::new("batty".into()).unwrap();
-            repo.store_target(data, &path).await.unwrap();
+            repo.store_target(&mut &*data, &path).await.unwrap();
 
             let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
             let mut buf = Vec::new();
@@ -165,7 +160,7 @@ mod test {
 
             // RepositoryProvider implementations do not guarantee data is not corrupt.
             let bad_data: &[u8] = b"you're in a desert";
-            repo.store_target(bad_data, &path).await.unwrap();
+            repo.store_target(&mut &*bad_data, &path).await.unwrap();
             let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
             buf.clear();
             read.read_to_end(&mut buf).await.unwrap();

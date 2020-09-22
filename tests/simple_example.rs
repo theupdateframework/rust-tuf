@@ -135,14 +135,14 @@ where
         .store_metadata(
             &root_path,
             &MetadataVersion::Number(1),
-            signed.to_raw().unwrap().as_bytes(),
+            &mut signed.to_raw().unwrap().as_bytes(),
         )
         .await?;
     remote
         .store_metadata(
             &root_path,
             &MetadataVersion::None,
-            signed.to_raw().unwrap().as_bytes(),
+            &mut signed.to_raw().unwrap().as_bytes(),
         )
         .await?;
 
@@ -158,9 +158,11 @@ where
     if consistent_snapshot {
         let (_, value) = crypto::hash_preference(target_description.hashes())?;
         let hash_prefixed_path = target_path.with_hash_prefix(&value)?;
-        let _ = remote.store_target(target_file, &hash_prefixed_path).await;
+        let _ = remote
+            .store_target(&mut &*target_file, &hash_prefixed_path)
+            .await;
     } else {
-        let _ = remote.store_target(target_file, &target_path).await;
+        let _ = remote.store_target(&mut &*target_file, &target_path).await;
     };
 
     let targets = TargetsMetadataBuilder::new()
@@ -175,14 +177,14 @@ where
         .store_metadata(
             &targets_path,
             &MetadataVersion::Number(1),
-            targets.to_raw().unwrap().as_bytes(),
+            &mut targets.to_raw().unwrap().as_bytes(),
         )
         .await?;
     remote
         .store_metadata(
             &targets_path,
             &MetadataVersion::None,
-            targets.to_raw().unwrap().as_bytes(),
+            &mut targets.to_raw().unwrap().as_bytes(),
         )
         .await?;
 
@@ -197,14 +199,14 @@ where
         .store_metadata(
             &snapshot_path,
             &MetadataVersion::Number(1),
-            snapshot.to_raw().unwrap().as_bytes(),
+            &mut snapshot.to_raw().unwrap().as_bytes(),
         )
         .await?;
     remote
         .store_metadata(
             &snapshot_path,
             &MetadataVersion::None,
-            snapshot.to_raw().unwrap().as_bytes(),
+            &mut snapshot.to_raw().unwrap().as_bytes(),
         )
         .await?;
 
@@ -218,14 +220,14 @@ where
         .store_metadata(
             &timestamp_path,
             &MetadataVersion::Number(1),
-            timestamp.to_raw().unwrap().as_bytes(),
+            &mut timestamp.to_raw().unwrap().as_bytes(),
         )
         .await?;
     remote
         .store_metadata(
             &timestamp_path,
             &MetadataVersion::None,
-            timestamp.to_raw().unwrap().as_bytes(),
+            &mut timestamp.to_raw().unwrap().as_bytes(),
         )
         .await?;
 

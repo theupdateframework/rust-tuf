@@ -178,7 +178,7 @@ where
     /// local.store_metadata(
     ///     &root_path,
     ///     &root_version,
-    ///     root.to_raw().unwrap().as_bytes()
+    ///     &mut root.to_raw().unwrap().as_bytes()
     /// ).await?;
     ///
     /// let client = Client::with_trusted_local(
@@ -321,7 +321,7 @@ where
     /// remote.store_metadata(
     ///     &root_path,
     ///     &root_version,
-    ///     root.to_raw().unwrap().as_bytes()
+    ///     &mut root.to_raw().unwrap().as_bytes()
     /// ).await?;
     ///
     /// let client = Client::with_trusted_root_keys(
@@ -644,8 +644,8 @@ where
 
     /// Fetch a target from the remote repo and write it to the local repo.
     pub async fn fetch_target<'a>(&'a mut self, target: &'a TargetPath) -> Result<()> {
-        let read = self._fetch_target(target).await?;
-        self.local.store_target(read, target).await
+        let mut read = self._fetch_target(target).await?;
+        self.local.store_target(&mut read, target).await
     }
 
     /// Fetch a target from the remote repo and write it to the provided writer.
