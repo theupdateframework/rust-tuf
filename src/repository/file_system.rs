@@ -13,7 +13,7 @@ use crate::crypto::{HashAlgorithm, HashValue};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{MetadataPath, MetadataVersion, TargetDescription, TargetPath};
-use crate::repository::{RepositoryProvider, RepositoryStorage, RepositoryStorageProvider};
+use crate::repository::{RepositoryProvider, RepositoryStorage};
 use crate::Result;
 
 /// A builder to create a repository contained on the local file system.
@@ -197,8 +197,6 @@ where
         .boxed()
     }
 }
-
-impl<D> RepositoryStorageProvider<D> for FileSystemRepository<D> where D: DataInterchange + Sync {}
 
 fn create_temp_file(path: &Path) -> Result<NamedTempFile> {
     // We want to atomically write the file to make sure clients can never see a partially written

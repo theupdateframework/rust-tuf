@@ -12,7 +12,7 @@ use crate::crypto::{HashAlgorithm, HashValue};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{MetadataPath, MetadataVersion, TargetDescription, TargetPath};
-use crate::repository::{RepositoryProvider, RepositoryStorage, RepositoryStorageProvider};
+use crate::repository::{RepositoryProvider, RepositoryStorage};
 use crate::Result;
 
 type ArcHashMap<K, V> = Arc<RwLock<HashMap<K, V>>>;
@@ -135,8 +135,6 @@ where
     }
 }
 
-impl<D> RepositoryStorageProvider<D> for EphemeralRepository<D> where D: DataInterchange + Sync {}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -147,6 +145,7 @@ mod test {
     fn ephemeral_repo_targets() {
         block_on(async {
             let repo = EphemeralRepository::<Json>::new();
+
             let data: &[u8] = b"like tears in the rain";
             let target_description =
                 TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();

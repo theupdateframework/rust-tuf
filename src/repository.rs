@@ -92,6 +92,13 @@ where
 {
 }
 
+impl<D, T> RepositoryStorageProvider<D> for T
+where
+    D: DataInterchange + Sync,
+    T: RepositoryStorage<D> + RepositoryProvider<D>,
+{
+}
+
 impl<T, D> RepositoryProvider<D> for &T
 where
     T: RepositoryProvider<D>,
@@ -139,12 +146,6 @@ where
     }
 }
 
-impl<T, D> RepositoryStorageProvider<D> for &T
-where
-    T: RepositoryStorage<D> + RepositoryProvider<D>,
-    D: DataInterchange + Sync,
-{
-}
 
 impl<T, D> RepositoryStorage<D> for Box<T>
 where
@@ -191,13 +192,6 @@ where
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         (**self).fetch_target(target_path, target_description)
     }
-}
-
-impl<T, D> RepositoryStorageProvider<D> for Box<T>
-where
-    T: RepositoryStorage<D> + RepositoryProvider<D> + ?Sized,
-    D: DataInterchange + Sync,
-{
 }
 
 /// A wrapper around an implementation of [`RepositoryProvider`] and/or [`RepositoryStorage`] tied
