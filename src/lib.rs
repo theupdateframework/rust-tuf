@@ -117,6 +117,7 @@ pub mod interchange;
 pub mod metadata;
 pub mod repository;
 pub mod tuf;
+pub mod verify;
 
 mod format_hex;
 mod util;

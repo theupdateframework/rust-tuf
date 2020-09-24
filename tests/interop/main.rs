@@ -216,7 +216,7 @@ async fn extract_keys(dir: &Path) -> Vec<PublicKey> {
         .unwrap();
     reader.read_to_end(&mut buf).await.unwrap();
     let metadata = RawSignedMetadata::<Json, RootMetadata>::new(buf)
-        .parse()
+        .parse_untrusted()
         .unwrap()
         .assume_valid()
         .unwrap();

@@ -2,7 +2,6 @@
 
 use chrono::offset::Utc;
 use chrono::{DateTime, Duration};
-use log::{debug, warn};
 use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
 use serde::ser::{Error as SerializeError, Serialize, Serializer};
 use serde_derive::{Deserialize, Serialize};
@@ -266,7 +265,10 @@ where
     }
 
     /// Parse this metadata.
-    pub fn parse(&self) -> Result<SignedMetadata<D, M>> {
+    ///
+    /// **WARNING**: This does not verify signatures, so it exposes users to potential parser
+    /// exploits.
+    pub fn parse_untrusted(&self) -> Result<SignedMetadata<D, M>> {
         D::from_slice(&self.bytes)
     }
 }
@@ -495,111 +497,6 @@ where
     /// This operation is not safe to do with metadata obtained from an untrusted source.
     pub fn assume_valid(&self) -> Result<M> {
         D::deserialize(&self.metadata)
-    }
-
-    /// Verify this metadata.
-    ///
-    /// ```
-    /// # use chrono::prelude::*;
-    /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
-    /// # use tuf::interchange::Json;
-    /// # use tuf::metadata::{SnapshotMetadataBuilder, SignedMetadata};
-    ///
-    /// # fn main() {
-    /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
-    /// let key_1 = PrivateKey::from_pkcs8(&key_1, SignatureScheme::Ed25519).unwrap();
-    ///
-    /// let key_2: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
-    /// let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
-    ///
-    /// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
-    /// let snapshot = SignedMetadata::<Json, _>::new(&snapshot, &key_1).unwrap();
-    ///
-    /// assert!(snapshot.verify(
-    ///     1,
-    ///     vec![key_1.public()],
-    /// ).is_ok());
-    ///
-    /// // fail with increased threshold
-    /// assert!(snapshot.verify(
-    ///     2,
-    ///     vec![key_1.public()],
-    /// ).is_err());
-    ///
-    /// // fail when the keys aren't authorized
-    /// assert!(snapshot.verify(
-    ///     1,
-    ///     vec![key_2.public()],
-    /// ).is_err());
-    ///
-    /// // fail when the keys don't exist
-    /// assert!(snapshot.verify(
-    ///     1,
-    ///     &[],
-    /// ).is_err());
-    /// # }
-    pub fn verify<'a, I>(&self, threshold: u32, authorized_keys: I) -> Result<M>
-    where
-        I: IntoIterator<Item = &'a PublicKey>,
-    {
-        if self.signatures.is_empty() {
-            return Err(Error::VerificationFailure(
-                "The metadata was not signed with any authorized keys.".into(),
-            ));
-        }
-
-        if threshold < 1 {
-            return Err(Error::VerificationFailure(
-                "Threshold must be strictly greater than zero".into(),
-            ));
-        }
-
-        let authorized_keys = authorized_keys
-            .into_iter()
-            .map(|k| (k.key_id(), k))
-            .collect::<HashMap<&KeyId, &PublicKey>>();
-
-        let canonical_bytes = D::canonicalize(&self.metadata)?;
-
-        let mut signatures_needed = threshold;
-        // Create a key_id->signature map to deduplicate the key_ids.
-        let signatures = self
-            .signatures
-            .iter()
-            .map(|sig| (sig.key_id(), sig))
-            .collect::<HashMap<&KeyId, &Signature>>();
-        for (key_id, sig) in signatures {
-            match authorized_keys.get(key_id) {
-                Some(ref pub_key) => match pub_key.verify(&canonical_bytes, sig) {
-                    Ok(()) => {
-                        debug!("Good signature from key ID {:?}", pub_key.key_id());
-                        signatures_needed -= 1;
-                    }
-                    Err(e) => {
-                        warn!("Bad signature from key ID {:?}: {:?}", pub_key.key_id(), e);
-                    }
-                },
-                None => {
-                    warn!(
-                        "Key ID {:?} was not found in the set of authorized keys.",
-                        sig.key_id()
-                    );
-                }
-            }
-            if signatures_needed == 0 {
-                break;
-            }
-        }
-        if signatures_needed > 0 {
-            return Err(Error::VerificationFailure(format!(
-                "Signature threshold not met: {}/{}",
-                threshold - signatures_needed,
-                threshold
-            )));
-        }
-
-        // "assume" the metadata is valid because we just verified that it is.
-        self.assume_valid()
     }
 }
 
@@ -2103,6 +2000,7 @@ mod test {
     use super::*;
     use crate::crypto::SignatureScheme;
     use crate::interchange::Json;
+    use crate::verify::verify_signatures;
     use chrono::prelude::*;
     use maplit::{hashmap, hashset};
     use matches::assert_matches;
@@ -2436,7 +2334,12 @@ mod test {
 
         let signed: SignedMetadata<crate::interchange::cjson::Json, _> =
             SignedMetadata::new(&decoded, &root_key).unwrap();
-        signed.verify(1, &[root_key.public().clone()]).unwrap();
+        let raw_root = signed.to_raw().unwrap();
+
+        assert_matches!(
+            verify_signatures(&raw_root, 1, &[root_key.public().clone()]),
+            Ok(_)
+        );
     }
 
     #[test]
@@ -2451,8 +2354,12 @@ mod test {
         let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let decoded: SignedMetadata<crate::interchange::cjson::Json, RootMetadata> =
             serde_json::from_value(jsn).unwrap();
+        let raw_root = decoded.to_raw().unwrap();
 
-        decoded.verify(1, &[root_key.public().clone()]).unwrap();
+        assert_matches!(
+            verify_signatures(&raw_root, 1, &[root_key.public().clone()]),
+            Ok(_)
+        );
     }
 
     #[test]
@@ -2471,11 +2378,15 @@ mod test {
         let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
         let decoded: SignedMetadata<crate::interchange::cjson::Json, RootMetadata> =
             serde_json::from_value(jsn).unwrap();
+        let raw_root = decoded.to_raw().unwrap();
         assert_matches!(
-            decoded.verify(2, &[root_key.public().clone()]),
+            verify_signatures(&raw_root, 2, &[root_key.public().clone()]),
             Err(Error::VerificationFailure(_))
         );
-        decoded.verify(1, &[root_key.public().clone()]).unwrap();
+        assert_matches!(
+            verify_signatures(&raw_root, 1, &[root_key.public().clone()]),
+            Ok(_)
+        );
     }
 
     fn verify_signature_with_unknown_fields<M>(mut metadata: serde_json::Value)
@@ -2483,6 +2394,7 @@ mod test {
         M: Metadata,
     {
         let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let public_keys = vec![key.public().clone()];
 
         let mut standard = SignedMetadataBuilder::<Json, M>::from_raw_metadata(metadata.clone())
             .unwrap()
@@ -2491,7 +2403,7 @@ mod test {
             .build()
             .to_raw()
             .unwrap()
-            .parse()
+            .parse_untrusted()
             .unwrap();
 
         metadata.as_object_mut().unwrap().insert(
@@ -2508,22 +2420,32 @@ mod test {
             .build()
             .to_raw()
             .unwrap()
-            .parse()
+            .parse_untrusted()
             .unwrap();
 
         // Ensure the signatures are valid as-is.
-        assert_matches!(standard.verify(1, std::iter::once(key.public())), Ok(_));
-        assert_matches!(custom.verify(1, std::iter::once(key.public())), Ok(_));
+        assert_matches!(
+            verify_signatures(&standard.to_raw().unwrap(), 1, &public_keys),
+            Ok(_)
+        );
+        assert_matches!(
+            verify_signatures(&custom.to_raw().unwrap(), 1, std::iter::once(key.public())),
+            Ok(_)
+        );
 
         // But not if the metadata was signed with custom fields and they are now missing or
         // unexpected new fields appear.
         std::mem::swap(&mut standard.metadata, &mut custom.metadata);
         assert_matches!(
-            standard.verify(1, std::iter::once(key.public())),
+            verify_signatures(
+                &standard.to_raw().unwrap(),
+                1,
+                std::iter::once(key.public())
+            ),
             Err(Error::VerificationFailure(_))
         );
         assert_matches!(
-            custom.verify(1, std::iter::once(key.public())),
+            verify_signatures(&custom.to_raw().unwrap(), 1, std::iter::once(key.public())),
             Err(Error::VerificationFailure(_))
         );
     }
