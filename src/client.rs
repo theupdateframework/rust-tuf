@@ -381,7 +381,7 @@ where
                 .await;
 
             // FIXME: This isn't a part of the spec, but we also store the versioned metadata. This
-            // allows us to initialize a repository from the local emtadata.
+            // allows us to initialize a repository from the local metadata.
             client
                 .store_metadata(&root_path, &root_version, &raw_root)
                 .await;
@@ -525,7 +525,7 @@ where
                 .await;
 
             // FIXME: This isn't a part of the spec, but we also store the versioned metadata. This
-            // allows us to initialize a repository from the local emtadata.
+            // allows us to initialize a repository from the local metadata.
             self.store_metadata(&root_path, &version, &raw_signed_root)
                 .await;
 
@@ -550,7 +550,7 @@ where
             .await;
 
         // FIXME: This isn't a part of the spec, but we also store the versioned metadata. This
-        // allows us to initialize a repository from the local emtadata.
+        // allows us to initialize a repository from the local metadata.
         self.store_metadata(
             &root_path,
             &MetadataVersion::Number(latest_version),
