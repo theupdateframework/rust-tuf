@@ -156,16 +156,16 @@ impl<D: DataInterchange> Tuf<D> {
         let verified = {
             let trusted_root = &self.trusted_root;
 
+            /////////////////////////////////////////
             // TUF-1.0.5 §5.1.3:
             //
-            //     1.3. Check signatures. Version N+1 of the root metadata file MUST have been
-            //       signed by: (1) a threshold of keys specified in the trusted root metadata file
-            //       (version N), and (2) a threshold of keys specified in the new root metadata
-            //       file being validated (version N+1). If version N+1 is not signed as required,
-            //       discard it, abort the update cycle, and report the signature failure. On the
-            //       next update cycle, begin at step 0 and version N of the root metadata file.
-
-            // Verify the trusted root signed the new root.
+            //     Check signatures. Version N+1 of the root metadata file MUST have been signed
+            //     by: (1) a threshold of keys specified in the trusted root metadata file (version
+            //     N), and (2) a threshold of keys specified in the new root metadata file being
+            //     validated (version N+1). If version N+1 is not signed as required, discard it,
+            //     abort the update cycle, and report the signature failure. On the next update
+            //     cycle, begin at step 0 and version N of the root metadata file.  Verify the
+            //     trusted root signed the new root.
             let new_root = verify::verify_signatures(
                 raw_root,
                 trusted_root.root().threshold(),
@@ -178,6 +178,17 @@ impl<D: DataInterchange> Tuf<D> {
                 new_root.root().threshold(),
                 new_root.root_keys(),
             )?;
+
+            /////////////////////////////////////////
+            // TUF-1.0.5 §5.1.4:
+            //
+            //     Check for a rollback attack. The version number of the trusted root metadata
+            //     file (version N) must be less than or equal to the version number of the new
+            //     root metadata file (version N+1). Effectively, this means checking that the
+            //     version number signed in the new root metadata file is indeed N+1. If the
+            //     version of the new root metadata file is less than the trusted metadata file,
+            //     discard it, abort the update cycle, and report the rollback attack. On the next
+            //     update cycle, begin at step 0 and version N of the root metadata file.
 
             // Next, make sure the new root has a higher version than the old root.
             if new_root.version() == trusted_root.version() {
@@ -194,12 +205,46 @@ impl<D: DataInterchange> Tuf<D> {
                 )));
             }
 
+            /////////////////////////////////////////
+            // TUF-1.0.5 §5.1.5:
+            //
+            //     Note that the expiration of the new (intermediate) root metadata file does not matter yet, because we will check for it in step 1.8.
+
+            /////////////////////////////////////////
+            // TUF-1.0.5 §5.1.8:
+            //
+            //     Check for a freeze attack. The latest known time should be lower than the
+            //     expiration timestamp in the trusted root metadata file (version N). If the
+            //     trusted root metadata file has expired, abort the update cycle, report the
+            //     potential freeze attack. On the next update cycle, begin at step 0 and version N
+            //     of the root metadata file.
+
+            // FIXME: root metadata expiration is performed in Client. We should restructure things
+            // such that it is performed here.
+
             new_root
         };
 
+        /////////////////////////////////////////
+        // TUF-1.0.5 §5.1.9:
+        //
+        //     If the timestamp and / or snapshot keys have been rotated, then delete the
+        //     trusted timestamp and snapshot metadata files. This is done in order to recover
+        //     from fast-forward attacks after the repository has been compromised and
+        //     recovered. A fast-forward attack happens when attackers arbitrarily increase the
+        //     version numbers of: (1) the timestamp metadata, (2) the snapshot metadata, and /
+        //     or (3) the targets, or a delegated targets, metadata file in the snapshot
+        //     metadata. Please see the Mercury paper for more details.
+
         self.purge_metadata();
 
+        /////////////////////////////////////////
+        // TUF-1.0.5 §5.1.6:
+        //
+        //     1.6. Set the trusted root metadata file to the new root metadata file.
+
         self.trusted_root = verified;
+
         Ok(true)
     }
 
@@ -216,24 +261,31 @@ impl<D: DataInterchange> Tuf<D> {
             // methods, but not here.
             let trusted_root = &self.trusted_root;
 
+            /////////////////////////////////////////
             // TUF-1.0.5 §5.2.1:
             //
             //     Check signatures. The new timestamp metadata file must have been signed by a
             //     threshold of keys specified in the trusted root metadata file. If the new
             //     timestamp metadata file is not properly signed, discard it, abort the update
             //     cycle, and report the signature failure.
+
             let new_timestamp = verify::verify_signatures(
                 raw_timestamp,
                 trusted_root.timestamp().threshold(),
                 trusted_root.timestamp_keys(),
             )?;
 
-            // Next, make sure the timestamp hasn't expired.
-            if new_timestamp.expires() <= &Utc::now() {
-                return Err(Error::ExpiredMetadata(Role::Timestamp));
-            }
+            /////////////////////////////////////////
+            // TUF-1.0.5 §5.2.2: Check for a rollback attack.
 
-            // Next, make sure the new metadata has a higher version than the old metadata.
+            /////////////////////////////////////////
+            // TUF-1.0.5 §5.2.2.1:
+            //
+            //     The version number of the trusted timestamp metadata file, if any, must be less
+            //     than or equal to the version number of the new timestamp metadata file. If the
+            //     new timestamp metadata file is older than the trusted timestamp metadata file,
+            //     discard it, abort the update cycle, and report the potential rollback attack.
+
             let trusted_timestamp_version = self.trusted_timestamp_version();
 
             if new_timestamp.version() < trusted_timestamp_version {
@@ -246,8 +298,35 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(None);
             }
 
+            /////////////////////////////////////////
+            // TUF-1.0.5 §5.2.2.2:
+            //
+            //     The version number of the snapshot metadata file in the trusted timestamp
+            //     metadata file, if any, MUST be less than or equal to its version number in the
+            //     new timestamp metadata file. If not, discard the new timestamp metadadata file,
+            //     abort the update cycle, and report the failure.
+
+            // FIXME(#294): Implement this section.
+
+            /////////////////////////////////////////
+            // FIXME(#297): forgetting the trusted snapshot here is not part of the spec. Do we need to
+            // do it?
+
             if self.trusted_snapshot_version() != new_timestamp.snapshot().version() {
                 self.trusted_snapshot = None;
+            }
+
+            /////////////////////////////////////////
+            // TUF-1.0.5 §5.2.3:
+            //
+            //     Check for a freeze attack. The latest known time should be lower than the
+            //     expiration timestamp in the new timestamp metadata file. If so, the new
+            //     timestamp metadata file becomes the trusted timestamp metadata file. If the new
+            //     timestamp metadata file has expired, discard it, abort the update cycle, and
+            //     report the potential freeze attack.
+
+            if new_timestamp.expires() <= &Utc::now() {
+                return Err(Error::ExpiredMetadata(Role::Timestamp));
             }
 
             new_timestamp
@@ -263,6 +342,7 @@ impl<D: DataInterchange> Tuf<D> {
         raw_snapshot: &RawSignedMetadata<D, SnapshotMetadata>,
     ) -> Result<bool> {
         let verified = {
+            /////////////////////////////////////////
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
             // this metadata expired isn't part of the spec. Do we actually want to do this?
             let trusted_root = self.trusted_root_unexpired()?;
@@ -279,6 +359,7 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
+            /////////////////////////////////////////
             // TUF-1.0.5 §5.3.1:
             //
             //     Check against timestamp metadata. The hashes and version number of the new
@@ -295,32 +376,83 @@ impl<D: DataInterchange> Tuf<D> {
             // afterwards. That PR proposes formally moving the version check to after signature
             // verification.
 
+            /////////////////////////////////////////
             // TUF-1.0.5 §5.3.2:
             //
             //     The new snapshot metadata file MUST have been signed by a threshold of keys
             //     specified in the trusted root metadata file. If the new snapshot metadata file
             //     is not signed as required, discard it, abort the update cycle, and report the
             //     signature failure.
+
             let new_snapshot = verify::verify_signatures(
                 raw_snapshot,
                 trusted_root.snapshot().threshold(),
                 trusted_root.snapshot_keys(),
             )?;
 
+            /////////////////////////////////////////
+            // FIXME(https://github.com/theupdateframework/specification/pull/112): Actually check
+            // the version.
+
             if new_snapshot.version() != trusted_timestamp.snapshot().version() {
                 return Err(Error::VerificationFailure(format!(
                     "The timestamp metadata reported that the snapshot metadata should be at \
                      version {} but version {} was found instead.",
                     trusted_timestamp.snapshot().version(),
-                    new_snapshot.version()
+                    new_snapshot.version(),
                 )));
             }
 
+            /////////////////////////////////////////
+            // TUF-1.0.5 §5.3.3: Check for a rollback attack.
+
+            /////////////////////////////////////////
+            // TUF-1.0.5 §5.3.3.1:
+            //
+            //     The version number of the trusted snapshot metadata file, if any, MUST be less
+            //     than or equal to the version number of the new snapshot metadata file. If the
+            //     new snapshot metadata file is older than the trusted metadata file, discard it,
+            //     abort the update cycle, and report the potential rollback attack.
+
+            if new_snapshot.version() < trusted_snapshot_version {
+                return Err(Error::VerificationFailure(format!(
+                    "Attempted to roll back snapshot metadata at version {} to {}",
+                    trusted_snapshot_version,
+                    new_snapshot.version(),
+                )));
+            }
+
+            /////////////////////////////////////////
+            // TUF-1.0.5 §5.3.3.2:
+            //
+            //     The version number of the targets metadata file, and all delegated targets
+            //     metadata files (if any), in the trusted snapshot metadata file, if any, MUST be
+            //     less than or equal to its version number in the new snapshot metadata file.
+            //     Furthermore, any targets metadata filename that was listed in the trusted
+            //     snapshot metadata file, if any, MUST continue to be listed in the new snapshot
+            //     metadata file. If any of these conditions are not met, discard the new snapshot
+            //     metadadata file, abort the update cycle, and report the failure.
+
+            // FIXME(#295): Implement this section.
+
+            /////////////////////////////////////////
+            // TUF-1.0.5 §5.3.4:
+            //
+            //     Check for a freeze attack. The latest known time should be lower than the
+            //     expiration timestamp in the new snapshot metadata file. If so, the new snapshot
+            //     metadata file becomes the trusted snapshot metadata file. If the new snapshot
+            //     metadata file is expired, discard it, abort the update cycle, and report the
+            //     potential freeze attack.
+
+            /////////////////////////////////////////
+            // FIXME(#297): Verify why we don't check expiration here:
             // Note: this doesn't check the expiration because we need to be able to update it
             // regardless so we can prevent rollback attacks againsts targets/delegations.
+
             new_snapshot
         };
 
+        // FIXME(#297): purging targets is not part of the spec. Do we need to do it?
         if self
             .trusted_targets
             .as_ref()
@@ -336,7 +468,10 @@ impl<D: DataInterchange> Tuf<D> {
         }
 
         self.trusted_snapshot = Some(verified);
+
+        // FIXME(#297): purging delegates is not part of the spec. Do we need to do it?
         self.purge_delegations();
+
         Ok(true)
     }
 
@@ -378,6 +513,8 @@ impl<D: DataInterchange> Tuf<D> {
             let trusted_root = self.trusted_root_unexpired()?;
             let trusted_snapshot = self.trusted_snapshot_unexpired()?;
 
+            // FIXME(#295): TUF-1.0.5 §5.3.3.2 says this check should be done when updating the
+            // snapshot, not here.
             let trusted_targets_description = trusted_snapshot
                 .meta()
                 .get(&MetadataPath::from_role(&Role::Targets))
@@ -399,6 +536,7 @@ impl<D: DataInterchange> Tuf<D> {
                 return Ok(false);
             }
 
+            /////////////////////////////////////////
             // TUF-1.0.5 §5.4.1:
             //
             //     Check against snapshot metadata. The hashes and version number of the new
@@ -416,6 +554,7 @@ impl<D: DataInterchange> Tuf<D> {
             // afterwards. That PR proposes formally moving the version check to after signature
             // verification.
 
+            /////////////////////////////////////////
             // TUF-1.0.5 §5.4.2:
             //
             //     Check for an arbitrary software attack. The new targets metadata file MUST have
@@ -429,6 +568,10 @@ impl<D: DataInterchange> Tuf<D> {
                 trusted_root.targets_keys(),
             )?;
 
+            /////////////////////////////////////////
+            // FIXME(https://github.com/theupdateframework/specification/pull/112): Actually check
+            // the version.
+
             if new_targets.version() != trusted_targets_description.version() {
                 return Err(Error::VerificationFailure(format!(
                     "The timestamp metadata reported that the targets metadata should be at \
@@ -438,6 +581,14 @@ impl<D: DataInterchange> Tuf<D> {
                 )));
             }
 
+            /////////////////////////////////////////
+            // TUF-1.0.5 §5.4.3:
+            //
+            //     Check for a freeze attack. The latest known time should be lower than the
+            //     expiration timestamp in the new targets metadata file. If so, the new targets
+            //     metadata file becomes the trusted targets metadata file. If the new targets
+            //     metadata file is expired, discard it, abort the update cycle, and report the
+            //     potential freeze attack.
             if new_targets.expires() <= &Utc::now() {
                 return Err(Error::ExpiredMetadata(Role::Snapshot));
             }
@@ -548,6 +699,7 @@ impl<D: DataInterchange> Tuf<D> {
             // FIXME(#279) update_delegation trusts tuf::Client to provide too much information,
             // making this difficult to verify as correct.
 
+            /////////////////////////////////////////
             // TUF-1.0.5 §5.4.1:
             //
             //     Check against snapshot metadata. The hashes and version number of the new
