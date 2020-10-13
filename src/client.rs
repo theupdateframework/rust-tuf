@@ -363,9 +363,10 @@ where
         )
         .await?;
 
-        // FIXME(#253) verify the trusted root version matches the provided version.
-
         let tuf = Tuf::from_root_with_trusted_keys(&raw_root, root_threshold, trusted_root_keys)?;
+
+        // FIXME(#253) verify the trusted root version matches the provided version.
+        let root_version = MetadataVersion::Number(tuf.trusted_root().version());
 
         let mut client = Client {
             tuf,
@@ -376,15 +377,23 @@ where
 
         // Only store the metadata after we have validated it.
         if fetched {
-            client
-                .store_metadata(&root_path, &MetadataVersion::None, &raw_root)
-                .await;
-
-            // FIXME: This isn't a part of the spec, but we also store the versioned metadata. This
-            // allows us to initialize a repository from the local metadata.
+            // NOTE(#301): The spec only states that the unversioned root metadata needs to be
+            // written to non-volatile storage. This enables a method like
+            // `Client::with_trusted_local` to initialize trust with the latest root version.
+            // However, this doesn't work well when trust is established with an externally
+            // provided root, such as with `Clietn::with_trusted_root` or
+            // `Client::with_trusted_root_keys`. In those cases, it's possible those initial roots
+            // could be multiple versions behind the latest cached root metadata. So we'd most
+            // likely never use the locally cached `root.json`.
+            //
+            // Instead, as an extension to the spec, we'll write the `$VERSION.root.json` metadata
+            // to the local store. This will eventually enable us to initialize metadata from the
+            // local store (see #301).
             client
                 .store_metadata(&root_path, &root_version, &raw_root)
                 .await;
+
+            // FIXME: should we also store the root as `MetadataVersion::None`?
         }
 
         Ok(client)
@@ -472,7 +481,7 @@ where
             // to parser exploits.
             //
             // FIXME(#292): Consider rewriting this logic to just fetching root version N+1 until
-            // we get a not found error. That allows us to avoid parsing the metadata here.
+            // we get a "Not Found" error. That allows us to avoid parsing the metadata here.
             let latest_root = raw_latest_root.parse_untrusted()?;
             latest_root.parse_version_untrusted()?
         };
@@ -505,6 +514,8 @@ where
             //     exact number is as yet unknown), then go to step 5.1.9. The value for Y is set
             //     by the authors of the application using TUF. For example, Y may be 2^10.
 
+            // FIXME(#292): Consider rewriting this logic to just fetching root version N+1 until
+            // we get a "Not Found" error.
             let raw_signed_root = self
                 .remote
                 .fetch_metadata(&root_path, &version, self.config.max_root_length, None)
@@ -524,8 +535,7 @@ where
             self.store_metadata(&root_path, &MetadataVersion::None, &raw_signed_root)
                 .await;
 
-            // FIXME: This isn't a part of the spec, but we also store the versioned metadata. This
-            // allows us to initialize a repository from the local metadata.
+            // NOTE(#301): See the comment in `Client::with_trusted_root_keys`.
             self.store_metadata(&root_path, &version, &raw_signed_root)
                 .await;
 
@@ -549,8 +559,7 @@ where
         self.store_metadata(&root_path, &MetadataVersion::None, &raw_latest_root)
             .await;
 
-        // FIXME: This isn't a part of the spec, but we also store the versioned metadata. This
-        // allows us to initialize a repository from the local metadata.
+        // NOTE(#301): See the comment in `Client::with_trusted_root_keys`.
         self.store_metadata(
             &root_path,
             &MetadataVersion::Number(latest_version),
@@ -567,9 +576,8 @@ where
         //     attack. On the next update cycle, begin at step 5.0 and version N of the root
         //     metadata file.
 
-        // FIXME: we should move this logic into TUF to make it easier to review we implement the
-        // TUF spec.
-
+        // TODO: Consider moving the root metadata expiration check into `tuf::Tuf`, since that's
+        // where we check timestamp/snapshot/targets/delegations for expiration.
         if self.tuf.trusted_root().expires() <= &Utc::now() {
             error!("Root metadata expired, potential freeze attack");
             return Err(Error::ExpiredMetadata(Role::Root));
@@ -1422,7 +1430,12 @@ mod test {
                 root1.to_raw().unwrap(),
                 client
                     .local
-                    .fetch_metadata::<RootMetadata>(&root_path, &MetadataVersion::None, None, None)
+                    .fetch_metadata::<RootMetadata>(
+                        &root_path,
+                        &MetadataVersion::Number(1),
+                        None,
+                        None
+                    )
                     .await
                     .unwrap()
             );
@@ -1606,11 +1619,11 @@ mod test {
             .unwrap();
 
         ////
-        // Initialize with root metadata version 2.
+        // Initialize with root metadata version 1.
         let public_keys = [KEYS[0].public().clone(), KEYS[1].public().clone()];
         let mut client = Client::with_trusted_root_keys(
             Config::build().finish().unwrap(),
-            &MetadataVersion::Number(2),
+            &MetadataVersion::Number(1),
             1,
             &public_keys,
             EphemeralRepository::new(),
@@ -1620,7 +1633,7 @@ mod test {
         .unwrap();
 
         ////
-        // Ensure client doesn't fetch previous version (1).
+        // Ensure client fetched the new version (2).
         assert_matches!(client.update().await, Ok(true));
         assert_eq!(client.tuf.trusted_root().version(), 2);
 
