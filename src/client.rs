@@ -463,6 +463,25 @@ where
     async fn update_root(&mut self) -> Result<bool> {
         let root_path = MetadataPath::from_role(&Role::Root);
 
+        // We don't follow the TUF-1.0.9 §5.1 on how to update the root metadata. It states:
+        //
+        // TUF-1.0.9 §5.1.2:
+        //
+        //     Try downloading version N+1 of the root metadata file, up to some W number of
+        //     bytes (because the size is unknown). The value for W is set by the authors of
+        //     the application using TUF. For example, W may be tens of kilobytes. The filename
+        //     used to download the root metadata file is of the fixed form
+        //     VERSION_NUMBER.FILENAME.EXT (e.g., 42.root.json). If this file is not available,
+        //     or we have downloaded more than Y number of root metadata files (because the
+        //     exact number is as yet unknown), then go to step 5.1.9. The value for Y is set
+        //     by the authors of the application using TUF. For example, Y may be 2^10.
+        //
+        // Instead, we fetch the latest available metadata (lets call the current version N and the
+        // latest version N+M), then we re-fetch all the metadata in betwee N and N+M.
+        //
+        // FIXME(#292): Consider rewriting this logic to follow the spec. By following the spec, we
+        // avoid the issue of having to use metadata (in order to extract the metadata version
+        // number) before we've verified it was signed correctly.
         let raw_latest_root = self
             .remote
             .fetch_metadata(
@@ -477,11 +496,7 @@ where
         // signed by the previous root metadata, which we can't check without knowing what version
         // this root metadata claims to be.
         let latest_version = {
-            // **WARNING**: By deserializing the metadata before verification, we are exposing us
-            // to parser exploits.
-            //
-            // FIXME(#292): Consider rewriting this logic to just fetching root version N+1 until
-            // we get a "Not Found" error. That allows us to avoid parsing the metadata here.
+            // FIXME(#292): See the note above.
             let latest_root = raw_latest_root.parse_untrusted()?;
             latest_root.parse_version_untrusted()?
         };
@@ -502,20 +517,7 @@ where
         for i in (self.tuf.trusted_root().version() + 1)..latest_version {
             let version = MetadataVersion::Number(i);
 
-            /////////////////////////////////////////
-            // TUF-1.0.9 §5.1.2:
-            //
-            //     Try downloading version N+1 of the root metadata file, up to some W number of
-            //     bytes (because the size is unknown). The value for W is set by the authors of
-            //     the application using TUF. For example, W may be tens of kilobytes. The filename
-            //     used to download the root metadata file is of the fixed form
-            //     VERSION_NUMBER.FILENAME.EXT (e.g., 42.root.json). If this file is not available,
-            //     or we have downloaded more than Y number of root metadata files (because the
-            //     exact number is as yet unknown), then go to step 5.1.9. The value for Y is set
-            //     by the authors of the application using TUF. For example, Y may be 2^10.
-
-            // FIXME(#292): Consider rewriting this logic to just fetching root version N+1 until
-            // we get a "Not Found" error.
+            // FIXME(#292): See the note above.
             let raw_signed_root = self
                 .remote
                 .fetch_metadata(&root_path, &version, self.config.max_root_length, None)
@@ -923,10 +925,10 @@ where
             {
                 Ok(_) => {
                     /////////////////////////////////////////
-                    // TUF-1.0.9 §5.2.4:
+                    // TUF-1.0.9 §5.4.4:
                     //
-                    //     Persist timestamp metadata. The client MUST write the file to
-                    //     non-volatile storage as FILENAME.EXT (e.g. timestamp.json).
+                    //     Persist targets metadata. The client MUST write the file to non-volatile
+                    //     storage as FILENAME.EXT (e.g. targets.json).
 
                     match self
                         .local
