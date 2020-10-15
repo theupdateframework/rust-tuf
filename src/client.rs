@@ -377,6 +377,18 @@ where
 
         // Only store the metadata after we have validated it.
         if fetched {
+            // NOTE(#301): The spec only states that the unversioned root metadata needs to be
+            // written to non-volatile storage. This enables a method like
+            // `Client::with_trusted_local` to initialize trust with the latest root version.
+            // However, this doesn't work well when trust is established with an externally
+            // provided root, such as with `Clietn::with_trusted_root` or
+            // `Client::with_trusted_root_keys`. In those cases, it's possible those initial roots
+            // could be multiple versions behind the latest cached root metadata. So we'd most
+            // likely never use the locally cached `root.json`.
+            //
+            // Instead, as an extension to the spec, we'll write the `$VERSION.root.json` metadata
+            // to the local store. This will eventually enable us to initialize metadata from the
+            // local store (see #301).
             client
                 .store_metadata(&root_path, &root_version, &raw_root)
                 .await;
@@ -451,6 +463,25 @@ where
     async fn update_root(&mut self) -> Result<bool> {
         let root_path = MetadataPath::from_role(&Role::Root);
 
+        // We don't follow the TUF-1.0.9 §5.1 on how to update the root metadata. It states:
+        //
+        // TUF-1.0.9 §5.1.2:
+        //
+        //     Try downloading version N+1 of the root metadata file, up to some W number of
+        //     bytes (because the size is unknown). The value for W is set by the authors of
+        //     the application using TUF. For example, W may be tens of kilobytes. The filename
+        //     used to download the root metadata file is of the fixed form
+        //     VERSION_NUMBER.FILENAME.EXT (e.g., 42.root.json). If this file is not available,
+        //     or we have downloaded more than Y number of root metadata files (because the
+        //     exact number is as yet unknown), then go to step 5.1.9. The value for Y is set
+        //     by the authors of the application using TUF. For example, Y may be 2^10.
+        //
+        // Instead, we fetch the latest available metadata (lets call the current version N and the
+        // latest version N+M), then we re-fetch all the metadata in betwee N and N+M.
+        //
+        // FIXME(#292): Consider rewriting this logic to follow the spec. By following the spec, we
+        // avoid the issue of having to use metadata (in order to extract the metadata version
+        // number) before we've verified it was signed correctly.
         let raw_latest_root = self
             .remote
             .fetch_metadata(
@@ -465,11 +496,7 @@ where
         // signed by the previous root metadata, which we can't check without knowing what version
         // this root metadata claims to be.
         let latest_version = {
-            // **WARNING**: By deserializing the metadata before verification, we are exposing us
-            // to parser exploits.
-            //
-            // FIXME(#292): Consider rewriting this logic to just fetching root version N+1 until
-            // we get a not found error. That allows us to avoid parsing the metadata here.
+            // FIXME(#292): See the note above.
             let latest_root = raw_latest_root.parse_untrusted()?;
             latest_root.parse_version_untrusted()?
         };
@@ -490,6 +517,7 @@ where
         for i in (self.tuf.trusted_root().version() + 1)..latest_version {
             let version = MetadataVersion::Number(i);
 
+            // FIXME(#292): See the note above.
             let raw_signed_root = self
                 .remote
                 .fetch_metadata(&root_path, &version, self.config.max_root_length, None)
@@ -500,8 +528,23 @@ where
                 return Err(Error::Programming(err_msg.into()));
             }
 
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.1.7:
+            //
+            //     Persist root metadata. The client MUST write the file to non-volatile storage as
+            //     FILENAME.EXT (e.g. root.json).
+
+            self.store_metadata(&root_path, &MetadataVersion::None, &raw_signed_root)
+                .await;
+
+            // NOTE(#301): See the comment in `Client::with_trusted_root_keys`.
             self.store_metadata(&root_path, &version, &raw_signed_root)
                 .await;
+
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.1.8:
+            //
+            //     Repeat steps 5.1.1 to 5.1.8.
         }
 
         if !self.tuf.update_root(&raw_latest_root)? {
@@ -509,17 +552,46 @@ where
             return Err(Error::Programming(err_msg.into()));
         }
 
-        let latest_version = MetadataVersion::Number(latest_version);
+        /////////////////////////////////////////
+        // TUF-1.0.9 §5.1.7:
+        //
+        //     Persist root metadata. The client MUST write the file to non-volatile storage as
+        //     FILENAME.EXT (e.g. root.json).
 
-        self.store_metadata(&root_path, &latest_version, &raw_latest_root)
-            .await;
         self.store_metadata(&root_path, &MetadataVersion::None, &raw_latest_root)
             .await;
 
+        // NOTE(#301): See the comment in `Client::with_trusted_root_keys`.
+        self.store_metadata(
+            &root_path,
+            &MetadataVersion::Number(latest_version),
+            &raw_latest_root,
+        )
+        .await;
+
+        /////////////////////////////////////////
+        // TUF-1.0.9 §5.1.9:
+        //
+        //     Check for a freeze attack. The latest known time MUST be lower than the expiration
+        //     timestamp in the trusted root metadata file (version N). If the trusted root
+        //     metadata file has expired, abort the update cycle, report the potential freeze
+        //     attack. On the next update cycle, begin at step 5.0 and version N of the root
+        //     metadata file.
+
+        // TODO: Consider moving the root metadata expiration check into `tuf::Tuf`, since that's
+        // where we check timestamp/snapshot/targets/delegations for expiration.
         if self.tuf.trusted_root().expires() <= &Utc::now() {
             error!("Root metadata expired, potential freeze attack");
             return Err(Error::ExpiredMetadata(Role::Root));
         }
+
+        /////////////////////////////////////////
+        // TUF-1.0.5 §5.1.10:
+        //
+        //     Set whether consistent snapshots are used as per the trusted root metadata file (see
+        //     Section 4.3).
+
+        // FIXME: validate we are properly setting the consistent snapshot.
 
         Ok(true)
     }
@@ -527,6 +599,14 @@ where
     /// Returns `true` if an update occurred and `false` otherwise.
     async fn update_timestamp(&mut self) -> Result<bool> {
         let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
+
+        /////////////////////////////////////////
+        // TUF-1.0.9 §5.2:
+        //
+        //     Download the timestamp metadata file, up to X number of bytes (because the size is
+        //     unknown). The value for X is set by the authors of the application using TUF. For
+        //     example, X may be tens of kilobytes. The filename used to download the timestamp
+        //     metadata file is of the fixed form FILENAME.EXT (e.g., timestamp.json).
 
         let raw_signed_timestamp = self
             .remote
@@ -538,10 +618,19 @@ where
             )
             .await?;
 
-        if let Some(updated_timestamp) = self.tuf.update_timestamp(&raw_signed_timestamp)? {
-            let latest_version = MetadataVersion::Number(updated_timestamp.version());
-            self.store_metadata(&timestamp_path, &latest_version, &raw_signed_timestamp)
-                .await;
+        if self.tuf.update_timestamp(&raw_signed_timestamp)?.is_some() {
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.2.4:
+            //
+            //     Persist timestamp metadata. The client MUST write the file to non-volatile
+            //     storage as FILENAME.EXT (e.g. timestamp.json).
+
+            self.store_metadata(
+                &timestamp_path,
+                &MetadataVersion::None,
+                &raw_signed_timestamp,
+            )
+            .await;
 
             Ok(true)
         } else {
@@ -592,7 +681,13 @@ where
             .await?;
 
         if self.tuf.update_snapshot(&raw_signed_snapshot)? {
-            self.store_metadata(&snapshot_path, &version, &raw_signed_snapshot)
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.3.5:
+            //
+            //     Persist snapshot metadata. The client MUST write the file to non-volatile
+            //     storage as FILENAME.EXT (e.g. snapshot.json).
+
+            self.store_metadata(&snapshot_path, &MetadataVersion::None, &raw_signed_snapshot)
                 .await;
 
             Ok(true)
@@ -644,7 +739,13 @@ where
             .await?;
 
         if self.tuf.update_targets(&raw_signed_targets)? {
-            self.store_metadata(&targets_path, &version, &raw_signed_targets)
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.4.4:
+            //
+            //     Persist targets metadata. The client MUST write the file to non-volatile storage
+            //     as FILENAME.EXT (e.g. targets.json).
+
+            self.store_metadata(&targets_path, &MetadataVersion::None, &raw_signed_targets)
                 .await;
 
             Ok(true)
@@ -823,6 +924,12 @@ where
                 .update_delegation(&targets_role, delegation.role(), &raw_signed_meta)
             {
                 Ok(_) => {
+                    /////////////////////////////////////////
+                    // TUF-1.0.9 §5.4.4:
+                    //
+                    //     Persist targets metadata. The client MUST write the file to non-volatile
+                    //     storage as FILENAME.EXT (e.g. targets.json).
+
                     match self
                         .local
                         .store_metadata(delegation.role(), &MetadataVersion::None, &raw_signed_meta)
@@ -1045,7 +1152,7 @@ mod test {
     use crate::interchange::Json;
     use crate::metadata::{
         MetadataPath, MetadataVersion, RootMetadata, RootMetadataBuilder, SnapshotMetadataBuilder,
-        TargetsMetadataBuilder, TimestampMetadataBuilder,
+        TargetsMetadataBuilder, TimestampMetadata, TimestampMetadataBuilder,
     };
     use crate::repository::EphemeralRepository;
     use chrono::prelude::*;
@@ -1380,12 +1487,7 @@ mod test {
                 root3.to_raw().unwrap(),
                 client
                     .local
-                    .fetch_metadata::<RootMetadata>(
-                        &root_path,
-                        &MetadataVersion::Number(3),
-                        None,
-                        None
-                    )
+                    .fetch_metadata::<RootMetadata>(&root_path, &MetadataVersion::None, None, None)
                     .await
                     .unwrap()
             );
@@ -1519,11 +1621,11 @@ mod test {
             .unwrap();
 
         ////
-        // Initialize with root metadata version 2.
+        // Initialize with root metadata version 1.
         let public_keys = [KEYS[0].public().clone(), KEYS[1].public().clone()];
         let mut client = Client::with_trusted_root_keys(
             Config::build().finish().unwrap(),
-            &MetadataVersion::Number(2),
+            &MetadataVersion::Number(1),
             1,
             &public_keys,
             EphemeralRepository::new(),
@@ -1533,7 +1635,7 @@ mod test {
         .unwrap();
 
         ////
-        // Ensure client doesn't fetch previous version (1).
+        // Ensure client fetched the new version (2).
         assert_matches!(client.update().await, Ok(true));
         assert_eq!(client.tuf.trusted_root().version(), 2);
 
@@ -1547,10 +1649,72 @@ mod test {
             root2.to_raw().unwrap(),
             client
                 .local
+                .fetch_metadata::<RootMetadata>(&root_path, &MetadataVersion::None, None, None)
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            root2.to_raw().unwrap(),
+            client
+                .local
                 .fetch_metadata::<RootMetadata>(&root_path, &MetadataVersion::Number(2), None, None)
                 .await
                 .unwrap()
         );
+        assert_eq!(
+            timestamp.to_raw().unwrap(),
+            client
+                .local
+                .fetch_metadata::<TimestampMetadata>(
+                    &timestamp_path,
+                    &MetadataVersion::None,
+                    None,
+                    None
+                )
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            snapshot.to_raw().unwrap(),
+            client
+                .local
+                .fetch_metadata::<SnapshotMetadata>(
+                    &snapshot_path,
+                    &MetadataVersion::None,
+                    None,
+                    None
+                )
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            targets.to_raw().unwrap(),
+            client
+                .local
+                .fetch_metadata::<TargetsMetadata>(
+                    &targets_path,
+                    &MetadataVersion::None,
+                    None,
+                    None
+                )
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            targets.to_raw().unwrap(),
+            client
+                .local
+                .fetch_metadata::<TargetsMetadata>(
+                    &targets_path,
+                    &MetadataVersion::None,
+                    None,
+                    None
+                )
+                .await
+                .unwrap()
+        );
+
+        // FIXME: make sure we persist delegations correctly.
     }
 
     #[test]
