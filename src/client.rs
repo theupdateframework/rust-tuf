@@ -463,67 +463,42 @@ where
     async fn update_root(&mut self) -> Result<bool> {
         let root_path = MetadataPath::from_role(&Role::Root);
 
-        // We don't follow the TUF-1.0.9 §5.1 on how to update the root metadata. It states:
-        //
-        // TUF-1.0.9 §5.1.2:
-        //
-        //     Try downloading version N+1 of the root metadata file, up to some W number of
-        //     bytes (because the size is unknown). The value for W is set by the authors of
-        //     the application using TUF. For example, W may be tens of kilobytes. The filename
-        //     used to download the root metadata file is of the fixed form
-        //     VERSION_NUMBER.FILENAME.EXT (e.g., 42.root.json). If this file is not available,
-        //     or we have downloaded more than Y number of root metadata files (because the
-        //     exact number is as yet unknown), then go to step 5.1.9. The value for Y is set
-        //     by the authors of the application using TUF. For example, Y may be 2^10.
-        //
-        // Instead, we fetch the latest available metadata (lets call the current version N and the
-        // latest version N+M), then we re-fetch all the metadata in betwee N and N+M.
-        //
-        // FIXME(#292): Consider rewriting this logic to follow the spec. By following the spec, we
-        // avoid the issue of having to use metadata (in order to extract the metadata version
-        // number) before we've verified it was signed correctly.
-        let raw_latest_root = self
-            .remote
-            .fetch_metadata(
-                &root_path,
-                &MetadataVersion::None,
-                self.config.max_root_length,
-                None,
-            )
-            .await?;
+        let mut updated = false;
 
-        // Root metadata is signed by its own keys, but we should only trust it if it is also
-        // signed by the previous root metadata, which we can't check without knowing what version
-        // this root metadata claims to be.
-        let latest_version = {
-            // FIXME(#292): See the note above.
-            let latest_root = raw_latest_root.parse_untrusted()?;
-            latest_root.parse_version_untrusted()?
-        };
+        loop {
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.1.2:
+            //
+            //     Try downloading version N+1 of the root metadata file, up to some W number of
+            //     bytes (because the size is unknown). The value for W is set by the authors of
+            //     the application using TUF. For example, W may be tens of kilobytes. The filename
+            //     used to download the root metadata file is of the fixed form
+            //     VERSION_NUMBER.FILENAME.EXT (e.g., 42.root.json). If this file is not available,
+            //     or we have downloaded more than Y number of root metadata files (because the
+            //     exact number is as yet unknown), then go to step 5.1.9. The value for Y is set
+            //     by the authors of the application using TUF. For example, Y may be 2^10.
 
-        if latest_version < self.tuf.trusted_root().version() {
-            return Err(Error::VerificationFailure(format!(
-                "Latest root version is lower than current root version: {} < {}",
-                latest_version,
-                self.tuf.trusted_root().version()
-            )));
-        } else if latest_version == self.tuf.trusted_root().version() {
-            return Ok(false);
-        }
-
-        let err_msg = "TUF claimed no update occurred when one should have. \
-                       This is a programming error. Please report this as a bug.";
-
-        for i in (self.tuf.trusted_root().version() + 1)..latest_version {
-            let version = MetadataVersion::Number(i);
-
-            // FIXME(#292): See the note above.
-            let raw_signed_root = self
+            let next_version = MetadataVersion::Number(self.tuf.trusted_root().version() + 1);
+            let res = self
                 .remote
-                .fetch_metadata(&root_path, &version, self.config.max_root_length, None)
-                .await?;
+                .fetch_metadata(&root_path, &next_version, self.config.max_root_length, None)
+                .await;
+
+            let raw_signed_root = match res {
+                Ok(raw_signed_root) => raw_signed_root,
+                Err(Error::NotFound) => {
+                    break;
+                }
+                Err(err) => {
+                    return Err(err);
+                }
+            };
+
+            updated = true;
 
             if !self.tuf.update_root(&raw_signed_root)? {
+                let err_msg = "TUF claimed no update occurred when one should have. \
+                               This is a programming error. Please report this as a bug.";
                 error!("{}", err_msg);
                 return Err(Error::Programming(err_msg.into()));
             }
@@ -538,7 +513,7 @@ where
                 .await;
 
             // NOTE(#301): See the comment in `Client::with_trusted_root_keys`.
-            self.store_metadata(&root_path, &version, &raw_signed_root)
+            self.store_metadata(&root_path, &next_version, &raw_signed_root)
                 .await;
 
             /////////////////////////////////////////
@@ -546,28 +521,6 @@ where
             //
             //     Repeat steps 5.1.1 to 5.1.8.
         }
-
-        if !self.tuf.update_root(&raw_latest_root)? {
-            error!("{}", err_msg);
-            return Err(Error::Programming(err_msg.into()));
-        }
-
-        /////////////////////////////////////////
-        // TUF-1.0.9 §5.1.7:
-        //
-        //     Persist root metadata. The client MUST write the file to non-volatile storage as
-        //     FILENAME.EXT (e.g. root.json).
-
-        self.store_metadata(&root_path, &MetadataVersion::None, &raw_latest_root)
-            .await;
-
-        // NOTE(#301): See the comment in `Client::with_trusted_root_keys`.
-        self.store_metadata(
-            &root_path,
-            &MetadataVersion::Number(latest_version),
-            &raw_latest_root,
-        )
-        .await;
 
         /////////////////////////////////////////
         // TUF-1.0.9 §5.1.9:
@@ -593,7 +546,7 @@ where
 
         // FIXME: validate we are properly setting the consistent snapshot.
 
-        Ok(true)
+        Ok(updated)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
