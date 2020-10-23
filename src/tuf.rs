@@ -1,7 +1,6 @@
 //! Components needed to verify TUF metadata and targets.
 
 use chrono::offset::Utc;
-use log::info;
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
@@ -152,7 +151,7 @@ impl<D: DataInterchange> Tuf<D> {
     }
 
     /// Verify and update the root metadata.
-    pub fn update_root(&mut self, raw_root: &RawSignedMetadata<D, RootMetadata>) -> Result<bool> {
+    pub fn update_root(&mut self, raw_root: &RawSignedMetadata<D, RootMetadata>) -> Result<()> {
         let verified = {
             let trusted_root = &self.trusted_root;
 
@@ -190,14 +189,12 @@ impl<D: DataInterchange> Tuf<D> {
             //     discard it, abort the update cycle, and report the rollback attack. On the next
             //     update cycle, begin at step 0 and version N of the root metadata file.
 
-            // Next, make sure the new root has a higher version than the old root.
-            if new_root.version() == trusted_root.version() {
-                info!(
-                    "Attempted to update root to new metadata with the same version. \
-                     Refusing to update."
-                );
-                return Ok(false);
-            } else if new_root.version() < trusted_root.version() {
+            let next_root_version = trusted_root
+                .version()
+                .checked_add(1)
+                .expect("root version should be less than max u32");
+
+            if new_root.version() != next_root_version {
                 return Err(Error::VerificationFailure(format!(
                     "Attempted to roll back root metadata at version {} to {}.",
                     trusted_root.version(),
@@ -245,7 +242,7 @@ impl<D: DataInterchange> Tuf<D> {
 
         self.trusted_root = verified;
 
-        Ok(true)
+        Ok(())
     }
 
     /// Verify and update the timestamp metadata.
@@ -968,10 +965,13 @@ mod test {
         root.add_signature(&KEYS[0]).unwrap();
         let raw_root = root.to_raw().unwrap();
 
-        assert_matches!(tuf.update_root(&raw_root), Ok(true));
+        assert_matches!(tuf.update_root(&raw_root), Ok(()));
 
-        // second update should do nothing
-        assert_matches!(tuf.update_root(&raw_root), Ok(false));
+        // second update with the same metadata should fail.
+        assert_matches!(
+            tuf.update_root(&raw_root),
+            Err(Error::VerificationFailure(_))
+        );
     }
 
     #[test]
