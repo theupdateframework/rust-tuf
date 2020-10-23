@@ -122,6 +122,9 @@ pub mod verify;
 mod format_hex;
 mod util;
 
+#[cfg(test)]
+mod repo_builder;
+
 pub use crate::error::*;
 pub use crate::tuf::*;
 
