@@ -58,7 +58,7 @@ impl Track {
     }
 }
 
-/// Helper Repository wrapper that tracks all the fetches and stores for testing purposes.
+/// Helper Repository wrapper that tracks all the metadata fetches and stores for testing purposes.
 pub(crate) struct TrackRepository<R> {
     repo: R,
     tracks: Arc<Mutex<Vec<Track>>>,

@@ -189,10 +189,9 @@ impl<D: DataInterchange> Tuf<D> {
             //     discard it, abort the update cycle, and report the rollback attack. On the next
             //     update cycle, begin at step 0 and version N of the root metadata file.
 
-            let next_root_version = trusted_root
-                .version()
-                .checked_add(1)
-                .expect("root version should be less than max u32");
+            let next_root_version = trusted_root.version().checked_add(1).ok_or_else(|| {
+                Error::VerificationFailure(format!("root version should be less than max u32"))
+            })?;
 
             if new_root.version() != next_root_version {
                 return Err(Error::VerificationFailure(format!(

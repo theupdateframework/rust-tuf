@@ -478,6 +478,11 @@ where
             //     exact number is as yet unknown), then go to step 5.1.9. The value for Y is set
             //     by the authors of the application using TUF. For example, Y may be 2^10.
 
+            // FIXME(#306) We do not have an upper bound on the number of root metadata we'll
+            // fetch. This means that an attacker that's stolen the root keys could cause a client
+            // to fall into an infinite loop (but if an attacker has stolen the root keys, the
+            // client probably has worse problems to worry about).
+
             let next_version = MetadataVersion::Number(self.tuf.trusted_root().version() + 1);
             let res = self
                 .remote
