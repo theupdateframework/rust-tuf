@@ -22,6 +22,11 @@ pub use self::http::{HttpRepository, HttpRepositoryBuilder};
 mod ephemeral;
 pub use self::ephemeral::EphemeralRepository;
 
+#[cfg(test)]
+mod track_repo;
+#[cfg(test)]
+pub(crate) use self::track_repo::{Track, TrackRepository};
+
 /// A readable TUF repository.
 pub trait RepositoryProvider<D>
 where

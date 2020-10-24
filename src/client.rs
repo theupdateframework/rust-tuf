@@ -463,70 +463,45 @@ where
     async fn update_root(&mut self) -> Result<bool> {
         let root_path = MetadataPath::from_role(&Role::Root);
 
-        // We don't follow the TUF-1.0.9 §5.1 on how to update the root metadata. It states:
-        //
-        // TUF-1.0.9 §5.1.2:
-        //
-        //     Try downloading version N+1 of the root metadata file, up to some W number of
-        //     bytes (because the size is unknown). The value for W is set by the authors of
-        //     the application using TUF. For example, W may be tens of kilobytes. The filename
-        //     used to download the root metadata file is of the fixed form
-        //     VERSION_NUMBER.FILENAME.EXT (e.g., 42.root.json). If this file is not available,
-        //     or we have downloaded more than Y number of root metadata files (because the
-        //     exact number is as yet unknown), then go to step 5.1.9. The value for Y is set
-        //     by the authors of the application using TUF. For example, Y may be 2^10.
-        //
-        // Instead, we fetch the latest available metadata (lets call the current version N and the
-        // latest version N+M), then we re-fetch all the metadata in betwee N and N+M.
-        //
-        // FIXME(#292): Consider rewriting this logic to follow the spec. By following the spec, we
-        // avoid the issue of having to use metadata (in order to extract the metadata version
-        // number) before we've verified it was signed correctly.
-        let raw_latest_root = self
-            .remote
-            .fetch_metadata(
-                &root_path,
-                &MetadataVersion::None,
-                self.config.max_root_length,
-                None,
-            )
-            .await?;
+        let mut updated = false;
 
-        // Root metadata is signed by its own keys, but we should only trust it if it is also
-        // signed by the previous root metadata, which we can't check without knowing what version
-        // this root metadata claims to be.
-        let latest_version = {
-            // FIXME(#292): See the note above.
-            let latest_root = raw_latest_root.parse_untrusted()?;
-            latest_root.parse_version_untrusted()?
-        };
+        loop {
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.1.2:
+            //
+            //     Try downloading version N+1 of the root metadata file, up to some W number of
+            //     bytes (because the size is unknown). The value for W is set by the authors of
+            //     the application using TUF. For example, W may be tens of kilobytes. The filename
+            //     used to download the root metadata file is of the fixed form
+            //     VERSION_NUMBER.FILENAME.EXT (e.g., 42.root.json). If this file is not available,
+            //     or we have downloaded more than Y number of root metadata files (because the
+            //     exact number is as yet unknown), then go to step 5.1.9. The value for Y is set
+            //     by the authors of the application using TUF. For example, Y may be 2^10.
 
-        if latest_version < self.tuf.trusted_root().version() {
-            return Err(Error::VerificationFailure(format!(
-                "Latest root version is lower than current root version: {} < {}",
-                latest_version,
-                self.tuf.trusted_root().version()
-            )));
-        } else if latest_version == self.tuf.trusted_root().version() {
-            return Ok(false);
-        }
+            // FIXME(#306) We do not have an upper bound on the number of root metadata we'll
+            // fetch. This means that an attacker that's stolen the root keys could cause a client
+            // to fall into an infinite loop (but if an attacker has stolen the root keys, the
+            // client probably has worse problems to worry about).
 
-        let err_msg = "TUF claimed no update occurred when one should have. \
-                       This is a programming error. Please report this as a bug.";
-
-        for i in (self.tuf.trusted_root().version() + 1)..latest_version {
-            let version = MetadataVersion::Number(i);
-
-            // FIXME(#292): See the note above.
-            let raw_signed_root = self
+            let next_version = MetadataVersion::Number(self.tuf.trusted_root().version() + 1);
+            let res = self
                 .remote
-                .fetch_metadata(&root_path, &version, self.config.max_root_length, None)
-                .await?;
+                .fetch_metadata(&root_path, &next_version, self.config.max_root_length, None)
+                .await;
 
-            if !self.tuf.update_root(&raw_signed_root)? {
-                error!("{}", err_msg);
-                return Err(Error::Programming(err_msg.into()));
-            }
+            let raw_signed_root = match res {
+                Ok(raw_signed_root) => raw_signed_root,
+                Err(Error::NotFound) => {
+                    break;
+                }
+                Err(err) => {
+                    return Err(err);
+                }
+            };
+
+            updated = true;
+
+            self.tuf.update_root(&raw_signed_root)?;
 
             /////////////////////////////////////////
             // TUF-1.0.9 §5.1.7:
@@ -538,7 +513,7 @@ where
                 .await;
 
             // NOTE(#301): See the comment in `Client::with_trusted_root_keys`.
-            self.store_metadata(&root_path, &version, &raw_signed_root)
+            self.store_metadata(&root_path, &next_version, &raw_signed_root)
                 .await;
 
             /////////////////////////////////////////
@@ -546,28 +521,6 @@ where
             //
             //     Repeat steps 5.1.1 to 5.1.8.
         }
-
-        if !self.tuf.update_root(&raw_latest_root)? {
-            error!("{}", err_msg);
-            return Err(Error::Programming(err_msg.into()));
-        }
-
-        /////////////////////////////////////////
-        // TUF-1.0.9 §5.1.7:
-        //
-        //     Persist root metadata. The client MUST write the file to non-volatile storage as
-        //     FILENAME.EXT (e.g. root.json).
-
-        self.store_metadata(&root_path, &MetadataVersion::None, &raw_latest_root)
-            .await;
-
-        // NOTE(#301): See the comment in `Client::with_trusted_root_keys`.
-        self.store_metadata(
-            &root_path,
-            &MetadataVersion::Number(latest_version),
-            &raw_latest_root,
-        )
-        .await;
 
         /////////////////////////////////////////
         // TUF-1.0.9 §5.1.9:
@@ -593,7 +546,7 @@ where
 
         // FIXME: validate we are properly setting the consistent snapshot.
 
-        Ok(true)
+        Ok(updated)
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -1151,10 +1104,10 @@ mod test {
     use crate::crypto::{HashAlgorithm, KeyType, PrivateKey, SignatureScheme};
     use crate::interchange::Json;
     use crate::metadata::{
-        MetadataPath, MetadataVersion, RootMetadata, RootMetadataBuilder, SnapshotMetadataBuilder,
-        TargetsMetadataBuilder, TimestampMetadata, TimestampMetadataBuilder,
+        MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder,
+        TargetsMetadataBuilder, TimestampMetadataBuilder,
     };
-    use crate::repository::EphemeralRepository;
+    use crate::repository::{EphemeralRepository, Track, TrackRepository};
     use chrono::prelude::*;
     use futures_executor::block_on;
     use lazy_static::lazy_static;
@@ -1267,251 +1220,23 @@ mod test {
     }
 
     #[test]
-    fn root_chain_update() {
-        block_on(async {
-            let repo = EphemeralRepository::<Json>::new();
-            let mut remote = Repository::new(&repo);
-
-            //// First, create the root metadata.
-            let root1 = RootMetadataBuilder::new()
-                .version(1)
-                .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
-                .root_key(KEYS[0].public().clone())
-                .snapshot_key(KEYS[0].public().clone())
-                .targets_key(KEYS[0].public().clone())
-                .timestamp_key(KEYS[0].public().clone())
-                .signed::<Json>(&KEYS[0])
-                .unwrap();
-
-            let mut root2 = RootMetadataBuilder::new()
-                .version(2)
-                .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
-                .root_key(KEYS[1].public().clone())
-                .snapshot_key(KEYS[1].public().clone())
-                .targets_key(KEYS[1].public().clone())
-                .timestamp_key(KEYS[1].public().clone())
-                .signed::<Json>(&KEYS[1])
-                .unwrap();
-
-            root2.add_signature(&KEYS[0]).unwrap();
-
-            // Make sure the version 2 is signed by version 1's keys.
-            root2.add_signature(&KEYS[0]).unwrap();
-
-            let mut root3 = RootMetadataBuilder::new()
-                .version(3)
-                .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
-                .root_key(KEYS[2].public().clone())
-                .snapshot_key(KEYS[2].public().clone())
-                .targets_key(KEYS[2].public().clone())
-                .timestamp_key(KEYS[2].public().clone())
-                .signed::<Json>(&KEYS[2])
-                .unwrap();
-
-            // Make sure the version 3 is signed by version 2's keys.
-            root3.add_signature(&KEYS[1]).unwrap();
-
-            let mut targets = TargetsMetadataBuilder::new()
-                .signed::<Json>(&KEYS[0])
-                .unwrap();
-
-            targets.add_signature(&KEYS[1]).unwrap();
-            targets.add_signature(&KEYS[2]).unwrap();
-
-            let mut snapshot = SnapshotMetadataBuilder::new()
-                .insert_metadata(&targets, &[HashAlgorithm::Sha256])
-                .unwrap()
-                .signed::<Json>(&KEYS[0])
-                .unwrap();
-
-            snapshot.add_signature(&KEYS[1]).unwrap();
-            snapshot.add_signature(&KEYS[2]).unwrap();
-
-            let mut timestamp =
-                TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
-                    .unwrap()
-                    .signed::<Json>(&KEYS[0])
-                    .unwrap();
-
-            timestamp.add_signature(&KEYS[1]).unwrap();
-            timestamp.add_signature(&KEYS[2]).unwrap();
-
-            ////
-            // Now register the metadata.
-
-            let root_path = MetadataPath::from_role(&Role::Root);
-            let targets_path = MetadataPath::from_role(&Role::Targets);
-            let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
-            let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
-
-            remote
-                .store_metadata(
-                    &root_path,
-                    &MetadataVersion::Number(1),
-                    &root1.to_raw().unwrap(),
-                )
-                .await
-                .unwrap();
-
-            remote
-                .store_metadata(&root_path, &MetadataVersion::None, &root1.to_raw().unwrap())
-                .await
-                .unwrap();
-
-            remote
-                .store_metadata(
-                    &targets_path,
-                    &MetadataVersion::Number(1),
-                    &targets.to_raw().unwrap(),
-                )
-                .await
-                .unwrap();
-
-            remote
-                .store_metadata(
-                    &targets_path,
-                    &MetadataVersion::None,
-                    &targets.to_raw().unwrap(),
-                )
-                .await
-                .unwrap();
-
-            remote
-                .store_metadata(
-                    &snapshot_path,
-                    &MetadataVersion::Number(1),
-                    &snapshot.to_raw().unwrap(),
-                )
-                .await
-                .unwrap();
-
-            remote
-                .store_metadata(
-                    &snapshot_path,
-                    &MetadataVersion::None,
-                    &snapshot.to_raw().unwrap(),
-                )
-                .await
-                .unwrap();
-
-            remote
-                .store_metadata(
-                    &timestamp_path,
-                    &MetadataVersion::Number(1),
-                    &timestamp.to_raw().unwrap(),
-                )
-                .await
-                .unwrap();
-
-            remote
-                .store_metadata(
-                    &timestamp_path,
-                    &MetadataVersion::None,
-                    &timestamp.to_raw().unwrap(),
-                )
-                .await
-                .unwrap();
-
-            ////
-            // Now, make sure that the local metadata got version 1.
-            let mut client = Client::with_trusted_root_keys(
-                Config::default(),
-                &MetadataVersion::Number(1),
-                1,
-                once(&KEYS[0].public().clone()),
-                EphemeralRepository::new(),
-                repo,
-            )
-            .await
-            .unwrap();
-
-            assert_matches!(client.update().await, Ok(true));
-            assert_eq!(client.tuf.trusted_root().version(), 1);
-
-            assert_eq!(
-                root1.to_raw().unwrap(),
-                client
-                    .local
-                    .fetch_metadata::<RootMetadata>(
-                        &root_path,
-                        &MetadataVersion::Number(1),
-                        None,
-                        None
-                    )
-                    .await
-                    .unwrap()
-            );
-
-            ////
-            // Now bump the root to version 3
-
-            client
-                .remote
-                .store_metadata(
-                    &root_path,
-                    &MetadataVersion::Number(2),
-                    &root2.to_raw().unwrap(),
-                )
-                .await
-                .unwrap();
-
-            client
-                .remote
-                .store_metadata(&root_path, &MetadataVersion::None, &root2.to_raw().unwrap())
-                .await
-                .unwrap();
-
-            client
-                .remote
-                .store_metadata(
-                    &root_path,
-                    &MetadataVersion::Number(3),
-                    &root3.to_raw().unwrap(),
-                )
-                .await
-                .unwrap();
-
-            client
-                .remote
-                .store_metadata(&root_path, &MetadataVersion::None, &root3.to_raw().unwrap())
-                .await
-                .unwrap();
-
-            ////
-            // Finally, check that the update brings us to version 3.
-
-            assert_matches!(client.update().await, Ok(true));
-            assert_eq!(client.tuf.trusted_root().version(), 3);
-
-            assert_eq!(
-                root3.to_raw().unwrap(),
-                client
-                    .local
-                    .fetch_metadata::<RootMetadata>(&root_path, &MetadataVersion::None, None, None)
-                    .await
-                    .unwrap()
-            );
-        });
+    fn root_chain_update_consistent_snapshot_false() {
+        block_on(root_chain_update(false))
     }
 
     #[test]
-    fn versioned_init_consistent_snapshot_false() {
-        block_on(test_versioned_init(false))
+    fn root_chain_update_consistent_snapshot_true() {
+        block_on(root_chain_update(true))
     }
 
-    #[test]
-    fn versioned_init_consistent_snapshot_true() {
-        block_on(test_versioned_init(true))
-    }
-
-    async fn test_versioned_init(consistent_snapshot: bool) {
+    async fn root_chain_update(consistent_snapshot: bool) {
         let repo = EphemeralRepository::<Json>::new();
         let mut remote = Repository::new(&repo);
 
         //// First, create the root metadata.
         let root1 = RootMetadataBuilder::new()
-            .consistent_snapshot(consistent_snapshot)
             .version(1)
+            .consistent_snapshot(consistent_snapshot)
             .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[0].public().clone())
@@ -1519,10 +1244,11 @@ mod test {
             .timestamp_key(KEYS[0].public().clone())
             .signed::<Json>(&KEYS[0])
             .unwrap();
+        let raw_root1 = root1.to_raw().unwrap();
 
         let mut root2 = RootMetadataBuilder::new()
-            .consistent_snapshot(consistent_snapshot)
             .version(2)
+            .consistent_snapshot(consistent_snapshot)
             .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
             .root_key(KEYS[1].public().clone())
             .snapshot_key(KEYS[1].public().clone())
@@ -1531,14 +1257,37 @@ mod test {
             .signed::<Json>(&KEYS[1])
             .unwrap();
 
+        root2.add_signature(&KEYS[0]).unwrap();
+
         // Make sure the version 2 is signed by version 1's keys.
         root2.add_signature(&KEYS[0]).unwrap();
+
+        let raw_root2 = root2.to_raw().unwrap();
+
+        let mut root3 = RootMetadataBuilder::new()
+            .version(3)
+            .consistent_snapshot(consistent_snapshot)
+            .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+            .root_key(KEYS[2].public().clone())
+            .snapshot_key(KEYS[2].public().clone())
+            .targets_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[2].public().clone())
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
+
+        // Make sure the version 3 is signed by version 2's keys.
+        root3.add_signature(&KEYS[1]).unwrap();
+
+        let raw_root3 = root3.to_raw().unwrap();
 
         let mut targets = TargetsMetadataBuilder::new()
             .signed::<Json>(&KEYS[0])
             .unwrap();
 
         targets.add_signature(&KEYS[1]).unwrap();
+        targets.add_signature(&KEYS[2]).unwrap();
+
+        let raw_targets = targets.to_raw().unwrap();
 
         let mut snapshot = SnapshotMetadataBuilder::new()
             .insert_metadata(&targets, &[HashAlgorithm::Sha256])
@@ -1547,6 +1296,9 @@ mod test {
             .unwrap();
 
         snapshot.add_signature(&KEYS[1]).unwrap();
+        snapshot.add_signature(&KEYS[2]).unwrap();
+
+        let raw_snapshot = snapshot.to_raw().unwrap();
 
         let mut timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
@@ -1555,9 +1307,13 @@ mod test {
                 .unwrap();
 
         timestamp.add_signature(&KEYS[1]).unwrap();
+        timestamp.add_signature(&KEYS[2]).unwrap();
+
+        let raw_timestamp = timestamp.to_raw().unwrap();
 
         ////
-        // Now register the metadata (root version 1 and 2).
+        // Now register the metadata.
+
         let root_path = MetadataPath::from_role(&Role::Root);
         let targets_path = MetadataPath::from_role(&Role::Targets);
         let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
@@ -1572,39 +1328,120 @@ mod test {
             .await
             .unwrap();
 
-        remote
-            .store_metadata(&root_path, &MetadataVersion::None, &root1.to_raw().unwrap())
-            .await
-            .unwrap();
-
-        let metadata_version = if consistent_snapshot {
+        // Make sure we fetched the metadata in the right order.
+        let snapshot_and_targets_version = if consistent_snapshot {
             MetadataVersion::Number(1)
         } else {
             MetadataVersion::None
         };
 
         remote
-            .store_metadata(&targets_path, &metadata_version, &targets.to_raw().unwrap())
+            .store_metadata(&targets_path, &snapshot_and_targets_version, &raw_targets)
             .await
             .unwrap();
 
         remote
-            .store_metadata(
-                &snapshot_path,
-                &metadata_version,
-                &snapshot.to_raw().unwrap(),
-            )
+            .store_metadata(&snapshot_path, &snapshot_and_targets_version, &raw_snapshot)
             .await
             .unwrap();
 
         remote
-            .store_metadata(
-                &timestamp_path,
-                &MetadataVersion::None,
-                &timestamp.to_raw().unwrap(),
-            )
+            .store_metadata(&timestamp_path, &MetadataVersion::None, &raw_timestamp)
             .await
             .unwrap();
+
+        ////
+        // Now, make sure that the local metadata got version 1.
+        let track_local = TrackRepository::new(EphemeralRepository::new());
+        let track_remote = TrackRepository::new(&repo);
+
+        let mut client = Client::with_trusted_root_keys(
+            Config::default(),
+            &MetadataVersion::Number(1),
+            1,
+            once(&KEYS[0].public().clone()),
+            &track_local,
+            &track_remote,
+        )
+        .await
+        .unwrap();
+
+        assert_matches!(client.update().await, Ok(true));
+        assert_eq!(client.tuf.trusted_root().version(), 1);
+
+        assert_eq!(
+            track_remote.take_tracks(),
+            vec![
+                Track::fetch_found(
+                    &root_path,
+                    &MetadataVersion::Number(1),
+                    raw_root1.as_bytes()
+                ),
+                Track::FetchErr(root_path.clone(), MetadataVersion::Number(2)),
+                Track::fetch_found(
+                    &timestamp_path,
+                    &MetadataVersion::None,
+                    raw_timestamp.as_bytes(),
+                ),
+                Track::fetch_found(
+                    &snapshot_path,
+                    &snapshot_and_targets_version,
+                    raw_snapshot.as_bytes(),
+                ),
+                Track::fetch_found(
+                    &targets_path,
+                    &snapshot_and_targets_version,
+                    raw_targets.as_bytes(),
+                ),
+            ]
+        );
+        assert_eq!(
+            track_local.take_tracks(),
+            vec![
+                Track::FetchErr(root_path.clone(), MetadataVersion::Number(1)),
+                Track::store(
+                    &root_path,
+                    &MetadataVersion::Number(1),
+                    raw_root1.as_bytes()
+                ),
+                Track::store(
+                    &timestamp_path,
+                    &MetadataVersion::None,
+                    raw_timestamp.as_bytes(),
+                ),
+                Track::store(
+                    &snapshot_path,
+                    &MetadataVersion::None,
+                    raw_snapshot.as_bytes(),
+                ),
+                Track::store(
+                    &targets_path,
+                    &MetadataVersion::None,
+                    raw_targets.as_bytes()
+                ),
+            ],
+        );
+
+        // Another update should not fetch anything.
+        assert_matches!(client.update().await, Ok(false));
+        assert_eq!(client.tuf.trusted_root().version(), 1);
+
+        // Make sure we only fetched the next root and timestamp, and didn't store anything.
+        assert_eq!(
+            track_remote.take_tracks(),
+            vec![
+                Track::FetchErr(root_path.clone(), MetadataVersion::Number(2)),
+                Track::fetch_found(
+                    &timestamp_path,
+                    &MetadataVersion::None,
+                    raw_timestamp.as_bytes(),
+                ),
+            ]
+        );
+        assert_eq!(track_local.take_tracks(), vec![]);
+
+        ////
+        // Now bump the root to version 3
 
         remote
             .store_metadata(
@@ -1620,101 +1457,92 @@ mod test {
             .await
             .unwrap();
 
-        ////
-        // Initialize with root metadata version 1.
-        let public_keys = [KEYS[0].public().clone(), KEYS[1].public().clone()];
-        let mut client = Client::with_trusted_root_keys(
-            Config::build().finish().unwrap(),
-            &MetadataVersion::Number(1),
-            1,
-            &public_keys,
-            EphemeralRepository::new(),
-            repo,
-        )
-        .await
-        .unwrap();
+        remote
+            .store_metadata(
+                &root_path,
+                &MetadataVersion::Number(3),
+                &root3.to_raw().unwrap(),
+            )
+            .await
+            .unwrap();
+
+        remote
+            .store_metadata(&root_path, &MetadataVersion::None, &root3.to_raw().unwrap())
+            .await
+            .unwrap();
 
         ////
-        // Ensure client fetched the new version (2).
+        // Finally, check that the update brings us to version 3.
+
         assert_matches!(client.update().await, Ok(true));
-        assert_eq!(client.tuf.trusted_root().version(), 2);
+        assert_eq!(client.tuf.trusted_root().version(), 3);
 
-        assert_eq!(client.root_version(), 2);
-        assert_eq!(client.timestamp_version(), Some(1));
-        assert_eq!(client.snapshot_version(), Some(1));
-        assert_eq!(client.targets_version(), Some(1));
-        assert_eq!(client.delegations_version(&snapshot_path), None);
-
+        // Make sure we fetched and stored the metadata in the expected order. Note that we
+        // re-fetch snapshot and targets because we rotated keys, which caused `tuf::Tuf` to delete
+        // the metadata.
         assert_eq!(
-            root2.to_raw().unwrap(),
-            client
-                .local
-                .fetch_metadata::<RootMetadata>(&root_path, &MetadataVersion::None, None, None)
-                .await
-                .unwrap()
-        );
-        assert_eq!(
-            root2.to_raw().unwrap(),
-            client
-                .local
-                .fetch_metadata::<RootMetadata>(&root_path, &MetadataVersion::Number(2), None, None)
-                .await
-                .unwrap()
-        );
-        assert_eq!(
-            timestamp.to_raw().unwrap(),
-            client
-                .local
-                .fetch_metadata::<TimestampMetadata>(
+            track_remote.take_tracks(),
+            vec![
+                Track::fetch_found(
+                    &root_path,
+                    &MetadataVersion::Number(2),
+                    raw_root2.as_bytes(),
+                ),
+                Track::fetch_found(
+                    &root_path,
+                    &MetadataVersion::Number(3),
+                    raw_root3.as_bytes(),
+                ),
+                Track::FetchErr(root_path.clone(), MetadataVersion::Number(4)),
+                Track::fetch_found(
                     &timestamp_path,
                     &MetadataVersion::None,
-                    None,
-                    None
-                )
-                .await
-                .unwrap()
+                    raw_timestamp.as_bytes(),
+                ),
+                Track::fetch_found(
+                    &snapshot_path,
+                    &snapshot_and_targets_version,
+                    raw_snapshot.as_bytes(),
+                ),
+                Track::fetch_found(
+                    &targets_path,
+                    &snapshot_and_targets_version,
+                    raw_targets.as_bytes(),
+                ),
+            ]
         );
         assert_eq!(
-            snapshot.to_raw().unwrap(),
-            client
-                .local
-                .fetch_metadata::<SnapshotMetadata>(
+            track_local.take_tracks(),
+            vec![
+                Track::store(&root_path, &MetadataVersion::None, raw_root2.as_bytes()),
+                Track::store(
+                    &root_path,
+                    &MetadataVersion::Number(2),
+                    raw_root2.as_bytes(),
+                ),
+                Track::store(&root_path, &MetadataVersion::None, raw_root3.as_bytes()),
+                Track::store(
+                    &root_path,
+                    &MetadataVersion::Number(3),
+                    raw_root3.as_bytes(),
+                ),
+                Track::store(
+                    &timestamp_path,
+                    &MetadataVersion::None,
+                    raw_timestamp.as_bytes(),
+                ),
+                Track::store(
                     &snapshot_path,
                     &MetadataVersion::None,
-                    None,
-                    None
-                )
-                .await
-                .unwrap()
-        );
-        assert_eq!(
-            targets.to_raw().unwrap(),
-            client
-                .local
-                .fetch_metadata::<TargetsMetadata>(
+                    raw_snapshot.as_bytes(),
+                ),
+                Track::store(
                     &targets_path,
                     &MetadataVersion::None,
-                    None,
-                    None
-                )
-                .await
-                .unwrap()
+                    raw_targets.as_bytes(),
+                ),
+            ],
         );
-        assert_eq!(
-            targets.to_raw().unwrap(),
-            client
-                .local
-                .fetch_metadata::<TargetsMetadata>(
-                    &targets_path,
-                    &MetadataVersion::None,
-                    None,
-                    None
-                )
-                .await
-                .unwrap()
-        );
-
-        // FIXME: make sure we persist delegations correctly.
     }
 
     #[test]
@@ -1862,5 +1690,10 @@ mod test {
             .unwrap();
 
         assert_eq!(description, expected_description);
+    }
+
+    #[test]
+    fn test_update() {
+        block_on(async {})
     }
 }
