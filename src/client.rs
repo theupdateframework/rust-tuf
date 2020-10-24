@@ -204,12 +204,7 @@ where
 
         let tuf = Tuf::from_trusted_root(&raw_root)?;
 
-        Ok(Client {
-            tuf,
-            config,
-            local,
-            remote,
-        })
+        Self::new(config, tuf, local, remote).await
     }
 
     /// Create a new TUF client. It will trust this initial root metadata.
@@ -271,12 +266,7 @@ where
         let (local, remote) = (Repository::new(local), Repository::new(remote));
         let tuf = Tuf::from_trusted_root(trusted_root)?;
 
-        Ok(Client {
-            tuf,
-            config,
-            local,
-            remote,
-        })
+        Self::new(config, tuf, local, remote).await
     }
 
     /// Create a new TUF client. It will attempt to load initial root metadata from the local and remote
@@ -368,13 +358,6 @@ where
         // FIXME(#253) verify the trusted root version matches the provided version.
         let root_version = MetadataVersion::Number(tuf.trusted_root().version());
 
-        let mut client = Client {
-            tuf,
-            config,
-            local,
-            remote,
-        };
-
         // Only store the metadata after we have validated it.
         if fetched {
             // NOTE(#301): The spec only states that the unversioned root metadata needs to be
@@ -389,15 +372,51 @@ where
             // Instead, as an extension to the spec, we'll write the `$VERSION.root.json` metadata
             // to the local store. This will eventually enable us to initialize metadata from the
             // local store (see #301).
-            client
-                .local
+            local
                 .store_metadata(&root_path, &root_version, &raw_root)
                 .await?;
 
             // FIXME: should we also store the root as `MetadataVersion::None`?
         }
 
-        Ok(client)
+        Self::new(config, tuf, local, remote).await
+    }
+
+    async fn new(
+        config: Config<T>,
+        mut tuf: Tuf<D>,
+        local: Repository<L, D>,
+        remote: Repository<R, D>,
+    ) -> Result<Self> {
+        let res = async {
+            let _r = Self::update_root_with_repos(&config, &mut tuf, None, &local).await?;
+            let _ts = Self::update_timestamp_with_repos(&config, &mut tuf, None, &local).await?;
+            let _sn = Self::update_snapshot_with_repos(&mut tuf, None, &local, false).await?;
+            let _ta = Self::update_targets_with_repos(&mut tuf, None, &local, false).await?;
+
+            Ok(())
+        }
+        .await;
+
+        match res {
+            Ok(()) => {}
+            Err(Error::NotFound) => {
+                // Ignore if the local repository has expired metadata.
+            }
+            Err(Error::ExpiredMetadata(role)) => {
+                warn!("local metadata expired: {}", role);
+            }
+            Err(err) => {
+                return Err(err);
+            }
+        }
+
+        Ok(Client {
+            tuf,
+            config,
+            local,
+            remote,
+        })
     }
 
     /// Update TUF metadata from the remote repository.
@@ -439,68 +458,13 @@ where
 
     /// Returns `true` if an update occurred and `false` otherwise.
     async fn update_root(&mut self) -> Result<bool> {
-        let root_path = MetadataPath::from_role(&Role::Root);
-
-        let mut updated = false;
-
-        loop {
-            /////////////////////////////////////////
-            // TUF-1.0.9 §5.1.2:
-            //
-            //     Try downloading version N+1 of the root metadata file, up to some W number of
-            //     bytes (because the size is unknown). The value for W is set by the authors of
-            //     the application using TUF. For example, W may be tens of kilobytes. The filename
-            //     used to download the root metadata file is of the fixed form
-            //     VERSION_NUMBER.FILENAME.EXT (e.g., 42.root.json). If this file is not available,
-            //     or we have downloaded more than Y number of root metadata files (because the
-            //     exact number is as yet unknown), then go to step 5.1.9. The value for Y is set
-            //     by the authors of the application using TUF. For example, Y may be 2^10.
-
-            // FIXME(#306) We do not have an upper bound on the number of root metadata we'll
-            // fetch. This means that an attacker that's stolen the root keys could cause a client
-            // to fall into an infinite loop (but if an attacker has stolen the root keys, the
-            // client probably has worse problems to worry about).
-
-            let next_version = MetadataVersion::Number(self.tuf.trusted_root().version() + 1);
-            let res = self
-                .remote
-                .fetch_metadata(&root_path, &next_version, self.config.max_root_length, None)
-                .await;
-
-            let raw_signed_root = match res {
-                Ok(raw_signed_root) => raw_signed_root,
-                Err(Error::NotFound) => {
-                    break;
-                }
-                Err(err) => {
-                    return Err(err);
-                }
-            };
-
-            updated = true;
-
-            self.tuf.update_root(&raw_signed_root)?;
-
-            /////////////////////////////////////////
-            // TUF-1.0.9 §5.1.7:
-            //
-            //     Persist root metadata. The client MUST write the file to non-volatile storage as
-            //     FILENAME.EXT (e.g. root.json).
-
-            self.local
-                .store_metadata(&root_path, &MetadataVersion::None, &raw_signed_root)
-                .await?;
-
-            // NOTE(#301): See the comment in `Client::with_trusted_root_keys`.
-            self.local
-                .store_metadata(&root_path, &next_version, &raw_signed_root)
-                .await?;
-
-            /////////////////////////////////////////
-            // TUF-1.0.9 §5.1.8:
-            //
-            //     Repeat steps 5.1.1 to 5.1.8.
-        }
+        let updated = Self::update_root_with_repos(
+            &self.config,
+            &mut self.tuf,
+            Some(&self.local),
+            &self.remote,
+        )
+        .await?;
 
         /////////////////////////////////////////
         // TUF-1.0.9 §5.1.9:
@@ -529,8 +493,123 @@ where
         Ok(updated)
     }
 
+    async fn update_root_with_repos<Remote>(
+        config: &Config<T>,
+        tuf: &mut Tuf<D>,
+        local: Option<&Repository<L, D>>,
+        remote: &Repository<Remote, D>,
+    ) -> Result<bool>
+    where
+        Remote: RepositoryProvider<D>,
+    {
+        let root_path = MetadataPath::from_role(&Role::Root);
+
+        let mut updated = false;
+
+        loop {
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.1.2:
+            //
+            //     Try downloading version N+1 of the root metadata file, up to some W number of
+            //     bytes (because the size is unknown). The value for W is set by the authors of
+            //     the application using TUF. For example, W may be tens of kilobytes. The filename
+            //     used to download the root metadata file is of the fixed form
+            //     VERSION_NUMBER.FILENAME.EXT (e.g., 42.root.json). If this file is not available,
+            //     or we have downloaded more than Y number of root metadata files (because the
+            //     exact number is as yet unknown), then go to step 5.1.9. The value for Y is set
+            //     by the authors of the application using TUF. For example, Y may be 2^10.
+
+            // FIXME(#306) We do not have an upper bound on the number of root metadata we'll
+            // fetch. This means that an attacker that's stolen the root keys could cause a client
+            // to fall into an infinite loop (but if an attacker has stolen the root keys, the
+            // client probably has worse problems to worry about).
+
+            let next_version = MetadataVersion::Number(tuf.trusted_root().version() + 1);
+            let res = remote
+                .fetch_metadata(&root_path, &next_version, config.max_root_length, None)
+                .await;
+
+            let raw_signed_root = match res {
+                Ok(raw_signed_root) => raw_signed_root,
+                Err(Error::NotFound) => {
+                    break;
+                }
+                Err(err) => {
+                    return Err(err);
+                }
+            };
+
+            updated = true;
+
+            tuf.update_root(&raw_signed_root)?;
+
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.1.7:
+            //
+            //     Persist root metadata. The client MUST write the file to non-volatile storage as
+            //     FILENAME.EXT (e.g. root.json).
+
+            if let Some(local) = local {
+                local
+                    .store_metadata(&root_path, &MetadataVersion::None, &raw_signed_root)
+                    .await?;
+
+                // NOTE(#301): See the comment in `Client::with_trusted_root_keys`.
+                local
+                    .store_metadata(&root_path, &next_version, &raw_signed_root)
+                    .await?;
+            }
+
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.1.8:
+            //
+            //     Repeat steps 5.1.1 to 5.1.8.
+        }
+        /////////////////////////////////////////
+        // TUF-1.0.9 §5.1.9:
+        //
+        //     Check for a freeze attack. The latest known time MUST be lower than the expiration
+        //     timestamp in the trusted root metadata file (version N). If the trusted root
+        //     metadata file has expired, abort the update cycle, report the potential freeze
+        //     attack. On the next update cycle, begin at step 5.0 and version N of the root
+        //     metadata file.
+
+        // TODO: Consider moving the root metadata expiration check into `tuf::Tuf`, since that's
+        // where we check timestamp/snapshot/targets/delegations for expiration.
+        if tuf.trusted_root().expires() <= &Utc::now() {
+            error!("Root metadata expired, potential freeze attack");
+            return Err(Error::ExpiredMetadata(Role::Root));
+        }
+
+        /////////////////////////////////////////
+        // TUF-1.0.5 §5.1.10:
+        //
+        //     Set whether consistent snapshots are used as per the trusted root metadata file (see
+        //     Section 4.3).
+
+        Ok(updated)
+    }
+
     /// Returns `true` if an update occurred and `false` otherwise.
     async fn update_timestamp(&mut self) -> Result<bool> {
+        Self::update_timestamp_with_repos(
+            &self.config,
+            &mut self.tuf,
+            Some(&self.local),
+            &self.remote,
+        )
+        .await
+    }
+
+    async fn update_timestamp_with_repos<Remote>(
+        config: &Config<T>,
+        tuf: &mut Tuf<D>,
+        local: Option<&Repository<L, D>>,
+        remote: &Repository<Remote, D>,
+    ) -> Result<bool>
+    where
+        Remote: RepositoryProvider<D>,
+    {
         let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
 
         /////////////////////////////////////////
@@ -541,30 +620,31 @@ where
         //     example, X may be tens of kilobytes. The filename used to download the timestamp
         //     metadata file is of the fixed form FILENAME.EXT (e.g., timestamp.json).
 
-        let raw_signed_timestamp = self
-            .remote
+        let raw_signed_timestamp = remote
             .fetch_metadata(
                 &timestamp_path,
                 &MetadataVersion::None,
-                self.config.max_timestamp_length,
+                config.max_timestamp_length,
                 None,
             )
             .await?;
 
-        if self.tuf.update_timestamp(&raw_signed_timestamp)?.is_some() {
+        if tuf.update_timestamp(&raw_signed_timestamp)?.is_some() {
             /////////////////////////////////////////
             // TUF-1.0.9 §5.2.4:
             //
             //     Persist timestamp metadata. The client MUST write the file to non-volatile
             //     storage as FILENAME.EXT (e.g. timestamp.json).
 
-            self.local
-                .store_metadata(
-                    &timestamp_path,
-                    &MetadataVersion::None,
-                    &raw_signed_timestamp,
-                )
-                .await?;
+            if let Some(local) = local {
+                local
+                    .store_metadata(
+                        &timestamp_path,
+                        &MetadataVersion::None,
+                        &raw_signed_timestamp,
+                    )
+                    .await?;
+            }
 
             Ok(true)
         } else {
@@ -574,28 +654,43 @@ where
 
     /// Returns `true` if an update occurred and `false` otherwise.
     async fn update_snapshot(&mut self) -> Result<bool> {
+        let consistent_snapshot = self.tuf.trusted_root().consistent_snapshot();
+        Self::update_snapshot_with_repos(
+            &mut self.tuf,
+            Some(&self.local),
+            &self.remote,
+            consistent_snapshot,
+        )
+        .await
+    }
+
+    async fn update_snapshot_with_repos<Remote>(
+        tuf: &mut Tuf<D>,
+        local: Option<&Repository<L, D>>,
+        remote: &Repository<Remote, D>,
+        consistent_snapshots: bool,
+    ) -> Result<bool>
+    where
+        Remote: RepositoryProvider<D>,
+    {
         // 5.3.1 Check against timestamp metadata. The hashes and version number listed in the
         // timestamp metadata. If hashes and version do not match, discard the new snapshot
         // metadata, abort the update cycle, and report the failure.
-        let snapshot_description = match self.tuf.trusted_timestamp() {
+        let snapshot_description = match tuf.trusted_timestamp() {
             Some(ts) => Ok(ts.snapshot()),
             None => Err(Error::MissingMetadata(Role::Timestamp)),
         }?
         .clone();
 
         if snapshot_description.version()
-            <= self
-                .tuf
-                .trusted_snapshot()
-                .map(|s| s.version())
-                .unwrap_or(0)
+            <= tuf.trusted_snapshot().map(|s| s.version()).unwrap_or(0)
         {
             return Ok(false);
         }
 
         let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
 
-        let version = if self.tuf.trusted_root().consistent_snapshot() {
+        let version = if consistent_snapshots {
             MetadataVersion::Number(snapshot_description.version())
         } else {
             MetadataVersion::None
@@ -604,8 +699,7 @@ where
         let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
         let snapshot_length = Some(snapshot_description.length());
 
-        let raw_signed_snapshot = self
-            .remote
+        let raw_signed_snapshot = remote
             .fetch_metadata(
                 &snapshot_path,
                 &version,
@@ -614,16 +708,18 @@ where
             )
             .await?;
 
-        if self.tuf.update_snapshot(&raw_signed_snapshot)? {
+        if tuf.update_snapshot(&raw_signed_snapshot)? {
             /////////////////////////////////////////
             // TUF-1.0.9 §5.3.5:
             //
             //     Persist snapshot metadata. The client MUST write the file to non-volatile
             //     storage as FILENAME.EXT (e.g. snapshot.json).
 
-            self.local
-                .store_metadata(&snapshot_path, &MetadataVersion::None, &raw_signed_snapshot)
-                .await?;
+            if let Some(local) = local {
+                local
+                    .store_metadata(&snapshot_path, &MetadataVersion::None, &raw_signed_snapshot)
+                    .await?;
+            }
 
             Ok(true)
         } else {
@@ -633,7 +729,26 @@ where
 
     /// Returns `true` if an update occurred and `false` otherwise.
     async fn update_targets(&mut self) -> Result<bool> {
-        let targets_description = match self.tuf.trusted_snapshot() {
+        let consistent_snapshot = self.tuf.trusted_root().consistent_snapshot();
+        Self::update_targets_with_repos(
+            &mut self.tuf,
+            Some(&self.local),
+            &self.remote,
+            consistent_snapshot,
+        )
+        .await
+    }
+
+    async fn update_targets_with_repos<Remote>(
+        tuf: &mut Tuf<D>,
+        local: Option<&Repository<L, D>>,
+        remote: &Repository<Remote, D>,
+        consistent_snapshot: bool,
+    ) -> Result<bool>
+    where
+        Remote: RepositoryProvider<D>,
+    {
+        let targets_description = match tuf.trusted_snapshot() {
             Some(sn) => match sn.meta().get(&MetadataPath::from_role(&Role::Targets)) {
                 Some(d) => Ok(d),
                 None => Err(Error::VerificationFailure(
@@ -646,15 +761,14 @@ where
         }?
         .clone();
 
-        if targets_description.version()
-            <= self.tuf.trusted_targets().map(|t| t.version()).unwrap_or(0)
+        if targets_description.version() <= tuf.trusted_targets().map(|t| t.version()).unwrap_or(0)
         {
             return Ok(false);
         }
 
         let (alg, value) = crypto::hash_preference(targets_description.hashes())?;
 
-        let version = if self.tuf.trusted_root().consistent_snapshot() {
+        let version = if consistent_snapshot {
             MetadataVersion::Number(targets_description.version())
         } else {
             MetadataVersion::None
@@ -663,8 +777,7 @@ where
         let targets_path = MetadataPath::from_role(&Role::Targets);
         let targets_length = Some(targets_description.length());
 
-        let raw_signed_targets = self
-            .remote
+        let raw_signed_targets = remote
             .fetch_metadata(
                 &targets_path,
                 &version,
@@ -673,16 +786,18 @@ where
             )
             .await?;
 
-        if self.tuf.update_targets(&raw_signed_targets)? {
+        if tuf.update_targets(&raw_signed_targets)? {
             /////////////////////////////////////////
             // TUF-1.0.9 §5.4.4:
             //
             //     Persist targets metadata. The client MUST write the file to non-volatile storage
             //     as FILENAME.EXT (e.g. targets.json).
 
-            self.local
-                .store_metadata(&targets_path, &MetadataVersion::None, &raw_signed_targets)
-                .await?;
+            if let Some(local) = local {
+                local
+                    .store_metadata(&targets_path, &MetadataVersion::None, &raw_signed_targets)
+                    .await?;
+            }
 
             Ok(true)
         } else {
@@ -1126,6 +1241,12 @@ mod test {
         };
     }
 
+    enum ConstructorMode {
+        WithTrustedLocal,
+        WithTrustedRoot,
+        WithTrustedRootKeys,
+    }
+
     #[test]
     fn client_constructors_err_with_not_found() {
         block_on(async {
@@ -1198,6 +1319,410 @@ mod test {
     }
 
     #[test]
+    fn with_trusted_local_loads_metadata_from_local_repo() {
+        block_on(constructors_load_metadata_from_local_repo(
+            ConstructorMode::WithTrustedLocal,
+        ))
+    }
+
+    #[test]
+    fn with_trusted_root_loads_metadata_from_local_repo() {
+        block_on(constructors_load_metadata_from_local_repo(
+            ConstructorMode::WithTrustedRoot,
+        ))
+    }
+
+    #[test]
+    fn with_trusted_root_keys_loads_metadata_from_local_repo() {
+        block_on(constructors_load_metadata_from_local_repo(
+            ConstructorMode::WithTrustedRootKeys,
+        ))
+    }
+
+    async fn constructors_load_metadata_from_local_repo(constructor_mode: ConstructorMode) {
+        // Store an expired root in the local store.
+        let local = EphemeralRepository::<Json>::new();
+        let metadata1 = RepoBuilder::new(&local)
+            .root_keys(vec![&KEYS[0]])
+            .targets_keys(vec![&KEYS[0]])
+            .snapshot_keys(vec![&KEYS[0]])
+            .timestamp_keys(vec![&KEYS[0]])
+            .with_root_builder(|bld| {
+                bld.version(1)
+                    .consistent_snapshot(true)
+                    .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+                    .root_key(KEYS[0].public().clone())
+                    .snapshot_key(KEYS[0].public().clone())
+                    .targets_key(KEYS[0].public().clone())
+                    .timestamp_key(KEYS[0].public().clone())
+            })
+            .targets_version(1)
+            .commit()
+            .await
+            .unwrap();
+
+        // Remote repo has unexpired metadata.
+        let remote = EphemeralRepository::<Json>::new();
+        let metadata2 = RepoBuilder::new(&remote)
+            .root_keys(vec![&KEYS[0]])
+            .targets_keys(vec![&KEYS[0]])
+            .snapshot_keys(vec![&KEYS[0]])
+            .timestamp_keys(vec![&KEYS[0]])
+            .with_root_builder(|bld| {
+                bld.version(2)
+                    .consistent_snapshot(true)
+                    .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+                    .root_key(KEYS[0].public().clone())
+                    .snapshot_key(KEYS[0].public().clone())
+                    .targets_key(KEYS[0].public().clone())
+                    .timestamp_key(KEYS[0].public().clone())
+            })
+            .targets_version(2)
+            .snapshot_version(2)
+            .timestamp_version(2)
+            .commit()
+            .await
+            .unwrap();
+
+        // Now, make sure that the local metadata got version 1.
+        let track_local = TrackRepository::new(&local);
+        let track_remote = TrackRepository::new(&remote);
+
+        // Make sure the client initialized metadata in the right order. Each has a slightly
+        // different usage of the local repository.
+        let mut client = match constructor_mode {
+            ConstructorMode::WithTrustedLocal => {
+                Client::with_trusted_local(Config::default(), &track_local, &track_remote)
+                    .await
+                    .unwrap()
+            }
+            ConstructorMode::WithTrustedRoot => Client::with_trusted_root(
+                Config::default(),
+                &metadata1.root,
+                &track_local,
+                &track_remote,
+            )
+            .await
+            .unwrap(),
+            ConstructorMode::WithTrustedRootKeys => Client::with_trusted_root_keys(
+                Config::default(),
+                &MetadataVersion::Number(1),
+                1,
+                once(&KEYS[0].public().clone()),
+                &track_local,
+                &track_remote,
+            )
+            .await
+            .unwrap(),
+        };
+
+        assert_eq!(client.tuf.trusted_root().version(), 1);
+        assert_eq!(track_remote.take_tracks(), vec![]);
+
+        match constructor_mode {
+            ConstructorMode::WithTrustedLocal => {
+                assert_eq!(
+                    track_local.take_tracks(),
+                    vec![
+                        Track::fetch_meta_found(&MetadataVersion::Number(1), &metadata1.root),
+                        Track::FetchErr(
+                            MetadataPath::from_role(&Role::Root),
+                            MetadataVersion::Number(2)
+                        ),
+                        Track::fetch_meta_found(
+                            &MetadataVersion::None,
+                            &metadata1.timestamp.as_ref().unwrap()
+                        ),
+                        Track::fetch_meta_found(
+                            &MetadataVersion::None,
+                            &metadata1.snapshot.as_ref().unwrap()
+                        ),
+                        Track::fetch_meta_found(
+                            &MetadataVersion::None,
+                            metadata1.targets.as_ref().unwrap()
+                        ),
+                    ],
+                );
+            }
+            ConstructorMode::WithTrustedRoot => {
+                assert_eq!(
+                    track_local.take_tracks(),
+                    vec![
+                        Track::FetchErr(
+                            MetadataPath::from_role(&Role::Root),
+                            MetadataVersion::Number(2)
+                        ),
+                        Track::fetch_meta_found(
+                            &MetadataVersion::None,
+                            &metadata1.timestamp.as_ref().unwrap()
+                        ),
+                        Track::fetch_meta_found(
+                            &MetadataVersion::None,
+                            &metadata1.snapshot.as_ref().unwrap()
+                        ),
+                        Track::fetch_meta_found(
+                            &MetadataVersion::None,
+                            metadata1.targets.as_ref().unwrap()
+                        ),
+                    ],
+                );
+            }
+            ConstructorMode::WithTrustedRootKeys => {
+                assert_eq!(
+                    track_local.take_tracks(),
+                    vec![
+                        Track::fetch_meta_found(&MetadataVersion::Number(1), &metadata1.root),
+                        Track::FetchErr(
+                            MetadataPath::from_role(&Role::Root),
+                            MetadataVersion::Number(2)
+                        ),
+                        Track::fetch_meta_found(
+                            &MetadataVersion::None,
+                            &metadata1.timestamp.as_ref().unwrap()
+                        ),
+                        Track::fetch_meta_found(
+                            &MetadataVersion::None,
+                            &metadata1.snapshot.as_ref().unwrap()
+                        ),
+                        Track::fetch_meta_found(
+                            &MetadataVersion::None,
+                            metadata1.targets.as_ref().unwrap()
+                        ),
+                    ],
+                );
+            }
+        };
+
+        assert_matches!(client.update().await, Ok(true));
+        assert_eq!(client.tuf.trusted_root().version(), 2);
+
+        // We should only fetch metadata from the remote repository and write it to the local
+        // repository.
+        assert_eq!(
+            track_remote.take_tracks(),
+            vec![
+                Track::fetch_meta_found(&MetadataVersion::Number(2), &metadata2.root),
+                Track::FetchErr(
+                    MetadataPath::from_role(&Role::Root),
+                    MetadataVersion::Number(3)
+                ),
+                Track::fetch_meta_found(
+                    &MetadataVersion::None,
+                    &metadata2.timestamp.as_ref().unwrap()
+                ),
+                Track::fetch_meta_found(
+                    &MetadataVersion::Number(2),
+                    &metadata2.snapshot.as_ref().unwrap()
+                ),
+                Track::fetch_meta_found(
+                    &MetadataVersion::Number(2),
+                    metadata2.targets.as_ref().unwrap()
+                ),
+            ],
+        );
+        assert_eq!(
+            track_local.take_tracks(),
+            vec![
+                Track::store_meta(&MetadataVersion::None, &metadata2.root),
+                Track::store_meta(&MetadataVersion::Number(2), &metadata2.root),
+                Track::store_meta(
+                    &MetadataVersion::None,
+                    metadata2.timestamp.as_ref().unwrap()
+                ),
+                Track::store_meta(&MetadataVersion::None, metadata2.snapshot.as_ref().unwrap()),
+                Track::store_meta(&MetadataVersion::None, metadata2.targets.as_ref().unwrap()),
+            ],
+        );
+
+        // Another update should not fetch anything.
+        assert_matches!(client.update().await, Ok(false));
+        assert_eq!(client.tuf.trusted_root().version(), 2);
+
+        // Make sure we only fetched the next root and timestamp, and didn't store anything.
+        assert_eq!(
+            track_remote.take_tracks(),
+            vec![
+                Track::FetchErr(
+                    MetadataPath::from_role(&Role::Root),
+                    MetadataVersion::Number(3)
+                ),
+                Track::fetch_meta_found(
+                    &MetadataVersion::None,
+                    metadata2.timestamp.as_ref().unwrap(),
+                ),
+            ]
+        );
+        assert_eq!(track_local.take_tracks(), vec![]);
+    }
+
+    #[test]
+    fn constructor_succeeds_with_missing_metadata() {
+        block_on(async {
+            let local = EphemeralRepository::<Json>::new();
+            let remote = EphemeralRepository::<Json>::new();
+
+            // Store only a root in the local store.
+            let metadata1 = RepoBuilder::new(&local)
+                .root_keys(vec![&KEYS[0]])
+                .targets_keys(vec![&KEYS[0]])
+                .snapshot_keys(vec![&KEYS[0]])
+                .timestamp_keys(vec![&KEYS[0]])
+                .with_root_builder(|bld| {
+                    bld.version(1)
+                        .consistent_snapshot(true)
+                        .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+                        .root_key(KEYS[0].public().clone())
+                        .snapshot_key(KEYS[0].public().clone())
+                        .targets_key(KEYS[0].public().clone())
+                        .timestamp_key(KEYS[0].public().clone())
+                })
+                .commit()
+                .await
+                .unwrap();
+
+            let track_local = TrackRepository::new(&local);
+            let track_remote = TrackRepository::new(&remote);
+
+            // Create a client, which should try to fetch metadata from the local store.
+            let mut client = Client::with_trusted_root(
+                Config::default(),
+                &metadata1.root,
+                &track_local,
+                &track_remote,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(client.tuf.trusted_root().version(), 1);
+
+            // We shouldn't fetch metadata.
+            assert_eq!(track_remote.take_tracks(), vec![]);
+
+            // We should have tried fetching a new timestamp, but it shouldn't exist in the
+            // repository.
+            assert_eq!(
+                track_local.take_tracks(),
+                vec![
+                    Track::FetchErr(
+                        MetadataPath::from_role(&Role::Root),
+                        MetadataVersion::Number(2)
+                    ),
+                    Track::FetchErr(
+                        MetadataPath::from_role(&Role::Timestamp),
+                        MetadataVersion::None
+                    )
+                ],
+            );
+
+            // An update should succeed.
+            let _metadata2 = RepoBuilder::new(&remote)
+                .root_keys(vec![&KEYS[0]])
+                .targets_keys(vec![&KEYS[0]])
+                .snapshot_keys(vec![&KEYS[0]])
+                .timestamp_keys(vec![&KEYS[0]])
+                .with_root_builder(|bld| {
+                    bld.version(2)
+                        .consistent_snapshot(true)
+                        .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+                        .root_key(KEYS[0].public().clone())
+                        .snapshot_key(KEYS[0].public().clone())
+                        .targets_key(KEYS[0].public().clone())
+                        .timestamp_key(KEYS[0].public().clone())
+                })
+                .targets_version(1)
+                .snapshot_version(1)
+                .timestamp_version(1)
+                .commit()
+                .await
+                .unwrap();
+
+            assert_matches!(client.update().await, Ok(true));
+            assert_eq!(client.tuf.trusted_root().version(), 2);
+        })
+    }
+
+    #[test]
+    fn constructor_succeeds_with_expired_metadata() {
+        block_on(async {
+            let local = EphemeralRepository::<Json>::new();
+            let remote = EphemeralRepository::<Json>::new();
+
+            // Store an expired root in the local store.
+            let metadata1 = RepoBuilder::new(&local)
+                .root_keys(vec![&KEYS[0]])
+                .targets_keys(vec![&KEYS[0]])
+                .snapshot_keys(vec![&KEYS[0]])
+                .timestamp_keys(vec![&KEYS[0]])
+                .with_root_builder(|bld| {
+                    bld.version(1)
+                        .consistent_snapshot(true)
+                        .expires(Utc.ymd(1970, 1, 1).and_hms(0, 0, 0))
+                        .root_key(KEYS[0].public().clone())
+                        .snapshot_key(KEYS[0].public().clone())
+                        .targets_key(KEYS[0].public().clone())
+                        .timestamp_key(KEYS[0].public().clone())
+                })
+                .targets_version(1)
+                .commit()
+                .await
+                .unwrap();
+
+            // Now, make sure that the local metadata got version 1.
+            let track_local = TrackRepository::new(&local);
+            let track_remote = TrackRepository::new(&remote);
+
+            let mut client = Client::with_trusted_root(
+                Config::default(),
+                &metadata1.root,
+                &track_local,
+                &track_remote,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(client.tuf.trusted_root().version(), 1);
+
+            // We shouldn't fetch metadata.
+            assert_eq!(track_remote.take_tracks(), vec![]);
+
+            // We should only load the root metadata, but because it's expired we don't try
+            // fetching the other local metadata.
+            assert_eq!(
+                track_local.take_tracks(),
+                vec![Track::FetchErr(
+                    MetadataPath::from_role(&Role::Root),
+                    MetadataVersion::Number(2)
+                )],
+            );
+
+            // An update should succeed.
+            let _metadata2 = RepoBuilder::new(&remote)
+                .root_keys(vec![&KEYS[0]])
+                .targets_keys(vec![&KEYS[0]])
+                .snapshot_keys(vec![&KEYS[0]])
+                .timestamp_keys(vec![&KEYS[0]])
+                .with_root_builder(|bld| {
+                    bld.version(2)
+                        .consistent_snapshot(true)
+                        .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+                        .root_key(KEYS[0].public().clone())
+                        .snapshot_key(KEYS[0].public().clone())
+                        .targets_key(KEYS[0].public().clone())
+                        .timestamp_key(KEYS[0].public().clone())
+                })
+                .targets_version(2)
+                .snapshot_version(2)
+                .timestamp_version(2)
+                .commit()
+                .await
+                .unwrap();
+
+            assert_matches!(client.update().await, Ok(true));
+            assert_eq!(client.tuf.trusted_root().version(), 2);
+        })
+    }
+
+    #[test]
     fn root_chain_update_consistent_snapshot_false() {
         block_on(root_chain_update(false))
     }
@@ -1231,6 +1756,7 @@ mod test {
             .unwrap();
 
         let root_path = MetadataPath::from_role(&Role::Root);
+        let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
 
         let targets_version;
         let snapshot_version;
@@ -1257,6 +1783,25 @@ mod test {
         .await
         .unwrap();
 
+        // Check that we tried to load metadata from the local repository.
+        assert_eq!(
+            track_remote.take_tracks(),
+            vec![Track::fetch_found(
+                &root_path,
+                &MetadataVersion::Number(1),
+                metadata1.root.as_bytes()
+            ),]
+        );
+        assert_eq!(
+            track_local.take_tracks(),
+            vec![
+                Track::FetchErr(root_path.clone(), MetadataVersion::Number(1)),
+                Track::store_meta(&MetadataVersion::Number(1), &metadata1.root),
+                Track::FetchErr(root_path.clone(), MetadataVersion::Number(2)),
+                Track::FetchErr(timestamp_path.clone(), MetadataVersion::None),
+            ]
+        );
+
         assert_matches!(client.update().await, Ok(true));
         assert_eq!(client.tuf.trusted_root().version(), 1);
 
@@ -1264,11 +1809,6 @@ mod test {
         assert_eq!(
             track_remote.take_tracks(),
             vec![
-                Track::fetch_found(
-                    &root_path,
-                    &MetadataVersion::Number(1),
-                    metadata1.root.as_bytes()
-                ),
                 Track::FetchErr(root_path.clone(), MetadataVersion::Number(2)),
                 Track::fetch_meta_found(
                     &MetadataVersion::None,
@@ -1281,8 +1821,6 @@ mod test {
         assert_eq!(
             track_local.take_tracks(),
             vec![
-                Track::FetchErr(root_path.clone(), MetadataVersion::Number(1)),
-                Track::store_meta(&MetadataVersion::Number(1), &metadata1.root),
                 Track::store_meta(
                     &MetadataVersion::None,
                     metadata1.timestamp.as_ref().unwrap()

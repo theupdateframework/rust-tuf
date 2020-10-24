@@ -159,20 +159,28 @@ where
                 let signed_timestamp = signed_builder.build();
                 let raw_timestamp = signed_timestamp.to_raw()?;
 
-                let targets_version;
-                let snapshot_version;
                 if root.consistent_snapshot() {
-                    targets_version = MetadataVersion::Number(targets.version());
-                    snapshot_version = MetadataVersion::Number(snapshot.version());
-                } else {
-                    targets_version = MetadataVersion::None;
-                    snapshot_version = MetadataVersion::None;
+                    self.repo
+                        .store_metadata(
+                            &MetadataPath::from_role(&Role::Targets),
+                            &MetadataVersion::Number(targets.version()),
+                            &raw_targets,
+                        )
+                        .await?;
+
+                    self.repo
+                        .store_metadata(
+                            &MetadataPath::from_role(&Role::Snapshot),
+                            &MetadataVersion::Number(snapshot.version()),
+                            &raw_snapshot,
+                        )
+                        .await?;
                 }
 
                 self.repo
                     .store_metadata(
                         &MetadataPath::from_role(&Role::Targets),
-                        &targets_version,
+                        &MetadataVersion::None,
                         &raw_targets,
                     )
                     .await?;
@@ -180,7 +188,7 @@ where
                 self.repo
                     .store_metadata(
                         &MetadataPath::from_role(&Role::Snapshot),
-                        &snapshot_version,
+                        &MetadataVersion::None,
                         &raw_snapshot,
                     )
                     .await?;

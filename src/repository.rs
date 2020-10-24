@@ -311,7 +311,7 @@ where
     ///
     /// [extension]: crate::interchange::DataInterchange::extension
     pub async fn store_metadata<'a, M>(
-        &'a mut self,
+        &'a self,
         path: &'a MetadataPath,
         version: &'a MetadataVersion,
         metadata: &'a RawSignedMetadata<D, M>,
@@ -328,7 +328,7 @@ where
 
     /// Store the provided `target` in a location identified by `target_path`.
     pub async fn store_target<'a>(
-        &'a mut self,
+        &'a self,
         target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
     ) -> Result<()> {
@@ -366,7 +366,7 @@ mod test {
     #[test]
     fn repository_rejects_mismatched_path() {
         block_on(async {
-            let mut repo = Repository::<_, Json>::new(EphemeralRepository::new());
+            let repo = Repository::<_, Json>::new(EphemeralRepository::new());
             let fake_metadata = RawSignedMetadata::<Json, RootMetadata>::new(vec![]);
 
             repo.store_metadata(
@@ -509,7 +509,7 @@ mod test {
     fn repository_rejects_corrupt_targets() {
         block_on(async {
             let repo = EphemeralRepository::new();
-            let mut client = Repository::<_, Json>::new(repo);
+            let client = Repository::<_, Json>::new(repo);
 
             let data: &[u8] = b"like tears in the rain";
             let target_description =
@@ -540,7 +540,7 @@ mod test {
         block_on(async {
             let repo: Box<dyn RepositoryStorageProvider<Json>> =
                 Box::new(EphemeralRepository::new());
-            let mut client = Repository::<_, Json>::new(Box::new(repo));
+            let client = Repository::<_, Json>::new(Box::new(repo));
 
             let data: &[u8] = b"like tears in the rain";
             let target_description =
