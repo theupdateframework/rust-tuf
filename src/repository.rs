@@ -35,12 +35,13 @@ where
     /// Fetch signed metadata identified by `meta_path`, `version`, and
     /// [`D::extension()`][extension].
     ///
-    /// Implementations may ignore `max_length` and `hash_data` as [`Repository`] will verify these
-    /// constraints itself. However, it may be more efficient for an implementation to detect
+    /// Implementations may ignore `max_length` and `hash_data` as [`Client`][Client] will verify
+    /// these constraints itself. However, it may be more efficient for an implementation to detect
     /// invalid metadata and fail the fetch operation before streaming all of the bytes of the
     /// metadata.
     ///
     /// [extension]: crate::interchange::DataInterchange::extension
+    /// [Client]: crate::client::Client
     fn fetch_metadata<'a>(
         &'a self,
         meta_path: &'a MetadataPath,
@@ -52,9 +53,11 @@ where
     /// Fetch the given target.
     ///
     /// Implementations may ignore the `length` and `hashes` fields in `target_description` as
-    /// [`Repository`] will verify these constraints itself. However, it may be more efficient for
-    /// an implementation to detect invalid targets and fail the fetch operation before streaming
-    /// all of the bytes.
+    /// [`Client`][Client] will verify these constraints itself. However, it may be more efficient
+    /// for an implementation to detect invalid targets and fail the fetch operation before
+    /// streaming all of the bytes.
+    ///
+    /// [Client]: crate::client::Client
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
