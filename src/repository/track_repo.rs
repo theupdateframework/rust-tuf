@@ -2,7 +2,10 @@ use {
     crate::{
         crypto::{HashAlgorithm, HashValue},
         interchange::DataInterchange,
-        metadata::{MetadataPath, MetadataVersion, TargetDescription, TargetPath},
+        metadata::{
+            Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, TargetDescription,
+            TargetPath,
+        },
         repository::{RepositoryProvider, RepositoryStorage},
         Result,
     },
@@ -42,6 +45,21 @@ impl Track {
         }
     }
 
+    pub(crate) fn store_meta<M, D>(
+        version: &MetadataVersion,
+        metadata: &RawSignedMetadata<D, M>,
+    ) -> Self
+    where
+        M: Metadata,
+        D: DataInterchange,
+    {
+        Self::store(
+            &MetadataPath::from_role(&M::ROLE),
+            version,
+            metadata.as_bytes(),
+        )
+    }
+
     pub(crate) fn fetch_found<T>(
         meta_path: &MetadataPath,
         version: &MetadataVersion,
@@ -55,6 +73,21 @@ impl Track {
             version: version.clone(),
             metadata: String::from_utf8(metadata.into()).unwrap(),
         }
+    }
+
+    pub(crate) fn fetch_meta_found<M, D>(
+        version: &MetadataVersion,
+        metadata: &RawSignedMetadata<D, M>,
+    ) -> Self
+    where
+        M: Metadata,
+        D: DataInterchange,
+    {
+        Track::fetch_found(
+            &MetadataPath::from_role(&M::ROLE),
+            version,
+            metadata.as_bytes(),
+        )
     }
 }
 
