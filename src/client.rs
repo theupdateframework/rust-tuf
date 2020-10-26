@@ -827,8 +827,21 @@ where
                 Err(e) => return (delegation.terminating(), Err(e)),
             };
 
+            /////////////////////////////////////////
+            // TUF-1.0.9 §5.4:
+            //
+            //     Download the top-level targets metadata file, up to either the number of bytes
+            //     specified in the snapshot metadata file, or some Z number of bytes. The value
+            //     for Z is set by the authors of the application using TUF. For example, Z may be
+            //     tens of kilobytes. If consistent snapshots are not used (see Section 7), then
+            //     the filename used to download the targets metadata file is of the fixed form
+            //     FILENAME.EXT (e.g., targets.json). Otherwise, the filename is of the form
+            //     VERSION_NUMBER.FILENAME.EXT (e.g., 42.targets.json), where VERSION_NUMBER is the
+            //     version number of the targets metadata file listed in the snapshot metadata
+            //     file.
+
             let version = if self.tuf.trusted_root().consistent_snapshot() {
-                MetadataVersion::Hash(value.clone())
+                MetadataVersion::Number(role_meta.version())
             } else {
                 MetadataVersion::None
             };
