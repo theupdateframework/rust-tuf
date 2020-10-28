@@ -390,8 +390,9 @@ where
             // to the local store. This will eventually enable us to initialize metadata from the
             // local store (see #301).
             client
+                .local
                 .store_metadata(&root_path, &root_version, &raw_root)
-                .await;
+                .await?;
 
             // FIXME: should we also store the root as `MetadataVersion::None`?
         }
@@ -409,29 +410,6 @@ where
         let ta = self.update_targets().await?;
 
         Ok(r || ts || sn || ta)
-    }
-
-    /// Store the metadata in the local repository. This is just a local cache, so we ignore if it
-    /// experiences any errors.
-    async fn store_metadata<'a, M>(
-        &'a mut self,
-        path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-        metadata: &'a RawSignedMetadata<D, M>,
-    ) where
-        M: Metadata + Sync,
-    {
-        match self.local.store_metadata(path, version, metadata).await {
-            Ok(()) => {}
-            Err(err) => {
-                warn!(
-                    "failed to store metadata version {:?} to {}: {}",
-                    version,
-                    path.to_string(),
-                    err,
-                );
-            }
-        }
     }
 
     /// Returns the current trusted root version.
@@ -509,12 +487,14 @@ where
             //     Persist root metadata. The client MUST write the file to non-volatile storage as
             //     FILENAME.EXT (e.g. root.json).
 
-            self.store_metadata(&root_path, &MetadataVersion::None, &raw_signed_root)
-                .await;
+            self.local
+                .store_metadata(&root_path, &MetadataVersion::None, &raw_signed_root)
+                .await?;
 
             // NOTE(#301): See the comment in `Client::with_trusted_root_keys`.
-            self.store_metadata(&root_path, &next_version, &raw_signed_root)
-                .await;
+            self.local
+                .store_metadata(&root_path, &next_version, &raw_signed_root)
+                .await?;
 
             /////////////////////////////////////////
             // TUF-1.0.9 §5.1.8:
@@ -578,12 +558,13 @@ where
             //     Persist timestamp metadata. The client MUST write the file to non-volatile
             //     storage as FILENAME.EXT (e.g. timestamp.json).
 
-            self.store_metadata(
-                &timestamp_path,
-                &MetadataVersion::None,
-                &raw_signed_timestamp,
-            )
-            .await;
+            self.local
+                .store_metadata(
+                    &timestamp_path,
+                    &MetadataVersion::None,
+                    &raw_signed_timestamp,
+                )
+                .await?;
 
             Ok(true)
         } else {
@@ -640,8 +621,9 @@ where
             //     Persist snapshot metadata. The client MUST write the file to non-volatile
             //     storage as FILENAME.EXT (e.g. snapshot.json).
 
-            self.store_metadata(&snapshot_path, &MetadataVersion::None, &raw_signed_snapshot)
-                .await;
+            self.local
+                .store_metadata(&snapshot_path, &MetadataVersion::None, &raw_signed_snapshot)
+                .await?;
 
             Ok(true)
         } else {
@@ -698,8 +680,9 @@ where
             //     Persist targets metadata. The client MUST write the file to non-volatile storage
             //     as FILENAME.EXT (e.g. targets.json).
 
-            self.store_metadata(&targets_path, &MetadataVersion::None, &raw_signed_targets)
-                .await;
+            self.local
+                .store_metadata(&targets_path, &MetadataVersion::None, &raw_signed_targets)
+                .await?;
 
             Ok(true)
         } else {
@@ -1118,7 +1101,7 @@ mod test {
     use crate::interchange::Json;
     use crate::metadata::{MetadataPath, MetadataVersion};
     use crate::repo_builder::RepoBuilder;
-    use crate::repository::{EphemeralRepository, Track, TrackRepository};
+    use crate::repository::{EphemeralRepository, ErrorRepository, Track, TrackRepository};
     use chrono::prelude::*;
     use futures_executor::block_on;
     use lazy_static::lazy_static;
@@ -1500,5 +1483,77 @@ mod test {
             .unwrap();
 
         assert_eq!(description, expected_description);
+    }
+
+    #[test]
+    fn update_fails_if_cannot_write_to_repo() {
+        block_on(async {
+            let remote = EphemeralRepository::<Json>::new();
+
+            // First, create the metadata.
+            let _ = RepoBuilder::new(&remote)
+                .root_keys(vec![&KEYS[0]])
+                .targets_keys(vec![&KEYS[0]])
+                .snapshot_keys(vec![&KEYS[0]])
+                .timestamp_keys(vec![&KEYS[0]])
+                .with_root_builder(|bld| {
+                    bld.expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+                        .root_key(KEYS[0].public().clone())
+                        .snapshot_key(KEYS[0].public().clone())
+                        .targets_key(KEYS[0].public().clone())
+                        .timestamp_key(KEYS[0].public().clone())
+                })
+                .targets_version(1)
+                .commit()
+                .await
+                .unwrap();
+
+            // Now, make sure that the local metadata got version 1.
+            let local = ErrorRepository::new(EphemeralRepository::new());
+            let mut client = Client::with_trusted_root_keys(
+                Config::default(),
+                &MetadataVersion::Number(1),
+                1,
+                once(&KEYS[0].public().clone()),
+                &local,
+                &remote,
+            )
+            .await
+            .unwrap();
+
+            // The first update should succeed.
+            assert_matches!(client.update().await, Ok(true));
+
+            // Publish new metadata.
+            let _ = RepoBuilder::new(&remote)
+                .root_keys(vec![&KEYS[0]])
+                .targets_keys(vec![&KEYS[0]])
+                .snapshot_keys(vec![&KEYS[0]])
+                .timestamp_keys(vec![&KEYS[0]])
+                .with_root_builder(|bld| {
+                    bld.expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+                        .root_key(KEYS[0].public().clone())
+                        .snapshot_key(KEYS[0].public().clone())
+                        .targets_key(KEYS[0].public().clone())
+                        .timestamp_key(KEYS[0].public().clone())
+                })
+                .targets_version(2)
+                .snapshot_version(2)
+                .timestamp_version(2)
+                .commit()
+                .await
+                .unwrap();
+
+            local.fail_metadata_stores(true);
+
+            // The second update should fail.
+            assert_matches!(client.update().await, Err(Error::Encoding(_)));
+
+            // However, due to https://github.com/theupdateframework/specification/issues/131, if
+            // the update is retried a few times it will still succeed.
+            assert_matches!(client.update().await, Err(Error::Encoding(_)));
+            assert_matches!(client.update().await, Err(Error::Encoding(_)));
+            assert_matches!(client.update().await, Ok(false));
+        });
     }
 }

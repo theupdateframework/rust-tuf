@@ -75,6 +75,16 @@ where
         self.with_targets_builder(|bld| bld.version(version))
     }
 
+    pub(crate) fn snapshot_version(mut self, version: u32) -> Self {
+        self.snapshot_version = version;
+        self
+    }
+
+    pub(crate) fn timestamp_version(mut self, version: u32) -> Self {
+        self.timestamp_version = version;
+        self
+    }
+
     pub(crate) fn with_root_builder<F>(mut self, f: F) -> Self
     where
         F: FnOnce(RootMetadataBuilder) -> RootMetadataBuilder,

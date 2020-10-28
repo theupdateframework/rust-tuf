@@ -23,6 +23,11 @@ mod ephemeral;
 pub use self::ephemeral::EphemeralRepository;
 
 #[cfg(test)]
+mod error_repo;
+#[cfg(test)]
+pub(crate) use self::error_repo::ErrorRepository;
+
+#[cfg(test)]
 mod track_repo;
 #[cfg(test)]
 pub(crate) use self::track_repo::{Track, TrackRepository};
