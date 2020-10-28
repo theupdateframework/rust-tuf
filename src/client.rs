@@ -1531,10 +1531,16 @@ mod test {
                 .await
                 .unwrap();
 
-            local.fail_stores(true);
+            local.fail_metadata_stores(true);
 
             // The second update should fail.
             assert_matches!(client.update().await, Err(Error::Encoding(_)));
+
+            // However, due to https://github.com/theupdateframework/specification/issues/131, if
+            // the update is retried a few times it will still succeed.
+            assert_matches!(client.update().await, Err(Error::Encoding(_)));
+            assert_matches!(client.update().await, Err(Error::Encoding(_)));
+            assert_matches!(client.update().await, Ok(false));
         });
     }
 }

@@ -14,19 +14,19 @@ use {
 
 pub(crate) struct ErrorRepository<R> {
     repo: R,
-    fail_stores: Arc<Mutex<bool>>,
+    fail_metadata_stores: Arc<Mutex<bool>>,
 }
 
 impl<R> ErrorRepository<R> {
     pub(crate) fn new(repo: R) -> Self {
         Self {
             repo,
-            fail_stores: Arc::new(Mutex::new(false)),
+            fail_metadata_stores: Arc::new(Mutex::new(false)),
         }
     }
 
-    pub(crate) fn fail_stores(&self, fail_stores: bool) {
-        *self.fail_stores.lock() = fail_stores;
+    pub(crate) fn fail_metadata_stores(&self, fail_metadata_stores: bool) {
+        *self.fail_metadata_stores.lock() = fail_metadata_stores;
     }
 }
 
@@ -66,7 +66,7 @@ where
         version: &'a MetadataVersion,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
-        if *self.fail_stores.lock() {
+        if *self.fail_metadata_stores.lock() {
             async { Err(Error::Encoding("failed".into())) }.boxed()
         } else {
             self.repo.store_metadata(meta_path, version, metadata)
