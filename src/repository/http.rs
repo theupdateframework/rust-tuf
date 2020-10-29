@@ -45,7 +45,7 @@ where
     pub fn new(url: Url, client: Client<C>) -> Self {
         HttpRepositoryBuilder {
             uri: url.to_string().parse::<Uri>().unwrap(), // This is dangerous, but will only exist for a short time as we migrate APIs.
-            client: client,
+            client,
             user_agent: None,
             metadata_prefix: None,
             targets_prefix: None,
@@ -57,8 +57,8 @@ where
     /// Create a new repository with the given `Url` and `Client`.
     pub fn new_with_uri(uri: Uri, client: Client<C>) -> Self {
         HttpRepositoryBuilder {
-            uri: uri,
-            client: client,
+            uri,
+            client,
             user_agent: None,
             metadata_prefix: None,
             targets_prefix: None,
@@ -113,7 +113,7 @@ where
         HttpRepository {
             uri: self.uri,
             client: self.client,
-            user_agent: user_agent,
+            user_agent,
             metadata_prefix: self.metadata_prefix,
             targets_prefix: self.targets_prefix,
             min_bytes_per_second: self.min_bytes_per_second,
@@ -157,12 +157,12 @@ fn extend_uri(uri: Uri, prefix: &Option<Vec<String>>, components: &[String]) -> 
     };
 
     let mut modified_path = path.to_owned();
-    if modified_path.ends_with("/") {
+    if modified_path.ends_with('/') {
         modified_path.pop();
     }
 
     let mut path_split = modified_path
-        .split("/")
+        .split('/')
         .map(String::from)
         .collect::<Vec<_>>();
     let mut new_path_elements: Vec<&str> = vec![];

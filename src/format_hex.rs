@@ -2,7 +2,7 @@ use data_encoding::HEXLOWER;
 use serde::{self, Deserialize, Deserializer, Serializer};
 use std::result::Result;
 
-pub fn serialize<S>(value: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+pub fn serialize<S>(value: &[u8], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {

@@ -1,6 +1,7 @@
 //! Components needed to verify TUF metadata and targets.
 
 use chrono::offset::Utc;
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
@@ -190,7 +191,7 @@ impl<D: DataInterchange> Tuf<D> {
             //     update cycle, begin at step 0 and version N of the root metadata file.
 
             let next_root_version = trusted_root.version().checked_add(1).ok_or_else(|| {
-                Error::VerificationFailure(format!("root version should be less than max u32"))
+                Error::VerificationFailure("root version should be less than max u32".into())
             })?;
 
             if new_root.version() != next_root_version {
@@ -284,14 +285,18 @@ impl<D: DataInterchange> Tuf<D> {
 
             let trusted_timestamp_version = self.trusted_timestamp_version();
 
-            if new_timestamp.version() < trusted_timestamp_version {
-                return Err(Error::VerificationFailure(format!(
-                    "Attempted to roll back timestamp metadata at version {} to {}.",
-                    trusted_timestamp_version,
-                    new_timestamp.version()
-                )));
-            } else if new_timestamp.version() == trusted_timestamp_version {
-                return Ok(None);
+            match new_timestamp.version().cmp(&trusted_timestamp_version) {
+                Ordering::Less => {
+                    return Err(Error::VerificationFailure(format!(
+                        "Attempted to roll back timestamp metadata at version {} to {}.",
+                        trusted_timestamp_version,
+                        new_timestamp.version()
+                    )));
+                }
+                Ordering::Equal => {
+                    return Ok(None);
+                }
+                Ordering::Greater => {}
             }
 
             /////////////////////////////////////////
@@ -345,14 +350,18 @@ impl<D: DataInterchange> Tuf<D> {
             let trusted_timestamp = self.trusted_timestamp_unexpired()?;
             let trusted_snapshot_version = self.trusted_snapshot_version();
 
-            if trusted_timestamp.snapshot().version() < trusted_snapshot_version {
-                return Err(Error::VerificationFailure(format!(
-                    "Attempted to roll back snapshot metadata at version {} to {}.",
-                    trusted_snapshot_version,
-                    trusted_timestamp.snapshot().version()
-                )));
-            } else if trusted_timestamp.snapshot().version() == trusted_snapshot_version {
-                return Ok(false);
+            match trusted_timestamp.snapshot().version().cmp(&trusted_snapshot_version) {
+                Ordering::Less => {
+                    return Err(Error::VerificationFailure(format!(
+                        "Attempted to roll back snapshot metadata at version {} to {}.",
+                        trusted_snapshot_version,
+                        trusted_timestamp.snapshot().version()
+                    )));
+                }
+                Ordering::Equal => {
+                    return Ok(false);
+                }
+                Ordering::Greater => {}
             }
 
             /////////////////////////////////////////
@@ -522,14 +531,18 @@ impl<D: DataInterchange> Tuf<D> {
 
             let trusted_targets_version = self.trusted_targets_version();
 
-            if trusted_targets_description.version() < trusted_targets_version {
-                return Err(Error::VerificationFailure(format!(
-                    "Attempted to roll back targets metadata at version {} to {}.",
-                    trusted_targets_version,
-                    trusted_targets_description.version()
-                )));
-            } else if trusted_targets_description.version() == trusted_targets_version {
-                return Ok(false);
+            match trusted_targets_description.version().cmp(&trusted_targets_version) {
+                Ordering::Less => {
+                    return Err(Error::VerificationFailure(format!(
+                        "Attempted to roll back targets metadata at version {} to {}.",
+                        trusted_targets_version,
+                        trusted_targets_description.version()
+                    )));
+                }
+                Ordering::Equal => {
+                    return Ok(false);
+                }
+                Ordering::Greater => {}
             }
 
             /////////////////////////////////////////
@@ -606,17 +619,9 @@ impl<D: DataInterchange> Tuf<D> {
         // Find the parent TargetsMetadata that is expected to refer to `role`.
         let trusted_parent = {
             if parent_role == &MetadataPath::from_role(&Role::Targets) {
-                if let Some(trusted_targets) = self.trusted_targets() {
-                    trusted_targets
-                } else {
-                    return None;
-                }
+                self.trusted_targets()?
             } else {
-                if let Some(trusted_delegation) = self.trusted_delegations.get(parent_role) {
-                    trusted_delegation
-                } else {
-                    return None;
-                }
+                self.trusted_delegations.get(parent_role)?
             }
         };
 
@@ -706,7 +711,7 @@ impl<D: DataInterchange> Tuf<D> {
 
             let (threshold, keys) = self
                 .find_delegation_threshold_and_keys(parent_role, role)
-                .ok_or(Error::VerificationFailure(format!(
+                .ok_or_else(|| Error::VerificationFailure(format!(
                     "The delegated role {:?} is not known to the base \
                         targets metadata or any known delegated targets metadata",
                     role
