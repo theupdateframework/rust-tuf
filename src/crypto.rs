@@ -2,7 +2,6 @@
 
 use data_encoding::{BASE64URL, HEXLOWER};
 use derp::{self, Der, Tag};
-use ring;
 use ring::digest::{self, SHA256, SHA512};
 use ring::rand::SystemRandom;
 use ring::signature::{
@@ -412,11 +411,10 @@ impl PrivateKey {
     /// # use ring::signature::Ed25519KeyPair;
     /// # use std::fs::File;
     /// # use std::io::Write;
-    /// # fn main() {
+    /// #
     /// let mut file = File::open("ed25519-private-key.pk8").unwrap();
     /// let key = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
     /// file.write_all(key.as_ref()).unwrap()
-    /// # }
     /// ```
     ///
     /// ## RSA

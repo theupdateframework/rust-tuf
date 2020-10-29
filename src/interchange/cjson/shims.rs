@@ -116,11 +116,7 @@ pub struct RoleDefinition {
 
 impl RoleDefinition {
     pub fn from(role: &metadata::RoleDefinition) -> Result<Self> {
-        let key_ids = role
-            .key_ids()
-            .iter()
-            .cloned()
-            .collect::<Vec<crypto::KeyId>>();
+        let key_ids = role.key_ids().to_vec();
 
         Ok(RoleDefinition {
             threshold: role.threshold(),

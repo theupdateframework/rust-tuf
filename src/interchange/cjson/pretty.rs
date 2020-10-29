@@ -1,6 +1,5 @@
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use serde_json;
 use std::io::{Read, Write};
 
 use super::Json;
@@ -49,12 +48,10 @@ impl DataInterchange for JsonPretty {
     ///    bar: String,
     /// }
     ///
-    /// # fn main() {
     /// let jsn = json!({"foo": "wat", "bar": "lol"});
     /// let thing = Thing { foo: "wat".into(), bar: "lol".into() };
     /// let de: Thing = JsonPretty::deserialize(&jsn).unwrap();
     /// assert_eq!(de, thing);
-    /// # }
     /// ```
     fn deserialize<T>(raw_data: &Self::RawData) -> Result<T>
     where
@@ -75,12 +72,10 @@ impl DataInterchange for JsonPretty {
     ///    bar: String,
     /// }
     ///
-    /// # fn main() {
     /// let jsn = json!({"foo": "wat", "bar": "lol"});
     /// let thing = Thing { foo: "wat".into(), bar: "lol".into() };
     /// let se: serde_json::Value = JsonPretty::serialize(&thing).unwrap();
     /// assert_eq!(se, jsn);
-    /// # }
     /// ```
     fn serialize<T>(data: &T) -> Result<Self::RawData>
     where
@@ -92,6 +87,7 @@ impl DataInterchange for JsonPretty {
     /// ```
     /// # use serde_json::json;
     /// # use tuf::interchange::{DataInterchange, JsonPretty};
+    /// #
     /// let json = json!({
     ///     "o": {
     ///         "a": [1, 2, 3],
@@ -102,8 +98,10 @@ impl DataInterchange for JsonPretty {
     ///         "0": null,
     ///     },
     /// });
+    ///
     /// let mut buf = Vec::new();
     /// JsonPretty::to_writer(&mut buf, &json).unwrap();
+    ///
     /// assert_eq!(&String::from_utf8(buf).unwrap(), r#"{
     ///   "o": {
     ///     "0": null,

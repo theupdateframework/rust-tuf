@@ -1,7 +1,5 @@
-use itoa;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use serde_json;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 
@@ -222,12 +220,10 @@ impl DataInterchange for Json {
     ///    bar: String,
     /// }
     ///
-    /// # fn main() {
     /// let jsn = json!({"foo": "wat", "bar": "lol"});
     /// let thing = Thing { foo: "wat".into(), bar: "lol".into() };
     /// let de: Thing = Json::deserialize(&jsn).unwrap();
     /// assert_eq!(de, thing);
-    /// # }
     /// ```
     fn deserialize<T>(raw_data: &Self::RawData) -> Result<T>
     where
@@ -248,12 +244,10 @@ impl DataInterchange for Json {
     ///    bar: String,
     /// }
     ///
-    /// # fn main() {
     /// let jsn = json!({"foo": "wat", "bar": "lol"});
     /// let thing = Thing { foo: "wat".into(), bar: "lol".into() };
     /// let se: serde_json::Value = Json::serialize(&thing).unwrap();
     /// assert_eq!(se, jsn);
-    /// # }
     /// ```
     fn serialize<T>(data: &T) -> Result<Self::RawData>
     where
@@ -275,6 +269,7 @@ impl DataInterchange for Json {
     ///         "0": null,
     ///     },
     /// });
+    ///
     /// let mut buf = Vec::new();
     /// Json::to_writer(&mut buf, &json).unwrap();
     /// assert_eq!(

@@ -41,7 +41,6 @@ impl<T> std::ops::Deref for Verified<T> {
 /// # use tuf::metadata::{SnapshotMetadataBuilder, SignedMetadata};
 /// # use tuf::verify::verify_signatures;
 ///
-/// # fn main() {
 /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
 /// let key_1 = PrivateKey::from_pkcs8(&key_1, SignatureScheme::Ed25519).unwrap();
 ///
@@ -64,7 +63,6 @@ impl<T> std::ops::Deref for Verified<T> {
 ///
 /// // fail when the keys don't exist
 /// assert!(verify_signatures(&raw_snapshot, 1, &[]).is_err());
-/// # }
 pub fn verify_signatures<'a, D, M, I>(
     raw_metadata: &RawSignedMetadata<D, M>,
     threshold: u32,

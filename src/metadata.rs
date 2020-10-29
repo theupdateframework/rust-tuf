@@ -19,14 +19,14 @@ use crate::interchange::DataInterchange;
 use crate::Result;
 
 #[rustfmt::skip]
-static PATH_ILLEGAL_COMPONENTS: &'static [&str] = &[
+static PATH_ILLEGAL_COMPONENTS: &[&str] = &[
     ".", // current dir
     "..", // parent dir
          // TODO ? "0", // may translate to nul in windows
 ];
 
 #[rustfmt::skip]
-static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &'static [&str] = &[
+static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &[&str] = &[
     // DOS device files
     "CON",
     "PRN",
@@ -58,7 +58,7 @@ static PATH_ILLEGAL_COMPONENTS_CASE_INSENSITIVE: &'static [&str] = &[
 ];
 
 #[rustfmt::skip]
-static PATH_ILLEGAL_STRINGS: &'static [&str] = &[
+static PATH_ILLEGAL_STRINGS: &[&str] = &[
     ":", // for *nix compatibility
     "\\", // for windows compatibility
     "<",
@@ -364,13 +364,11 @@ where
     /// # use tuf::interchange::Json;
     /// # use tuf::metadata::{SignedMetadata, SnapshotMetadataBuilder};
     /// #
-    /// # fn main() {
     /// # let key: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     /// let key = PrivateKey::from_pkcs8(&key, SignatureScheme::Ed25519).unwrap();
     ///
     /// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
     /// SignedMetadata::<Json, _>::new(&snapshot, &key).unwrap();
-    /// # }
     /// ```
     pub fn new(metadata: &M, private_key: &PrivateKey) -> Result<Self> {
         let raw = D::serialize(metadata)?;
@@ -414,7 +412,6 @@ where
     /// # use tuf::interchange::Json;
     /// # use tuf::metadata::{SignedMetadata, SnapshotMetadataBuilder};
     /// #
-    /// # fn main() {
     /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     /// let key_1 = PrivateKey::from_pkcs8(&key_1, SignatureScheme::Ed25519).unwrap();
     ///
@@ -431,7 +428,6 @@ where
     ///
     /// snapshot.add_signature(&key_2).unwrap();
     /// assert_eq!(snapshot.signatures().len(), 2);
-    /// # }
     /// ```
     pub fn add_signature(&mut self, private_key: &PrivateKey) -> Result<()> {
         let bytes = D::canonicalize(&self.metadata)?;
@@ -1555,29 +1551,27 @@ impl TargetDescription {
     /// Read the from the given reader and calculate the length and hash values.
     ///
     /// ```
-    /// use data_encoding::BASE64URL;
-    /// use tuf::crypto::{HashAlgorithm,HashValue};
-    /// use tuf::metadata::TargetDescription;
+    /// # use data_encoding::BASE64URL;
+    /// # use tuf::crypto::{HashAlgorithm,HashValue};
+    /// # use tuf::metadata::TargetDescription;
+    /// #
+    /// let bytes: &[u8] = b"it was a pleasure to burn";
     ///
-    /// fn main() {
-    ///     let bytes: &[u8] = b"it was a pleasure to burn";
+    /// let target_description = TargetDescription::from_reader(
+    ///     bytes,
+    ///     &[HashAlgorithm::Sha256, HashAlgorithm::Sha512],
+    /// ).unwrap();
     ///
-    ///     let target_description = TargetDescription::from_reader(
-    ///         bytes,
-    ///         &[HashAlgorithm::Sha256, HashAlgorithm::Sha512],
-    ///     ).unwrap();
+    /// let s = "Rd9zlbzrdWfeL7gnIEi05X-Yv2TCpy4qqZM1N72ZWQs=";
+    /// let sha256 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
     ///
-    ///     let s = "Rd9zlbzrdWfeL7gnIEi05X-Yv2TCpy4qqZM1N72ZWQs=";
-    ///     let sha256 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
+    /// let s ="tuIxwKybYdvJpWuUj6dubvpwhkAozWB6hMJIRzqn2jOUdtDTBg381brV4K\
+    ///     BU1zKP8GShoJuXEtCf5NkDTCEJgQ==";
+    /// let sha512 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
     ///
-    ///     let s ="tuIxwKybYdvJpWuUj6dubvpwhkAozWB6hMJIRzqn2jOUdtDTBg381brV4K\
-    ///         BU1zKP8GShoJuXEtCf5NkDTCEJgQ==";
-    ///     let sha512 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
-    ///
-    ///     assert_eq!(target_description.length(), bytes.len() as u64);
-    ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
-    ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
-    /// }
+    /// assert_eq!(target_description.length(), bytes.len() as u64);
+    /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
+    /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
     /// ```
     pub fn from_reader<R>(read: R, hash_algs: &[HashAlgorithm]) -> Result<Self>
     where
@@ -1595,36 +1589,34 @@ impl TargetDescription {
     /// values.
     ///
     /// ```
-    /// use data_encoding::BASE64URL;
-    /// use serde_json::Value;
-    /// use std::collections::HashMap;
-    /// use tuf::crypto::{HashAlgorithm,HashValue};
-    /// use tuf::metadata::TargetDescription;
+    /// # use data_encoding::BASE64URL;
+    /// # use serde_json::Value;
+    /// # use std::collections::HashMap;
+    /// # use tuf::crypto::{HashAlgorithm,HashValue};
+    /// # use tuf::metadata::TargetDescription;
+    /// #
+    /// let bytes: &[u8] = b"it was a pleasure to burn";
     ///
-    /// fn main() {
-    ///     let bytes: &[u8] = b"it was a pleasure to burn";
+    /// let mut custom = HashMap::new();
+    /// custom.insert("Hello".into(), "World".into());
     ///
-    ///     let mut custom = HashMap::new();
-    ///     custom.insert("Hello".into(), "World".into());
+    /// let target_description = TargetDescription::from_reader_with_custom(
+    ///     bytes,
+    ///     &[HashAlgorithm::Sha256, HashAlgorithm::Sha512],
+    ///     custom,
+    /// ).unwrap();
     ///
-    ///     let target_description = TargetDescription::from_reader_with_custom(
-    ///         bytes,
-    ///         &[HashAlgorithm::Sha256, HashAlgorithm::Sha512],
-    ///         custom,
-    ///     ).unwrap();
+    /// let s = "Rd9zlbzrdWfeL7gnIEi05X-Yv2TCpy4qqZM1N72ZWQs=";
+    /// let sha256 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
     ///
-    ///     let s = "Rd9zlbzrdWfeL7gnIEi05X-Yv2TCpy4qqZM1N72ZWQs=";
-    ///     let sha256 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
+    /// let s ="tuIxwKybYdvJpWuUj6dubvpwhkAozWB6hMJIRzqn2jOUdtDTBg381brV4K\
+    ///     BU1zKP8GShoJuXEtCf5NkDTCEJgQ==";
+    /// let sha512 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
     ///
-    ///     let s ="tuIxwKybYdvJpWuUj6dubvpwhkAozWB6hMJIRzqn2jOUdtDTBg381brV4K\
-    ///         BU1zKP8GShoJuXEtCf5NkDTCEJgQ==";
-    ///     let sha512 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
-    ///
-    ///     assert_eq!(target_description.length(), bytes.len() as u64);
-    ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
-    ///     assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
-    ///     assert_eq!(target_description.custom().and_then(|c| c.get("Hello")), Some(&"World".into()));
-    /// }
+    /// assert_eq!(target_description.length(), bytes.len() as u64);
+    /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
+    /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
+    /// assert_eq!(target_description.custom().and_then(|c| c.get("Hello")), Some(&"World".into()));
     /// ```
     pub fn from_reader_with_custom<R>(
         read: R,
