@@ -399,15 +399,9 @@ where
         .await;
 
         match res {
-            Ok(()) => {}
-            Err(Error::NotFound) => {
-                // Ignore if the local repository has expired metadata.
-            }
-            Err(Error::ExpiredMetadata(role)) => {
-                warn!("local metadata expired: {}", role);
-            }
+            Ok(()) | Err(Error::NotFound) => {}
             Err(err) => {
-                return Err(err);
+                warn!("error loading local metadata: : {}", err);
             }
         }
 
@@ -1719,6 +1713,81 @@ mod test {
 
             assert_matches!(client.update().await, Ok(true));
             assert_eq!(client.tuf.trusted_root().version(), 2);
+        })
+    }
+
+    #[test]
+    fn constructor_succeeds_with_malformed_metadata() {
+        block_on(async {
+            // Store a malformed timestamp in the local repository.
+            let local = EphemeralRepository::<Json>::new();
+            let junk_timestamp = "junk timestamp";
+
+            local
+                .store_metadata(
+                    &MetadataPath::from_role(&Role::Timestamp),
+                    &MetadataVersion::None,
+                    &mut junk_timestamp.as_bytes(),
+                )
+                .await
+                .unwrap();
+
+            // Create a normal repository on the remote server.
+            let remote = EphemeralRepository::<Json>::new();
+            let metadata1 = RepoBuilder::new(&remote)
+                .root_keys(vec![&KEYS[0]])
+                .targets_keys(vec![&KEYS[0]])
+                .snapshot_keys(vec![&KEYS[0]])
+                .timestamp_keys(vec![&KEYS[0]])
+                .with_root_builder(|bld| {
+                    bld.expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+                        .root_key(KEYS[0].public().clone())
+                        .snapshot_key(KEYS[0].public().clone())
+                        .targets_key(KEYS[0].public().clone())
+                        .timestamp_key(KEYS[0].public().clone())
+                })
+                .targets_version(1)
+                .commit()
+                .await
+                .unwrap();
+
+            // Create the client. It should ignore the malformed timestamp.
+            let track_local = TrackRepository::new(&local);
+            let track_remote = TrackRepository::new(&remote);
+
+            let mut client = Client::with_trusted_root(
+                Config::default(),
+                &metadata1.root,
+                &track_local,
+                &track_remote,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(client.tuf.trusted_root().version(), 1);
+
+            // We shouldn't fetch metadata.
+            assert_eq!(track_remote.take_tracks(), vec![]);
+
+            // We should only load the root metadata, but because it's expired we don't try
+            // fetching the other local metadata.
+            assert_eq!(
+                track_local.take_tracks(),
+                vec![
+                    Track::FetchErr(
+                        MetadataPath::from_role(&Role::Root),
+                        MetadataVersion::Number(2)
+                    ),
+                    Track::FetchFound {
+                        path: MetadataPath::from_role(&Role::Timestamp),
+                        version: MetadataVersion::None,
+                        metadata: junk_timestamp.into(),
+                    },
+                ],
+            );
+
+            // An update should work.
+            assert_matches!(client.update().await, Ok(true));
         })
     }
 
