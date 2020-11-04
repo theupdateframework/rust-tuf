@@ -452,39 +452,8 @@ where
 
     /// Returns `true` if an update occurred and `false` otherwise.
     async fn update_root(&mut self) -> Result<bool> {
-        let updated = Self::update_root_with_repos(
-            &self.config,
-            &mut self.tuf,
-            Some(&self.local),
-            &self.remote,
-        )
-        .await?;
-
-        /////////////////////////////////////////
-        // TUF-1.0.9 §5.1.9:
-        //
-        //     Check for a freeze attack. The latest known time MUST be lower than the expiration
-        //     timestamp in the trusted root metadata file (version N). If the trusted root
-        //     metadata file has expired, abort the update cycle, report the potential freeze
-        //     attack. On the next update cycle, begin at step 5.0 and version N of the root
-        //     metadata file.
-
-        // TODO: Consider moving the root metadata expiration check into `tuf::Tuf`, since that's
-        // where we check timestamp/snapshot/targets/delegations for expiration.
-        if self.tuf.trusted_root().expires() <= &Utc::now() {
-            error!("Root metadata expired, potential freeze attack");
-            return Err(Error::ExpiredMetadata(Role::Root));
-        }
-
-        /////////////////////////////////////////
-        // TUF-1.0.5 §5.1.10:
-        //
-        //     Set whether consistent snapshots are used as per the trusted root metadata file (see
-        //     Section 4.3).
-
-        // FIXME: validate we are properly setting the consistent snapshot.
-
-        Ok(updated)
+        Self::update_root_with_repos(&self.config, &mut self.tuf, Some(&self.local), &self.remote)
+            .await
     }
 
     async fn update_root_with_repos<Remote>(
@@ -559,6 +528,7 @@ where
             //
             //     Repeat steps 5.1.1 to 5.1.8.
         }
+
         /////////////////////////////////////////
         // TUF-1.0.9 §5.1.9:
         //
@@ -1661,6 +1631,27 @@ mod test {
                 .await
                 .unwrap();
 
+            let metadata2 = RepoBuilder::new(&local)
+                .root_keys(vec![&KEYS[0]])
+                .targets_keys(vec![&KEYS[0]])
+                .snapshot_keys(vec![&KEYS[0]])
+                .timestamp_keys(vec![&KEYS[0]])
+                .with_root_builder(|bld| {
+                    bld.version(2)
+                        .consistent_snapshot(true)
+                        .expires(Utc.ymd(1970, 1, 1).and_hms(0, 0, 0))
+                        .root_key(KEYS[0].public().clone())
+                        .snapshot_key(KEYS[0].public().clone())
+                        .targets_key(KEYS[0].public().clone())
+                        .timestamp_key(KEYS[0].public().clone())
+                })
+                .targets_version(2)
+                .snapshot_version(2)
+                .timestamp_version(2)
+                .commit()
+                .await
+                .unwrap();
+
             // Now, make sure that the local metadata got version 1.
             let track_local = TrackRepository::new(&local);
             let track_remote = TrackRepository::new(&remote);
@@ -1674,7 +1665,7 @@ mod test {
             .await
             .unwrap();
 
-            assert_eq!(client.tuf.trusted_root().version(), 1);
+            assert_eq!(client.tuf.trusted_root().version(), 2);
 
             // We shouldn't fetch metadata.
             assert_eq!(track_remote.take_tracks(), vec![]);
@@ -1683,20 +1674,23 @@ mod test {
             // fetching the other local metadata.
             assert_eq!(
                 track_local.take_tracks(),
-                vec![Track::FetchErr(
-                    MetadataPath::from_role(&Role::Root),
-                    MetadataVersion::Number(2)
-                )],
+                vec![
+                    Track::fetch_meta_found(&MetadataVersion::Number(2), &metadata2.root),
+                    Track::FetchErr(
+                        MetadataPath::from_role(&Role::Root),
+                        MetadataVersion::Number(3)
+                    )
+                ],
             );
 
             // An update should succeed.
-            let _metadata2 = RepoBuilder::new(&remote)
+            let _metadata3 = RepoBuilder::new(&remote)
                 .root_keys(vec![&KEYS[0]])
                 .targets_keys(vec![&KEYS[0]])
                 .snapshot_keys(vec![&KEYS[0]])
                 .timestamp_keys(vec![&KEYS[0]])
                 .with_root_builder(|bld| {
-                    bld.version(2)
+                    bld.version(3)
                         .consistent_snapshot(true)
                         .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
                         .root_key(KEYS[0].public().clone())
@@ -1704,15 +1698,15 @@ mod test {
                         .targets_key(KEYS[0].public().clone())
                         .timestamp_key(KEYS[0].public().clone())
                 })
-                .targets_version(2)
-                .snapshot_version(2)
-                .timestamp_version(2)
+                .targets_version(3)
+                .snapshot_version(3)
+                .timestamp_version(3)
                 .commit()
                 .await
                 .unwrap();
 
             assert_matches!(client.update().await, Ok(true));
-            assert_eq!(client.tuf.trusted_root().version(), 2);
+            assert_eq!(client.tuf.trusted_root().version(), 3);
         })
     }
 
