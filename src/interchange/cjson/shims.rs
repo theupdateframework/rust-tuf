@@ -512,7 +512,7 @@ mod deserialize_reject_duplicates {
     {
         struct BTreeVisitor<K, V> {
             marker: PhantomData<(K, V)>,
-        };
+        }
 
         impl<'de, K, V> Visitor<'de> for BTreeVisitor<K, V>
         where
