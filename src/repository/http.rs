@@ -217,7 +217,7 @@ where
         let uri = extend_uri(base_uri, prefix, components)?;
 
         let req = Request::builder()
-            .uri(uri)
+            .uri(&uri)
             .header("User-Agent", &*self.user_agent)
             .body(Body::default())?;
 
@@ -228,10 +228,10 @@ where
             if status == StatusCode::NOT_FOUND {
                 Err(Error::NotFound)
             } else {
-                Err(Error::Opaque(format!(
-                    "Error getting {:?}: {:?}",
-                    self.uri, resp
-                )))
+                Err(Error::BadHttpStatus {
+                    code: status,
+                    uri: uri.to_string(),
+                })
             }
         } else {
             Ok(resp)

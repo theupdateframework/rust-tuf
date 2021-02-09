@@ -31,6 +31,16 @@ pub enum Error {
     #[error("http: {0}")]
     Http(http::Error),
 
+    /// Unexpected HTTP response status.
+    #[error("error getting {uri}: request failed with status code {code}")]
+    BadHttpStatus {
+        /// HTTP status code.
+        code: http::StatusCode,
+
+        /// URI Resource that resulted in the error.
+        uri: String,
+    },
+
     /// Errors that can occur parsing HTTP streams.
     #[error("hyper: {0}")]
     Hyper(hyper::Error),
