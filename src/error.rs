@@ -31,7 +31,7 @@ pub enum Error {
     #[error("http: {0}")]
     Http(http::Error),
 
-    /// Unexpected error
+    /// Unexpected HTTP response status.
     #[error("error getting {uri}: request failed with status code {code}")]
     BadHttpStatus {
         /// HTTP status code.

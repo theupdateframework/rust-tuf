@@ -217,7 +217,7 @@ where
         let uri = extend_uri(base_uri, prefix, components)?;
 
         let req = Request::builder()
-            .uri(uri)
+            .uri(&uri)
             .header("User-Agent", &*self.user_agent)
             .body(Body::default())?;
 
@@ -230,7 +230,7 @@ where
             } else {
                 Err(Error::BadHttpStatus {
                     code: status,
-                    uri: self.uri.to_string(),
+                    uri: uri.to_string(),
                 })
             }
         } else {
