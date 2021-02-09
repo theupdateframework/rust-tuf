@@ -228,10 +228,10 @@ where
             if status == StatusCode::NOT_FOUND {
                 Err(Error::NotFound)
             } else {
-                Err(Error::Opaque(format!(
-                    "Error getting {:?}: {:?}",
-                    self.uri, resp
-                )))
+                Err(Error::BadHttpStatus {
+                    code: status,
+                    uri: self.uri.to_string(),
+                })
             }
         } else {
             Ok(resp)
