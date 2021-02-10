@@ -224,17 +224,15 @@ where
         let resp = self.client.request(req).await?;
         let status = resp.status();
 
-        if !status.is_success() {
-            if status == StatusCode::NOT_FOUND {
-                Err(Error::NotFound)
-            } else {
-                Err(Error::BadHttpStatus {
-                    code: status,
-                    uri: uri.to_string(),
-                })
-            }
-        } else {
+        if status == StatusCode::OK {
             Ok(resp)
+        } else if status == StatusCode::NOT_FOUND {
+            Err(Error::NotFound)
+        } else {
+            Err(Error::BadHttpStatus {
+                code: status,
+                uri: uri.to_string(),
+            })
         }
     }
 }
