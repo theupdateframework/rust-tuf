@@ -2184,6 +2184,7 @@ mod test {
             assert_matches!(client.update().await, Ok(false));
         });
     }
+    
     #[test]
     fn with_trusted_methods_return_correct_metadata() {
         block_on(async {
