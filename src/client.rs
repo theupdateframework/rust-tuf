@@ -51,6 +51,7 @@ use chrono::offset::Utc;
 use futures_io::{AsyncRead, AsyncWrite};
 use futures_util::io::copy;
 use log::{error, warn};
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -59,7 +60,8 @@ use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, Role, RootMetadata,
-    SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata, VirtualTargetPath,
+    SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata, TimestampMetadata,
+    VirtualTargetPath,
 };
 use crate::repository::{Repository, RepositoryProvider, RepositoryStorage};
 use crate::tuf::Tuf;
@@ -448,6 +450,31 @@ where
     /// Returns the current trusted delegations version for a given role.
     pub fn delegations_version(&self, role: &MetadataPath) -> Option<u32> {
         Some(self.tuf.trusted_delegations().get(role)?.version())
+    }
+
+    /// Returns the current trusted root.
+    pub fn trusted_root(&self) -> &Verified<RootMetadata> {
+        self.tuf.trusted_root()
+    }
+
+    /// Returns the current trusted timestamp.
+    pub fn trusted_timestamp(&self) -> Option<&Verified<TimestampMetadata>> {
+        self.tuf.trusted_timestamp()
+    }
+
+    /// Returns the current trusted snapshot.
+    pub fn trusted_snapshot(&self) -> Option<&Verified<SnapshotMetadata>> {
+        self.tuf.trusted_snapshot()
+    }
+
+    /// Returns the current trusted targets.
+    pub fn trusted_targets(&self) -> Option<&Verified<TargetsMetadata>> {
+        self.tuf.trusted_targets()
+    }
+
+    /// Returns the current trusted delegations.
+    pub fn trusted_delegations(&self) -> &HashMap<MetadataPath, Verified<TargetsMetadata>> {
+        self.tuf.trusted_delegations()
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
@@ -2156,5 +2183,52 @@ mod test {
             assert_matches!(client.update().await, Err(Error::Encoding(_)));
             assert_matches!(client.update().await, Ok(false));
         });
+    }
+    #[test]
+    fn with_trusted_methods_return_correct_metadata() {
+        block_on(async {
+            let local = EphemeralRepository::<Json>::new();
+            let remote = EphemeralRepository::<Json>::new();
+
+            // Store an expired root in the local store.
+            let metadata1 = RepoBuilder::new(&local)
+                .root_keys(vec![&KEYS[0]])
+                .targets_keys(vec![&KEYS[0]])
+                .snapshot_keys(vec![&KEYS[0]])
+                .timestamp_keys(vec![&KEYS[0]])
+                .with_root_builder(|bld| {
+                    bld.version(1)
+                        .consistent_snapshot(true)
+                        .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+                        .root_key(KEYS[0].public().clone())
+                        .snapshot_key(KEYS[0].public().clone())
+                        .targets_key(KEYS[0].public().clone())
+                        .timestamp_key(KEYS[0].public().clone())
+                })
+                .targets_version(1)
+                .commit()
+                .await
+                .unwrap();
+
+            let track_local = TrackRepository::new(&local);
+            let track_remote = TrackRepository::new(&remote);
+
+            let client = Client::with_trusted_root(
+                Config::default(),
+                &metadata1.root,
+                &track_local,
+                &track_remote,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(client.trusted_targets(), client.tuf.trusted_targets());
+            assert_eq!(client.trusted_snapshot(), client.tuf.trusted_snapshot());
+            assert_eq!(client.trusted_timestamp(), client.tuf.trusted_timestamp());
+            assert_eq!(
+                client.trusted_delegations(),
+                client.tuf.trusted_delegations()
+            );
+        })
     }
 }
