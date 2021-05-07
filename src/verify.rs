@@ -36,16 +36,16 @@ impl<T> std::ops::Deref for Verified<T> {
 ///
 /// ```
 /// # use chrono::prelude::*;
-/// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+/// # use tuf::crypto::{Ed25519PrivateKey, PrivateKey, SignatureScheme, HashAlgorithm};
 /// # use tuf::interchange::Json;
 /// # use tuf::metadata::{SnapshotMetadataBuilder, SignedMetadata};
 /// # use tuf::verify::verify_signatures;
 ///
 /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
-/// let key_1 = PrivateKey::from_pkcs8(&key_1, SignatureScheme::Ed25519).unwrap();
+/// let key_1 = Ed25519PrivateKey::from_pkcs8(&key_1).unwrap();
 ///
 /// let key_2: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
-/// let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
+/// let key_2 = Ed25519PrivateKey::from_pkcs8(&key_2).unwrap();
 ///
 /// let raw_snapshot = SnapshotMetadataBuilder::new()
 ///     .signed::<Json>(&key_1)

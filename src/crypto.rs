@@ -327,39 +327,27 @@ impl<'de> Deserialize<'de> for KeyType {
     }
 }
 
-enum PrivateKeyType {
-    Ed25519(Ed25519KeyPair),
-    Rsa(Arc<RsaKeyPair>),
-}
-
-impl Debug for PrivateKeyType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = match *self {
-            PrivateKeyType::Ed25519(_) => "Ed25519",
-            PrivateKeyType::Rsa(_) => "Rsa",
-        };
-        f.debug_tuple(s).field(&"_").finish()
-    }
-}
-
 /// A structure containing information about a private key.
-pub struct PrivateKey {
-    private: PrivateKeyType,
+pub trait PrivateKey {
+    /// Sign a message.
+    fn sign(&self, msg: &[u8]) -> Result<Signature>;
+
+    /// Return the public component of the key.
+    fn public(&self) -> &PublicKey;
+}
+
+/// A structure containing information about an Ed25519 private key.
+pub struct Ed25519PrivateKey {
+    private: Ed25519KeyPair,
     public: PublicKey,
 }
 
-impl PrivateKey {
-    /// Generate a new `PrivateKey` bytes in pkcs8 format.
-    ///
-    /// Note: For RSA keys, `openssl` needs to the on the `$PATH`.
-    pub fn new(key_type: KeyType) -> Result<Vec<u8>> {
-        match key_type {
-            KeyType::Ed25519 => Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
-                .map(|bytes| bytes.as_ref().to_vec())
-                .map_err(|_| Error::Opaque("Failed to generate Ed25519 key".into())),
-            KeyType::Rsa => Self::rsa_gen(),
-            KeyType::Unknown(s) => Err(Error::IllegalArgument(format!("Unknown key type: {}", s))),
-        }
+impl Ed25519PrivateKey {
+    /// Generate Ed25519 key bytes in pkcs8 format.
+    pub fn pkcs8() -> Result<Vec<u8>> {
+        Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
+            .map(|bytes| bytes.as_ref().to_vec())
+            .map_err(|_| Error::Opaque("Failed to generate Ed25519 key".into()))
     }
 
     /// Create a new `PrivateKey` from an ed25519 keypair, a 64 byte slice, where the first 32
@@ -381,25 +369,14 @@ impl PrivateKey {
         let private_key_bytes = &key[..ED25519_PRIVATE_KEY_LENGTH];
         let public_key_bytes = &key[ED25519_PUBLIC_KEY_LENGTH..];
 
-        let key = Ed25519KeyPair::from_seed_and_public_key(private_key_bytes, public_key_bytes)
+        let private = Ed25519KeyPair::from_seed_and_public_key(private_key_bytes, public_key_bytes)
             .map_err(|err| Error::Encoding(err.to_string()))?;
-
-        let public = PublicKey::new(
-            KeyType::Ed25519,
-            SignatureScheme::Ed25519,
-            keyid_hash_algorithms,
-            key.public_key().as_ref().to_vec(),
-        )?;
-        let private = PrivateKeyType::Ed25519(key);
-
-        Ok(PrivateKey { private, public })
+        Self::from_keypair_with_keyid_hash_algorithms(private, keyid_hash_algorithms)
     }
 
     /// Create a private key from PKCS#8v2 DER bytes.
     ///
     /// # Generating Keys
-    ///
-    /// ## Ed25519
     ///
     /// ```bash
     /// $ touch ed25519-private-key.pk8
@@ -416,130 +393,66 @@ impl PrivateKey {
     /// let key = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
     /// file.write_all(key.as_ref()).unwrap()
     /// ```
-    ///
-    /// ## RSA
-    ///
-    /// ```bash
-    /// $ umask 077
-    /// $ openssl genpkey -algorithm RSA \
-    ///     -pkeyopt rsa_keygen_bits:4096 \
-    ///     -pkeyopt rsa_keygen_pubexp:65537 | \
-    ///     openssl pkcs8 -topk8 -nocrypt -outform der > rsa-4096-private-key.pk8
-    /// ```
-    pub fn from_pkcs8(der_key: &[u8], scheme: SignatureScheme) -> Result<Self> {
-        match Self::ed25519_from_pkcs8(der_key) {
-            Ok(k) => {
-                match scheme {
-                    SignatureScheme::Ed25519 => (),
-                    s => {
-                        return Err(Error::IllegalArgument(format!(
-                            "Cannot use signature scheme {:?} with Ed25519 keys",
-                            s
-                        )));
-                    }
-                };
-                Ok(k)
-            }
-            Err(e1) => match Self::rsa_from_pkcs8(der_key, scheme) {
-                Ok(k) => Ok(k),
-                Err(e2) => Err(Error::Opaque(format!(
-                    "Key was neither Ed25519 nor RSA: {:?} {:?}",
-                    e1, e2
-                ))),
-            },
-        }
-    }
-
-    fn ed25519_from_pkcs8(der_key: &[u8]) -> Result<Self> {
-        Self::ed25519_from_pkcs8_with_keyid_hash_algorithms(
+    pub fn from_pkcs8(der_key: &[u8]) -> Result<Self> {
+        Self::from_pkcs8_with_keyid_hash_algorithms(
             der_key,
             python_tuf_compatibility_keyid_hash_algorithms(),
         )
     }
 
-    fn ed25519_from_pkcs8_with_keyid_hash_algorithms(
+    fn from_pkcs8_with_keyid_hash_algorithms(
         der_key: &[u8],
         keyid_hash_algorithms: Option<Vec<String>>,
     ) -> Result<Self> {
-        let key = Ed25519KeyPair::from_pkcs8(der_key)
-            .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
+        Self::from_keypair_with_keyid_hash_algorithms(
+            Ed25519KeyPair::from_pkcs8(der_key)
+                .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?,
+            keyid_hash_algorithms,
+        )
+    }
 
+    fn from_keypair_with_keyid_hash_algorithms(
+        private: Ed25519KeyPair,
+        keyid_hash_algorithms: Option<Vec<String>>,
+    ) -> Result<Self> {
         let public = PublicKey::new(
             KeyType::Ed25519,
             SignatureScheme::Ed25519,
             keyid_hash_algorithms,
-            key.public_key().as_ref().to_vec(),
+            private.public_key().as_ref().to_vec(),
         )?;
-        let private = PrivateKeyType::Ed25519(key);
 
-        Ok(PrivateKey { private, public })
+        Ok(Ed25519PrivateKey { private, public })
     }
+}
 
-    fn rsa_from_pkcs8(der_key: &[u8], scheme: SignatureScheme) -> Result<Self> {
-        if let SignatureScheme::Ed25519 = scheme {
-            return Err(Error::IllegalArgument(
-                "RSA keys do not support the Ed25519 signing scheme".into(),
-            ));
-        }
+impl PrivateKey for Ed25519PrivateKey {
+    fn sign(&self, msg: &[u8]) -> Result<Signature> {
+        debug_assert!(self.public.scheme == SignatureScheme::Ed25519);
 
-        let key = RsaKeyPair::from_pkcs8(der_key)
-            .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
-
-        if key.public_modulus_len() < 256 {
-            return Err(Error::IllegalArgument(format!(
-                "RSA public modulus must be 2048 or greater. Found {}",
-                key.public_modulus_len() * 8
-            )));
-        }
-
-        let pub_key = extract_rsa_pub_from_pkcs8(der_key)?;
-
-        let public = PublicKey::new(
-            KeyType::Rsa,
-            scheme,
-            python_tuf_compatibility_keyid_hash_algorithms(),
-            pub_key,
-        )?;
-        let private = PrivateKeyType::Rsa(Arc::new(key));
-
-        Ok(PrivateKey { private, public })
-    }
-
-    /// Sign a message.
-    pub fn sign(&self, msg: &[u8]) -> Result<Signature> {
-        let value = match (&self.private, &self.public.scheme) {
-            (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha256) => {
-                let rng = SystemRandom::new();
-                let mut buf = vec![0; rsa.public_modulus_len()];
-                rsa.sign(&RSA_PSS_SHA256, &rng, msg, &mut buf)
-                    .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
-                SignatureValue(buf)
-            }
-            (&PrivateKeyType::Rsa(ref rsa), &SignatureScheme::RsaSsaPssSha512) => {
-                let rng = SystemRandom::new();
-                let mut buf = vec![0; rsa.public_modulus_len()];
-                rsa.sign(&RSA_PSS_SHA512, &rng, msg, &mut buf)
-                    .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
-                SignatureValue(buf)
-            }
-            (&PrivateKeyType::Ed25519(ref ed), &SignatureScheme::Ed25519) => {
-                SignatureValue(ed.sign(msg).as_ref().into())
-            }
-            (k, s) => {
-                return Err(Error::IllegalArgument(format!(
-                    "Key {:?} can't be used with scheme {:?}",
-                    k, s
-                )));
-            }
-        };
-
+        let value = SignatureValue(self.private.sign(msg).as_ref().into());
         Ok(Signature {
-            key_id: self.key_id().clone(),
+            key_id: self.public.key_id().clone(),
             value,
         })
     }
 
-    fn rsa_gen() -> Result<Vec<u8>> {
+    fn public(&self) -> &PublicKey {
+        &self.public
+    }
+}
+
+/// A structure containing information about an Rsa private key.
+pub struct RsaPrivateKey {
+    private: Arc<RsaKeyPair>,
+    public: PublicKey,
+}
+
+impl RsaPrivateKey {
+    /// Generate RSA key bytes in pkcs8 format.
+    ///
+    /// Note: `openssl` needs to the on the `$PATH`.
+    pub fn pkcs8() -> Result<Vec<u8>> {
         let gen = Command::new("openssl")
             .args(&[
                 "genpkey",
@@ -570,14 +483,73 @@ impl PrivateKey {
         Ok(pk8.wait_with_output()?.stdout)
     }
 
-    /// Return the public component of the key.
-    pub fn public(&self) -> &PublicKey {
-        &self.public
+    /// Create a private key from PKCS#8v2 DER bytes.
+    ///
+    /// # Generating Keys
+    ///
+    /// ```bash
+    /// $ umask 077
+    /// $ openssl genpkey -algorithm RSA \
+    ///     -pkeyopt rsa_keygen_bits:4096 \
+    ///     -pkeyopt rsa_keygen_pubexp:65537 | \
+    ///     openssl pkcs8 -topk8 -nocrypt -outform der > rsa-4096-private-key.pk8
+    /// ```
+    pub fn from_pkcs8(der_key: &[u8], scheme: SignatureScheme) -> Result<Self> {
+        match scheme {
+            SignatureScheme::RsaSsaPssSha256 | SignatureScheme::RsaSsaPssSha512 => (),
+            _ => Err(Error::IllegalArgument(format!(
+                "RSA keys do not support the signing scheme {:?}",
+                scheme
+            )))?,
+        }
+
+        let key = RsaKeyPair::from_pkcs8(der_key)
+            .map_err(|_| Error::Encoding("Could not parse key as PKCS#8v2".into()))?;
+
+        if key.public_modulus_len() < 256 {
+            return Err(Error::IllegalArgument(format!(
+                "RSA public modulus must be 2048 or greater. Found {}",
+                key.public_modulus_len() * 8
+            )));
+        }
+
+        let pub_key = extract_rsa_pub_from_pkcs8(der_key)?;
+
+        let public = PublicKey::new(
+            KeyType::Rsa,
+            scheme,
+            python_tuf_compatibility_keyid_hash_algorithms(),
+            pub_key,
+        )?;
+        let private = Arc::new(key);
+
+        Ok(RsaPrivateKey { private, public })
+    }
+}
+
+impl PrivateKey for RsaPrivateKey {
+    fn sign(&self, msg: &[u8]) -> Result<Signature> {
+        let rng = SystemRandom::new();
+        let mut buf = vec![0; self.private.public_modulus_len()];
+        let scheme = match &self.public.scheme {
+            SignatureScheme::RsaSsaPssSha256 => &RSA_PSS_SHA256,
+            SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_SHA512,
+            s => unreachable!("Key {:?} can't be used with scheme {:?}", self.private, s),
+        };
+
+        self.private
+            .sign(scheme, &rng, msg, &mut buf)
+            .map_err(|_| Error::Opaque("Failed to sign message.".into()))?;
+        let value = SignatureValue(buf);
+
+        Ok(Signature {
+            key_id: self.public.key_id().clone(),
+            value,
+        })
     }
 
-    /// Return the key ID of the public key.
-    pub fn key_id(&self) -> &KeyId {
-        &self.public.key_id
+    fn public(&self) -> &PublicKey {
+        &self.public
     }
 }
 
@@ -1070,11 +1042,13 @@ mod test {
     fn rsa_2048_read_pkcs8_and_sign() {
         let msg = b"test";
 
-        let key = PrivateKey::from_pkcs8(RSA_2048_PK8, SignatureScheme::RsaSsaPssSha256).unwrap();
+        let key =
+            RsaPrivateKey::from_pkcs8(RSA_2048_PK8, SignatureScheme::RsaSsaPssSha256).unwrap();
         let sig = key.sign(msg).unwrap();
         key.public.verify(msg, &sig).unwrap();
 
-        let key = PrivateKey::from_pkcs8(RSA_2048_PK8, SignatureScheme::RsaSsaPssSha512).unwrap();
+        let key =
+            RsaPrivateKey::from_pkcs8(RSA_2048_PK8, SignatureScheme::RsaSsaPssSha512).unwrap();
         let sig = key.sign(msg).unwrap();
         key.public.verify(msg, &sig).unwrap();
     }
@@ -1083,11 +1057,13 @@ mod test {
     fn rsa_4096_read_pkcs8_and_sign() {
         let msg = b"test";
 
-        let key = PrivateKey::from_pkcs8(RSA_4096_PK8, SignatureScheme::RsaSsaPssSha256).unwrap();
+        let key =
+            RsaPrivateKey::from_pkcs8(RSA_4096_PK8, SignatureScheme::RsaSsaPssSha256).unwrap();
         let sig = key.sign(msg).unwrap();
         key.public.verify(msg, &sig).unwrap();
 
-        let key = PrivateKey::from_pkcs8(RSA_4096_PK8, SignatureScheme::RsaSsaPssSha512).unwrap();
+        let key =
+            RsaPrivateKey::from_pkcs8(RSA_4096_PK8, SignatureScheme::RsaSsaPssSha512).unwrap();
         let sig = key.sign(msg).unwrap();
         key.public.verify(msg, &sig).unwrap();
     }
@@ -1106,7 +1082,7 @@ mod test {
 
     #[test]
     fn ed25519_read_pkcs8_and_sign() {
-        let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let msg = b"test";
 
         let sig = key.sign(msg).unwrap();
@@ -1122,7 +1098,7 @@ mod test {
         assert_eq!(sig.value().as_bytes(), ring_key.sign(msg).as_ref());
 
         // Make sure verification fails with the wrong key.
-        let bad_pub_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
+        let bad_pub_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8)
             .unwrap()
             .public()
             .clone();
@@ -1132,7 +1108,7 @@ mod test {
 
     #[test]
     fn ed25519_read_keypair_and_sign() {
-        let key = PrivateKey::from_ed25519(ED25519_1_PRIVATE_KEY).unwrap();
+        let key = Ed25519PrivateKey::from_ed25519(ED25519_1_PRIVATE_KEY).unwrap();
         let pub_key = PublicKey::from_ed25519(ED25519_1_PUBLIC_KEY).unwrap();
         assert_eq!(key.public(), &pub_key);
 
@@ -1146,7 +1122,7 @@ mod test {
         assert_eq!(sig.value().as_bytes(), ring_key.sign(msg).as_ref());
 
         // Make sure verification fails with the wrong key.
-        let bad_pub_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
+        let bad_pub_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8)
             .unwrap()
             .public()
             .clone();
@@ -1156,7 +1132,7 @@ mod test {
 
     #[test]
     fn ed25519_read_keypair_and_sign_with_keyid_hash_algorithms() {
-        let key = PrivateKey::from_ed25519_with_keyid_hash_algorithms(
+        let key = Ed25519PrivateKey::from_ed25519_with_keyid_hash_algorithms(
             ED25519_1_PRIVATE_KEY,
             python_tuf_compatibility_keyid_hash_algorithms(),
         )
@@ -1178,7 +1154,7 @@ mod test {
         assert_eq!(sig.value().as_bytes(), ring_key.sign(msg).as_ref());
 
         // Make sure verification fails with the wrong key.
-        let bad_pub_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
+        let bad_pub_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8)
             .unwrap()
             .public()
             .clone();
@@ -1259,7 +1235,7 @@ mod test {
 
     #[test]
     fn serde_ed25519_public_key() {
-        let pub_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+        let pub_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
             .unwrap()
             .public()
             .clone();
@@ -1285,7 +1261,7 @@ mod test {
 
     #[test]
     fn de_ser_ed25519_public_key_with_keyid_hash_algo() {
-        let pub_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+        let pub_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
             .unwrap()
             .public()
             .clone();
@@ -1311,7 +1287,7 @@ mod test {
 
     #[test]
     fn de_ser_ed25519_public_key_without_keyid_hash_algo() {
-        let pub_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+        let pub_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
             .unwrap()
             .public()
             .clone();
@@ -1334,7 +1310,7 @@ mod test {
 
     #[test]
     fn serde_signature() {
-        let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let msg = b"test";
         let sig = key.sign(msg).unwrap();
         let encoded = serde_json::to_value(&sig).unwrap();
@@ -1353,7 +1329,7 @@ mod test {
     #[test]
     fn serde_signature_without_keyid_hash_algo() {
         let key =
-            PrivateKey::ed25519_from_pkcs8_with_keyid_hash_algorithms(ED25519_1_PK8, None).unwrap();
+            Ed25519PrivateKey::from_pkcs8_with_keyid_hash_algorithms(ED25519_1_PK8, None).unwrap();
         let msg = b"test";
         let sig = key.sign(msg).unwrap();
         let encoded = serde_json::to_value(&sig).unwrap();
@@ -1372,14 +1348,14 @@ mod test {
     #[test]
     #[cfg(not(any(target_os = "fuchsia", windows)))]
     fn new_rsa_key() {
-        let bytes = PrivateKey::new(KeyType::Rsa).unwrap();
-        let _ = PrivateKey::from_pkcs8(&bytes, SignatureScheme::RsaSsaPssSha256).unwrap();
+        let bytes = RsaPrivateKey::pkcs8().unwrap();
+        let _ = RsaPrivateKey::from_pkcs8(&bytes, SignatureScheme::RsaSsaPssSha256).unwrap();
     }
 
     #[test]
     fn new_ed25519_key() {
-        let bytes = PrivateKey::new(KeyType::Ed25519).unwrap();
-        let _ = PrivateKey::from_pkcs8(&bytes, SignatureScheme::Ed25519).unwrap();
+        let bytes = Ed25519PrivateKey::pkcs8().unwrap();
+        let _ = Ed25519PrivateKey::from_pkcs8(&bytes).unwrap();
     }
 
     #[test]

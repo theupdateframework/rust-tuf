@@ -1,6 +1,6 @@
 use futures_executor::block_on;
 use tuf::client::{Client, Config, PathTranslator};
-use tuf::crypto::{self, HashAlgorithm, PrivateKey, PublicKey, SignatureScheme};
+use tuf::crypto::{self, Ed25519PrivateKey, HashAlgorithm, PrivateKey, PublicKey};
 use tuf::interchange::Json;
 use tuf::metadata::{
     MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder, TargetDescription,
@@ -115,10 +115,10 @@ where
     T: PathTranslator,
 {
     // in real life, you wouldn't want these keys on the same machine ever
-    let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)?;
-    let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)?;
-    let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519)?;
-    let timestamp_key = PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519)?;
+    let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)?;
+    let snapshot_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8)?;
+    let targets_key = Ed25519PrivateKey::from_pkcs8(ED25519_3_PK8)?;
+    let timestamp_key = Ed25519PrivateKey::from_pkcs8(ED25519_4_PK8)?;
 
     //// build the root ////
 

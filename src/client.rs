@@ -151,15 +151,14 @@ where
     /// #     Error,
     /// #     interchange::Json,
     /// #     client::{Client, Config},
-    /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
+    /// #     crypto::{Ed25519PrivateKey, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
     /// #     repository::{EphemeralRepository, RepositoryStorage},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
-    /// # let private_key = PrivateKey::from_pkcs8(
-    /// #     &PrivateKey::new(KeyType::Ed25519)?,
-    /// #     SignatureScheme::Ed25519,
+    /// # let private_key = Ed25519PrivateKey::from_pkcs8(
+    /// #     &Ed25519PrivateKey::pkcs8()?,
     /// # )?;
     /// # let public_key = private_key.public().clone();
     /// let local = EphemeralRepository::<Json>::new();
@@ -220,15 +219,14 @@ where
     /// #     Error,
     /// #     interchange::Json,
     /// #     client::{Client, Config},
-    /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
+    /// #     crypto::{Ed25519PrivateKey, KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
     /// #     repository::{EphemeralRepository},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
-    /// # let private_key = PrivateKey::from_pkcs8(
-    /// #     &PrivateKey::new(KeyType::Ed25519)?,
-    /// #     SignatureScheme::Ed25519,
+    /// # let private_key = Ed25519PrivateKey::from_pkcs8(
+    /// #     &Ed25519PrivateKey::pkcs8()?,
     /// # )?;
     /// # let public_key = private_key.public().clone();
     /// let local = EphemeralRepository::<Json>::new();
@@ -284,15 +282,14 @@ where
     /// #     Error,
     /// #     interchange::Json,
     /// #     client::{Client, Config},
-    /// #     crypto::{KeyType, PrivateKey, SignatureScheme},
+    /// #     crypto::{Ed25519PrivateKey, KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
     /// #     repository::{EphemeralRepository, RepositoryStorage},
     /// # };
     /// # fn main() -> Result<(), Error> {
     /// # block_on(async {
-    /// # let private_key = PrivateKey::from_pkcs8(
-    /// #     &PrivateKey::new(KeyType::Ed25519)?,
-    /// #     SignatureScheme::Ed25519,
+    /// # let private_key = Ed25519PrivateKey::from_pkcs8(
+    /// #     &Ed25519PrivateKey::pkcs8()?,
     /// # )?;
     /// # let public_key = private_key.public().clone();
     /// let local = EphemeralRepository::<Json>::new();
@@ -991,11 +988,13 @@ where
                         .await
                     {
                         Ok(_) => (),
-                        Err(e) => warn!(
-                            "Error storing metadata {:?} locally: {:?}",
-                            delegation.role(),
-                            e
-                        ),
+                        Err(e) => {
+                            warn!(
+                                "Error storing metadata {:?} locally: {:?}",
+                                delegation.role(),
+                                e
+                            )
+                        }
                     }
 
                     let meta = self
@@ -1203,7 +1202,7 @@ impl Default for ConfigBuilder<DefaultTranslator> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::crypto::{HashAlgorithm, KeyType, PrivateKey, SignatureScheme};
+    use crate::crypto::{Ed25519PrivateKey, HashAlgorithm, PrivateKey};
     use crate::interchange::Json;
     use crate::metadata::{MetadataPath, MetadataVersion};
     use crate::repo_builder::RepoBuilder;
@@ -1217,7 +1216,7 @@ mod test {
     use std::iter::once;
 
     lazy_static! {
-        static ref KEYS: Vec<PrivateKey> = {
+        static ref KEYS: Vec<Ed25519PrivateKey> = {
             let keys: &[&[u8]] = &[
                 include_bytes!("../tests/ed25519/ed25519-1.pk8.der"),
                 include_bytes!("../tests/ed25519/ed25519-2.pk8.der"),
@@ -1227,7 +1226,7 @@ mod test {
                 include_bytes!("../tests/ed25519/ed25519-6.pk8.der"),
             ];
             keys.iter()
-                .map(|b| PrivateKey::from_pkcs8(b, SignatureScheme::Ed25519).unwrap())
+                .map(|b| Ed25519PrivateKey::from_pkcs8(b).unwrap())
                 .collect()
         };
     }
@@ -1244,11 +1243,8 @@ mod test {
             let local = EphemeralRepository::<Json>::new();
             let remote = EphemeralRepository::<Json>::new();
 
-            let private_key = PrivateKey::from_pkcs8(
-                &PrivateKey::new(KeyType::Ed25519).unwrap(),
-                SignatureScheme::Ed25519,
-            )
-            .unwrap();
+            let private_key =
+                Ed25519PrivateKey::from_pkcs8(&Ed25519PrivateKey::pkcs8().unwrap()).unwrap();
             let public_key = private_key.public().clone();
 
             assert_matches!(
@@ -1281,7 +1277,7 @@ mod test {
             let bad_private_key = &KEYS[1];
 
             let _ = RepoBuilder::<_, Json>::new(&remote)
-                .root_keys(vec![&good_private_key])
+                .root_keys(vec![good_private_key])
                 .with_root_builder(|bld| {
                     bld.version(root_version)
                         .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
@@ -2184,7 +2180,7 @@ mod test {
             assert_matches!(client.update().await, Ok(false));
         });
     }
-    
+
     #[test]
     fn with_trusted_methods_return_correct_metadata() {
         block_on(async {

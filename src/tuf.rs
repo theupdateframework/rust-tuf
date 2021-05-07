@@ -350,7 +350,11 @@ impl<D: DataInterchange> Tuf<D> {
             let trusted_timestamp = self.trusted_timestamp_unexpired()?;
             let trusted_snapshot_version = self.trusted_snapshot_version();
 
-            match trusted_timestamp.snapshot().version().cmp(&trusted_snapshot_version) {
+            match trusted_timestamp
+                .snapshot()
+                .version()
+                .cmp(&trusted_snapshot_version)
+            {
                 Ordering::Less => {
                     return Err(Error::VerificationFailure(format!(
                         "Attempted to roll back snapshot metadata at version {} to {}.",
@@ -531,7 +535,10 @@ impl<D: DataInterchange> Tuf<D> {
 
             let trusted_targets_version = self.trusted_targets_version();
 
-            match trusted_targets_description.version().cmp(&trusted_targets_version) {
+            match trusted_targets_description
+                .version()
+                .cmp(&trusted_targets_version)
+            {
                 Ordering::Less => {
                     return Err(Error::VerificationFailure(format!(
                         "Attempted to roll back targets metadata at version {} to {}.",
@@ -711,11 +718,13 @@ impl<D: DataInterchange> Tuf<D> {
 
             let (threshold, keys) = self
                 .find_delegation_threshold_and_keys(parent_role, role)
-                .ok_or_else(|| Error::VerificationFailure(format!(
-                    "The delegated role {:?} is not known to the base \
+                .ok_or_else(|| {
+                    Error::VerificationFailure(format!(
+                        "The delegated role {:?} is not known to the base \
                         targets metadata or any known delegated targets metadata",
-                    role
-                )))?;
+                        role
+                    ))
+                })?;
 
             let new_delegation = verify::verify_signatures(raw_delegation, threshold, keys)?;
 
@@ -881,7 +890,7 @@ impl<D: DataInterchange> Tuf<D> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
+    use crate::crypto::{Ed25519PrivateKey, HashAlgorithm, PrivateKey};
     use crate::interchange::Json;
     use crate::metadata::{
         RootMetadataBuilder, SnapshotMetadataBuilder, TargetsMetadataBuilder,
@@ -892,7 +901,7 @@ mod test {
     use std::iter::once;
 
     lazy_static! {
-        static ref KEYS: Vec<PrivateKey> = {
+        static ref KEYS: Vec<Ed25519PrivateKey> = {
             let keys: &[&[u8]] = &[
                 include_bytes!("../tests/ed25519/ed25519-1.pk8.der"),
                 include_bytes!("../tests/ed25519/ed25519-2.pk8.der"),
@@ -902,7 +911,7 @@ mod test {
                 include_bytes!("../tests/ed25519/ed25519-6.pk8.der"),
             ];
             keys.iter()
-                .map(|b| PrivateKey::from_pkcs8(b, SignatureScheme::Ed25519).unwrap())
+                .map(|b| Ed25519PrivateKey::from_pkcs8(b).unwrap())
                 .collect()
         };
     }
@@ -915,7 +924,7 @@ mod test {
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
-            .signed::<Json>(&root_key)
+            .signed::<Json>(root_key)
             .unwrap();
         let raw_root = root.to_raw().unwrap();
 

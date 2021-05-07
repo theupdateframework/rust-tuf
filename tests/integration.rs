@@ -1,7 +1,7 @@
 use maplit::hashmap;
 use matches::assert_matches;
 use std::iter::once;
-use tuf::crypto::{HashAlgorithm, PrivateKey, SignatureScheme};
+use tuf::crypto::{Ed25519PrivateKey, HashAlgorithm, PrivateKey};
 use tuf::interchange::Json;
 use tuf::metadata::{
     Delegation, Delegations, MetadataDescription, MetadataPath, Role, RootMetadataBuilder,
@@ -19,11 +19,11 @@ const ED25519_6_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-6.pk8.der
 
 #[test]
 fn simple_delegation() {
-    let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
-    let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519).unwrap();
-    let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519).unwrap();
-    let timestamp_key = PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519).unwrap();
-    let delegation_key = PrivateKey::from_pkcs8(ED25519_5_PK8, SignatureScheme::Ed25519).unwrap();
+    let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
+    let snapshot_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap();
+    let targets_key = Ed25519PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap();
+    let timestamp_key = Ed25519PrivateKey::from_pkcs8(ED25519_4_PK8).unwrap();
+    let delegation_key = Ed25519PrivateKey::from_pkcs8(ED25519_5_PK8).unwrap();
 
     //// build the root ////
 
@@ -70,7 +70,7 @@ fn simple_delegation() {
             MetadataPath::new("delegation").unwrap(),
             false,
             1,
-            vec![delegation_key.key_id().clone()]
+            vec![delegation_key.public().key_id().clone()]
                 .iter()
                 .cloned()
                 .collect(),
@@ -117,12 +117,12 @@ fn simple_delegation() {
 
 #[test]
 fn nested_delegation() {
-    let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
-    let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519).unwrap();
-    let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519).unwrap();
-    let timestamp_key = PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519).unwrap();
-    let delegation_a_key = PrivateKey::from_pkcs8(ED25519_5_PK8, SignatureScheme::Ed25519).unwrap();
-    let delegation_b_key = PrivateKey::from_pkcs8(ED25519_6_PK8, SignatureScheme::Ed25519).unwrap();
+    let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
+    let snapshot_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap();
+    let targets_key = Ed25519PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap();
+    let timestamp_key = Ed25519PrivateKey::from_pkcs8(ED25519_4_PK8).unwrap();
+    let delegation_a_key = Ed25519PrivateKey::from_pkcs8(ED25519_5_PK8).unwrap();
+    let delegation_b_key = Ed25519PrivateKey::from_pkcs8(ED25519_6_PK8).unwrap();
 
     //// build the root ////
 
@@ -176,7 +176,7 @@ fn nested_delegation() {
             MetadataPath::new("delegation-a").unwrap(),
             false,
             1,
-            vec![delegation_a_key.key_id().clone()]
+            vec![delegation_a_key.public().key_id().clone()]
                 .iter()
                 .cloned()
                 .collect(),
@@ -204,7 +204,7 @@ fn nested_delegation() {
             MetadataPath::new("delegation-b").unwrap(),
             false,
             1,
-            vec![delegation_b_key.key_id().clone()].iter().cloned().collect(),
+            vec![delegation_b_key.public().key_id().clone()].iter().cloned().collect(),
             vec![VirtualTargetPath::new("foo".into()).unwrap()].iter().cloned().collect(),
         )
         .unwrap()],
@@ -253,13 +253,12 @@ fn nested_delegation() {
 
 #[test]
 fn rejects_bad_delegation_signatures() {
-    let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
-    let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519).unwrap();
-    let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519).unwrap();
-    let timestamp_key = PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519).unwrap();
-    let delegation_key = PrivateKey::from_pkcs8(ED25519_5_PK8, SignatureScheme::Ed25519).unwrap();
-    let bad_delegation_key =
-        PrivateKey::from_pkcs8(ED25519_6_PK8, SignatureScheme::Ed25519).unwrap();
+    let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
+    let snapshot_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap();
+    let targets_key = Ed25519PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap();
+    let timestamp_key = Ed25519PrivateKey::from_pkcs8(ED25519_4_PK8).unwrap();
+    let delegation_key = Ed25519PrivateKey::from_pkcs8(ED25519_5_PK8).unwrap();
+    let bad_delegation_key = Ed25519PrivateKey::from_pkcs8(ED25519_6_PK8).unwrap();
 
     //// build the root ////
 
@@ -306,7 +305,7 @@ fn rejects_bad_delegation_signatures() {
             MetadataPath::new("delegation").unwrap(),
             false,
             1,
-            vec![delegation_key.key_id().clone()]
+            vec![delegation_key.public().key_id().clone()]
                 .iter()
                 .cloned()
                 .collect(),
@@ -356,11 +355,11 @@ fn rejects_bad_delegation_signatures() {
 
 #[test]
 fn diamond_delegation() {
-    let etc_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
-    let targets_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519).unwrap();
-    let delegation_a_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519).unwrap();
-    let delegation_b_key = PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519).unwrap();
-    let delegation_c_key = PrivateKey::from_pkcs8(ED25519_5_PK8, SignatureScheme::Ed25519).unwrap();
+    let etc_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
+    let targets_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap();
+    let delegation_a_key = Ed25519PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap();
+    let delegation_b_key = Ed25519PrivateKey::from_pkcs8(ED25519_4_PK8).unwrap();
+    let delegation_c_key = Ed25519PrivateKey::from_pkcs8(ED25519_5_PK8).unwrap();
 
     // Given delegations a, b, and c, targets delegates "foo" to delegation-a and "bar" to
     // delegation-b.
@@ -436,7 +435,7 @@ fn diamond_delegation() {
                 MetadataPath::new("delegation-a").unwrap(),
                 false,
                 1,
-                vec![delegation_a_key.key_id().clone()]
+                vec![delegation_a_key.public().key_id().clone()]
                     .iter()
                     .cloned()
                     .collect(),
@@ -450,7 +449,7 @@ fn diamond_delegation() {
                 MetadataPath::new("delegation-b").unwrap(),
                 false,
                 1,
-                vec![delegation_b_key.key_id().clone()]
+                vec![delegation_b_key.public().key_id().clone()]
                     .iter()
                     .cloned()
                     .collect(),
@@ -479,7 +478,7 @@ fn diamond_delegation() {
             MetadataPath::new("delegation-c").unwrap(),
             false,
             1,
-            vec![delegation_c_key.key_id().clone()].iter().cloned().collect(),
+            vec![delegation_c_key.public().key_id().clone()].iter().cloned().collect(),
             vec![VirtualTargetPath::new("foo".into()).unwrap()].iter().cloned().collect(),
         )
         .unwrap()],
@@ -508,7 +507,7 @@ fn diamond_delegation() {
             false,
             1,
             // oops, wrong key.
-            vec![delegation_b_key.key_id().clone()].iter().cloned().collect(),
+            vec![delegation_b_key.public().key_id().clone()].iter().cloned().collect(),
             vec![VirtualTargetPath::new("bar".into()).unwrap()].iter().cloned().collect(),
         )
         .unwrap()],

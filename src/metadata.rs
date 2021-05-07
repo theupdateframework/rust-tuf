@@ -313,7 +313,7 @@ where
     /// you're using this to append several signatures at once, you are doing something wrong. The
     /// preferred method is to generate your copy of the metadata locally and use
     /// `SignedMetadata::merge_signatures` to perform the "append" operations.
-    pub fn sign(mut self, private_key: &PrivateKey) -> Result<Self> {
+    pub fn sign(mut self, private_key: &dyn PrivateKey) -> Result<Self> {
         let sig = private_key.sign(&self.metadata_bytes)?;
         let _ = self.signatures.insert(sig.key_id().clone(), sig);
         Ok(self)
@@ -360,17 +360,17 @@ where
     ///
     /// ```
     /// # use chrono::prelude::*;
-    /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+    /// # use tuf::crypto::{Ed25519PrivateKey, PrivateKey, SignatureScheme, HashAlgorithm};
     /// # use tuf::interchange::Json;
     /// # use tuf::metadata::{SignedMetadata, SnapshotMetadataBuilder};
     /// #
     /// # let key: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
-    /// let key = PrivateKey::from_pkcs8(&key, SignatureScheme::Ed25519).unwrap();
+    /// let key = Ed25519PrivateKey::from_pkcs8(&key).unwrap();
     ///
     /// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
     /// SignedMetadata::<Json, _>::new(&snapshot, &key).unwrap();
     /// ```
-    pub fn new(metadata: &M, private_key: &PrivateKey) -> Result<Self> {
+    pub fn new(metadata: &M, private_key: &dyn PrivateKey) -> Result<Self> {
         let raw = D::serialize(metadata)?;
         let bytes = D::canonicalize(&raw)?;
         let sig = private_key.sign(&bytes)?;
@@ -408,17 +408,17 @@ where
     ///
     /// ```
     /// # use chrono::prelude::*;
-    /// # use tuf::crypto::{PrivateKey, SignatureScheme, HashAlgorithm};
+    /// # use tuf::crypto::{Ed25519PrivateKey, PrivateKey, SignatureScheme, HashAlgorithm};
     /// # use tuf::interchange::Json;
     /// # use tuf::metadata::{SignedMetadata, SnapshotMetadataBuilder};
     /// #
     /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
-    /// let key_1 = PrivateKey::from_pkcs8(&key_1, SignatureScheme::Ed25519).unwrap();
+    /// let key_1 = Ed25519PrivateKey::from_pkcs8(&key_1).unwrap();
     ///
     /// // Note: This is for demonstration purposes only.
     /// // You should never have multiple private keys on the same device.
     /// let key_2: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
-    /// let key_2 = PrivateKey::from_pkcs8(&key_2, SignatureScheme::Ed25519).unwrap();
+    /// let key_2 = Ed25519PrivateKey::from_pkcs8(&key_2).unwrap();
     ///
     /// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
     /// let mut snapshot = SignedMetadata::<Json, _>::new(&snapshot, &key_1).unwrap();
@@ -429,11 +429,11 @@ where
     /// snapshot.add_signature(&key_2).unwrap();
     /// assert_eq!(snapshot.signatures().len(), 2);
     /// ```
-    pub fn add_signature(&mut self, private_key: &PrivateKey) -> Result<()> {
+    pub fn add_signature(&mut self, private_key: &dyn PrivateKey) -> Result<()> {
         let bytes = D::canonicalize(&self.metadata)?;
         let sig = private_key.sign(&bytes)?;
         self.signatures
-            .retain(|s| s.key_id() != private_key.key_id());
+            .retain(|s| s.key_id() != private_key.public().key_id());
         self.signatures.push(sig);
         Ok(())
     }
@@ -622,7 +622,7 @@ impl RootMetadataBuilder {
     }
 
     /// Construct a new `SignedMetadata<D, RootMetadata>`.
-    pub fn signed<D>(self, private_key: &PrivateKey) -> Result<SignedMetadata<D, RootMetadata>>
+    pub fn signed<D>(self, private_key: &dyn PrivateKey) -> Result<SignedMetadata<D, RootMetadata>>
     where
         D: DataInterchange,
     {
@@ -1023,7 +1023,10 @@ impl TimestampMetadataBuilder {
     }
 
     /// Construct a new `SignedMetadata<D, TimestampMetadata>`.
-    pub fn signed<D>(self, private_key: &PrivateKey) -> Result<SignedMetadata<D, TimestampMetadata>>
+    pub fn signed<D>(
+        self,
+        private_key: &dyn PrivateKey,
+    ) -> Result<SignedMetadata<D, TimestampMetadata>>
     where
         D: DataInterchange,
     {
@@ -1269,7 +1272,10 @@ impl SnapshotMetadataBuilder {
     }
 
     /// Construct a new `SignedMetadata<D, SnapshotMetadata>`.
-    pub fn signed<D>(self, private_key: &PrivateKey) -> Result<SignedMetadata<D, SnapshotMetadata>>
+    pub fn signed<D>(
+        self,
+        private_key: &dyn PrivateKey,
+    ) -> Result<SignedMetadata<D, SnapshotMetadata>>
     where
         D: DataInterchange,
     {
@@ -1813,7 +1819,10 @@ impl TargetsMetadataBuilder {
     }
 
     /// Construct a new `SignedMetadata<D, TargetsMetadata>`.
-    pub fn signed<D>(self, private_key: &PrivateKey) -> Result<SignedMetadata<D, TargetsMetadata>>
+    pub fn signed<D>(
+        self,
+        private_key: &dyn PrivateKey,
+    ) -> Result<SignedMetadata<D, TargetsMetadata>>
     where
         D: DataInterchange,
     {
@@ -1984,7 +1993,7 @@ impl<'de> Deserialize<'de> for Delegation {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::crypto::SignatureScheme;
+    use crate::crypto::Ed25519PrivateKey;
     use crate::interchange::Json;
     use crate::verify::verify_signatures;
     use chrono::prelude::*;
@@ -2149,11 +2158,10 @@ mod test {
 
     #[test]
     fn serde_root_metadata() {
-        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
-        let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519).unwrap();
-        let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519).unwrap();
-        let timestamp_key =
-            PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519).unwrap();
+        let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
+        let snapshot_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap();
+        let targets_key = Ed25519PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap();
+        let timestamp_key = Ed25519PrivateKey::from_pkcs8(ED25519_4_PK8).unwrap();
 
         let root = RootMetadataBuilder::new()
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
@@ -2315,7 +2323,7 @@ mod test {
     #[test]
     fn sign_and_verify_root_metadata() {
         let jsn = jsn_root_metadata_without_keyid_hash_algos();
-        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let decoded: RootMetadata = serde_json::from_value(jsn).unwrap();
 
         let signed: SignedMetadata<crate::interchange::cjson::Json, _> =
@@ -2337,7 +2345,7 @@ mod test {
             }],
             "signed": jsn_root_metadata_without_keyid_hash_algos()
         });
-        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let decoded: SignedMetadata<crate::interchange::cjson::Json, RootMetadata> =
             serde_json::from_value(jsn).unwrap();
         let raw_root = decoded.to_raw().unwrap();
@@ -2361,7 +2369,7 @@ mod test {
             }],
             "signed": jsn_root_metadata_without_keyid_hash_algos()
         });
-        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let decoded: SignedMetadata<crate::interchange::cjson::Json, RootMetadata> =
             serde_json::from_value(jsn).unwrap();
         let raw_root = decoded.to_raw().unwrap();
@@ -2379,7 +2387,7 @@ mod test {
     where
         M: Metadata,
     {
-        let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let public_keys = vec![key.public().clone()];
 
         let mut standard = SignedMetadataBuilder::<Json, M>::from_raw_metadata(metadata.clone())
@@ -2655,14 +2663,14 @@ mod test {
 
     #[test]
     fn serde_targets_with_delegations_metadata() {
-        let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let delegations = Delegations::new(
-            hashmap! { key.key_id().clone() => key.public().clone() },
+            hashmap! { key.public().key_id().clone() => key.public().clone() },
             vec![Delegation::new(
                 MetadataPath::new("foo/bar").unwrap(),
                 false,
                 1,
-                hashset!(key.key_id().clone()),
+                hashset!(key.public().key_id().clone()),
                 hashset!(VirtualTargetPath::new("baz/quux".into()).unwrap()),
             )
             .unwrap()],
@@ -2727,7 +2735,7 @@ mod test {
             .build()
             .unwrap();
 
-        let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
+        let key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
 
         let signed = SignedMetadata::<Json, _>::new(&snapshot, &key).unwrap();
 
@@ -2788,11 +2796,10 @@ mod test {
     // TODO test for mismatched ed25519/rsa keys/schemes
 
     fn make_root() -> serde_json::Value {
-        let root_key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519).unwrap();
-        let snapshot_key = PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519).unwrap();
-        let targets_key = PrivateKey::from_pkcs8(ED25519_3_PK8, SignatureScheme::Ed25519).unwrap();
-        let timestamp_key =
-            PrivateKey::from_pkcs8(ED25519_4_PK8, SignatureScheme::Ed25519).unwrap();
+        let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
+        let snapshot_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap();
+        let targets_key = Ed25519PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap();
+        let timestamp_key = Ed25519PrivateKey::from_pkcs8(ED25519_4_PK8).unwrap();
 
         let root = RootMetadataBuilder::new()
             .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
@@ -2836,7 +2843,7 @@ mod test {
     }
 
     fn make_delegations() -> serde_json::Value {
-        let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+        let key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
             .unwrap()
             .public()
             .clone();
@@ -2857,7 +2864,7 @@ mod test {
     }
 
     fn make_delegation() -> serde_json::Value {
-        let key = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+        let key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
             .unwrap()
             .public()
             .clone();
@@ -2964,12 +2971,11 @@ mod test {
     fn deserialize_json_role_definition_illegal_threshold() {
         let role_def = RoleDefinition::new(
             1,
-            vec![
-                PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
-                    .unwrap()
-                    .key_id()
-                    .clone(),
-            ],
+            vec![Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
+                .unwrap()
+                .public()
+                .key_id()
+                .clone()],
         )
         .unwrap();
 
@@ -2984,12 +2990,14 @@ mod test {
         let role_def = RoleDefinition::new(
             2,
             vec![
-                PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+                Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
                     .unwrap()
+                    .public()
                     .key_id()
                     .clone(),
-                PrivateKey::from_pkcs8(ED25519_2_PK8, SignatureScheme::Ed25519)
+                Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8)
                     .unwrap()
+                    .public()
                     .key_id()
                     .clone(),
             ],
@@ -3026,8 +3034,9 @@ mod test {
     // Refuse to deserialize role definitions with duplicated key ids
     #[test]
     fn deserialize_json_role_definition_duplicate_key_ids() {
-        let key_id = PrivateKey::from_pkcs8(ED25519_1_PK8, SignatureScheme::Ed25519)
+        let key_id = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
             .unwrap()
+            .public()
             .key_id()
             .clone();
         let role_def = RoleDefinition::new(1, vec![key_id.clone()]).unwrap();
