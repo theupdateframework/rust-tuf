@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
 use std::process::Command;
-use tuf::crypto::{HashAlgorithm, KeyType, PrivateKey, SignatureScheme};
+use tuf::crypto::{Ed25519PrivateKey, HashAlgorithm, KeyType, PrivateKey, SignatureScheme};
 use tuf::interchange::JsonPretty;
 use tuf::metadata::{
     MetadataPath, MetadataVersion, Role, RootMetadataBuilder, SnapshotMetadataBuilder, TargetPath,
@@ -34,9 +34,9 @@ struct TestKeyPair {
 }
 
 impl TestKeyPair {
-    fn to_private_key(&self) -> PrivateKey {
+    fn to_private_key(&self) -> Ed25519PrivateKey {
         let priv_bytes = HEXLOWER.decode(self.keyval.private.as_bytes()).unwrap();
-        PrivateKey::from_ed25519(&priv_bytes[..]).unwrap()
+        Ed25519PrivateKey::from_ed25519(&priv_bytes[..]).unwrap()
     }
 }
 
@@ -54,7 +54,7 @@ fn init_json_keys(path: &str) -> TestKeys {
 }
 
 // Map each role to its current key.
-type RoleKeys = HashMap<&'static str, PrivateKey>;
+type RoleKeys = HashMap<&'static str, Ed25519PrivateKey>;
 
 fn init_role_keys(json_keys: &TestKeys) -> RoleKeys {
     let mut keys = HashMap::new();
@@ -84,7 +84,7 @@ fn copy_repo(dir: &str, step: u8) {
 async fn update_root(
     repo: &FileSystemRepository<JsonPretty>,
     keys: &RoleKeys,
-    root_signer: Option<&PrivateKey>,
+    root_signer: Option<&dyn PrivateKey>,
     version: u32,
     consistent_snapshot: bool,
 ) {
@@ -160,7 +160,7 @@ async fn add_target(
     let target_data = step_str.as_bytes();
 
     let signed_targets = targets_builder
-        .signed::<JsonPretty>(&keys.get("targets").unwrap())
+        .signed::<JsonPretty>(keys.get("targets").unwrap())
         .unwrap();
     let targets = signed_targets.assume_valid().unwrap();
 
@@ -202,7 +202,7 @@ async fn add_target(
         .version(version)
         .insert_metadata(&signed_targets, &[HashAlgorithm::Sha256])
         .unwrap()
-        .signed::<JsonPretty>(&keys.get("snapshot").unwrap())
+        .signed::<JsonPretty>(keys.get("snapshot").unwrap())
         .unwrap();
 
     repo.store_metadata(
@@ -218,7 +218,7 @@ async fn add_target(
         .unwrap()
         .expires(expiration)
         .version(version)
-        .signed::<JsonPretty>(&keys.get("timestamp").unwrap())
+        .signed::<JsonPretty>(keys.get("timestamp").unwrap())
         .unwrap();
 
     // Timestamp doesn't require a version prefix even in consistent_snapshot.
@@ -281,7 +281,7 @@ async fn generate_repos(dir: &str, consistent_snapshot: bool) -> tuf::Result<()>
         update_root(
             &repo,
             &keys,
-            root_signer.as_ref(),
+            root_signer.as_ref().map(|x| x as &dyn PrivateKey),
             (i + 1).into(),
             consistent_snapshot,
         )

@@ -20,10 +20,10 @@ where
     D: DataInterchange + Sync,
 {
     repo: Repository<R, D>,
-    root_keys: Vec<&'a PrivateKey>,
-    targets_keys: Vec<&'a PrivateKey>,
-    snapshot_keys: Vec<&'a PrivateKey>,
-    timestamp_keys: Vec<&'a PrivateKey>,
+    root_keys: Vec<&'a dyn PrivateKey>,
+    targets_keys: Vec<&'a dyn PrivateKey>,
+    snapshot_keys: Vec<&'a dyn PrivateKey>,
+    timestamp_keys: Vec<&'a dyn PrivateKey>,
     snapshot_version: u32,
     timestamp_version: u32,
     root_builder: RootMetadataBuilder,
@@ -51,22 +51,22 @@ where
         }
     }
 
-    pub(crate) fn root_keys(mut self, keys: Vec<&'a PrivateKey>) -> Self {
+    pub(crate) fn root_keys(mut self, keys: Vec<&'a dyn PrivateKey>) -> Self {
         self.root_keys = keys;
         self
     }
 
-    pub(crate) fn targets_keys(mut self, keys: Vec<&'a PrivateKey>) -> Self {
+    pub(crate) fn targets_keys(mut self, keys: Vec<&'a dyn PrivateKey>) -> Self {
         self.targets_keys = keys;
         self
     }
 
-    pub(crate) fn snapshot_keys(mut self, keys: Vec<&'a PrivateKey>) -> Self {
+    pub(crate) fn snapshot_keys(mut self, keys: Vec<&'a dyn PrivateKey>) -> Self {
         self.snapshot_keys = keys;
         self
     }
 
-    pub(crate) fn timestamp_keys(mut self, keys: Vec<&'a PrivateKey>) -> Self {
+    pub(crate) fn timestamp_keys(mut self, keys: Vec<&'a dyn PrivateKey>) -> Self {
         self.timestamp_keys = keys;
         self
     }
@@ -110,7 +110,7 @@ where
 
         let mut signed_builder = SignedMetadataBuilder::from_metadata(&root)?;
         for key in &self.root_keys {
-            signed_builder = signed_builder.sign(key)?;
+            signed_builder = signed_builder.sign(*key)?;
         }
         let raw_root = signed_builder.build().to_raw()?;
 
@@ -128,7 +128,7 @@ where
 
                 let mut signed_builder = SignedMetadataBuilder::from_metadata(&targets)?;
                 for key in &self.targets_keys {
-                    signed_builder = signed_builder.sign(key)?;
+                    signed_builder = signed_builder.sign(*key)?;
                 }
                 let signed_targets = signed_builder.build();
                 let raw_targets = signed_targets.to_raw()?;
@@ -140,7 +140,7 @@ where
 
                 let mut signed_builder = SignedMetadataBuilder::from_metadata(&snapshot)?;
                 for key in &self.snapshot_keys {
-                    signed_builder = signed_builder.sign(key)?;
+                    signed_builder = signed_builder.sign(*key)?;
                 }
                 let signed_snapshot = signed_builder.build();
                 let raw_snapshot = signed_snapshot.to_raw()?;
@@ -154,7 +154,7 @@ where
 
                 let mut signed_builder = SignedMetadataBuilder::from_metadata(&timestamp)?;
                 for key in &self.timestamp_keys {
-                    signed_builder = signed_builder.sign(key)?;
+                    signed_builder = signed_builder.sign(*key)?;
                 }
                 let signed_timestamp = signed_builder.build();
                 let raw_timestamp = signed_timestamp.to_raw()?;
