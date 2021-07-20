@@ -474,8 +474,10 @@ where
         self.tuf.trusted_delegations()
     }
 
+    /// Update TUF root metadata from the remote repository.
+    ///
     /// Returns `true` if an update occurred and `false` otherwise.
-    async fn update_root(&mut self) -> Result<bool> {
+    pub async fn update_root(&mut self) -> Result<bool> {
         Self::update_root_with_repos(&self.config, &mut self.tuf, Some(&self.local), &self.remote)
             .await
     }
