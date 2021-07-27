@@ -12,6 +12,7 @@ use futures_io::AsyncRead;
 use futures_util::future::BoxFuture;
 use futures_util::io::AsyncReadExt;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 mod file_system;
 pub use self::file_system::{FileSystemRepository, FileSystemRepositoryBuilder};
@@ -202,6 +203,53 @@ where
         target_description: &'a TargetDescription,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         (**self).fetch_target(target_path, target_description)
+    }
+}
+
+impl<D, T> RepositoryProvider<D> for Arc<T>
+where
+    D: DataInterchange + Sync,
+    T: RepositoryProvider<D>,
+{
+    fn fetch_metadata<'a>(
+        &'a self,
+        meta_path: &'a MetadataPath,
+        version: &'a MetadataVersion,
+        max_length: Option<usize>,
+        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        (**self).fetch_metadata(meta_path, version, max_length, hash_data)
+    }
+
+    fn fetch_target<'a>(
+        &'a self,
+        target_path: &'a TargetPath,
+        target_description: &'a TargetDescription,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        (**self).fetch_target(target_path, target_description)
+    }
+}
+
+impl<T, D> RepositoryStorage<D> for Arc<T>
+where
+    T: RepositoryStorage<D>,
+    D: DataInterchange + Sync,
+{
+    fn store_metadata<'a>(
+        &'a self,
+        meta_path: &'a MetadataPath,
+        version: &'a MetadataVersion,
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+    ) -> BoxFuture<'a, Result<()>> {
+        (**self).store_metadata(meta_path, version, metadata)
+    }
+
+    fn store_target<'a>(
+        &'a self,
+        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        target_path: &'a TargetPath,
+    ) -> BoxFuture<'a, Result<()>> {
+        (**self).store_target(target, target_path)
     }
 }
 
