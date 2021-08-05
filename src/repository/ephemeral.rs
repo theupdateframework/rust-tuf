@@ -37,6 +37,16 @@ where
             _interchange: PhantomData,
         }
     }
+
+    /// Return a map for all the metadata in the repository.
+    pub fn metadata(&self) -> ArcHashMap<(MetadataPath, MetadataVersion), Arc<[u8]>> {
+        Arc::clone(&self.metadata)
+    }
+
+    /// Return a map for all the targets in the repository.
+    pub fn targets(&self) -> ArcHashMap<TargetPath, Arc<[u8]>> {
+        Arc::clone(&self.targets)
+    }
 }
 
 impl<D> Default for EphemeralRepository<D>
@@ -137,9 +147,53 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::interchange::Json;
-    use futures_executor::block_on;
+    use {
+        super::*,
+        crate::{
+            crypto::{self, HashAlgorithm},
+            interchange::Json,
+            metadata::{MetadataPath, MetadataVersion, RawSignedMetadata, Role, RootMetadata},
+        },
+        futures_executor::block_on,
+        maplit::hashmap,
+    };
+
+    #[test]
+    fn ephemeral_repo_metadata() {
+        block_on(async {
+            let path = MetadataPath::from_role(&Role::Root);
+            let version = MetadataVersion::None;
+            let data: &[u8] = b"valid metadata";
+            let _metadata = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
+            let data_hash = crypto::calculate_hash(data, HashAlgorithm::Sha256);
+
+            let repo = EphemeralRepository::<Json>::new();
+            repo.store_metadata(&path, &version, &mut &*data)
+                .await
+                .unwrap();
+
+            let mut read = repo
+                .fetch_metadata(
+                    &path,
+                    &version,
+                    None,
+                    Some((&HashAlgorithm::Sha256, data_hash)),
+                )
+                .await
+                .unwrap();
+
+            let mut buf = Vec::new();
+            read.read_to_end(&mut buf).await.unwrap();
+            assert_eq!(buf.as_slice(), data);
+
+            assert_eq!(
+                &*repo.metadata().read(),
+                &hashmap! {
+                    (path, version) => Arc::from(data.to_vec().into_boxed_slice()),
+                }
+            );
+        })
+    }
 
     #[test]
     fn ephemeral_repo_targets() {
@@ -158,12 +212,25 @@ mod test {
             assert_eq!(buf.as_slice(), data);
 
             // RepositoryProvider implementations do not guarantee data is not corrupt.
+            let bad_path = TargetPath::new("bad".into()).unwrap();
             let bad_data: &[u8] = b"you're in a desert";
-            repo.store_target(&mut &*bad_data, &path).await.unwrap();
-            let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
+            repo.store_target(&mut &*bad_data, &bad_path).await.unwrap();
+
+            let mut read = repo
+                .fetch_target(&bad_path, &target_description)
+                .await
+                .unwrap();
             buf.clear();
             read.read_to_end(&mut buf).await.unwrap();
             assert_eq!(buf.as_slice(), bad_data);
+
+            assert_eq!(
+                &*repo.targets().read(),
+                &hashmap! {
+                    path => Arc::from(data.to_vec().into_boxed_slice()),
+                    bad_path => Arc::from(bad_data.to_vec().into_boxed_slice()),
+                }
+            );
         })
     }
 }
