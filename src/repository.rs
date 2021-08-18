@@ -209,7 +209,7 @@ where
 impl<D, T> RepositoryProvider<D> for Arc<T>
 where
     D: DataInterchange + Sync,
-    T: RepositoryProvider<D>,
+    T: RepositoryProvider<D> + ?Sized,
 {
     fn fetch_metadata<'a>(
         &'a self,
@@ -232,7 +232,7 @@ where
 
 impl<T, D> RepositoryStorage<D> for Arc<T>
 where
-    T: RepositoryStorage<D>,
+    T: RepositoryStorage<D> + ?Sized,
     D: DataInterchange + Sync,
 {
     fn store_metadata<'a>(
@@ -588,7 +588,30 @@ mod test {
         block_on(async {
             let repo: Box<dyn RepositoryStorageProvider<Json>> =
                 Box::new(EphemeralRepository::new());
-            let client = Repository::<_, Json>::new(Box::new(repo));
+            let client = Repository::<_, Json>::new(repo);
+
+            let data: &[u8] = b"like tears in the rain";
+            let target_description =
+                TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
+            let path = TargetPath::new("batty".into()).unwrap();
+            client.store_target(&mut &*data, &path).await.unwrap();
+
+            let mut read = client
+                .fetch_target(&path, &target_description)
+                .await
+                .unwrap();
+            let mut buf = Vec::new();
+            read.read_to_end(&mut buf).await.unwrap();
+            assert_eq!(buf.as_slice(), data);
+        })
+    }
+
+    #[test]
+    fn repository_takes_arc_trait_objects() {
+        block_on(async {
+            let repo: Arc<dyn RepositoryStorageProvider<Json>> =
+                Arc::new(EphemeralRepository::new());
+            let client = Repository::<_, Json>::new(repo);
 
             let data: &[u8] = b"like tears in the rain";
             let target_description =
