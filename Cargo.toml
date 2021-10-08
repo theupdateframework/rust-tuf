@@ -1,53 +1,5 @@
-[package]
-name = "tuf"
-edition = "2018"
-version = "0.3.0-beta1"
-authors = [ "heartsucker <heartsucker@autistici.org>" ]
-description = "Library for The Update Framework (TUF)"
-homepage = "https://github.com/heartsucker/rust-tuf"
-repository = "https://github.com/heartsucker/rust-tuf"
-documentation = "https://docs.rs/tuf"
-readme = "README.md"
-license = "MIT/Apache-2.0"
-keywords = [ "security", "update", "repository" ]
-categories = [ "cryptography" ]
-
-[lib]
-name = "tuf"
-path = "./src/lib.rs"
-
-[dependencies]
-chrono = { version = "0.4", features = [ "serde" ] }
-data-encoding = "2.0.0-rc.2"
-derp = "0.0.13"
-futures-executor = "0.3.1"
-futures-io = "0.3.1"
-futures-util = { version = "0.3.1", features = [ "io" ] }
-http = "0.2.0"
-hyper = { version = "0.13.2", default-features = false, features = [ "stream" ] }
-itoa = "0.4"
-log = "0.4"
-ring = { version = "0.16" }
-parking_lot = "0.9"
-percent-encoding = "2.1"
-serde = "1"
-serde_derive = "1"
-serde_json = "1"
-tempfile = "3"
-untrusted = "0.7"
-url = "2"
-thiserror = "1.0"
-
-[dev-dependencies]
-lazy_static = "1"
-maplit = "1"
-matches = "0.1.8"
-pretty_assertions = "0.6"
-
-[features]
-default = ["hyper/default"]
-
-[[bin]]
-# TODO: separate this into its own toml file.
-name = "generate"
-path = "tests/metadata/generate.rs"
+[workspace]
+members = [
+    "tuf",
+    "interop-tests",
+]

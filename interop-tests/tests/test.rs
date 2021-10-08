@@ -54,7 +54,6 @@ use tuf::Result;
 fn fuchsia_go_tuf_consistent_snapshot_false() {
     test_key_rotation(
         Path::new("tests")
-            .join("interop")
             .join("fuchsia-go-tuf-5527fe")
             .join("consistent-snapshot-false"),
     );
@@ -64,7 +63,6 @@ fn fuchsia_go_tuf_consistent_snapshot_false() {
 fn fuchsia_go_tuf_consistent_snapshot_true() {
     test_key_rotation(
         Path::new("tests")
-            .join("interop")
             .join("fuchsia-go-tuf-5527fe")
             .join("consistent-snapshot-true"),
     );
@@ -74,7 +72,6 @@ fn fuchsia_go_tuf_consistent_snapshot_true() {
 fn fuchsia_go_tuf_transition_m4_consistent_snapshot_false() {
     test_key_rotation(
         Path::new("tests")
-            .join("interop")
             .join("fuchsia-go-tuf-transition-M4")
             .join("consistent-snapshot-false"),
     );
@@ -84,7 +81,6 @@ fn fuchsia_go_tuf_transition_m4_consistent_snapshot_false() {
 fn fuchsia_go_tuf_transition_m4_consistent_snapshot_true() {
     test_key_rotation(
         Path::new("tests")
-            .join("interop")
             .join("fuchsia-go-tuf-transition-M4")
             .join("consistent-snapshot-true"),
     );
