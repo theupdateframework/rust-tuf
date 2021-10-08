@@ -1,0 +1,22 @@
+[package]
+name = "interop-tests"
+version = "0.1.0"
+edition = "2018"
+publish = false
+
+[dependencies]
+chrono = { version = "0.4", features = [ "serde" ] }
+data-encoding = "2.0.0-rc.2"
+futures-executor = "0.3.1"
+serde = "1"
+serde_derive = "1"
+serde_json = "1"
+tuf = { version = "0.3.0-beta1", path = "../tuf" }
+
+[dev-dependencies]
+matches = "0.1.8"
+futures-util = { version = "0.3.1", features = [ "io" ] }
+
+[[bin]]
+name = "generate"
+path = "src/generate.rs"
