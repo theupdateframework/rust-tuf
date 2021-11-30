@@ -39,9 +39,16 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
+          args: ${{ matrix.features }}
+
+      - name: Run Tests with Hyper 0.13
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: "--manifest-path tuf/Cargo.toml --no-default-features --features hyper_013/default"
 
       - name: Generate Docs
         uses: actions-rs/cargo@v1
         with:
           command: doc
-          args: --all-features --no-deps
+          args: --no-deps
