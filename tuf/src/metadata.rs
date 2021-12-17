@@ -435,6 +435,7 @@ where
         self.signatures
             .retain(|s| s.key_id() != private_key.public().key_id());
         self.signatures.push(sig);
+        self.signatures.sort();
         Ok(())
     }
 
@@ -461,6 +462,7 @@ where
                 .filter(|s| !key_ids.contains(s.key_id()))
                 .cloned(),
         );
+        self.signatures.sort();
 
         Ok(())
     }
