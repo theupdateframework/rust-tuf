@@ -6,7 +6,7 @@ pub use cjson::{Json, JsonPretty};
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use std::fmt::Debug;
-use std::io::{Read, Write};
+use std::io::Read;
 
 use crate::Result;
 
@@ -29,12 +29,6 @@ pub trait DataInterchange: Debug + PartialEq + Clone {
     /// Serialize into `RawData`.
     fn serialize<T>(data: &T) -> Result<Self::RawData>
     where
-        T: Serialize;
-
-    /// Write a struct to a stream.
-    fn to_writer<W, T: Sized>(writer: W, value: &T) -> Result<()>
-    where
-        W: Write,
         T: Serialize;
 
     /// Read a struct from a stream.

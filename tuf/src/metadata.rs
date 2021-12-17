@@ -981,10 +981,9 @@ impl TimestampMetadataBuilder {
         D: DataInterchange,
         M: Metadata,
     {
-        let mut bytes = Vec::new();
-        D::to_writer(&mut bytes, &snapshot)?;
+        let raw_snapshot = snapshot.to_raw()?;
         let description = MetadataDescription::from_reader(
-            &*bytes,
+            raw_snapshot.as_bytes(),
             snapshot.parse_version_untrusted()?,
             hash_algs,
         )?;
@@ -1245,10 +1244,9 @@ impl SnapshotMetadataBuilder {
         M: Metadata,
         D: DataInterchange,
     {
-        let mut bytes = Vec::new();
-        D::to_writer(&mut bytes, metadata)?;
+        let raw_metadata = metadata.to_raw()?;
         let description = MetadataDescription::from_reader(
-            &*bytes,
+            raw_metadata.as_bytes(),
             metadata.parse_version_untrusted()?,
             hash_algs,
         )?;
