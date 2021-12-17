@@ -1,12 +1,11 @@
 use futures_executor::block_on;
+use futures_util::io::Cursor;
 use tuf::client::{Client, Config};
-use tuf::crypto::{self, Ed25519PrivateKey, HashAlgorithm, PrivateKey, PublicKey};
+use tuf::crypto::{Ed25519PrivateKey, PrivateKey, PublicKey};
 use tuf::interchange::Json;
-use tuf::metadata::{
-    MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder, TargetDescription,
-    TargetPath, TargetsMetadataBuilder, TimestampMetadataBuilder,
-};
-use tuf::repository::{EphemeralRepository, RepositoryStorage};
+use tuf::metadata::{MetadataVersion, TargetPath};
+use tuf::repo_builder::RepoBuilder;
+use tuf::repository::EphemeralRepository;
 use tuf::Result;
 
 // Ironically, this is far from simple, but it's as simple as it can be made.
@@ -75,114 +74,22 @@ async fn init_server(
     let targets_key = Ed25519PrivateKey::from_pkcs8(ED25519_3_PK8)?;
     let timestamp_key = Ed25519PrivateKey::from_pkcs8(ED25519_4_PK8)?;
 
-    //// build the root ////
-
-    let signed = RootMetadataBuilder::new()
-        .consistent_snapshot(consistent_snapshot)
-        .root_key(root_key.public().clone())
-        .snapshot_key(snapshot_key.public().clone())
-        .targets_key(targets_key.public().clone())
-        .timestamp_key(timestamp_key.public().clone())
-        .signed::<Json>(&root_key)?;
-
-    let root_path = MetadataPath::new("root")?;
-    remote
-        .store_metadata(
-            &root_path,
-            &MetadataVersion::Number(1),
-            &mut signed.to_raw().unwrap().as_bytes(),
-        )
-        .await?;
-    remote
-        .store_metadata(
-            &root_path,
-            &MetadataVersion::None,
-            &mut signed.to_raw().unwrap().as_bytes(),
-        )
-        .await?;
-
-    //// build the targets ////
-
-    let target_file: &[u8] = b"things fade, alternatives exclude";
-    let target_description = TargetDescription::from_slice(target_file, &[HashAlgorithm::Sha256])?;
-
     let target_path = TargetPath::new("foo-bar")?;
+    let target_file: &[u8] = b"things fade, alternatives exclude";
 
-    // According to TUF section 5.5.2, when consistent snapshot is enabled, target files should be
-    // stored at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.
-    if consistent_snapshot {
-        let hashes = crypto::retain_supported_hashes(target_description.hashes());
-        let (_, value) = hashes.first().unwrap();
-        let hash_prefixed_path = target_path.with_hash_prefix(value)?;
-        let _ = remote
-            .store_target(&hash_prefixed_path, &mut &*target_file)
-            .await;
-    } else {
-        let _ = remote.store_target(&target_path, &mut &*target_file).await;
-    };
-
-    let targets = TargetsMetadataBuilder::new()
-        .insert_target_description(target_path, target_description)
-        .signed::<Json>(&targets_key)?;
-
-    let targets_path = &MetadataPath::new("targets")?;
-    remote
-        .store_metadata(
-            targets_path,
-            &MetadataVersion::Number(1),
-            &mut targets.to_raw().unwrap().as_bytes(),
-        )
-        .await?;
-    remote
-        .store_metadata(
-            targets_path,
-            &MetadataVersion::None,
-            &mut targets.to_raw().unwrap().as_bytes(),
-        )
-        .await?;
-
-    //// build the snapshot ////
-
-    let snapshot = SnapshotMetadataBuilder::new()
-        .insert_metadata(&targets, &[HashAlgorithm::Sha256])?
-        .signed::<Json>(&snapshot_key)?;
-
-    let snapshot_path = MetadataPath::new("snapshot")?;
-    remote
-        .store_metadata(
-            &snapshot_path,
-            &MetadataVersion::Number(1),
-            &mut snapshot.to_raw().unwrap().as_bytes(),
-        )
-        .await?;
-    remote
-        .store_metadata(
-            &snapshot_path,
-            &MetadataVersion::None,
-            &mut snapshot.to_raw().unwrap().as_bytes(),
-        )
-        .await?;
-
-    //// build the timestamp ////
-
-    let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])?
-        .signed::<Json>(&timestamp_key)?;
-
-    let timestamp_path = MetadataPath::new("timestamp")?;
-    remote
-        .store_metadata(
-            &timestamp_path,
-            &MetadataVersion::Number(1),
-            &mut timestamp.to_raw().unwrap().as_bytes(),
-        )
-        .await?;
-    remote
-        .store_metadata(
-            &timestamp_path,
-            &MetadataVersion::None,
-            &mut timestamp.to_raw().unwrap().as_bytes(),
-        )
-        .await?;
+    let _metadata = RepoBuilder::create(&mut *remote)
+        .trusted_root_keys(&[&root_key])
+        .trusted_snapshot_keys(&[&snapshot_key])
+        .trusted_targets_keys(&[&targets_key])
+        .trusted_timestamp_keys(&[&timestamp_key])
+        .with_root_builder(|builder| builder.consistent_snapshot(consistent_snapshot))
+        .unwrap()
+        .add_target(target_path.clone(), Cursor::new(target_file))
+        .await
+        .unwrap()
+        .commit()
+        .await
+        .unwrap();
 
     Ok(vec![root_key.public().clone()])
 }

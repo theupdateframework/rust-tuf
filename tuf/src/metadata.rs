@@ -205,7 +205,7 @@ impl Display for Role {
 }
 
 /// Enum used for addressing versioned TUF metadata.
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub enum MetadataVersion {
     /// The metadata is unversioned. This is the latest version of the metadata.
     None,
@@ -1062,13 +1062,12 @@ impl TimestampMetadataBuilder {
     ///
     /// * version: 1
     /// * expires: 1 day from the current time.
-    pub fn from_snapshot<D, M>(
-        snapshot: &SignedMetadata<D, M>,
+    pub fn from_snapshot<D>(
+        snapshot: &SignedMetadata<D, SnapshotMetadata>,
         hash_algs: &[HashAlgorithm],
     ) -> Result<Self>
     where
         D: DataInterchange,
-        M: Metadata,
     {
         let raw_snapshot = snapshot.to_raw()?;
         let description = MetadataDescription::from_slice(
@@ -1284,6 +1283,20 @@ impl SnapshotMetadataBuilder {
             expires: Utc::now() + Duration::days(7),
             meta: HashMap::new(),
         }
+    }
+
+    /// Create a new [SnapshotMetadataBuilder] from a given snapshot. It defaults to:
+    ///
+    /// * version: 1
+    /// * expires: 7 day from the current time.
+    pub fn from_targets<D>(
+        targets: &SignedMetadata<D, TargetsMetadata>,
+        hash_algs: &[HashAlgorithm],
+    ) -> Result<Self>
+    where
+        D: DataInterchange,
+    {
+        SnapshotMetadataBuilder::new().insert_metadata(targets, hash_algs)
     }
 
     /// Set the version number for this metadata.

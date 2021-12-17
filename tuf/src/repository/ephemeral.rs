@@ -32,6 +32,11 @@ where
             _interchange: PhantomData,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn metadata(&self) -> &HashMap<(MetadataPath, MetadataVersion), Box<[u8]>> {
+        &self.metadata
+    }
 }
 
 impl<D> Default for EphemeralRepository<D>

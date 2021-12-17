@@ -7,9 +7,10 @@ use std::path::{Path, PathBuf};
 use tuf::crypto::{Ed25519PrivateKey, HashAlgorithm, KeyType, PrivateKey, SignatureScheme};
 use tuf::interchange::JsonPretty;
 use tuf::metadata::{
-    MetadataPath, MetadataVersion, Role, RootMetadataBuilder, SnapshotMetadataBuilder, TargetPath,
+    MetadataPath, MetadataVersion, Role, SnapshotMetadataBuilder, TargetPath,
     TargetsMetadataBuilder, TimestampMetadataBuilder,
 };
+use tuf::repo_builder::RepoBuilder;
 use tuf::repository::{FileSystemRepository, FileSystemRepositoryBuilder, RepositoryStorage};
 use walkdir::WalkDir;
 
@@ -108,49 +109,34 @@ async fn update_root(
     version: u32,
     consistent_snapshot: bool,
 ) {
-    let signer = match root_signer {
-        Some(k) => k,
-        None => keys.get("root").unwrap(),
-    };
-
     // Same expiration as go-tuf metadata generator.
     let expiration = Utc.ymd(2100, 1, 1).and_hms(0, 0, 0);
 
-    let mut root = RootMetadataBuilder::new()
-        .root_key(keys.get("root").unwrap().public().clone())
-        .expires(expiration)
-        .version(version)
-        .snapshot_key(keys.get("snapshot").unwrap().public().clone())
-        .targets_key(keys.get("targets").unwrap().public().clone())
-        .timestamp_key(keys.get("timestamp").unwrap().public().clone())
-        .consistent_snapshot(consistent_snapshot)
-        .signed::<JsonPretty>(signer)
-        .unwrap();
+    let mut repo_builder = RepoBuilder::create(repo)
+        .trusted_root_keys(&[keys.get("root").unwrap()])
+        .trusted_snapshot_keys(&[keys.get("snapshot").unwrap()])
+        .trusted_targets_keys(&[keys.get("targets").unwrap()])
+        .trusted_timestamp_keys(&[keys.get("timestamp").unwrap()]);
 
     // If we rotated the root, sign it again with the new key.
-    if root_signer.is_some() {
-        root.add_signature(keys.get("root").unwrap()).unwrap()
-    };
+    if let Some(key) = root_signer {
+        repo_builder = repo_builder.signing_root_keys(&[key]);
+    }
 
-    // Insert both the versioned and unversioned root metadata. Most clients won't read the
-    // unversioned root, but most libraries produce both to make it easier to understand what is
-    // the latest root metadata.
-    let root_path = MetadataPath::from_role(&Role::Root);
-    repo.store_metadata(
-        &root_path,
-        &MetadataVersion::Number(version),
-        &mut root.to_raw().unwrap().as_bytes(),
-    )
-    .await
-    .unwrap();
-
-    repo.store_metadata(
-        &root_path,
-        &MetadataVersion::None,
-        &mut root.to_raw().unwrap().as_bytes(),
-    )
-    .await
-    .unwrap();
+    let _metadata = repo_builder
+        .with_root_builder(|builder| {
+            builder
+                .expires(expiration)
+                .version(version)
+                .consistent_snapshot(consistent_snapshot)
+        })
+        .unwrap()
+        .skip_targets()
+        .skip_snapshot()
+        .skip_timestamp()
+        .commit()
+        .await
+        .unwrap();
 }
 
 // adds a target and updates the non-root metadata files.

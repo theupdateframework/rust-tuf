@@ -116,14 +116,12 @@ pub mod database;
 pub mod error;
 pub mod interchange;
 pub mod metadata;
+pub mod repo_builder;
 pub mod repository;
 pub mod verify;
 
 mod format_hex;
 mod util;
-
-#[cfg(test)]
-mod repo_builder;
 
 pub use crate::database::*;
 pub use crate::error::*;
