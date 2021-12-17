@@ -41,7 +41,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tuf::client::{Client, Config};
 use tuf::crypto::PublicKey;
-use tuf::interchange::Json;
+use tuf::interchange::{DataInterchange, Json, JsonPretty};
 use tuf::metadata::{
     MetadataPath, MetadataVersion, RawSignedMetadata, Role, RootMetadata, TargetPath,
 };
@@ -52,7 +52,7 @@ use tuf::Result;
 
 #[test]
 fn fuchsia_go_tuf_consistent_snapshot_false() {
-    test_key_rotation(
+    test_key_rotation::<Json>(
         Path::new("tests")
             .join("fuchsia-go-tuf-5527fe")
             .join("consistent-snapshot-false"),
@@ -61,7 +61,7 @@ fn fuchsia_go_tuf_consistent_snapshot_false() {
 
 #[test]
 fn fuchsia_go_tuf_consistent_snapshot_true() {
-    test_key_rotation(
+    test_key_rotation::<Json>(
         Path::new("tests")
             .join("fuchsia-go-tuf-5527fe")
             .join("consistent-snapshot-true"),
@@ -70,7 +70,7 @@ fn fuchsia_go_tuf_consistent_snapshot_true() {
 
 #[test]
 fn fuchsia_go_tuf_transition_m4_consistent_snapshot_false() {
-    test_key_rotation(
+    test_key_rotation::<Json>(
         Path::new("tests")
             .join("fuchsia-go-tuf-transition-M4")
             .join("consistent-snapshot-false"),
@@ -79,7 +79,7 @@ fn fuchsia_go_tuf_transition_m4_consistent_snapshot_false() {
 
 #[test]
 fn fuchsia_go_tuf_transition_m4_consistent_snapshot_true() {
-    test_key_rotation(
+    test_key_rotation::<Json>(
         Path::new("tests")
             .join("fuchsia-go-tuf-transition-M4")
             .join("consistent-snapshot-true"),
@@ -89,7 +89,7 @@ fn fuchsia_go_tuf_transition_m4_consistent_snapshot_true() {
 // Tests to catch changes to the way we generate metadata.
 #[test]
 fn rust_tuf_identity_consistent_snapshot_false() {
-    test_key_rotation(
+    test_key_rotation::<JsonPretty>(
         Path::new("tests")
             .join("metadata")
             .join("consistent-snapshot-false"),
@@ -98,34 +98,43 @@ fn rust_tuf_identity_consistent_snapshot_false() {
 
 #[test]
 fn rust_tuf_identity_consistent_snapshot_true() {
-    test_key_rotation(
+    test_key_rotation::<JsonPretty>(
         Path::new("tests")
             .join("metadata")
             .join("consistent-snapshot-true"),
     );
 }
 
-fn test_key_rotation(dir: PathBuf) {
+fn test_key_rotation<D>(dir: PathBuf)
+where
+    D: DataInterchange + Sync,
+{
     block_on(async {
-        let mut suite = TestKeyRotation::new(dir);
+        let mut suite = TestKeyRotation::<D>::new(dir);
         suite.run_tests().await;
     })
 }
 
 /// TestKeyRotation is the main driver for running the key rotation tests.
-struct TestKeyRotation {
+struct TestKeyRotation<D>
+where
+    D: DataInterchange + Sync,
+{
     /// The paths to each test step directory.
     test_steps: Vec<PathBuf>,
 
     /// The local repository used to store the local metadata.
-    local: EphemeralRepository<Json>,
+    local: EphemeralRepository<D>,
 
     /// The targets we expect each step of the repository to contain. It will contain a target for
     /// each step we've processed, named for the first step it appeared in.
     expected_targets: BTreeMap<TargetPath, String>,
 }
 
-impl TestKeyRotation {
+impl<D> TestKeyRotation<D>
+where
+    D: DataInterchange + Sync,
+{
     fn new(test_dir: PathBuf) -> Self {
         let mut test_steps = Vec::new();
 
@@ -155,7 +164,7 @@ impl TestKeyRotation {
             // Extract the keys from the first step.
             if init {
                 init = false;
-                public_keys = extract_keys(&step_dir).await;
+                public_keys = extract_keys::<D>(&step_dir).await;
             }
 
             self.run_test_step(&public_keys, step_dir).await;
@@ -200,8 +209,11 @@ impl TestKeyRotation {
 }
 
 /// Extract the initial key ids from the first step.
-async fn extract_keys(dir: &Path) -> Vec<PublicKey> {
-    let remote = init_remote(dir).unwrap();
+async fn extract_keys<D>(dir: &Path) -> Vec<PublicKey>
+where
+    D: DataInterchange + Sync,
+{
+    let remote = init_remote::<D>(dir).unwrap();
 
     let root_path = MetadataPath::from_role(&Role::Root);
 
@@ -211,7 +223,7 @@ async fn extract_keys(dir: &Path) -> Vec<PublicKey> {
         .await
         .unwrap();
     reader.read_to_end(&mut buf).await.unwrap();
-    let metadata = RawSignedMetadata::<Json, RootMetadata>::new(buf)
+    let metadata = RawSignedMetadata::<D, RootMetadata>::new(buf)
         .parse_untrusted()
         .unwrap()
         .assume_valid()
@@ -220,7 +232,10 @@ async fn extract_keys(dir: &Path) -> Vec<PublicKey> {
     metadata.root_keys().cloned().collect()
 }
 
-fn init_remote(dir: &Path) -> Result<FileSystemRepository<Json>> {
+fn init_remote<D>(dir: &Path) -> Result<FileSystemRepository<D>>
+where
+    D: DataInterchange + Sync,
+{
     FileSystemRepositoryBuilder::new(dir)
         .metadata_prefix(Path::new("repository"))
         .targets_prefix(Path::new("repository").join("targets"))
