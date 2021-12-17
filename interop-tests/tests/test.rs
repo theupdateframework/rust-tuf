@@ -37,6 +37,7 @@
 use futures_executor::block_on;
 use futures_util::io::AsyncReadExt;
 use matches::assert_matches;
+use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tuf::client::{Client, Config};
@@ -240,4 +241,63 @@ where
         .metadata_prefix(Path::new("repository"))
         .targets_prefix(Path::new("repository").join("targets"))
         .build()
+}
+
+#[test]
+fn test_metadata_generation_does_not_change_consistent_snapshot_false() {
+    block_on(async {
+        let dir = tempfile::TempDir::new().unwrap();
+        interop_tests::generate_repos(
+            &Path::new("tests").join("metadata").join("keys.json"),
+            dir.path(),
+            false,
+        )
+        .await
+        .unwrap();
+
+        compare_dirs(
+            &Path::new("tests")
+                .join("metadata")
+                .join("consistent-snapshot-false"),
+            dir.path(),
+        );
+    });
+}
+
+#[test]
+fn test_metadata_generation_does_not_change_consistent_snapshot_true() {
+    block_on(async {
+        let dir = tempfile::TempDir::new().unwrap();
+        interop_tests::generate_repos(
+            &Path::new("tests").join("metadata").join("keys.json"),
+            dir.path(),
+            true,
+        )
+        .await
+        .unwrap();
+
+        compare_dirs(
+            &Path::new("tests")
+                .join("metadata")
+                .join("consistent-snapshot-true"),
+            dir.path(),
+        );
+    });
+}
+
+fn compare_dirs(expected: &Path, actual: &Path) {
+    assert!(expected.exists());
+    assert!(actual.exists());
+
+    let expected_entries = interop_tests::read_dir_files(expected);
+    let actual_entries = interop_tests::read_dir_files(actual);
+
+    assert_eq!(
+        expected_entries.keys().collect::<Vec<_>>(),
+        actual_entries.keys().collect::<Vec<_>>()
+    );
+
+    for key in expected_entries.keys() {
+        assert_eq!(expected_entries.get(key), actual_entries.get(key));
+    }
 }
