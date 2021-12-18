@@ -197,7 +197,7 @@ async fn add_target(
         .unwrap();
 
     let target_str = if consistent_snapshot {
-        format!("{}.{}", hash, step.to_string())
+        format!("{}.{}", hash, step)
     } else {
         step.to_string()
     };
