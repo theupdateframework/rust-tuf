@@ -47,3 +47,8 @@ pretty_assertions = "1"
 
 [features]
 default = ["hyper_014/tcp"]
+
+# FIXME(https://github.com/heartsucker/rust-tuf/issues/329) - RSA key support
+# does not yet conform to the TUF spec, so it is disabled by default. As a
+# warning it may experience breaking changes without a major version bump.
+unstable_rsa = []

@@ -47,6 +47,12 @@ jobs:
           command: test
           args: "--manifest-path tuf/Cargo.toml --no-default-features --features hyper_013/default"
 
+      - name: Run Tests with RSA
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: "--manifest-path tuf/Cargo.toml --features unstable_rsa"
+
   rustfmt:
     name: rustfmt
     runs-on: ubuntu-latest
