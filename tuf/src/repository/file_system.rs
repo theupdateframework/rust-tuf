@@ -9,10 +9,9 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
-use crate::crypto::{HashAlgorithm, HashValue};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
-use crate::metadata::{MetadataPath, MetadataVersion, TargetDescription, TargetPath};
+use crate::metadata::{MetadataPath, MetadataVersion, TargetPath};
 use crate::repository::{RepositoryProvider, RepositoryStorage};
 use crate::Result;
 
@@ -118,8 +117,6 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        _max_length: Option<usize>,
-        _hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
             let mut path = self.metadata_path.clone();
@@ -135,7 +132,6 @@ where
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
-        _target_description: &'a TargetDescription,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
             let mut path = self.targets_path.clone();
@@ -182,8 +178,8 @@ where
 
     fn store_target<'a>(
         &'a self,
-        read: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
+        read: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
         async move {
             let mut path = self.targets_path.clone();
@@ -271,10 +267,8 @@ mod test {
             assert!(temp_dir.path().join("targs").exists());
 
             let data: &[u8] = b"like tears in the rain";
-            let target_description =
-                TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
             let path = TargetPath::new("foo/bar/baz".into()).unwrap();
-            repo.store_target(&mut &*data, &path).await.unwrap();
+            repo.store_target(&path, &mut &*data).await.unwrap();
             assert!(temp_dir
                 .path()
                 .join("targs")
@@ -289,15 +283,15 @@ mod test {
             // This is needed for `tempfile` on Windows, which doesn't open the
             // files in a mode that allows the file to be opened multiple times.
             {
-                let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
+                let mut read = repo.fetch_target(&path).await.unwrap();
                 read.read_to_end(&mut buf).await.unwrap();
                 assert_eq!(buf.as_slice(), data);
             }
 
             // RepositoryProvider implementations do not guarantee data is not corrupt.
             let bad_data: &[u8] = b"you're in a desert";
-            repo.store_target(&mut &*bad_data, &path).await.unwrap();
-            let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
+            repo.store_target(&path, &mut &*bad_data).await.unwrap();
+            let mut read = repo.fetch_target(&path).await.unwrap();
             buf.clear();
             read.read_to_end(&mut buf).await.unwrap();
             assert_eq!(buf.as_slice(), bad_data);

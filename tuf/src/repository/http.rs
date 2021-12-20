@@ -17,10 +17,9 @@ use std::io;
 use std::marker::PhantomData;
 use url::Url;
 
-use crate::crypto::{HashAlgorithm, HashValue};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
-use crate::metadata::{MetadataPath, MetadataVersion, TargetDescription, TargetPath};
+use crate::metadata::{MetadataPath, MetadataVersion, TargetPath};
 use crate::repository::RepositoryProvider;
 use crate::util::SafeAsyncRead;
 use crate::Result;
@@ -250,8 +249,6 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        _max_length: Option<usize>,
-        _hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         let components = meta_path.components::<D>(version);
         async move {
@@ -274,7 +271,6 @@ where
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
-        _target_description: &'a TargetDescription,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
             let components = target_path.components();

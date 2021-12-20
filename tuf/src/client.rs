@@ -755,7 +755,7 @@ where
     /// Fetch a target from the remote repo and write it to the local repo.
     pub async fn fetch_target<'a>(&'a mut self, target: &'a TargetPath) -> Result<()> {
         let mut read = self._fetch_target(target).await?;
-        self.local.store_target(&mut read, target).await
+        self.local.store_target(target, &mut read).await
     }
 
     /// Fetch a target from the remote repo and write it to the provided writer.

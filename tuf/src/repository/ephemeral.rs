@@ -8,10 +8,9 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::crypto::{HashAlgorithm, HashValue};
 use crate::error::Error;
 use crate::interchange::DataInterchange;
-use crate::metadata::{MetadataPath, MetadataVersion, TargetDescription, TargetPath};
+use crate::metadata::{MetadataPath, MetadataVersion, TargetPath};
 use crate::repository::{RepositoryProvider, RepositoryStorage};
 use crate::Result;
 
@@ -56,8 +55,6 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        _max_length: Option<usize>,
-        _hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
             let bytes = match self
@@ -80,7 +77,6 @@ where
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
-        _target_description: &'a TargetDescription,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
             let bytes = match self.targets.read().get(target_path) {
@@ -120,8 +116,8 @@ where
 
     fn store_target<'a>(
         &'a self,
-        read: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
+        read: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
         async move {
             let mut buf = Vec::new();
@@ -147,20 +143,18 @@ mod test {
             let repo = EphemeralRepository::<Json>::new();
 
             let data: &[u8] = b"like tears in the rain";
-            let target_description =
-                TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
             let path = TargetPath::new("batty".into()).unwrap();
-            repo.store_target(&mut &*data, &path).await.unwrap();
+            repo.store_target(&path, &mut &*data).await.unwrap();
 
-            let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
+            let mut read = repo.fetch_target(&path).await.unwrap();
             let mut buf = Vec::new();
             read.read_to_end(&mut buf).await.unwrap();
             assert_eq!(buf.as_slice(), data);
 
             // RepositoryProvider implementations do not guarantee data is not corrupt.
             let bad_data: &[u8] = b"you're in a desert";
-            repo.store_target(&mut &*bad_data, &path).await.unwrap();
-            let mut read = repo.fetch_target(&path, &target_description).await.unwrap();
+            repo.store_target(&path, &mut &*bad_data).await.unwrap();
+            let mut read = repo.fetch_target(&path).await.unwrap();
             buf.clear();
             read.read_to_end(&mut buf).await.unwrap();
             assert_eq!(buf.as_slice(), bad_data);

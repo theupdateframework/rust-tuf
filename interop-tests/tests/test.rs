@@ -220,7 +220,7 @@ where
 
     let mut buf = Vec::new();
     let mut reader = remote
-        .fetch_metadata(&root_path, &MetadataVersion::Number(1), None, None)
+        .fetch_metadata(&root_path, &MetadataVersion::Number(1))
         .await
         .unwrap();
     reader.read_to_end(&mut buf).await.unwrap();
