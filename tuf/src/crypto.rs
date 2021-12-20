@@ -248,7 +248,7 @@ pub enum SignatureScheme {
 }
 
 /// Wrapper type for the value of a cryptographic signature.
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct SignatureValue(#[serde(with = "crate::format_hex")] Vec<u8>);
 
 impl SignatureValue {
@@ -865,7 +865,7 @@ impl Debug for PublicKeyValue {
 }
 
 /// A structure that contains a `Signature` and associated data for verifying it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Signature {
     #[serde(rename = "keyid")]
     key_id: KeyId,
@@ -882,6 +882,18 @@ impl Signature {
     /// An immutable reference to the `SignatureValue`.
     pub fn value(&self) -> &SignatureValue {
         &self.value
+    }
+}
+
+impl PartialOrd for Signature {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        (&self.key_id, &self.value).partial_cmp(&(&other.key_id, &other.value))
+    }
+}
+
+impl Ord for Signature {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.key_id, &self.value).cmp(&(&other.key_id, &other.value))
     }
 }
 

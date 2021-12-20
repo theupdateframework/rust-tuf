@@ -1,7 +1,7 @@
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
+use std::io::Read;
 
 use crate::error::Error;
 use crate::interchange::DataInterchange;
@@ -254,37 +254,6 @@ impl DataInterchange for Json {
         T: Serialize,
     {
         Ok(serde_json::to_value(data)?)
-    }
-
-    /// ```
-    /// # use serde_json::json;
-    /// # use tuf::interchange::{DataInterchange, Json};
-    /// let json = json!({
-    ///     "o": {
-    ///         "a": [1, 2, 3],
-    ///         "s": "string",
-    ///         "n": 123,
-    ///         "t": true,
-    ///         "f": false,
-    ///         "0": null,
-    ///     },
-    /// });
-    ///
-    /// let mut buf = Vec::new();
-    /// Json::to_writer(&mut buf, &json).unwrap();
-    /// assert_eq!(
-    ///     &String::from_utf8(buf).unwrap(),
-    ///     r#"{"o":{"0":null,"a":[1,2,3],"f":false,"n":123,"s":"string","t":true}}"#
-    /// );
-    /// ```
-    fn to_writer<W, T: Sized>(mut writer: W, value: &T) -> Result<()>
-    where
-        W: Write,
-        T: Serialize,
-    {
-        let bytes = Self::canonicalize(&Self::serialize(value)?)?;
-        writer.write_all(&bytes)?;
-        Ok(())
     }
 
     /// ```
