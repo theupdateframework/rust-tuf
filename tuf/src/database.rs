@@ -10,7 +10,7 @@ use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
     Delegations, Metadata, MetadataPath, RawSignedMetadata, Role, RootMetadata, SnapshotMetadata,
-    TargetDescription, TargetsMetadata, TimestampMetadata, VirtualTargetPath,
+    TargetDescription, TargetPath, TargetsMetadata, TimestampMetadata,
 };
 use crate::verify::{self, Verified};
 use crate::Result;
@@ -757,10 +757,10 @@ impl<D: DataInterchange> Database<D> {
     }
 
     /// Get a reference to the description needed to verify the target defined by the given
-    /// `VirtualTargetPath`. Returns an `Error` if the target is not defined in the trusted
+    /// `TargetPath`. Returns an `Error` if the target is not defined in the trusted
     /// metadata. This may mean the target exists somewhere in the metadata, but the chain of trust
     /// to that target may be invalid or incomplete.
-    pub fn target_description(&self, target_path: &VirtualTargetPath) -> Result<TargetDescription> {
+    pub fn target_description(&self, target_path: &TargetPath) -> Result<TargetDescription> {
         let _ = self.trusted_root_unexpired()?;
         let _ = self.trusted_snapshot_unexpired()?;
         let targets = self.trusted_targets_unexpired()?;
@@ -773,9 +773,9 @@ impl<D: DataInterchange> Database<D> {
             tuf: &Database<D>,
             default_terminate: bool,
             current_depth: u32,
-            target_path: &VirtualTargetPath,
+            target_path: &TargetPath,
             delegations: &Delegations,
-            parents: &[HashSet<VirtualTargetPath>],
+            parents: &[HashSet<TargetPath>],
             visited: &mut HashSet<MetadataPath>,
         ) -> (bool, Option<TargetDescription>) {
             for delegation in delegations.roles() {
