@@ -30,8 +30,6 @@ struct TestKeyPair {
     _keytype: KeyType,
     #[serde(rename = "scheme")]
     _scheme: SignatureScheme,
-    #[serde(rename = "keyid_hash_algorithms")]
-    _keyid_hash_algorithms: Option<Vec<String>>,
     keyval: KeyValue,
 }
 
@@ -134,6 +132,9 @@ async fn update_root(
         root.add_signature(keys.get("root").unwrap()).unwrap()
     };
 
+    // Insert both the versioned and unversioned root metadata. Most clients won't read the
+    // unversioned root, but most libraries produce both to make it easier to understand what is
+    // the latest root metadata.
     let root_path = MetadataPath::from_role(&Role::Root);
     repo.store_metadata(
         &root_path,
@@ -142,6 +143,7 @@ async fn update_root(
     )
     .await
     .unwrap();
+
     repo.store_metadata(
         &root_path,
         &MetadataVersion::None,
@@ -253,6 +255,9 @@ async fn add_target(
     .unwrap();
 }
 
+/// Generate a series of repositories in the `dir` path, using the keys in the `keys_path`. Each
+/// repository corresponds to a key rotation. This allows clients to test they can update through
+/// key transitions.
 pub async fn generate_repos(
     keys_path: &Path,
     dir: &Path,
@@ -270,6 +275,7 @@ pub async fn generate_repos(
     update_root(&repo, &keys, None, 1, consistent_snapshot).await;
     add_target(&repo, &keys, 0, consistent_snapshot).await;
 
+    // Queue up a series of key rotations
     let mut i: u8 = 1;
     let rotations = vec![
         Some(Role::Root),
