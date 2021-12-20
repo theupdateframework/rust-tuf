@@ -21,15 +21,19 @@ const KEYS_PATH: &str = "./keys.json";
 
 #[derive(Clone, Deserialize)]
 struct KeyValue {
-    public: String,
+    #[serde(rename = "public")]
+    _public: String,
     private: String,
 }
 
 #[derive(Clone, Deserialize)]
 struct TestKeyPair {
-    keytype: KeyType,
-    scheme: SignatureScheme,
-    keyid_hash_algorithms: Option<Vec<String>>,
+    #[serde(rename = "keytype")]
+    _keytype: KeyType,
+    #[serde(rename = "scheme")]
+    _scheme: SignatureScheme,
+    #[serde(rename = "keyid_hash_algorithms")]
+    _keyid_hash_algorithms: Option<Vec<String>>,
     keyval: KeyValue,
 }
 
