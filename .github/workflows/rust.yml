@@ -20,7 +20,8 @@ jobs:
           - nightly
           - "1.49.0"
     steps:
-      - uses: actions/checkout@v1
+      - name: Checkout repository
+        uses: actions/checkout@v1
 
       - name: Install Rust
         uses: actions-rs/toolchain/@v1
@@ -28,7 +29,6 @@ jobs:
           profile: minimal
           toolchain: ${{ matrix.rust }}
           override: true
-          components: clippy
 
       - name: Build
         uses: actions-rs/cargo@v1
@@ -47,8 +47,39 @@ jobs:
           command: test
           args: "--manifest-path tuf/Cargo.toml --no-default-features --features hyper_013/default"
 
-      - name: Generate Docs
-        uses: actions-rs/cargo@v1
+  rustfmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
         with:
-          command: doc
-          args: --no-deps
+          toolchain: stable
+          override: true
+          profile: minimal
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+
+      - name: Check documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --document-private-items --workspace

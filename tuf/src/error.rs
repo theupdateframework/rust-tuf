@@ -1,13 +1,13 @@
 //! Error types and converters.
 
 use data_encoding::DecodeError;
-use std::io;
-use std::path::Path;
-use thiserror::Error;
 #[cfg(feature = "hyper_013")]
 use hyper_013 as hyper;
 #[cfg(feature = "hyper_014")]
 use hyper_014 as hyper;
+use std::io;
+use std::path::Path;
+use thiserror::Error;
 
 use crate::metadata::Role;
 
