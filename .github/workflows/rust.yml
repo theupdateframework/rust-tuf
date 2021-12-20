@@ -65,6 +65,24 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+          components: rustfmt
+
+      - name: Check Clippy
+        run: cargo clippy --all --tests --workspace -- -D warnings
+
   docs:
     name: docs
     runs-on: ubuntu-latest

@@ -180,7 +180,7 @@ fn extend_uri(uri: Uri, prefix: &Option<Vec<String>>, components: &[String]) -> 
     // https://docs.rs/url/2.1.0/url/struct.PathSegmentsMut.html
     let encoded_new_path_elements = new_path_elements
         .into_iter()
-        .map(|path_segment| utf8_percent_encode(&path_segment, URLENCODE_PATH).collect());
+        .map(|path_segment| utf8_percent_encode(path_segment, URLENCODE_PATH).collect());
     path_split.extend(encoded_new_path_elements);
     let constructed_path = path_split.join("/");
 
@@ -199,12 +199,12 @@ fn extend_uri(uri: Uri, prefix: &Option<Vec<String>>, components: &[String]) -> 
             })?),
         };
 
-    Ok(Uri::from_parts(uri_parts).map_err(|_| {
+    Uri::from_parts(uri_parts).map_err(|_| {
         Error::IllegalArgument(format!(
             "Invalid URI parts: {:?}, {:?}, {:?}",
             constructed_path, prefix, components
         ))
-    })?)
+    })
 }
 
 impl<C, D> HttpRepository<C, D>
@@ -253,7 +253,7 @@ where
         _max_length: Option<usize>,
         _hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        let components = meta_path.components::<D>(&version);
+        let components = meta_path.components::<D>(version);
         async move {
             let resp = self.get(&self.metadata_prefix, &components).await?;
 
@@ -305,7 +305,7 @@ mod test {
         prefix: &Option<Vec<String>>,
         components: &[String],
     ) -> url::Url {
-        let mut url = base_url.clone();
+        let mut url = base_url;
         {
             let mut segments = url.path_segments_mut().unwrap();
             if let Some(ref prefix) = prefix {
@@ -313,7 +313,7 @@ mod test {
             }
             segments.extend(components);
         }
-        return url;
+        url
     }
 
     #[test]

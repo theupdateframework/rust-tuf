@@ -132,7 +132,7 @@ fn shim_public_key(
     let key = match key_type {
         KeyType::Ed25519 => HEXLOWER.encode(public_key),
         KeyType::Rsa | KeyType::Unknown(_) => {
-            let bytes = write_spki(public_key, &key_type)?;
+            let bytes = write_spki(public_key, key_type)?;
             BASE64URL.encode(&bytes)
         }
     };
@@ -497,10 +497,12 @@ impl RsaPrivateKey {
     pub fn from_pkcs8(der_key: &[u8], scheme: SignatureScheme) -> Result<Self> {
         match scheme {
             SignatureScheme::RsaSsaPssSha256 | SignatureScheme::RsaSsaPssSha512 => (),
-            _ => Err(Error::IllegalArgument(format!(
-                "RSA keys do not support the signing scheme {:?}",
-                scheme
-            )))?,
+            _ => {
+                return Err(Error::IllegalArgument(format!(
+                    "RSA keys do not support the signing scheme {:?}",
+                    scheme
+                )))
+            }
         }
 
         let key = RsaKeyPair::from_pkcs8(der_key)
@@ -962,19 +964,19 @@ mod test {
     use pretty_assertions::assert_eq;
     use serde_json::{self, json};
 
-    const RSA_2048_PK8: &'static [u8] = include_bytes!("../tests/rsa/rsa-2048.pk8.der");
-    const RSA_2048_SPKI: &'static [u8] = include_bytes!("../tests/rsa/rsa-2048.spki.der");
-    const RSA_2048_PKCS1: &'static [u8] = include_bytes!("../tests/rsa/rsa-2048.pkcs1.der");
+    const RSA_2048_PK8: &[u8] = include_bytes!("../tests/rsa/rsa-2048.pk8.der");
+    const RSA_2048_SPKI: &[u8] = include_bytes!("../tests/rsa/rsa-2048.spki.der");
+    const RSA_2048_PKCS1: &[u8] = include_bytes!("../tests/rsa/rsa-2048.pkcs1.der");
 
-    const RSA_4096_PK8: &'static [u8] = include_bytes!("../tests/rsa/rsa-4096.pk8.der");
-    const RSA_4096_SPKI: &'static [u8] = include_bytes!("../tests/rsa/rsa-4096.spki.der");
-    const RSA_4096_PKCS1: &'static [u8] = include_bytes!("../tests/rsa/rsa-4096.pkcs1.der");
+    const RSA_4096_PK8: &[u8] = include_bytes!("../tests/rsa/rsa-4096.pk8.der");
+    const RSA_4096_SPKI: &[u8] = include_bytes!("../tests/rsa/rsa-4096.spki.der");
+    const RSA_4096_PKCS1: &[u8] = include_bytes!("../tests/rsa/rsa-4096.pkcs1.der");
 
-    const ED25519_1_PRIVATE_KEY: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1");
-    const ED25519_1_PUBLIC_KEY: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pub");
-    const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
-    const ED25519_1_SPKI: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.spki.der");
-    const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
+    const ED25519_1_PRIVATE_KEY: &[u8] = include_bytes!("../tests/ed25519/ed25519-1");
+    const ED25519_1_PUBLIC_KEY: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pub");
+    const ED25519_1_PK8: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
+    const ED25519_1_SPKI: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.spki.der");
+    const ED25519_2_PK8: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
 
     #[test]
     fn parse_public_rsa_2048_spki() {
@@ -1360,10 +1362,13 @@ mod test {
 
     #[test]
     fn test_public_key_eq() {
-        let key256 = PublicKey::from_spki(RSA_2048_SPKI, SignatureScheme::RsaSsaPssSha256).unwrap();
+        let key256_1 =
+            PublicKey::from_spki(RSA_2048_SPKI, SignatureScheme::RsaSsaPssSha256).unwrap();
+        let key256_2 =
+            PublicKey::from_spki(RSA_2048_SPKI, SignatureScheme::RsaSsaPssSha256).unwrap();
         let key512 = PublicKey::from_spki(RSA_2048_SPKI, SignatureScheme::RsaSsaPssSha512).unwrap();
-        assert_eq!(key256, key256);
-        assert_ne!(key256, key512);
+        assert_eq!(key256_1, key256_2);
+        assert_ne!(key256_1, key512);
     }
 
     #[test]

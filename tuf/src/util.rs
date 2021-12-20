@@ -252,7 +252,7 @@ mod test {
         block_on(async {
             let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
             let mut context = digest::Context::new(&SHA256);
-            context.update(&bytes);
+            context.update(bytes);
             let hash_value = HashValue::new(context.finish().as_ref().to_vec());
             let mut reader = SafeReader::new(
                 bytes,
@@ -271,7 +271,7 @@ mod test {
         block_on(async {
             let bytes: &[u8] = &[0x00, 0x01, 0x02, 0x03];
             let mut context = digest::Context::new(&SHA256);
-            context.update(&bytes);
+            context.update(bytes);
             context.update(&[0xFF]); // evil bytes
             let hash_value = HashValue::new(context.finish().as_ref().to_vec());
             let mut reader = SafeReader::new(
@@ -290,7 +290,7 @@ mod test {
         block_on(async {
             let bytes: &[u8] = &[0x00; 64 * 1024];
             let mut context = digest::Context::new(&SHA256);
-            context.update(&bytes);
+            context.update(bytes);
             let hash_value = HashValue::new(context.finish().as_ref().to_vec());
             let mut reader = SafeReader::new(
                 bytes,
@@ -309,7 +309,7 @@ mod test {
         block_on(async {
             let bytes: &[u8] = &[0x00; 64 * 1024];
             let mut context = digest::Context::new(&SHA256);
-            context.update(&bytes);
+            context.update(bytes);
             context.update(&[0xFF]); // evil bytes
             let hash_value = HashValue::new(context.finish().as_ref().to_vec());
             let mut reader = SafeReader::new(

@@ -818,7 +818,7 @@ where
     where
         W: AsyncWrite + Send + Unpin,
     {
-        let read = self._fetch_target(&target).await?;
+        let read = self._fetch_target(target).await?;
         copy(read, &mut write).await?;
         Ok(())
     }
@@ -833,7 +833,7 @@ where
         let snapshot = self
             .tuf
             .trusted_snapshot()
-            .ok_or_else(|| Error::MissingMetadata(Role::Snapshot))?
+            .ok_or(Error::MissingMetadata(Role::Snapshot))?
             .clone();
         let (_, target_description) = self
             .lookup_target_description(false, 0, &virt, &snapshot, None)
@@ -1237,6 +1237,7 @@ mod test {
         };
     }
 
+    #[allow(clippy::enum_variant_names)]
     enum ConstructorMode {
         WithTrustedLocal,
         WithTrustedRoot,
@@ -1424,11 +1425,11 @@ mod test {
                         ),
                         Track::fetch_meta_found(
                             &MetadataVersion::None,
-                            &metadata1.timestamp.as_ref().unwrap()
+                            metadata1.timestamp.as_ref().unwrap()
                         ),
                         Track::fetch_meta_found(
                             &MetadataVersion::None,
-                            &metadata1.snapshot.as_ref().unwrap()
+                            metadata1.snapshot.as_ref().unwrap()
                         ),
                         Track::fetch_meta_found(
                             &MetadataVersion::None,
@@ -1447,11 +1448,11 @@ mod test {
                         ),
                         Track::fetch_meta_found(
                             &MetadataVersion::None,
-                            &metadata1.timestamp.as_ref().unwrap()
+                            metadata1.timestamp.as_ref().unwrap()
                         ),
                         Track::fetch_meta_found(
                             &MetadataVersion::None,
-                            &metadata1.snapshot.as_ref().unwrap()
+                            metadata1.snapshot.as_ref().unwrap()
                         ),
                         Track::fetch_meta_found(
                             &MetadataVersion::None,
@@ -1471,11 +1472,11 @@ mod test {
                         ),
                         Track::fetch_meta_found(
                             &MetadataVersion::None,
-                            &metadata1.timestamp.as_ref().unwrap()
+                            metadata1.timestamp.as_ref().unwrap()
                         ),
                         Track::fetch_meta_found(
                             &MetadataVersion::None,
-                            &metadata1.snapshot.as_ref().unwrap()
+                            metadata1.snapshot.as_ref().unwrap()
                         ),
                         Track::fetch_meta_found(
                             &MetadataVersion::None,
@@ -1501,11 +1502,11 @@ mod test {
                 ),
                 Track::fetch_meta_found(
                     &MetadataVersion::None,
-                    &metadata2.timestamp.as_ref().unwrap()
+                    metadata2.timestamp.as_ref().unwrap()
                 ),
                 Track::fetch_meta_found(
                     &MetadataVersion::Number(2),
-                    &metadata2.snapshot.as_ref().unwrap()
+                    metadata2.snapshot.as_ref().unwrap()
                 ),
                 Track::fetch_meta_found(
                     &MetadataVersion::Number(2),
@@ -1904,9 +1905,9 @@ mod test {
                 Track::FetchErr(root_path.clone(), MetadataVersion::Number(2)),
                 Track::fetch_meta_found(
                     &MetadataVersion::None,
-                    &metadata1.timestamp.as_ref().unwrap()
+                    metadata1.timestamp.as_ref().unwrap()
                 ),
-                Track::fetch_meta_found(&snapshot_version, &metadata1.snapshot.as_ref().unwrap()),
+                Track::fetch_meta_found(&snapshot_version, metadata1.snapshot.as_ref().unwrap()),
                 Track::fetch_meta_found(&targets_version, metadata1.targets.as_ref().unwrap()),
             ]
         );

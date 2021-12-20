@@ -65,7 +65,7 @@ where
                 .read()
                 .get(&(meta_path.clone(), version.clone()))
             {
-                Some(bytes) => Arc::clone(&bytes),
+                Some(bytes) => Arc::clone(bytes),
                 None => {
                     return Err(Error::NotFound);
                 }
@@ -84,7 +84,7 @@ where
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
             let bytes = match self.targets.read().get(target_path) {
-                Some(bytes) => Arc::clone(&bytes),
+                Some(bytes) => Arc::clone(bytes),
                 None => {
                     return Err(Error::NotFound);
                 }
