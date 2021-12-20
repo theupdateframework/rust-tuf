@@ -17,7 +17,7 @@ use crate::Result;
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
-pub struct Tuf<D: DataInterchange> {
+pub struct Database<D: DataInterchange> {
     trusted_root: Verified<RootMetadata>,
     trusted_snapshot: Option<Verified<SnapshotMetadata>>,
     trusted_targets: Option<Verified<TargetsMetadata>>,
@@ -26,10 +26,11 @@ pub struct Tuf<D: DataInterchange> {
     interchange: PhantomData<D>,
 }
 
-impl<D: DataInterchange> Tuf<D> {
-    /// Create a new [`Tuf`] struct from a set of trusted root keys that are used to verify the
-    /// signed metadata. The signed root metadata must be signed with at least a `root_threshold`
-    /// of the provided root_keys. It is not necessary for the root metadata to contain these keys.
+impl<D: DataInterchange> Database<D> {
+    /// Create a new [`Database`] struct from a set of trusted root keys that are used to verify
+    /// the signed metadata. The signed root metadata must be signed with at least a
+    /// `root_threshold` of the provided root_keys. It is not necessary for the root metadata to
+    /// contain these keys.
     pub fn from_root_with_trusted_keys<'a, I>(
         raw_root: &RawSignedMetadata<D, RootMetadata>,
         root_threshold: u32,
@@ -58,7 +59,7 @@ impl<D: DataInterchange> Tuf<D> {
             verified_root
         };
 
-        Ok(Tuf {
+        Ok(Database {
             trusted_root: verified_root,
             trusted_snapshot: None,
             trusted_targets: None,
@@ -68,10 +69,10 @@ impl<D: DataInterchange> Tuf<D> {
         })
     }
 
-    /// Create a new [`Tuf`] struct from a piece of metadata that is assumed to be trusted.
+    /// Create a new [`Database`] struct from a piece of metadata that is assumed to be trusted.
     ///
     /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
-    /// the related method [`Tuf::from_root_with_trusted_keys`].
+    /// the related method [`Database::from_root_with_trusted_keys`].
     pub fn from_trusted_root(raw_root: &RawSignedMetadata<D, RootMetadata>) -> Result<Self> {
         let verified_root = {
             // **WARNING**: By deserializing the metadata before verification, we are exposing us
@@ -88,7 +89,7 @@ impl<D: DataInterchange> Tuf<D> {
             verified_root
         };
 
-        Ok(Tuf {
+        Ok(Database {
             trusted_root: verified_root,
             trusted_snapshot: None,
             trusted_targets: None,
@@ -254,7 +255,7 @@ impl<D: DataInterchange> Tuf<D> {
     ) -> Result<Option<&Verified<TimestampMetadata>>> {
         let verified = {
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Should we
-            // check if the root metadata is expired here? We do that in the other `Tuf::update_*`
+            // check if the root metadata is expired here? We do that in the other `Database::update_*`
             // methods, but not here.
             let trusted_root = &self.trusted_root;
 
@@ -769,7 +770,7 @@ impl<D: DataInterchange> Tuf<D> {
         }
 
         fn lookup<D: DataInterchange>(
-            tuf: &Tuf<D>,
+            tuf: &Database<D>,
             default_terminate: bool,
             current_depth: u32,
             target_path: &VirtualTargetPath,
@@ -929,7 +930,7 @@ mod test {
         let raw_root = root.to_raw().unwrap();
 
         assert_matches!(
-            Tuf::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public())),
+            Database::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public())),
             Ok(_)
         );
     }
@@ -946,7 +947,7 @@ mod test {
         let raw_root = root.to_raw().unwrap();
 
         assert_matches!(
-            Tuf::from_root_with_trusted_keys(&raw_root, 1, once(KEYS[1].public())),
+            Database::from_root_with_trusted_keys(&raw_root, 1, once(KEYS[1].public())),
             Err(Error::VerificationFailure(s)) if s == "Signature threshold not met: 0/1"
         );
     }
@@ -963,7 +964,7 @@ mod test {
             .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let mut root = RootMetadataBuilder::new()
             .version(2)
@@ -999,7 +1000,7 @@ mod test {
             .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[1].public().clone())
@@ -1026,7 +1027,7 @@ mod test {
             .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .signed::<Json>(&KEYS[1])
@@ -1060,7 +1061,7 @@ mod test {
             .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .signed::<Json>(&KEYS[1])
@@ -1090,7 +1091,7 @@ mod test {
             .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new().signed(&KEYS[1]).unwrap();
         let raw_snapshot = snapshot.to_raw().unwrap();
@@ -1123,7 +1124,7 @@ mod test {
             .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .signed::<Json>(&KEYS[2])
@@ -1156,7 +1157,7 @@ mod test {
             .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .version(2)
@@ -1195,7 +1196,7 @@ mod test {
             .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let signed_targets = TargetsMetadataBuilder::new()
             .signed::<Json>(&KEYS[2])
@@ -1238,7 +1239,7 @@ mod test {
             .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let signed_targets = TargetsMetadataBuilder::new()
             // sign it with the timestamp key
@@ -1279,7 +1280,7 @@ mod test {
             .to_raw()
             .unwrap();
 
-        let mut tuf = Tuf::from_trusted_root(&raw_root).unwrap();
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let signed_targets = TargetsMetadataBuilder::new()
             .version(2)

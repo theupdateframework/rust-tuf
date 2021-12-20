@@ -112,11 +112,11 @@
 
 pub mod client;
 pub mod crypto;
+pub mod database;
 pub mod error;
 pub mod interchange;
 pub mod metadata;
 pub mod repository;
-pub mod tuf;
 pub mod verify;
 
 mod format_hex;
@@ -125,8 +125,8 @@ mod util;
 #[cfg(test)]
 mod repo_builder;
 
+pub use crate::database::*;
 pub use crate::error::*;
-pub use crate::tuf::*;
 
 /// Alias for `Result<T, Error>`.
 pub type Result<T> = std::result::Result<T, Error>;
