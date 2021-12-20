@@ -2003,10 +2003,10 @@ mod test {
     use serde_json::json;
     use std::str::FromStr;
 
-    const ED25519_1_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
-    const ED25519_2_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
-    const ED25519_3_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-3.pk8.der");
-    const ED25519_4_PK8: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-4.pk8.der");
+    const ED25519_1_PK8: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
+    const ED25519_2_PK8: &[u8] = include_bytes!("../tests/ed25519/ed25519-2.pk8.der");
+    const ED25519_3_PK8: &[u8] = include_bytes!("../tests/ed25519/ed25519-3.pk8.der");
+    const ED25519_4_PK8: &[u8] = include_bytes!("../tests/ed25519/ed25519-4.pk8.der");
 
     #[test]
     fn no_pardir_in_target_path() {
@@ -3224,7 +3224,7 @@ mod test {
         delegations
             .as_object_mut()
             .unwrap()
-            .get_mut("keys".into())
+            .get_mut("keys")
             .unwrap()
             .as_object_mut()
             .unwrap()
@@ -3239,7 +3239,7 @@ mod test {
         delegations
             .as_object_mut()
             .unwrap()
-            .get_mut("roles".into())
+            .get_mut("roles")
             .unwrap()
             .as_array_mut()
             .unwrap()
@@ -3254,7 +3254,7 @@ mod test {
         let dupe = delegations
             .as_object()
             .unwrap()
-            .get("roles".into())
+            .get("roles")
             .unwrap()
             .as_array()
             .unwrap()[0]
@@ -3262,7 +3262,7 @@ mod test {
         delegations
             .as_object_mut()
             .unwrap()
-            .get_mut("roles".into())
+            .get_mut("roles")
             .unwrap()
             .as_array_mut()
             .unwrap()
@@ -3289,7 +3289,7 @@ mod test {
         let dupe = delegation
             .as_object()
             .unwrap()
-            .get("keyids".into())
+            .get("keyids")
             .unwrap()
             .as_array()
             .unwrap()[0]
@@ -3297,7 +3297,7 @@ mod test {
         delegation
             .as_object_mut()
             .unwrap()
-            .get_mut("keyids".into())
+            .get_mut("keyids")
             .unwrap()
             .as_array_mut()
             .unwrap()
@@ -3312,7 +3312,7 @@ mod test {
         let dupe = delegation
             .as_object()
             .unwrap()
-            .get("paths".into())
+            .get("paths")
             .unwrap()
             .as_array()
             .unwrap()[0]
@@ -3320,7 +3320,7 @@ mod test {
         delegation
             .as_object_mut()
             .unwrap()
-            .get_mut("paths".into())
+            .get_mut("paths")
             .unwrap()
             .as_array_mut()
             .unwrap()

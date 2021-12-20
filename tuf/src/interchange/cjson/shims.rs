@@ -46,7 +46,7 @@ impl RootMetadata {
             typ: metadata::Role::Root,
             spec_version: SPEC_VERSION.to_string(),
             version: meta.version(),
-            expires: format_datetime(&meta.expires()),
+            expires: format_datetime(meta.expires()),
             consistent_snapshot: meta.consistent_snapshot(),
             keys: meta
                 .keys()
@@ -147,7 +147,7 @@ impl RoleDefinition {
             )));
         }
 
-        Ok(metadata::RoleDefinition::new(self.threshold, self.key_ids)?)
+        metadata::RoleDefinition::new(self.threshold, self.key_ids)
     }
 }
 
@@ -221,7 +221,7 @@ impl SnapshotMetadata {
             typ: metadata::Role::Snapshot,
             spec_version: SPEC_VERSION.to_string(),
             version: metadata.version(),
-            expires: format_datetime(&metadata.expires()),
+            expires: format_datetime(metadata.expires()),
             meta: metadata
                 .meta()
                 .iter()
@@ -286,7 +286,7 @@ impl TargetsMetadata {
             typ: metadata::Role::Targets,
             spec_version: SPEC_VERSION.to_string(),
             version: metadata.version(),
-            expires: format_datetime(&metadata.expires()),
+            expires: format_datetime(metadata.expires()),
             targets: metadata
                 .targets()
                 .iter()

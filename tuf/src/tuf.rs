@@ -80,7 +80,7 @@ impl<D: DataInterchange> Tuf<D> {
 
             // Make sure the root signed itself.
             let verified_root = verify::verify_signatures(
-                &raw_root,
+                raw_root,
                 unverified_root.root().threshold(),
                 unverified_root.root_keys(),
             )?;
@@ -786,7 +786,7 @@ impl<D: DataInterchange> Tuf<D> {
                 let mut new_parents = parents.to_owned();
                 new_parents.push(delegation.paths().clone());
 
-                if current_depth > 0 && !target_path.matches_chain(&parents) {
+                if current_depth > 0 && !target_path.matches_chain(parents) {
                     return (delegation.terminating(), None);
                 }
 
@@ -830,7 +830,7 @@ impl<D: DataInterchange> Tuf<D> {
                 let mut visited = HashSet::new();
                 lookup(self, false, 0, target_path, d, &[], &mut visited)
                     .1
-                    .ok_or_else(|| Error::TargetUnavailable)
+                    .ok_or(Error::TargetUnavailable)
             }
             None => Err(Error::TargetUnavailable),
         }
@@ -848,7 +848,7 @@ impl<D: DataInterchange> Tuf<D> {
         if trusted_root.expires() <= &Utc::now() {
             return Err(Error::ExpiredMetadata(Role::Root));
         }
-        Ok(&trusted_root)
+        Ok(trusted_root)
     }
 
     fn trusted_snapshot_unexpired(&self) -> Result<&SnapshotMetadata> {

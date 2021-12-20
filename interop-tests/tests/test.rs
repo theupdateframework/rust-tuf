@@ -191,7 +191,7 @@ impl TestKeyRotation {
         for (target_path, expected) in self.expected_targets.iter() {
             let mut buf = Vec::new();
             assert_matches!(
-                client.fetch_target_to_writer(&target_path, &mut buf).await,
+                client.fetch_target_to_writer(target_path, &mut buf).await,
                 Ok(())
             );
             assert_eq!(&String::from_utf8(buf).unwrap(), expected);

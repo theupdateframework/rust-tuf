@@ -118,7 +118,7 @@ where
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
             let mut path = self.metadata_path.clone();
-            path.extend(meta_path.components::<D>(&version));
+            path.extend(meta_path.components::<D>(version));
 
             let reader: Box<dyn AsyncRead + Send + Unpin> =
                 Box::new(AllowStdIo::new(File::open(&path)?));

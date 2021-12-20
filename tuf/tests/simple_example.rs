@@ -11,10 +11,10 @@ use tuf::Result;
 
 // Ironically, this is far from simple, but it's as simple as it can be made.
 
-const ED25519_1_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-1.pk8.der");
-const ED25519_2_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-2.pk8.der");
-const ED25519_3_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-3.pk8.der");
-const ED25519_4_PK8: &'static [u8] = include_bytes!("./ed25519/ed25519-4.pk8.der");
+const ED25519_1_PK8: &[u8] = include_bytes!("./ed25519/ed25519-1.pk8.der");
+const ED25519_2_PK8: &[u8] = include_bytes!("./ed25519/ed25519-2.pk8.der");
+const ED25519_3_PK8: &[u8] = include_bytes!("./ed25519/ed25519-3.pk8.der");
+const ED25519_4_PK8: &[u8] = include_bytes!("./ed25519/ed25519-4.pk8.der");
 
 struct MyPathTranslator;
 
@@ -157,7 +157,7 @@ where
     // stored at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.
     if consistent_snapshot {
         let (_, value) = crypto::hash_preference(target_description.hashes())?;
-        let hash_prefixed_path = target_path.with_hash_prefix(&value)?;
+        let hash_prefixed_path = target_path.with_hash_prefix(value)?;
         let _ = remote
             .store_target(&mut &*target_file, &hash_prefixed_path)
             .await;
@@ -175,14 +175,14 @@ where
     let targets_path = &MetadataPath::new("targets")?;
     remote
         .store_metadata(
-            &targets_path,
+            targets_path,
             &MetadataVersion::Number(1),
             &mut targets.to_raw().unwrap().as_bytes(),
         )
         .await?;
     remote
         .store_metadata(
-            &targets_path,
+            targets_path,
             &MetadataVersion::None,
             &mut targets.to_raw().unwrap().as_bytes(),
         )
