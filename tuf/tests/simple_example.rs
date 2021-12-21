@@ -35,8 +35,10 @@ fn consistent_snapshot_true() {
 }
 
 async fn run_tests(config: Config, consistent_snapshots: bool) {
-    let remote = EphemeralRepository::new();
-    let root_public_keys = init_server(&remote, consistent_snapshots).await.unwrap();
+    let mut remote = EphemeralRepository::new();
+    let root_public_keys = init_server(&mut remote, consistent_snapshots)
+        .await
+        .unwrap();
 
     init_client(&root_public_keys, remote, config)
         .await
@@ -64,7 +66,7 @@ async fn init_client(
 }
 
 async fn init_server(
-    remote: &EphemeralRepository<Json>,
+    remote: &mut EphemeralRepository<Json>,
     consistent_snapshot: bool,
 ) -> Result<Vec<PublicKey>> {
     // in real life, you wouldn't want these keys on the same machine ever

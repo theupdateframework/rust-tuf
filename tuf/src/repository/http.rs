@@ -247,9 +247,9 @@ where
 {
     fn fetch_metadata<'a>(
         &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         let components = meta_path.components::<D>(version);
         async move {
             let resp = self.get(&self.metadata_prefix, &components).await?;
@@ -270,13 +270,13 @@ where
 
     fn fetch_target<'a>(
         &'a self,
-        target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        async move {
-            let components = target_path.components();
-            let resp = self.get(&self.targets_prefix, &components).await?;
+        target_path: &TargetPath,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        let components = target_path.components();
 
+        async move {
             // TODO(#278) check content length if known and fail early if the payload is too large.
+            let resp = self.get(&self.targets_prefix, &components).await?;
 
             let reader = resp
                 .into_body()

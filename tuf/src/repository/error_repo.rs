@@ -7,25 +7,28 @@ use {
     },
     futures_io::AsyncRead,
     futures_util::future::{BoxFuture, FutureExt},
-    parking_lot::Mutex,
-    std::sync::Arc,
+    std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 
 pub(crate) struct ErrorRepository<R> {
     repo: R,
-    fail_metadata_stores: Arc<Mutex<bool>>,
+    fail_metadata_stores: Arc<AtomicBool>,
 }
 
 impl<R> ErrorRepository<R> {
     pub(crate) fn new(repo: R) -> Self {
         Self {
             repo,
-            fail_metadata_stores: Arc::new(Mutex::new(false)),
+            fail_metadata_stores: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub(crate) fn fail_metadata_stores(&self, fail_metadata_stores: bool) {
-        *self.fail_metadata_stores.lock() = fail_metadata_stores;
+        self.fail_metadata_stores
+            .store(fail_metadata_stores, Ordering::SeqCst);
     }
 }
 
@@ -36,16 +39,16 @@ where
 {
     fn fetch_metadata<'a>(
         &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         self.repo.fetch_metadata(meta_path, version)
     }
 
     fn fetch_target<'a>(
         &'a self,
-        target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        target_path: &TargetPath,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         self.repo.fetch_target(target_path)
     }
 }
@@ -56,12 +59,12 @@ where
     D: DataInterchange + Sync,
 {
     fn store_metadata<'a>(
-        &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
+        &'a mut self,
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
-        if *self.fail_metadata_stores.lock() {
+        if self.fail_metadata_stores.load(Ordering::SeqCst) {
             async { Err(Error::Encoding("failed".into())) }.boxed()
         } else {
             self.repo.store_metadata(meta_path, version, metadata)
@@ -69,8 +72,8 @@ where
     }
 
     fn store_target<'a>(
-        &'a self,
-        target_path: &'a TargetPath,
+        &'a mut self,
+        target_path: &TargetPath,
         target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
         self.repo.store_target(target_path, target)
