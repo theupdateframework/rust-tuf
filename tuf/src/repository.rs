@@ -303,27 +303,26 @@ where
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
         max_length: Option<usize>,
-        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
+        hashes: Vec<(&'static HashAlgorithm, HashValue)>,
     ) -> Result<RawSignedMetadata<D, M>>
     where
         M: Metadata,
     {
         Self::check::<M>(meta_path)?;
 
-        // Fetch the metadata, verifying max_length and hash_data if provided, as the repository
-        // implementation should only be trusted to use those as hints to fail early.
+        // Fetch the metadata, verifying max_length and hashes (if provided), as
+        // the repository implementation should only be trusted to use those as
+        // hints to fail early.
         let mut reader = self
             .repository
             .fetch_metadata(meta_path, version)
             .await?
-            .check_length_and_hash(max_length.unwrap_or(::std::usize::MAX) as u64, hash_data)?;
+            .check_length_and_hash(max_length.unwrap_or(::std::usize::MAX) as u64, hashes)?;
 
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf).await?;
 
-        let raw_signed_meta = RawSignedMetadata::new(buf);
-
-        Ok(raw_signed_meta)
+        Ok(RawSignedMetadata::new(buf))
     }
 
     /// Fetch the target identified by `target_path` through the returned `AsyncRead`, verifying
@@ -335,16 +334,44 @@ where
     /// has been fully consumed as the data is untrusted.
     pub(crate) async fn fetch_target(
         &self,
+        consistent_snapshot: bool,
         target_path: &TargetPath,
-        target_description: &TargetDescription,
+        target_description: TargetDescription,
     ) -> Result<impl AsyncRead + Send + Unpin + '_> {
-        let (hash_alg, value) = crypto::hash_preference(target_description.hashes())?;
-        let len = target_description.length();
+        // https://theupdateframework.github.io/specification/v1.0.26/#fetch-target 5.7.3:
+        //
+        // [...] download the target (up to the number of bytes specified in the targets metadata),
+        // and verify that its hashes match the targets metadata.
+        let length = target_description.length();
+        let hashes = crypto::retain_supported_hashes(target_description.hashes());
+        if hashes.is_empty() {
+            return Err(Error::NoSupportedHashAlgorithm);
+        }
 
-        self.repository
-            .fetch_target(target_path)
-            .await?
-            .check_length_and_hash(len, Some((hash_alg, value.clone())))
+        // https://theupdateframework.github.io/specification/v1.0.26/#fetch-target 5.7.3:
+        //
+        // [...] If consistent snapshots are not used (see § 6.2 Consistent snapshots), then the
+        // filename used to download the target file is of the fixed form FILENAME.EXT (e.g.,
+        // foobar.tar.gz). Otherwise, the filename is of the form HASH.FILENAME.EXT [...]
+        let target = if consistent_snapshot {
+            let mut hashes = hashes.iter();
+            loop {
+                if let Some((_, hash)) = hashes.next() {
+                    let target_path = target_path.with_hash_prefix(hash)?;
+                    match self.repository.fetch_target(&target_path).await {
+                        Ok(target) => break target,
+                        Err(Error::NotFound) => {}
+                        Err(err) => return Err(err),
+                    }
+                } else {
+                    return Err(Error::NotFound);
+                }
+            }
+        } else {
+            self.repository.fetch_target(target_path).await?
+        };
+
+        Ok(target.check_length_and_hash(length, hashes)?)
     }
 }
 
@@ -402,7 +429,7 @@ mod test {
                     &MetadataPath::from_role(&Role::Root),
                     &MetadataVersion::None,
                     None,
-                    None
+                    vec![],
                 )
                 .await,
                 Err(Error::NotFound)
@@ -439,7 +466,7 @@ mod test {
                     &MetadataPath::from_role(&Role::Root),
                     &MetadataVersion::None,
                     None,
-                    None
+                    vec![],
                 )
                 .await,
                 Err(Error::IllegalArgument(_))
@@ -454,7 +481,7 @@ mod test {
             let version = MetadataVersion::None;
             let data: &[u8] = b"valid metadata";
             let _metadata = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
-            let data_hash = crypto::calculate_hash(data, HashAlgorithm::Sha256);
+            let data_hash = crypto::calculate_hash(data, &HashAlgorithm::Sha256);
 
             let mut repo = EphemeralRepository::new();
             repo.store_metadata(&path, &version, &mut &*data)
@@ -469,7 +496,7 @@ mod test {
                         &path,
                         &version,
                         None,
-                        Some((&HashAlgorithm::Sha256, data_hash))
+                        vec![(&HashAlgorithm::Sha256, data_hash)],
                     )
                     .await,
                 Ok(_metadata)
@@ -497,7 +524,7 @@ mod test {
                         &path,
                         &version,
                         None,
-                        Some((&HashAlgorithm::Sha256, HashValue::new(vec![])))
+                        vec![(&HashAlgorithm::Sha256, HashValue::new(vec![]))],
                     )
                     .await,
                 Err(_)
@@ -522,7 +549,7 @@ mod test {
 
             assert_matches!(
                 client
-                    .fetch_metadata::<RootMetadata>(&path, &version, Some(100), None)
+                    .fetch_metadata::<RootMetadata>(&path, &version, Some(100), vec![])
                     .await,
                 Ok(_metadata)
             );
@@ -545,7 +572,7 @@ mod test {
 
             assert_matches!(
                 client
-                    .fetch_metadata::<RootMetadata>(&path, &version, Some(4), None)
+                    .fetch_metadata::<RootMetadata>(&path, &version, Some(4), vec![])
                     .await,
                 Err(_)
             );
@@ -565,7 +592,7 @@ mod test {
             client.store_target(&path, &mut &*data).await.unwrap();
 
             let mut read = client
-                .fetch_target(&path, &target_description)
+                .fetch_target(false, &path, target_description.clone())
                 .await
                 .unwrap();
             let mut buf = Vec::new();
@@ -576,7 +603,7 @@ mod test {
             let bad_data: &[u8] = b"you're in a desert";
             client.store_target(&path, &mut &*bad_data).await.unwrap();
             let mut read = client
-                .fetch_target(&path, &target_description)
+                .fetch_target(false, &path, target_description)
                 .await
                 .unwrap();
             assert!(read.read_to_end(&mut buf).await.is_err());
@@ -597,7 +624,7 @@ mod test {
             client.store_target(&path, &mut &*data).await.unwrap();
 
             let mut read = client
-                .fetch_target(&path, &target_description)
+                .fetch_target(false, &path, target_description)
                 .await
                 .unwrap();
             let mut buf = Vec::new();

@@ -155,7 +155,7 @@ where
         let root_version = MetadataVersion::Number(1);
 
         let raw_root: RawSignedMetadata<_, RootMetadata> = local
-            .fetch_metadata(&root_path, &root_version, config.max_root_length, None)
+            .fetch_metadata(&root_path, &root_version, config.max_root_length, vec![])
             .await?;
 
         let tuf = Database::from_trusted_root(&raw_root)?;
@@ -301,7 +301,7 @@ where
             &root_path,
             root_version,
             config.max_root_length,
-            None,
+            vec![],
             &local,
             &remote,
         )
@@ -514,7 +514,7 @@ where
 
             let next_version = MetadataVersion::Number(tuf.trusted_root().version() + 1);
             let res = remote
-                .fetch_metadata(&root_path, &next_version, config.max_root_length, None)
+                .fetch_metadata(&root_path, &next_version, config.max_root_length, vec![])
                 .await;
 
             let raw_signed_root = match res {
@@ -614,7 +614,7 @@ where
                 &timestamp_path,
                 &MetadataVersion::None,
                 config.max_timestamp_length,
-                None,
+                vec![],
             )
             .await?;
 
@@ -664,9 +664,6 @@ where
     where
         Remote: RepositoryProvider<D>,
     {
-        // 5.3.1 Check against timestamp metadata. The hashes and version number listed in the
-        // timestamp metadata. If hashes and version do not match, discard the new snapshot
-        // metadata, abort the update cycle, and report the failure.
         let snapshot_description = match tuf.trusted_timestamp() {
             Some(ts) => Ok(ts.snapshot()),
             None => Err(Error::MissingMetadata(Role::Timestamp)),
@@ -679,17 +676,6 @@ where
             return Ok(false);
         }
 
-        let hash_data = {
-            let snapshot_hashes = snapshot_description.hashes();
-
-            if snapshot_hashes.is_empty() {
-                None
-            } else {
-                let (alg, value) = crypto::hash_preference(snapshot_hashes)?;
-                Some((alg, value.clone()))
-            }
-        };
-
         let version = if consistent_snapshots {
             MetadataVersion::Number(snapshot_description.version())
         } else {
@@ -697,19 +683,30 @@ where
         };
 
         let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
+
+        // https://theupdateframework.github.io/specification/v1.0.26/#update-snapshot 5.5.1:
+
+        // Download snapshot metadata file, up to either the number of bytes specified in the
+        // timestamp metadata file, or some Y number of bytes.
         let snapshot_length = snapshot_description.length().or(config.max_snapshot_length);
 
+        // https://theupdateframework.github.io/specification/v1.0.26/#update-snapshot 5.5.2:
+        //
+        // [...] The hashes of the new snapshot metadata file MUST match the hashes, if any, listed
+        // in the trusted timestamp metadata.
+        let snapshot_hashes = crypto::retain_supported_hashes(snapshot_description.hashes());
+
         let raw_signed_snapshot = remote
-            .fetch_metadata(&snapshot_path, &version, snapshot_length, hash_data)
+            .fetch_metadata(&snapshot_path, &version, snapshot_length, snapshot_hashes)
             .await?;
 
+        // https://theupdateframework.github.io/specification/v1.0.26/#update-snapshot 5.5.3 through
+        // 5.5.6 are checked in [Database].
         if tuf.update_snapshot(&raw_signed_snapshot)? {
-            /////////////////////////////////////////
-            // TUF-1.0.9 §5.3.5:
+            // https://theupdateframework.github.io/specification/v1.0.26/#update-snapshot 5.5.7:
             //
-            //     Persist snapshot metadata. The client MUST write the file to non-volatile
-            //     storage as FILENAME.EXT (e.g. snapshot.json).
-
+            // Persist snapshot metadata. The client MUST write the file to non-volatile storage as
+            // FILENAME.EXT (e.g. snapshot.json).
             if let Some(local) = local {
                 local
                     .store_metadata(&snapshot_path, &MetadataVersion::None, &raw_signed_snapshot)
@@ -763,17 +760,6 @@ where
             return Ok(false);
         }
 
-        let hash_data = {
-            let targets_hashes = targets_description.hashes();
-
-            if targets_hashes.is_empty() {
-                None
-            } else {
-                let (alg, value) = crypto::hash_preference(targets_hashes)?;
-                Some((alg, value.clone()))
-            }
-        };
-
         let version = if consistent_snapshot {
             MetadataVersion::Number(targets_description.version())
         } else {
@@ -781,10 +767,21 @@ where
         };
 
         let targets_path = MetadataPath::from_role(&Role::Targets);
+
+        // https://theupdateframework.github.io/specification/v1.0.26/#update-targets 5.6.1:
+        //
+        // Download the top-level targets metadata file, up to either the number of bytes specified
+        // in the snapshot metadata file, or some Z number of bytes. [...]
         let targets_length = targets_description.length().or(config.max_targets_length);
 
+        // https://theupdateframework.github.io/specification/v1.0.26/#update-targets 5.6.2:
+        //
+        // Check against snapshot role’s targets hash. The hashes of the new targets metadata file
+        // MUST match the hashes, if any, listed in the trusted snapshot metadata. [...]
+        let target_hashes = crypto::retain_supported_hashes(targets_description.hashes());
+
         let raw_signed_targets = remote
-            .fetch_metadata(&targets_path, &version, targets_length, hash_data)
+            .fetch_metadata(&targets_path, &version, targets_length, target_hashes)
             .await?;
 
         if tuf.update_targets(&raw_signed_targets)? {
@@ -817,7 +814,13 @@ where
     ) -> Result<impl AsyncRead + Send + Unpin + '_> {
         let target_description = self.fetch_target_description(target).await?;
         // TODO: Check the local repository to see if it already has the target.
-        fetch_target(&self.tuf, &self.remote, target, target_description).await
+        self.remote
+            .fetch_target(
+                self.tuf.trusted_root().consistent_snapshot(),
+                target,
+                target_description,
+            )
+            .await
     }
 
     /// Fetch a target from the remote repo and write it to the local repo.
@@ -837,7 +840,14 @@ where
         } = self;
 
         // TODO: Check the local repository to see if it already has the target.
-        let mut read = fetch_target(tuf, remote, target, target_description).await?;
+        let mut read = remote
+            .fetch_target(
+                tuf.trusted_root().consistent_snapshot(),
+                target,
+                target_description,
+            )
+            .await?;
+
         local.store_target(target, &mut read).await
     }
 
@@ -908,16 +918,11 @@ where
 
             let role_meta = match snapshot.meta().get(delegation.role()) {
                 Some(m) => m,
-                None if !delegation.terminating() => continue,
-                None => return (true, Err(Error::NotFound)),
-            };
-
-            let hash_data = if role_meta.hashes().is_empty() {
-                None
-            } else {
-                match crypto::hash_preference(role_meta.hashes()) {
-                    Ok((alg, value)) => Some((alg, value.clone())),
-                    Err(e) => return (delegation.terminating(), Err(e)),
+                None if delegation.terminating() => {
+                    return (true, Err(Error::NotFound));
+                }
+                None => {
+                    continue;
                 }
             };
 
@@ -940,36 +945,26 @@ where
                 MetadataVersion::None
             };
 
-            // FIXME: Other than root, this is the only place that first tries using the local
-            // metadata before failing back to the remote server. Is this logic correct?
             let role_length = role_meta.length().or(self.config.max_targets_length);
-            let raw_signed_meta = self
-                .local
-                .fetch_metadata(
-                    delegation.role(),
-                    &MetadataVersion::None,
-                    role_length,
-                    hash_data.clone(),
-                )
-                .await;
 
-            let raw_signed_meta = match raw_signed_meta {
+            // https://theupdateframework.github.io/specification/v1.0.26/#update-targets
+            //
+            //     [...] The hashes of the new targets metadata file MUST match the hashes, if
+            //      any, listed in the trusted snapshot metadata.
+            let role_hashes = crypto::retain_supported_hashes(role_meta.hashes());
+
+            let raw_signed_meta = match self
+                .remote
+                .fetch_metadata(delegation.role(), &version, role_length, role_hashes)
+                .await
+            {
                 Ok(m) => m,
-                Err(_) => {
-                    match self
-                        .remote
-                        .fetch_metadata(delegation.role(), &version, role_length, hash_data.clone())
-                        .await
-                    {
-                        Ok(m) => m,
-                        Err(ref e) if !delegation.terminating() => {
-                            warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
-                            continue;
-                        }
-                        Err(e) => {
-                            warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
-                            return (true, Err(e));
-                        }
+                Err(e) => {
+                    warn!("Failed to fetch metadata {:?}: {:?}", delegation.role(), e);
+                    if delegation.terminating() {
+                        return (true, Err(e));
+                    } else {
+                        continue;
                     }
                 }
             };
@@ -1063,7 +1058,7 @@ async fn fetch_metadata_from_local_or_else_remote<'a, D, L, R, M>(
     path: &'a MetadataPath,
     version: &'a MetadataVersion,
     max_length: Option<usize>,
-    hash_data: Option<(&'static HashAlgorithm, HashValue)>,
+    hashes: Vec<(&'static HashAlgorithm, HashValue)>,
     local: &'a Repository<L, D>,
     remote: &'a Repository<R, D>,
 ) -> Result<(bool, RawSignedMetadata<D, M>)>
@@ -1074,41 +1069,17 @@ where
     M: Metadata + 'static,
 {
     match local
-        .fetch_metadata(path, version, max_length, hash_data.clone())
+        .fetch_metadata(path, version, max_length, hashes.clone())
         .await
     {
         Ok(raw_meta) => Ok((false, raw_meta)),
         Err(Error::NotFound) => {
             let raw_meta = remote
-                .fetch_metadata(path, version, max_length, hash_data)
+                .fetch_metadata(path, version, max_length, hashes)
                 .await?;
             Ok((true, raw_meta))
         }
         Err(err) => Err(err),
-    }
-}
-
-// For some reason clippy thinks we can elide the lifetime, but rust needs it since the fetch
-// future can hold a reference to repo items.
-#[allow(clippy::needless_lifetimes)]
-async fn fetch_target<'a, D, R>(
-    tuf: &Database<D>,
-    repo: &'a Repository<R, D>,
-    target: &TargetPath,
-    target_description: TargetDescription,
-) -> Result<impl AsyncRead + Send + Unpin + 'a>
-where
-    D: DataInterchange + Sync,
-    R: RepositoryProvider<D>,
-{
-    // According to TUF section 5.5.2, when consistent snapshot is enabled, target files should
-    // be found at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.
-    if tuf.trusted_root().consistent_snapshot() {
-        let (_, value) = crypto::hash_preference(target_description.hashes())?;
-        let target = target.with_hash_prefix(value)?;
-        repo.fetch_target(&target, &target_description).await
-    } else {
-        repo.fetch_target(target, &target_description).await
     }
 }
 
