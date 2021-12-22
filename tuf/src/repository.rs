@@ -55,8 +55,6 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        max_length: Option<usize>,
-        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>>;
 
     /// Fetch the given target.
@@ -70,7 +68,6 @@ where
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
-        target_description: &'a TargetDescription,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>>;
 }
 
@@ -95,8 +92,8 @@ where
     /// existing target at that location.
     fn store_target<'a>(
         &'a self,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
+        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>>;
 }
 
@@ -124,18 +121,15 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        max_length: Option<usize>,
-        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        (**self).fetch_metadata(meta_path, version, max_length, hash_data)
+        (**self).fetch_metadata(meta_path, version)
     }
 
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
-        target_description: &'a TargetDescription,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        (**self).fetch_target(target_path, target_description)
+        (**self).fetch_target(target_path)
     }
 }
 
@@ -155,10 +149,10 @@ where
 
     fn store_target<'a>(
         &'a self,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
+        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_target(target, target_path)
+        (**self).store_target(target_path, target)
     }
 }
 
@@ -178,10 +172,10 @@ where
 
     fn store_target<'a>(
         &'a self,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
+        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_target(target, target_path)
+        (**self).store_target(target_path, target)
     }
 }
 
@@ -194,18 +188,15 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        max_length: Option<usize>,
-        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        (**self).fetch_metadata(meta_path, version, max_length, hash_data)
+        (**self).fetch_metadata(meta_path, version)
     }
 
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
-        target_description: &'a TargetDescription,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        (**self).fetch_target(target_path, target_description)
+        (**self).fetch_target(target_path)
     }
 }
 
@@ -218,18 +209,15 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        max_length: Option<usize>,
-        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        (**self).fetch_metadata(meta_path, version, max_length, hash_data)
+        (**self).fetch_metadata(meta_path, version)
     }
 
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
-        target_description: &'a TargetDescription,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        (**self).fetch_target(target_path, target_description)
+        (**self).fetch_target(target_path)
     }
 }
 
@@ -249,10 +237,10 @@ where
 
     fn store_target<'a>(
         &'a self,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
+        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_target(target, target_path)
+        (**self).store_target(target_path, target)
     }
 }
 
@@ -319,7 +307,7 @@ where
         // implementation should only be trusted to use those as hints to fail early.
         let mut reader = self
             .repository
-            .fetch_metadata(meta_path, version, max_length, hash_data.clone())
+            .fetch_metadata(meta_path, version)
             .await?
             .check_length_and_hash(max_length.unwrap_or(::std::usize::MAX) as u64, hash_data)?;
 
@@ -346,7 +334,7 @@ where
         let (hash_alg, value) = crypto::hash_preference(target_description.hashes())?;
 
         self.repository
-            .fetch_target(target_path, target_description)
+            .fetch_target(target_path)
             .await?
             .check_length_and_hash(target_description.length(), Some((hash_alg, value.clone())))
     }
@@ -380,10 +368,10 @@ where
     /// Store the provided `target` in a location identified by `target_path`.
     pub async fn store_target<'a>(
         &'a self,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
+        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> Result<()> {
-        self.repository.store_target(target, target_path).await
+        self.repository.store_target(target_path, target).await
     }
 }
 
@@ -566,7 +554,7 @@ mod test {
             let target_description =
                 TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
             let path = TargetPath::new("batty".into()).unwrap();
-            client.store_target(&mut &*data, &path).await.unwrap();
+            client.store_target(&path, &mut &*data).await.unwrap();
 
             let mut read = client
                 .fetch_target(&path, &target_description)
@@ -577,7 +565,7 @@ mod test {
             assert_eq!(buf.as_slice(), data);
 
             let bad_data: &[u8] = b"you're in a desert";
-            client.store_target(&mut &*bad_data, &path).await.unwrap();
+            client.store_target(&path, &mut &*bad_data).await.unwrap();
             let mut read = client
                 .fetch_target(&path, &target_description)
                 .await
@@ -597,7 +585,7 @@ mod test {
             let target_description =
                 TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
             let path = TargetPath::new("batty".into()).unwrap();
-            client.store_target(&mut &*data, &path).await.unwrap();
+            client.store_target(&path, &mut &*data).await.unwrap();
 
             let mut read = client
                 .fetch_target(&path, &target_description)
@@ -620,7 +608,7 @@ mod test {
             let target_description =
                 TargetDescription::from_reader(data, &[HashAlgorithm::Sha256]).unwrap();
             let path = TargetPath::new("batty".into()).unwrap();
-            client.store_target(&mut &*data, &path).await.unwrap();
+            client.store_target(&path, &mut &*data).await.unwrap();
 
             let mut read = client
                 .fetch_target(&path, &target_description)

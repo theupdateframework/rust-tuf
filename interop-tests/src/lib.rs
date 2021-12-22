@@ -202,7 +202,7 @@ async fn add_target(
         step.to_string()
     };
     let target_path = TargetPath::new(target_str).unwrap();
-    repo.store_target(&mut &*target_data, &target_path)
+    repo.store_target(&target_path, &mut &*target_data)
         .await
         .unwrap();
 

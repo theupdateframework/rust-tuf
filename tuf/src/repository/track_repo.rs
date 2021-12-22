@@ -1,11 +1,7 @@
 use {
     crate::{
-        crypto::{HashAlgorithm, HashValue},
         interchange::DataInterchange,
-        metadata::{
-            Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, TargetDescription,
-            TargetPath,
-        },
+        metadata::{Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, TargetPath},
         repository::{RepositoryProvider, RepositoryStorage},
         Result,
     },
@@ -141,10 +137,10 @@ where
 
     fn store_target<'a>(
         &'a self,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
         target_path: &'a TargetPath,
+        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
-        self.repo.store_target(target, target_path)
+        self.repo.store_target(target_path, target)
     }
 }
 
@@ -157,13 +153,9 @@ where
         &'a self,
         meta_path: &'a MetadataPath,
         version: &'a MetadataVersion,
-        max_length: Option<usize>,
-        hash_data: Option<(&'static HashAlgorithm, HashValue)>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
         async move {
-            let fut = self
-                .repo
-                .fetch_metadata(meta_path, version, max_length, hash_data);
+            let fut = self.repo.fetch_metadata(meta_path, version);
             match fut.await {
                 Ok(mut rdr) => {
                     let mut buf = Vec::new();
@@ -191,8 +183,7 @@ where
     fn fetch_target<'a>(
         &'a self,
         target_path: &'a TargetPath,
-        target_description: &'a TargetDescription,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        self.repo.fetch_target(target_path, target_description)
+        self.repo.fetch_target(target_path)
     }
 }
