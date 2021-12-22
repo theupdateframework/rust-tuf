@@ -984,7 +984,7 @@ impl TimestampMetadataBuilder {
         M: Metadata,
     {
         let raw_snapshot = snapshot.to_raw()?;
-        let description = MetadataDescription::from_reader(
+        let description = MetadataDescription::from_slice(
             raw_snapshot.as_bytes(),
             snapshot.parse_version_untrusted()?,
             hash_algs,
@@ -1111,29 +1111,19 @@ pub struct MetadataDescription {
 }
 
 impl MetadataDescription {
-    /// Create a `MetadataDescription` from a given reader. Size and hashes will be calculated.
-    pub fn from_reader<R: Read>(
-        read: R,
-        version: u32,
-        hash_algs: &[HashAlgorithm],
-    ) -> Result<Self> {
+    /// Create a `MetadataDescription` from a slice. Size and hashes will be calculated.
+    pub fn from_slice(buf: &[u8], version: u32, hash_algs: &[HashAlgorithm]) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(
                 "Version must be greater than zero".into(),
             ));
         }
 
-        let (length, hashes) = crypto::calculate_hashes(read, hash_algs)?;
-
-        if length > ::std::usize::MAX as u64 {
-            return Err(Error::IllegalArgument(
-                "Calculated length exceeded usize".into(),
-            ));
-        }
+        let hashes = crypto::calculate_hashes_from_slice(buf, hash_algs)?;
 
         Ok(MetadataDescription {
             version,
-            length: length as usize,
+            length: buf.len(),
             hashes,
         })
     }
@@ -1247,7 +1237,7 @@ impl SnapshotMetadataBuilder {
         D: DataInterchange,
     {
         let raw_metadata = metadata.to_raw()?;
-        let description = MetadataDescription::from_reader(
+        let description = MetadataDescription::from_slice(
             raw_metadata.as_bytes(),
             metadata.parse_version_untrusted()?,
             hash_algs,
@@ -1526,6 +1516,86 @@ impl TargetDescription {
         })
     }
 
+    /// Read the from the given slice and calculate the length and hash values.
+    ///
+    /// ```
+    /// # use data_encoding::BASE64URL;
+    /// # use tuf::crypto::{HashAlgorithm,HashValue};
+    /// # use tuf::metadata::TargetDescription;
+    /// #
+    /// let bytes: &[u8] = b"it was a pleasure to burn";
+    ///
+    /// let target_description = TargetDescription::from_slice(
+    ///     bytes,
+    ///     &[HashAlgorithm::Sha256, HashAlgorithm::Sha512],
+    /// ).unwrap();
+    ///
+    /// let s = "Rd9zlbzrdWfeL7gnIEi05X-Yv2TCpy4qqZM1N72ZWQs=";
+    /// let sha256 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
+    ///
+    /// let s ="tuIxwKybYdvJpWuUj6dubvpwhkAozWB6hMJIRzqn2jOUdtDTBg381brV4K\
+    ///     BU1zKP8GShoJuXEtCf5NkDTCEJgQ==";
+    /// let sha512 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
+    ///
+    /// assert_eq!(target_description.length(), bytes.len() as u64);
+    /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
+    /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
+    /// ```
+    pub fn from_slice(buf: &[u8], hash_algs: &[HashAlgorithm]) -> Result<Self> {
+        let hashes = crypto::calculate_hashes_from_slice(buf, hash_algs)?;
+        Ok(TargetDescription {
+            length: buf.len() as u64,
+            hashes,
+            custom: None,
+        })
+    }
+
+    /// Read the from the given reader and custom metadata and calculate the length and hash
+    /// values.
+    ///
+    /// ```
+    /// # use data_encoding::BASE64URL;
+    /// # use serde_json::Value;
+    /// # use std::collections::HashMap;
+    /// # use tuf::crypto::{HashAlgorithm,HashValue};
+    /// # use tuf::metadata::TargetDescription;
+    /// #
+    /// let bytes: &[u8] = b"it was a pleasure to burn";
+    ///
+    /// let mut custom = HashMap::new();
+    /// custom.insert("Hello".into(), "World".into());
+    ///
+    /// let target_description = TargetDescription::from_slice_with_custom(
+    ///     bytes,
+    ///     &[HashAlgorithm::Sha256, HashAlgorithm::Sha512],
+    ///     custom,
+    /// ).unwrap();
+    ///
+    /// let s = "Rd9zlbzrdWfeL7gnIEi05X-Yv2TCpy4qqZM1N72ZWQs=";
+    /// let sha256 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
+    ///
+    /// let s ="tuIxwKybYdvJpWuUj6dubvpwhkAozWB6hMJIRzqn2jOUdtDTBg381brV4K\
+    ///     BU1zKP8GShoJuXEtCf5NkDTCEJgQ==";
+    /// let sha512 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
+    ///
+    /// assert_eq!(target_description.length(), bytes.len() as u64);
+    /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
+    /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
+    /// assert_eq!(target_description.custom().and_then(|c| c.get("Hello")), Some(&"World".into()));
+    /// ```
+    pub fn from_slice_with_custom(
+        buf: &[u8],
+        hash_algs: &[HashAlgorithm],
+        custom: HashMap<String, serde_json::Value>,
+    ) -> Result<Self> {
+        let hashes = crypto::calculate_hashes_from_slice(buf, hash_algs)?;
+        Ok(TargetDescription {
+            length: buf.len() as u64,
+            hashes,
+            custom: Some(custom),
+        })
+    }
+
     /// Read the from the given reader and calculate the length and hash values.
     ///
     /// ```
@@ -1555,7 +1625,7 @@ impl TargetDescription {
     where
         R: Read,
     {
-        let (length, hashes) = crypto::calculate_hashes(read, hash_algs)?;
+        let (length, hashes) = crypto::calculate_hashes_from_reader(read, hash_algs)?;
         Ok(TargetDescription {
             length,
             hashes,
@@ -1604,7 +1674,7 @@ impl TargetDescription {
     where
         R: Read,
     {
-        let (length, hashes) = crypto::calculate_hashes(read, hash_algs)?;
+        let (length, hashes) = crypto::calculate_hashes_from_reader(read, hash_algs)?;
         Ok(TargetDescription {
             length,
             hashes,
@@ -1753,6 +1823,17 @@ impl TargetsMetadataBuilder {
     pub fn expires(mut self, expires: DateTime<Utc>) -> Self {
         self.expires = expires;
         self
+    }
+
+    /// Add target to the target metadata.
+    pub fn insert_target_from_slice(
+        self,
+        path: TargetPath,
+        buf: &[u8],
+        hash_algs: &[HashAlgorithm],
+    ) -> Result<Self> {
+        let description = TargetDescription::from_slice(buf, hash_algs)?;
+        Ok(self.insert_target_description(path, description))
     }
 
     /// Add target to the target metadata.
@@ -2796,7 +2877,7 @@ mod test {
 
     fn make_timestamp() -> serde_json::Value {
         let description =
-            MetadataDescription::from_reader(&[][..], 1, &[HashAlgorithm::Sha256]).unwrap();
+            MetadataDescription::from_slice(&[][..], 1, &[HashAlgorithm::Sha256]).unwrap();
 
         let timestamp = TimestampMetadataBuilder::from_metadata_description(description)
             .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))

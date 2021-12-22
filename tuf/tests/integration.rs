@@ -45,11 +45,11 @@ fn simple_delegation() {
     let snapshot = SnapshotMetadataBuilder::new()
         .insert_metadata_description(
             MetadataPath::new("targets").unwrap(),
-            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            MetadataDescription::from_slice(&[0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .insert_metadata_description(
             MetadataPath::new("delegation").unwrap(),
-            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            MetadataDescription::from_slice(&[0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .signed::<Json>(&snapshot_key)
         .unwrap();
@@ -94,7 +94,7 @@ fn simple_delegation() {
     //// build the delegation ////
     let target_file: &[u8] = b"bar";
     let delegation = TargetsMetadataBuilder::new()
-        .insert_target_from_reader(
+        .insert_target_from_slice(
             TargetPath::new("foo".into()).unwrap(),
             target_file,
             &[HashAlgorithm::Sha256],
@@ -145,15 +145,15 @@ fn nested_delegation() {
     let snapshot = SnapshotMetadataBuilder::new()
         .insert_metadata_description(
             MetadataPath::new("targets").unwrap(),
-            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            MetadataDescription::from_slice(&[0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .insert_metadata_description(
             MetadataPath::new("delegation-a").unwrap(),
-            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            MetadataDescription::from_slice(&[0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .insert_metadata_description(
             MetadataPath::new("delegation-b").unwrap(),
-            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            MetadataDescription::from_slice(&[0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .signed::<Json>(&snapshot_key)
         .unwrap();
@@ -231,7 +231,7 @@ fn nested_delegation() {
     let target_file: &[u8] = b"bar";
 
     let delegation = TargetsMetadataBuilder::new()
-        .insert_target_from_reader(
+        .insert_target_from_slice(
             TargetPath::new("foo".into()).unwrap(),
             target_file,
             &[HashAlgorithm::Sha256],
@@ -282,11 +282,11 @@ fn rejects_bad_delegation_signatures() {
     let snapshot = SnapshotMetadataBuilder::new()
         .insert_metadata_description(
             MetadataPath::new("targets").unwrap(),
-            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            MetadataDescription::from_slice(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .insert_metadata_description(
             MetadataPath::new("delegation").unwrap(),
-            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            MetadataDescription::from_slice(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .signed::<Json>(&snapshot_key)
         .unwrap();
@@ -331,7 +331,7 @@ fn rejects_bad_delegation_signatures() {
     //// build the delegation ////
     let target_file: &[u8] = b"bar";
     let delegation = TargetsMetadataBuilder::new()
-        .insert_target_from_reader(
+        .insert_target_from_slice(
             TargetPath::new("foo".into()).unwrap(),
             target_file,
             &[HashAlgorithm::Sha256],
@@ -400,19 +400,19 @@ fn diamond_delegation() {
     let snapshot = SnapshotMetadataBuilder::new()
         .insert_metadata_description(
             MetadataPath::new("targets").unwrap(),
-            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            MetadataDescription::from_slice(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .insert_metadata_description(
             MetadataPath::new("delegation-a").unwrap(),
-            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            MetadataDescription::from_slice(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .insert_metadata_description(
             MetadataPath::new("delegation-b").unwrap(),
-            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            MetadataDescription::from_slice(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .insert_metadata_description(
             MetadataPath::new("delegation-c").unwrap(),
-            MetadataDescription::from_reader(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+            MetadataDescription::from_slice(&*vec![0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
         )
         .signed::<Json>(&etc_key)
         .unwrap();
@@ -537,13 +537,13 @@ fn diamond_delegation() {
     let bar_target_file: &[u8] = b"bar contents";
 
     let delegation = TargetsMetadataBuilder::new()
-        .insert_target_from_reader(
+        .insert_target_from_slice(
             TargetPath::new("foo".into()).unwrap(),
             foo_target_file,
             &[HashAlgorithm::Sha256],
         )
         .unwrap()
-        .insert_target_from_reader(
+        .insert_target_from_slice(
             TargetPath::new("bar".into()).unwrap(),
             bar_target_file,
             &[HashAlgorithm::Sha256],

@@ -173,7 +173,7 @@ async fn add_target(
         let step_str = format!("{}", i);
         let target_data = step_str.as_bytes();
         targets_builder = targets_builder
-            .insert_target_from_reader(
+            .insert_target_from_slice(
                 TargetPath::new(i.to_string()).unwrap(),
                 target_data,
                 &[HashAlgorithm::Sha256],
