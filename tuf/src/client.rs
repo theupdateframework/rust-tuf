@@ -11,7 +11,7 @@
 //! # use hyper::client::Client as HttpClient;
 //! # use std::path::PathBuf;
 //! # use std::str::FromStr;
-//! # use tuf::{Result, Tuf};
+//! # use tuf::{Result, Database};
 //! # use tuf::crypto::PublicKey;
 //! # use tuf::client::{Client, Config};
 //! # use tuf::metadata::{RootMetadata, Role, MetadataPath, MetadataVersion};
@@ -60,6 +60,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::crypto::{self, HashAlgorithm, HashValue, PublicKey};
+use crate::database::Database;
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
@@ -68,7 +69,6 @@ use crate::metadata::{
     VirtualTargetPath,
 };
 use crate::repository::{Repository, RepositoryProvider, RepositoryStorage};
-use crate::tuf::Tuf;
 use crate::verify::Verified;
 use crate::Result;
 
@@ -126,7 +126,7 @@ where
     R: RepositoryProvider<D>,
     T: PathTranslator,
 {
-    tuf: Tuf<D>,
+    tuf: Database<D>,
     config: Config<T>,
     local: Repository<L, D>,
     remote: Repository<R, D>,
@@ -207,7 +207,7 @@ where
             .fetch_metadata(&root_path, &root_version, config.max_root_length, None)
             .await?;
 
-        let tuf = Tuf::from_trusted_root(&raw_root)?;
+        let tuf = Database::from_trusted_root(&raw_root)?;
 
         Self::new(config, tuf, local, remote).await
     }
@@ -268,7 +268,7 @@ where
         remote: R,
     ) -> Result<Self> {
         let (local, remote) = (Repository::new(local), Repository::new(remote));
-        let tuf = Tuf::from_trusted_root(trusted_root)?;
+        let tuf = Database::from_trusted_root(trusted_root)?;
 
         Self::new(config, tuf, local, remote).await
     }
@@ -356,7 +356,8 @@ where
         )
         .await?;
 
-        let tuf = Tuf::from_root_with_trusted_keys(&raw_root, root_threshold, trusted_root_keys)?;
+        let tuf =
+            Database::from_root_with_trusted_keys(&raw_root, root_threshold, trusted_root_keys)?;
 
         // FIXME(#253) verify the trusted root version matches the provided version.
         let root_version = MetadataVersion::Number(tuf.trusted_root().version());
@@ -387,7 +388,7 @@ where
 
     async fn new(
         config: Config<T>,
-        mut tuf: Tuf<D>,
+        mut tuf: Database<D>,
         local: Repository<L, D>,
         remote: Repository<R, D>,
     ) -> Result<Self> {
@@ -488,7 +489,7 @@ where
 
     async fn update_root_with_repos<Remote>(
         config: &Config<T>,
-        tuf: &mut Tuf<D>,
+        tuf: &mut Database<D>,
         local: Option<&Repository<L, D>>,
         remote: &Repository<Remote, D>,
     ) -> Result<bool>
@@ -568,7 +569,7 @@ where
         //     attack. On the next update cycle, begin at step 5.0 and version N of the root
         //     metadata file.
 
-        // TODO: Consider moving the root metadata expiration check into `tuf::Tuf`, since that's
+        // TODO: Consider moving the root metadata expiration check into `tuf::Database`, since that's
         // where we check timestamp/snapshot/targets/delegations for expiration.
         if tuf.trusted_root().expires() <= &Utc::now() {
             error!("Root metadata expired, potential freeze attack");
@@ -597,7 +598,7 @@ where
 
     async fn update_timestamp_with_repos<Remote>(
         config: &Config<T>,
-        tuf: &mut Tuf<D>,
+        tuf: &mut Database<D>,
         local: Option<&Repository<L, D>>,
         remote: &Repository<Remote, D>,
     ) -> Result<bool>
@@ -659,7 +660,7 @@ where
     }
 
     async fn update_snapshot_with_repos<Remote>(
-        tuf: &mut Tuf<D>,
+        tuf: &mut Database<D>,
         local: Option<&Repository<L, D>>,
         remote: &Repository<Remote, D>,
         consistent_snapshots: bool,
@@ -734,7 +735,7 @@ where
     }
 
     async fn update_targets_with_repos<Remote>(
-        tuf: &mut Tuf<D>,
+        tuf: &mut Database<D>,
         local: Option<&Repository<L, D>>,
         remote: &Repository<Remote, D>,
         consistent_snapshot: bool,
@@ -1988,7 +1989,7 @@ mod test {
         assert_eq!(client.tuf.trusted_root().version(), 3);
 
         // Make sure we fetched and stored the metadata in the expected order. Note that we
-        // re-fetch snapshot and targets because we rotated keys, which caused `tuf::Tuf` to delete
+        // re-fetch snapshot and targets because we rotated keys, which caused `tuf::Database` to delete
         // the metadata.
         assert_eq!(
             track_remote.take_tracks(),

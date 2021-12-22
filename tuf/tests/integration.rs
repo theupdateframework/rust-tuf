@@ -7,8 +7,8 @@ use tuf::metadata::{
     Delegation, Delegations, MetadataDescription, MetadataPath, Role, RootMetadataBuilder,
     SnapshotMetadataBuilder, TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
 };
+use tuf::Database;
 use tuf::Error;
-use tuf::Tuf;
 
 const ED25519_1_PK8: &[u8] = include_bytes!("./ed25519/ed25519-1.pk8.der");
 const ED25519_2_PK8: &[u8] = include_bytes!("./ed25519/ed25519-2.pk8.der");
@@ -37,7 +37,8 @@ fn simple_delegation() {
     let raw_root = root.to_raw().unwrap();
 
     let mut tuf =
-        Tuf::<Json>::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public())).unwrap();
+        Database::<Json>::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public()))
+            .unwrap();
 
     //// build the snapshot and timestamp ////
 
@@ -136,7 +137,8 @@ fn nested_delegation() {
     let raw_root = root.to_raw().unwrap();
 
     let mut tuf =
-        Tuf::<Json>::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public())).unwrap();
+        Database::<Json>::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public()))
+            .unwrap();
 
     //// build the snapshot and timestamp ////
 
@@ -272,7 +274,8 @@ fn rejects_bad_delegation_signatures() {
     let raw_root = root.to_raw().unwrap();
 
     let mut tuf =
-        Tuf::<Json>::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public())).unwrap();
+        Database::<Json>::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public()))
+            .unwrap();
 
     //// build the snapshot and timestamp ////
 
@@ -375,7 +378,7 @@ fn diamond_delegation() {
     //    delegation-b's signature is invalid, then delegation-c
     // can contain target "bar" which is unaccessible and target "foo" which is.
     //
-    // Verify tuf::Tuf handles this situation correctly.
+    // Verify tuf::Database handles this situation correctly.
 
     //// build the root ////
 
@@ -389,7 +392,8 @@ fn diamond_delegation() {
     let raw_root = root.to_raw().unwrap();
 
     let mut tuf =
-        Tuf::<Json>::from_root_with_trusted_keys(&raw_root, 1, once(etc_key.public())).unwrap();
+        Database::<Json>::from_root_with_trusted_keys(&raw_root, 1, once(etc_key.public()))
+            .unwrap();
 
     //// build the snapshot and timestamp ////
 
