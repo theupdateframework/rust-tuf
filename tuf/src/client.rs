@@ -52,8 +52,7 @@
 //! ```
 
 use chrono::offset::Utc;
-use futures_io::{AsyncRead, AsyncWrite};
-use futures_util::io::copy;
+use futures_io::AsyncRead;
 use log::{error, warn};
 use std::collections::HashMap;
 use std::future::Future;
@@ -752,28 +751,31 @@ where
         }
     }
 
-    /// Fetch a target from the remote repo and write it to the local repo.
-    pub async fn fetch_target<'a>(&'a mut self, target: &'a TargetPath) -> Result<()> {
-        let mut read = self._fetch_target(target).await?;
-        self.local.store_target(target, &mut read).await
-    }
-
-    /// Fetch a target from the remote repo and write it to the provided writer.
+    /// Fetch a target from the remote repo.
     ///
     /// It is **critical** that none of the bytes written to the `write` are used until this future
     /// returns `Ok`, as the hash of the target is not verified until all bytes are read from the
     /// repository.
-    pub async fn fetch_target_to_writer<'a, W>(
-        &'a mut self,
-        target: &'a TargetPath,
-        mut write: W,
-    ) -> Result<()>
-    where
-        W: AsyncWrite + Send + Unpin,
-    {
-        let read = self._fetch_target(target).await?;
-        copy(read, &mut write).await?;
-        Ok(())
+    pub async fn fetch_target(
+        &mut self,
+        target: &TargetPath,
+    ) -> Result<impl AsyncRead + Send + Unpin + '_> {
+        let target_description = self.fetch_target_description(target).await?;
+        // TODO: Check the local repository to see if it already has the target.
+        fetch_target(&self.tuf, &self.remote, target, target_description).await
+    }
+
+    /// Fetch a target from the remote repo and write it to the local repo.
+    ///
+    /// It is **critical** that none of the bytes written to the `write` are used until this future
+    /// returns `Ok`, as the hash of the target is not verified until all bytes are read from the
+    /// repository.
+    pub async fn fetch_target_to_local(&mut self, target: &TargetPath) -> Result<()> {
+        let target_description = self.fetch_target_description(target).await?;
+
+        // TODO: Check the local repository to see if it already has the target.
+        let mut read = fetch_target(&self.tuf, &self.remote, target, target_description).await?;
+        self.local.store_target(target, &mut read).await
     }
 
     /// Fetch a target description from the remote repo and return it.
@@ -790,24 +792,6 @@ where
             .lookup_target_description(false, 0, target, &snapshot, None)
             .await;
         target_description
-    }
-
-    // TODO this should check the local repo first
-    async fn _fetch_target<'a>(
-        &'a mut self,
-        target: &'a TargetPath,
-    ) -> Result<impl AsyncRead + Send + Unpin> {
-        let target_description = self.fetch_target_description(target).await?;
-
-        // According to TUF section 5.5.2, when consistent snapshot is enabled, target files should
-        // be found at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.
-        if self.tuf.trusted_root().consistent_snapshot() {
-            let (_, value) = crypto::hash_preference(target_description.hashes())?;
-            let target = target.with_hash_prefix(value)?;
-            self.remote.fetch_target(&target, &target_description).await
-        } else {
-            self.remote.fetch_target(target, &target_description).await
-        }
     }
 
     async fn lookup_target_description<'a>(
@@ -1013,6 +997,30 @@ where
             Ok((true, raw_meta))
         }
         Err(err) => Err(err),
+    }
+}
+
+// For some reason clippy thinks we can elide the lifetime, but rust needs it since the fetch
+// future can hold a reference to repo items.
+#[allow(clippy::needless_lifetimes)]
+async fn fetch_target<'a, D, R>(
+    tuf: &Database<D>,
+    repo: &'a Repository<R, D>,
+    target: &TargetPath,
+    target_description: TargetDescription,
+) -> Result<impl AsyncRead + Send + Unpin + 'a>
+where
+    D: DataInterchange + Sync,
+    R: RepositoryProvider<D>,
+{
+    // According to TUF section 5.5.2, when consistent snapshot is enabled, target files should
+    // be found at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.
+    if tuf.trusted_root().consistent_snapshot() {
+        let (_, value) = crypto::hash_preference(target_description.hashes())?;
+        let target = target.with_hash_prefix(value)?;
+        repo.fetch_target(&target, &target_description).await
+    } else {
+        repo.fetch_target(target, &target_description).await
     }
 }
 
