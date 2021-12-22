@@ -1,10 +1,10 @@
 use futures_executor::block_on;
-use tuf::client::{Client, Config, PathTranslator};
+use tuf::client::{Client, Config};
 use tuf::crypto::{self, Ed25519PrivateKey, HashAlgorithm, PrivateKey, PublicKey};
 use tuf::interchange::Json;
 use tuf::metadata::{
     MetadataPath, MetadataVersion, RootMetadataBuilder, SnapshotMetadataBuilder, TargetDescription,
-    TargetPath, TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
+    TargetPath, TargetsMetadataBuilder, TimestampMetadataBuilder,
 };
 use tuf::repository::{EphemeralRepository, RepositoryStorage};
 use tuf::Result;
@@ -16,20 +16,8 @@ const ED25519_2_PK8: &[u8] = include_bytes!("./ed25519/ed25519-2.pk8.der");
 const ED25519_3_PK8: &[u8] = include_bytes!("./ed25519/ed25519-3.pk8.der");
 const ED25519_4_PK8: &[u8] = include_bytes!("./ed25519/ed25519-4.pk8.der");
 
-struct MyPathTranslator;
-
-impl PathTranslator for MyPathTranslator {
-    fn real_to_virtual(&self, path: &TargetPath) -> Result<VirtualTargetPath> {
-        VirtualTargetPath::new(path.value().to_owned().replace("-", "/"))
-    }
-
-    fn virtual_to_real(&self, path: &VirtualTargetPath) -> Result<TargetPath> {
-        TargetPath::new(path.value().to_owned().replace("/", "-"))
-    }
-}
-
 #[test]
-fn consistent_snapshot_false_without_translator() {
+fn consistent_snapshot_false() {
     block_on(async {
         let config = Config::default();
 
@@ -38,19 +26,7 @@ fn consistent_snapshot_false_without_translator() {
 }
 
 #[test]
-fn consistent_snapshot_false_with_translator() {
-    block_on(async {
-        let config = Config::build()
-            .path_translator(MyPathTranslator)
-            .finish()
-            .unwrap();
-
-        run_tests(config, false).await
-    })
-}
-
-#[test]
-fn consistent_snapshot_true_without_translator() {
+fn consistent_snapshot_true() {
     block_on(async {
         let config = Config::default();
 
@@ -58,39 +34,20 @@ fn consistent_snapshot_true_without_translator() {
     })
 }
 
-#[test]
-fn consistent_snapshot_true_with_translator() {
-    block_on(async {
-        let config = Config::build()
-            .path_translator(MyPathTranslator)
-            .finish()
-            .unwrap();
-
-        run_tests(config, true).await
-    })
-}
-
-async fn run_tests<T>(config: Config<T>, consistent_snapshots: bool)
-where
-    T: PathTranslator,
-{
+async fn run_tests(config: Config, consistent_snapshots: bool) {
     let remote = EphemeralRepository::new();
-    let root_public_keys = init_server(&remote, &config, consistent_snapshots)
-        .await
-        .unwrap();
+    let root_public_keys = init_server(&remote, consistent_snapshots).await.unwrap();
+
     init_client(&root_public_keys, remote, config)
         .await
         .unwrap();
 }
 
-async fn init_client<T>(
+async fn init_client(
     root_public_keys: &[PublicKey],
     remote: EphemeralRepository<Json>,
-    config: Config<T>,
-) -> Result<()>
-where
-    T: PathTranslator,
-{
+    config: Config,
+) -> Result<()> {
     let local = EphemeralRepository::new();
     let mut client = Client::with_trusted_root_keys(
         config,
@@ -106,14 +63,10 @@ where
     client.fetch_target(&target_path).await
 }
 
-async fn init_server<'a, T>(
-    remote: &'a EphemeralRepository<Json>,
-    config: &'a Config<T>,
+async fn init_server(
+    remote: &EphemeralRepository<Json>,
     consistent_snapshot: bool,
-) -> Result<Vec<PublicKey>>
-where
-    T: PathTranslator,
-{
+) -> Result<Vec<PublicKey>> {
     // in real life, you wouldn't want these keys on the same machine ever
     let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)?;
     let snapshot_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8)?;
@@ -166,10 +119,7 @@ where
     };
 
     let targets = TargetsMetadataBuilder::new()
-        .insert_target_description(
-            config.path_translator().real_to_virtual(&target_path)?,
-            target_description,
-        )
+        .insert_target_description(target_path, target_description)
         .signed::<Json>(&targets_key)?;
 
     let targets_path = &MetadataPath::new("targets")?;

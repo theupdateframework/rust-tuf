@@ -96,8 +96,13 @@ impl<D> FileSystemRepository<D>
 where
     D: DataInterchange,
 {
+    /// Create a [FileSystemRepositoryBuilder].
+    pub fn builder<P: Into<PathBuf>>(local_path: P) -> FileSystemRepositoryBuilder<D> {
+        FileSystemRepositoryBuilder::new(local_path)
+    }
+
     /// Create a new repository on the local file system.
-    pub fn new(local_path: PathBuf) -> Result<Self> {
+    pub fn new<P: Into<PathBuf>>(local_path: P) -> Result<Self> {
         FileSystemRepositoryBuilder::new(local_path)
             .metadata_prefix("metadata")
             .targets_prefix("targets")

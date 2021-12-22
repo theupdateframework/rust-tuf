@@ -275,7 +275,7 @@ pub struct TargetsMetadata {
     spec_version: String,
     version: u32,
     expires: String,
-    targets: BTreeMap<metadata::VirtualTargetPath, metadata::TargetDescription>,
+    targets: BTreeMap<metadata::TargetPath, metadata::TargetDescription>,
     #[serde(skip_serializing_if = "Option::is_none")]
     delegations: Option<metadata::Delegations>,
 }
@@ -373,7 +373,7 @@ pub struct Delegation {
     threshold: u32,
     #[serde(rename = "keyids")]
     key_ids: Vec<crypto::KeyId>,
-    paths: Vec<metadata::VirtualTargetPath>,
+    paths: Vec<metadata::TargetPath>,
 }
 
 impl Delegation {
@@ -382,7 +382,7 @@ impl Delegation {
             .paths()
             .iter()
             .cloned()
-            .collect::<Vec<metadata::VirtualTargetPath>>();
+            .collect::<Vec<metadata::TargetPath>>();
         paths.sort();
         let mut key_ids = meta
             .key_ids()
@@ -405,7 +405,7 @@ impl Delegation {
             .paths
             .iter()
             .cloned()
-            .collect::<HashSet<metadata::VirtualTargetPath>>();
+            .collect::<HashSet<metadata::TargetPath>>();
         if paths.len() != self.paths.len() {
             return Err(Error::Encoding("Non-unique delegation paths.".into()));
         }

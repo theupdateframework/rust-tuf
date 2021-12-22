@@ -8,7 +8,7 @@ use tuf::crypto::{Ed25519PrivateKey, HashAlgorithm, KeyType, PrivateKey, Signatu
 use tuf::interchange::JsonPretty;
 use tuf::metadata::{
     MetadataPath, MetadataVersion, Role, RootMetadataBuilder, SnapshotMetadataBuilder, TargetPath,
-    TargetsMetadataBuilder, TimestampMetadataBuilder, VirtualTargetPath,
+    TargetsMetadataBuilder, TimestampMetadataBuilder,
 };
 use tuf::repository::{FileSystemRepository, FileSystemRepositoryBuilder, RepositoryStorage};
 use walkdir::WalkDir;
@@ -174,7 +174,7 @@ async fn add_target(
         let target_data = step_str.as_bytes();
         targets_builder = targets_builder
             .insert_target_from_reader(
-                VirtualTargetPath::new(i.to_string()).unwrap(),
+                TargetPath::new(i.to_string()).unwrap(),
                 target_data,
                 &[HashAlgorithm::Sha256],
             )
@@ -190,7 +190,7 @@ async fn add_target(
 
     let hash = targets
         .targets()
-        .get(&VirtualTargetPath::new(step.to_string()).unwrap())
+        .get(&TargetPath::new(step.to_string()).unwrap())
         .unwrap()
         .hashes()
         .get(&HashAlgorithm::Sha256)
