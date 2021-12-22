@@ -9,14 +9,15 @@ use crate::crypto::PublicKey;
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
-    Delegations, Metadata, MetadataPath, RawSignedMetadata, Role, RootMetadata, SnapshotMetadata,
-    TargetDescription, TargetPath, TargetsMetadata, TimestampMetadata,
+    Delegations, Metadata, MetadataPath, RawSignedMetadata, RawSignedMetadataSet, Role,
+    RootMetadata, SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata,
+    TimestampMetadata,
 };
 use crate::verify::{self, Verified};
 use crate::Result;
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Database<D: DataInterchange> {
     trusted_root: Verified<RootMetadata>,
     trusted_snapshot: Option<Verified<SnapshotMetadata>>,
@@ -72,7 +73,10 @@ impl<D: DataInterchange> Database<D> {
     /// Create a new [`Database`] struct from a piece of metadata that is assumed to be trusted.
     ///
     /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
-    /// the related method [`Database::from_root_with_trusted_keys`].
+    /// the related method [`Database::from_root_with_trusted_keys`] because this method needs to
+    /// deserialize `raw_root` before we have verified it has been signed properly. This exposes us
+    /// to potential parser exploits. This method should only be used if the metadata is loaded from
+    /// a trusted source.
     pub fn from_trusted_root(raw_root: &RawSignedMetadata<D, RootMetadata>) -> Result<Self> {
         let verified_root = {
             // **WARNING**: By deserializing the metadata before verification, we are exposing us
@@ -99,19 +103,60 @@ impl<D: DataInterchange> Database<D> {
         })
     }
 
+    /// Create a new [`Database`] struct from a set of metadata that is assumed to be trusted. The
+    /// signed root metadata in the `metadata_set` must be signed with at least a `root_threshold`
+    /// of the provided root_keys. It is not necessary for the root metadata to contain these keys.
+    pub fn from_metadata_with_trusted_keys<'a, I>(
+        metadata_set: &RawSignedMetadataSet<D>,
+        root_threshold: u32,
+        root_keys: I,
+    ) -> Result<Self>
+    where
+        I: IntoIterator<Item = &'a PublicKey>,
+    {
+        let mut db = if let Some(root) = metadata_set.root() {
+            Database::from_root_with_trusted_keys(root, root_threshold, root_keys)?
+        } else {
+            return Err(Error::MissingMetadata(Role::Root));
+        };
+
+        db.update_metadata_after_root(metadata_set)?;
+
+        Ok(db)
+    }
+
+    /// Create a new [`Database`] struct from a set of metadata that is assumed to be trusted.
+    ///
+    /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
+    /// the related method [`Database::from_metadata_with_trusted_keys`] because this method needs
+    /// to deserialize the root metadata from `metadata_set` before we have verified it has been
+    /// signed properly. This exposes us to potential parser exploits. This method should only be
+    /// used if the metadata is loaded from a trusted source.
+    pub fn from_trusted_metadata(metadata_set: &RawSignedMetadataSet<D>) -> Result<Self> {
+        let mut db = if let Some(root) = metadata_set.root() {
+            Database::from_trusted_root(root)?
+        } else {
+            return Err(Error::MissingMetadata(Role::Root));
+        };
+
+        db.update_metadata_after_root(metadata_set)?;
+
+        Ok(db)
+    }
+
     /// An immutable reference to the root metadata.
     pub fn trusted_root(&self) -> &Verified<RootMetadata> {
         &self.trusted_root
     }
 
-    /// An immutable reference to the optional snapshot metadata.
-    pub fn trusted_snapshot(&self) -> Option<&Verified<SnapshotMetadata>> {
-        self.trusted_snapshot.as_ref()
-    }
-
     /// An immutable reference to the optional targets metadata.
     pub fn trusted_targets(&self) -> Option<&Verified<TargetsMetadata>> {
         self.trusted_targets.as_ref()
+    }
+
+    /// An immutable reference to the optional snapshot metadata.
+    pub fn trusted_snapshot(&self) -> Option<&Verified<SnapshotMetadata>> {
+        self.trusted_snapshot.as_ref()
     }
 
     /// An immutable reference to the optional timestamp metadata.
@@ -150,6 +195,48 @@ impl<D: DataInterchange> Database<D> {
             .get(role)
             .map(|t| t.version())
             .unwrap_or(0)
+    }
+
+    /// Verify and update metadata. Returns true if any of the metadata was updated.
+    pub fn update_metadata(&mut self, metadata: &RawSignedMetadataSet<D>) -> Result<bool> {
+        let updated = if let Some(root) = metadata.root() {
+            self.update_root(root)?;
+            true
+        } else {
+            false
+        };
+
+        if self.update_metadata_after_root(metadata)? {
+            Ok(true)
+        } else {
+            Ok(updated)
+        }
+    }
+
+    fn update_metadata_after_root(
+        &mut self,
+        metadata_set: &RawSignedMetadataSet<D>,
+    ) -> Result<bool> {
+        let mut updated = false;
+        if let Some(timestamp) = metadata_set.timestamp() {
+            if self.update_timestamp(timestamp)?.is_some() {
+                updated = true;
+            }
+        }
+
+        if let Some(snapshot) = metadata_set.snapshot() {
+            if self.update_snapshot(snapshot)? {
+                updated = true;
+            }
+        }
+
+        if let Some(targets) = metadata_set.targets() {
+            if self.update_targets(targets)? {
+                updated = true;
+            }
+        }
+
+        Ok(updated)
     }
 
     /// Verify and update the root metadata.
@@ -894,8 +981,8 @@ mod test {
     use crate::crypto::{Ed25519PrivateKey, HashAlgorithm, PrivateKey};
     use crate::interchange::Json;
     use crate::metadata::{
-        RootMetadataBuilder, SnapshotMetadataBuilder, TargetsMetadataBuilder,
-        TimestampMetadataBuilder,
+        RawSignedMetadataSetBuilder, RootMetadataBuilder, SnapshotMetadataBuilder,
+        TargetsMetadataBuilder, TimestampMetadataBuilder,
     };
     use lazy_static::lazy_static;
     use matches::assert_matches;
@@ -919,18 +1006,17 @@ mod test {
 
     #[test]
     fn root_trusted_keys_success() {
-        let root_key = &KEYS[0];
         let root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
-            .signed::<Json>(root_key)
+            .signed::<Json>(&KEYS[0])
             .unwrap();
         let raw_root = root.to_raw().unwrap();
 
         assert_matches!(
-            Database::from_root_with_trusted_keys(&raw_root, 1, once(root_key.public())),
+            Database::from_root_with_trusted_keys(&raw_root, 1, once(KEYS[0].public())),
             Ok(_)
         );
     }
@@ -948,6 +1034,83 @@ mod test {
 
         assert_matches!(
             Database::from_root_with_trusted_keys(&raw_root, 1, once(KEYS[1].public())),
+            Err(Error::VerificationFailure(s)) if s == "Signature threshold not met: 0/1"
+        );
+    }
+
+    #[test]
+    fn from_trusted_metadata_success() {
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[0].public().clone())
+            .targets_key(KEYS[0].public().clone())
+            .timestamp_key(KEYS[0].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
+            .unwrap();
+
+        let metadata = RawSignedMetadataSetBuilder::new().root(root).build();
+
+        assert_matches!(Database::from_trusted_metadata(&metadata), Ok(_));
+    }
+
+    #[test]
+    fn from_trusted_metadata_failure() {
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[0].public().clone())
+            .targets_key(KEYS[0].public().clone())
+            .timestamp_key(KEYS[0].public().clone())
+            .signed::<Json>(&KEYS[1])
+            .unwrap()
+            .to_raw()
+            .unwrap();
+
+        let metadata = RawSignedMetadataSetBuilder::new().root(root).build();
+
+        assert_matches!(
+            Database::from_trusted_metadata(&metadata),
+            Err(Error::VerificationFailure(s)) if s == "Signature threshold not met: 0/1"
+        );
+    }
+
+    #[test]
+    fn from_metadata_with_trusted_keys_success() {
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[0].public().clone())
+            .targets_key(KEYS[0].public().clone())
+            .timestamp_key(KEYS[0].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
+            .unwrap();
+
+        let metadata = RawSignedMetadataSetBuilder::new().root(root).build();
+
+        assert_matches!(
+            Database::from_metadata_with_trusted_keys(&metadata, 1, once(KEYS[0].public())),
+            Ok(_)
+        );
+    }
+
+    #[test]
+    fn from_metadata_with_trusted_keys_failure() {
+        let root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[0].public().clone())
+            .targets_key(KEYS[0].public().clone())
+            .timestamp_key(KEYS[0].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
+            .unwrap();
+
+        let metadata = RawSignedMetadataSetBuilder::new().root(root).build();
+
+        assert_matches!(
+            Database::from_metadata_with_trusted_keys(&metadata, 1, once(KEYS[1].public())),
             Err(Error::VerificationFailure(s)) if s == "Signature threshold not met: 0/1"
         );
     }
@@ -1313,5 +1476,178 @@ mod test {
             .unwrap();
 
         assert!(tuf.update_targets(&raw_targets).is_err());
+    }
+
+    #[test]
+    fn test_update_metadata_succeeds_with_good_metadata() {
+        let raw_root1 = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .targets_key(KEYS[1].public().clone())
+            .snapshot_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[3].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
+            .unwrap();
+
+        let signed_targets1 = TargetsMetadataBuilder::new()
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
+        let raw_targets1 = signed_targets1.to_raw().unwrap();
+
+        let snapshot1 = SnapshotMetadataBuilder::new()
+            .insert_metadata(&signed_targets1, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
+        let raw_snapshot1 = snapshot1.to_raw().unwrap();
+
+        let raw_timestamp1 =
+            TimestampMetadataBuilder::from_snapshot(&snapshot1, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Json>(&KEYS[3])
+                .unwrap()
+                .to_raw()
+                .unwrap();
+
+        let metadata1 = RawSignedMetadataSetBuilder::new()
+            .root(raw_root1)
+            .targets(raw_targets1)
+            .snapshot(raw_snapshot1)
+            .timestamp(raw_timestamp1)
+            .build();
+
+        let mut tuf = Database::from_trusted_metadata(&metadata1).unwrap();
+
+        let raw_root2 = RootMetadataBuilder::new()
+            .version(2)
+            .root_key(KEYS[0].public().clone())
+            .targets_key(KEYS[1].public().clone())
+            .snapshot_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[3].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
+            .unwrap();
+
+        let signed_targets2 = TargetsMetadataBuilder::new()
+            .version(2)
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
+        let raw_targets2 = signed_targets2.to_raw().unwrap();
+
+        let snapshot2 = SnapshotMetadataBuilder::new()
+            .version(2)
+            .insert_metadata(&signed_targets2, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
+        let raw_snapshot2 = snapshot2.to_raw().unwrap();
+
+        let raw_timestamp2 =
+            TimestampMetadataBuilder::from_snapshot(&snapshot2, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .version(2)
+                .signed::<Json>(&KEYS[3])
+                .unwrap()
+                .to_raw()
+                .unwrap();
+
+        let metadata2 = RawSignedMetadataSetBuilder::new()
+            .root(raw_root2)
+            .targets(raw_targets2)
+            .snapshot(raw_snapshot2)
+            .timestamp(raw_timestamp2)
+            .build();
+
+        assert_matches!(tuf.update_metadata(&metadata2), Ok(true));
+    }
+
+    #[test]
+    fn test_update_metadata_fails_with_bad_metadata() {
+        let raw_root1 = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .targets_key(KEYS[1].public().clone())
+            .snapshot_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[3].public().clone())
+            .signed::<Json>(&KEYS[0])
+            .unwrap()
+            .to_raw()
+            .unwrap();
+
+        let signed_targets1 = TargetsMetadataBuilder::new()
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
+        let raw_targets1 = signed_targets1.to_raw().unwrap();
+
+        let snapshot1 = SnapshotMetadataBuilder::new()
+            .insert_metadata(&signed_targets1, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
+        let raw_snapshot1 = snapshot1.to_raw().unwrap();
+
+        let raw_timestamp1 =
+            TimestampMetadataBuilder::from_snapshot(&snapshot1, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Json>(&KEYS[3])
+                .unwrap()
+                .to_raw()
+                .unwrap();
+
+        let metadata1 = RawSignedMetadataSetBuilder::new()
+            .root(raw_root1)
+            .targets(raw_targets1)
+            .snapshot(raw_snapshot1)
+            .timestamp(raw_timestamp1)
+            .build();
+
+        let mut tuf = Database::from_trusted_metadata(&metadata1).unwrap();
+
+        let raw_root2 = RootMetadataBuilder::new()
+            .version(2)
+            .root_key(KEYS[1].public().clone())
+            .targets_key(KEYS[2].public().clone())
+            .snapshot_key(KEYS[3].public().clone())
+            .timestamp_key(KEYS[4].public().clone())
+            .signed::<Json>(&KEYS[1])
+            .unwrap()
+            .to_raw()
+            .unwrap();
+
+        let signed_targets2 = TargetsMetadataBuilder::new()
+            .version(2)
+            .signed::<Json>(&KEYS[1])
+            .unwrap();
+        let raw_targets2 = signed_targets2.to_raw().unwrap();
+
+        let snapshot2 = SnapshotMetadataBuilder::new()
+            .version(2)
+            .insert_metadata(&signed_targets2, &[HashAlgorithm::Sha256])
+            .unwrap()
+            .signed::<Json>(&KEYS[2])
+            .unwrap();
+        let raw_snapshot2 = snapshot2.to_raw().unwrap();
+
+        let raw_timestamp2 =
+            TimestampMetadataBuilder::from_snapshot(&snapshot2, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .version(2)
+                .signed::<Json>(&KEYS[3])
+                .unwrap()
+                .to_raw()
+                .unwrap();
+
+        let metadata2 = RawSignedMetadataSetBuilder::new()
+            .root(raw_root2)
+            .targets(raw_targets2)
+            .snapshot(raw_snapshot2)
+            .timestamp(raw_timestamp2)
+            .build();
+
+        assert_matches!(
+            tuf.update_metadata(&metadata2),
+            Err(Error::VerificationFailure(s)) if s == "Signature threshold not met: 0/1"
+        );
     }
 }
