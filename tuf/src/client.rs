@@ -366,8 +366,10 @@ where
         let res = async {
             let _r = Self::update_root_with_repos(&config, &mut tuf, None, &local).await?;
             let _ts = Self::update_timestamp_with_repos(&config, &mut tuf, None, &local).await?;
-            let _sn = Self::update_snapshot_with_repos(&mut tuf, None, &local, false).await?;
-            let _ta = Self::update_targets_with_repos(&mut tuf, None, &local, false).await?;
+            let _sn =
+                Self::update_snapshot_with_repos(&config, &mut tuf, None, &local, false).await?;
+            let _ta =
+                Self::update_targets_with_repos(&config, &mut tuf, None, &local, false).await?;
 
             Ok(())
         }
@@ -643,6 +645,7 @@ where
     async fn update_snapshot(&mut self) -> Result<bool> {
         let consistent_snapshot = self.tuf.trusted_root().consistent_snapshot();
         Self::update_snapshot_with_repos(
+            &self.config,
             &mut self.tuf,
             Some(&mut self.local),
             &self.remote,
@@ -652,6 +655,7 @@ where
     }
 
     async fn update_snapshot_with_repos<Remote>(
+        config: &Config,
         tuf: &mut Database<D>,
         local: Option<&mut Repository<L, D>>,
         remote: &Repository<Remote, D>,
@@ -675,7 +679,16 @@ where
             return Ok(false);
         }
 
-        let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
+        let hash_data = {
+            let snapshot_hashes = snapshot_description.hashes();
+
+            if snapshot_hashes.is_empty() {
+                None
+            } else {
+                let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
+                Some((alg, value.clone()))
+            }
+        };
 
         let version = if consistent_snapshots {
             MetadataVersion::Number(snapshot_description.version())
@@ -684,15 +697,10 @@ where
         };
 
         let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
-        let snapshot_length = Some(snapshot_description.length());
+        let snapshot_length = snapshot_description.length().or(config.max_snapshot_length);
 
         let raw_signed_snapshot = remote
-            .fetch_metadata(
-                &snapshot_path,
-                &version,
-                snapshot_length,
-                Some((alg, value.clone())),
-            )
+            .fetch_metadata(&snapshot_path, &version, snapshot_length, hash_data)
             .await?;
 
         if tuf.update_snapshot(&raw_signed_snapshot)? {
@@ -718,6 +726,7 @@ where
     async fn update_targets(&mut self) -> Result<bool> {
         let consistent_snapshot = self.tuf.trusted_root().consistent_snapshot();
         Self::update_targets_with_repos(
+            &self.config,
             &mut self.tuf,
             Some(&mut self.local),
             &self.remote,
@@ -727,6 +736,7 @@ where
     }
 
     async fn update_targets_with_repos<Remote>(
+        config: &Config,
         tuf: &mut Database<D>,
         local: Option<&mut Repository<L, D>>,
         remote: &Repository<Remote, D>,
@@ -753,7 +763,16 @@ where
             return Ok(false);
         }
 
-        let (alg, value) = crypto::hash_preference(targets_description.hashes())?;
+        let hash_data = {
+            let targets_hashes = targets_description.hashes();
+
+            if targets_hashes.is_empty() {
+                None
+            } else {
+                let (alg, value) = crypto::hash_preference(targets_description.hashes())?;
+                Some((alg, value.clone()))
+            }
+        };
 
         let version = if consistent_snapshot {
             MetadataVersion::Number(targets_description.version())
@@ -762,15 +781,10 @@ where
         };
 
         let targets_path = MetadataPath::from_role(&Role::Targets);
-        let targets_length = Some(targets_description.length());
+        let targets_length = targets_description.length().or(config.max_targets_length);
 
         let raw_signed_targets = remote
-            .fetch_metadata(
-                &targets_path,
-                &version,
-                targets_length,
-                Some((alg, value.clone())),
-            )
+            .fetch_metadata(&targets_path, &version, targets_length, hash_data)
             .await?;
 
         if tuf.update_targets(&raw_signed_targets)? {
@@ -898,9 +912,13 @@ where
                 None => return (true, Err(Error::NotFound)),
             };
 
-            let (alg, value) = match crypto::hash_preference(role_meta.hashes()) {
-                Ok(h) => h,
-                Err(e) => return (delegation.terminating(), Err(e)),
+            let hash_data = if role_meta.hashes().is_empty() {
+                None
+            } else {
+                match crypto::hash_preference(role_meta.hashes()) {
+                    Ok((alg, value)) => Some((alg, value.clone())),
+                    Err(e) => return (delegation.terminating(), Err(e)),
+                }
             };
 
             /////////////////////////////////////////
@@ -924,14 +942,14 @@ where
 
             // FIXME: Other than root, this is the only place that first tries using the local
             // metadata before failing back to the remote server. Is this logic correct?
-            let role_length = Some(role_meta.length());
+            let role_length = role_meta.length().or(self.config.max_targets_length);
             let raw_signed_meta = self
                 .local
                 .fetch_metadata(
                     delegation.role(),
                     &MetadataVersion::None,
                     role_length,
-                    Some((alg, value.clone())),
+                    hash_data.clone(),
                 )
                 .await;
 
@@ -940,12 +958,7 @@ where
                 Err(_) => {
                     match self
                         .remote
-                        .fetch_metadata(
-                            delegation.role(),
-                            &version,
-                            role_length,
-                            Some((alg, value.clone())),
-                        )
+                        .fetch_metadata(delegation.role(), &version, role_length, hash_data.clone())
                         .await
                     {
                         Ok(m) => m,
@@ -1110,14 +1123,18 @@ where
 /// ```
 /// # use tuf::client::{Config};
 /// let config = Config::default();
-/// assert_eq!(config.max_root_length(), &Some(1024 * 1024));
-/// assert_eq!(config.max_timestamp_length(), &Some(32 * 1024));
+/// assert_eq!(config.max_root_length(), &Some(500 * 1024));
+/// assert_eq!(config.max_timestamp_length(), &Some(16 * 1024));
+/// assert_eq!(config.max_snapshot_length(), &Some(2000000));
+/// assert_eq!(config.max_targets_length(), &Some(5000000));
 /// assert_eq!(config.max_delegation_depth(), 8);
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
     max_root_length: Option<usize>,
     max_timestamp_length: Option<usize>,
+    max_snapshot_length: Option<usize>,
+    max_targets_length: Option<usize>,
     max_delegation_depth: u32,
 }
 
@@ -1137,6 +1154,16 @@ impl Config {
         &self.max_timestamp_length
     }
 
+    /// Return the optional maximum snapshot metadata size.
+    pub fn max_snapshot_length(&self) -> &Option<usize> {
+        &self.max_snapshot_length
+    }
+
+    /// Return the optional maximum targets metadata size.
+    pub fn max_targets_length(&self) -> &Option<usize> {
+        &self.max_targets_length
+    }
+
     /// The maximum number of steps used when walking the delegation graph.
     pub fn max_delegation_depth(&self) -> u32 {
         self.max_delegation_depth
@@ -1146,58 +1173,55 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            max_root_length: Some(1024 * 1024),
-            max_timestamp_length: Some(32 * 1024),
+            max_root_length: Some(500 * 1024),
+            max_timestamp_length: Some(16 * 1024),
+            max_snapshot_length: Some(2000000),
+            max_targets_length: Some(5000000),
             max_delegation_depth: 8,
         }
     }
 }
 
 /// Helper for building and validating a TUF client `Config`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct ConfigBuilder {
-    max_root_length: Option<usize>,
-    max_timestamp_length: Option<usize>,
-    max_delegation_depth: u32,
+    cfg: Config,
 }
 
 impl ConfigBuilder {
     /// Validate this builder return a `Config` if validation succeeds.
     pub fn finish(self) -> Result<Config> {
-        Ok(Config {
-            max_root_length: self.max_root_length,
-            max_timestamp_length: self.max_timestamp_length,
-            max_delegation_depth: self.max_delegation_depth,
-        })
+        Ok(self.cfg)
     }
 
     /// Set the optional maximum download length for root metadata.
     pub fn max_root_length(mut self, max: Option<usize>) -> Self {
-        self.max_root_length = max;
+        self.cfg.max_root_length = max;
         self
     }
 
     /// Set the optional maximum download length for timestamp metadata.
     pub fn max_timestamp_length(mut self, max: Option<usize>) -> Self {
-        self.max_timestamp_length = max;
+        self.cfg.max_timestamp_length = max;
+        self
+    }
+
+    /// Set the optional maximum download length for snapshot metadata.
+    pub fn max_snapshot_length(mut self, max: Option<usize>) -> Self {
+        self.cfg.max_snapshot_length = max;
+        self
+    }
+
+    /// Set the optional maximum download length for targets metadata.
+    pub fn max_targets_length(mut self, max: Option<usize>) -> Self {
+        self.cfg.max_targets_length = max;
         self
     }
 
     /// Set the maximum number of steps used when walking the delegation graph.
     pub fn max_delegation_depth(mut self, max: u32) -> Self {
-        self.max_delegation_depth = max;
+        self.cfg.max_delegation_depth = max;
         self
-    }
-}
-
-impl Default for ConfigBuilder {
-    fn default() -> ConfigBuilder {
-        let cfg = Config::default();
-        ConfigBuilder {
-            max_root_length: cfg.max_root_length,
-            max_timestamp_length: cfg.max_timestamp_length,
-            max_delegation_depth: cfg.max_delegation_depth,
-        }
     }
 }
 
@@ -1206,7 +1230,10 @@ mod test {
     use super::*;
     use crate::crypto::{Ed25519PrivateKey, HashAlgorithm, PrivateKey};
     use crate::interchange::Json;
-    use crate::metadata::{MetadataPath, MetadataVersion};
+    use crate::metadata::{
+        MetadataDescription, MetadataPath, MetadataVersion, RootMetadataBuilder,
+        SnapshotMetadataBuilder, TargetsMetadataBuilder, TimestampMetadataBuilder,
+    };
     use crate::repo_builder::RepoBuilder;
     use crate::repository::{EphemeralRepository, ErrorRepository, Track, TrackRepository};
     use chrono::prelude::*;
@@ -2236,6 +2263,93 @@ mod test {
                 client.trusted_delegations(),
                 client.tuf.trusted_delegations()
             );
+        })
+    }
+
+    #[test]
+    fn client_can_update_with_unknown_len_and_hashes() {
+        block_on(async {
+            let repo = EphemeralRepository::<Json>::new();
+
+            let root = RootMetadataBuilder::new()
+                .consistent_snapshot(true)
+                .root_key(KEYS[0].public().clone())
+                .targets_key(KEYS[1].public().clone())
+                .snapshot_key(KEYS[2].public().clone())
+                .timestamp_key(KEYS[3].public().clone())
+                .signed::<Json>(&KEYS[0])
+                .unwrap()
+                .to_raw()
+                .unwrap();
+
+            repo.store_metadata(
+                &MetadataPath::from_role(&Role::Root),
+                &MetadataVersion::Number(1),
+                &mut root.as_bytes(),
+            )
+            .await
+            .unwrap();
+
+            let targets = TargetsMetadataBuilder::new()
+                .signed::<Json>(&KEYS[1])
+                .unwrap()
+                .to_raw()
+                .unwrap();
+
+            repo.store_metadata(
+                &MetadataPath::from_role(&Role::Targets),
+                &MetadataVersion::Number(1),
+                &mut targets.as_bytes(),
+            )
+            .await
+            .unwrap();
+
+            let snapshot = SnapshotMetadataBuilder::new()
+                .insert_metadata_description(
+                    MetadataPath::from_role(&Role::Targets),
+                    MetadataDescription::new(1, None, HashMap::new()).unwrap(),
+                )
+                .signed::<Json>(&KEYS[2])
+                .unwrap()
+                .to_raw()
+                .unwrap();
+
+            repo.store_metadata(
+                &MetadataPath::from_role(&Role::Snapshot),
+                &MetadataVersion::Number(1),
+                &mut snapshot.as_bytes(),
+            )
+            .await
+            .unwrap();
+
+            let timestamp = TimestampMetadataBuilder::from_metadata_description(
+                MetadataDescription::new(1, None, HashMap::new()).unwrap(),
+            )
+            .signed::<Json>(&KEYS[3])
+            .unwrap()
+            .to_raw()
+            .unwrap();
+
+            repo.store_metadata(
+                &MetadataPath::from_role(&Role::Timestamp),
+                &MetadataVersion::None,
+                &mut timestamp.as_bytes(),
+            )
+            .await
+            .unwrap();
+
+            let mut client = Client::with_trusted_root_keys(
+                Config::default(),
+                &MetadataVersion::Number(1),
+                1,
+                once(&KEYS[0].public().clone()),
+                EphemeralRepository::new(),
+                repo,
+            )
+            .await
+            .unwrap();
+
+            assert_matches!(client.update().await, Ok(true));
         })
     }
 }

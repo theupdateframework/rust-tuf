@@ -1106,7 +1106,9 @@ impl<'de> Deserialize<'de> for TimestampMetadata {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MetadataDescription {
     version: u32,
-    length: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    length: Option<usize>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     hashes: HashMap<HashAlgorithm, HashValue>,
 }
 
@@ -1119,11 +1121,15 @@ impl MetadataDescription {
             ));
         }
 
-        let hashes = crypto::calculate_hashes_from_slice(buf, hash_algs)?;
+        let hashes = if hash_algs.is_empty() {
+            HashMap::new()
+        } else {
+            crypto::calculate_hashes_from_slice(buf, hash_algs)?
+        };
 
         Ok(MetadataDescription {
             version,
-            length: buf.len(),
+            length: Some(buf.len()),
             hashes,
         })
     }
@@ -1131,7 +1137,7 @@ impl MetadataDescription {
     /// Create a new `MetadataDescription`.
     pub fn new(
         version: u32,
-        length: usize,
+        length: Option<usize>,
         hashes: HashMap<HashAlgorithm, HashValue>,
     ) -> Result<Self> {
         if version < 1 {
@@ -1139,12 +1145,6 @@ impl MetadataDescription {
                 "Metadata version must be greater than zero. Found: {}",
                 version
             )));
-        }
-
-        if hashes.is_empty() {
-            return Err(Error::IllegalArgument(
-                "Cannot have empty set of hashes".into(),
-            ));
         }
 
         Ok(MetadataDescription {
@@ -1160,7 +1160,7 @@ impl MetadataDescription {
     }
 
     /// The length of the described metadata.
-    pub fn length(&self) -> usize {
+    pub fn length(&self) -> Option<usize> {
         self.length
     }
 
@@ -2530,7 +2530,7 @@ mod test {
     fn serde_timestamp_metadata() {
         let description = MetadataDescription::new(
             1,
-            100,
+            Some(100),
             hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
         )
         .unwrap();
@@ -2552,6 +2552,34 @@ mod test {
                     "hashes": {
                         "sha256": "",
                     },
+                },
+            }
+        });
+
+        let encoded = serde_json::to_value(&timestamp).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: TimestampMetadata = serde_json::from_value(encoded).unwrap();
+        assert_eq!(decoded, timestamp);
+    }
+
+    // Deserialize timestamp metadata with optional length and hashes
+    #[test]
+    fn serde_timestamp_metadata_optional_length_and_hashes() {
+        let description = MetadataDescription::new(1, None, HashMap::new()).unwrap();
+
+        let timestamp = TimestampMetadataBuilder::from_metadata_description(description)
+            .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
+            .build()
+            .unwrap();
+
+        let jsn = json!({
+            "_type": "timestamp",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "snapshot.json": {
+                    "version": 1
                 },
             }
         });
@@ -2618,7 +2646,7 @@ mod test {
                 MetadataPath::new("targets").unwrap(),
                 MetadataDescription::new(
                     1,
-                    100,
+                    Some(100),
                     hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
                 )
                 .unwrap(),
@@ -2638,6 +2666,36 @@ mod test {
                     "hashes": {
                         "sha256": "",
                     },
+                },
+            },
+        });
+
+        let encoded = serde_json::to_value(&snapshot).unwrap();
+        assert_eq!(encoded, jsn);
+        let decoded: SnapshotMetadata = serde_json::from_value(encoded).unwrap();
+        assert_eq!(decoded, snapshot);
+    }
+
+    // Deserialize snapshot metadata with optional length and hashes
+    #[test]
+    fn serde_snapshot_optional_length_and_hashes() {
+        let snapshot = SnapshotMetadataBuilder::new()
+            .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
+            .insert_metadata_description(
+                MetadataPath::new("targets").unwrap(),
+                MetadataDescription::new(1, None, HashMap::new()).unwrap(),
+            )
+            .build()
+            .unwrap();
+
+        let jsn = json!({
+            "_type": "snapshot",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "targets.json": {
+                    "version": 1,
                 },
             },
         });
@@ -2790,7 +2848,7 @@ mod test {
                 MetadataPath::new("targets").unwrap(),
                 MetadataDescription::new(
                     1,
-                    100,
+                    Some(100),
                     hashmap! { HashAlgorithm::Sha256 => HashValue::new(vec![]) },
                 )
                 .unwrap(),
