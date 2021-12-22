@@ -1,6 +1,5 @@
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use std::io::Read;
 
 use super::Json;
 use crate::interchange::DataInterchange;
@@ -110,20 +109,6 @@ impl DataInterchange for JsonPretty {
         T: Serialize,
     {
         Json::serialize(data)
-    }
-
-    /// ```
-    /// # use tuf::interchange::{DataInterchange, JsonPretty};
-    /// # use std::collections::HashMap;
-    /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
-    /// let _: HashMap<String, String> = JsonPretty::from_reader(jsn).unwrap();
-    /// ```
-    fn from_reader<R, T>(rdr: R) -> Result<T>
-    where
-        R: Read,
-        T: DeserializeOwned,
-    {
-        Json::from_reader(rdr)
     }
 
     /// ```

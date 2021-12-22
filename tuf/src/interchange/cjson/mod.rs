@@ -1,7 +1,6 @@
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use std::collections::BTreeMap;
-use std::io::Read;
 
 use crate::error::Error;
 use crate::interchange::DataInterchange;
@@ -200,7 +199,7 @@ impl DataInterchange for Json {
     /// # use tuf::interchange::{DataInterchange, Json};
     /// # use std::collections::HashMap;
     /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
-    /// let raw = Json::from_reader(jsn).unwrap();
+    /// let raw = Json::from_slice(jsn).unwrap();
     /// let out = Json::canonicalize(&raw).unwrap();
     /// assert_eq!(out, br#"{"baz":"quux","foo":"bar"}"#);
     /// ```
@@ -254,20 +253,6 @@ impl DataInterchange for Json {
         T: Serialize,
     {
         Ok(serde_json::to_value(data)?)
-    }
-
-    /// ```
-    /// # use tuf::interchange::{DataInterchange, Json};
-    /// # use std::collections::HashMap;
-    /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
-    /// let _: HashMap<String, String> = Json::from_reader(jsn).unwrap();
-    /// ```
-    fn from_reader<R, T>(rdr: R) -> Result<T>
-    where
-        R: Read,
-        T: DeserializeOwned,
-    {
-        Ok(serde_json::from_reader(rdr)?)
     }
 
     /// ```
