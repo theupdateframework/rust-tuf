@@ -200,10 +200,8 @@ where
         // fetch all the targets and check they have the correct content
         for (target_path, expected) in self.expected_targets.iter() {
             let mut buf = Vec::new();
-            assert_matches!(
-                client.fetch_target_to_writer(target_path, &mut buf).await,
-                Ok(())
-            );
+            let rdr = client.fetch_target(target_path).await.unwrap();
+            futures_util::io::copy(rdr, &mut buf).await.unwrap();
             assert_eq!(&String::from_utf8(buf).unwrap(), expected);
         }
     }

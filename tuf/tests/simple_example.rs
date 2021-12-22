@@ -60,7 +60,7 @@ async fn init_client(
     .await?;
     let _ = client.update().await?;
     let target_path = TargetPath::new("foo-bar".into())?;
-    client.fetch_target(&target_path).await
+    client.fetch_target_to_local(&target_path).await
 }
 
 async fn init_server(
