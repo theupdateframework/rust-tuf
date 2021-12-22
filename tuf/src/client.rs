@@ -1946,7 +1946,7 @@ mod test {
     fn test_fetch_target_description_standard() {
         block_on(test_fetch_target_description(
             "standard/metadata".to_string(),
-            TargetDescription::from_reader(
+            TargetDescription::from_slice(
                 "target with no custom metadata".as_bytes(),
                 &[HashAlgorithm::Sha256],
             )
@@ -1958,7 +1958,7 @@ mod test {
     fn test_fetch_target_description_custom_empty() {
         block_on(test_fetch_target_description(
             "custom-empty".to_string(),
-            TargetDescription::from_reader_with_custom(
+            TargetDescription::from_slice_with_custom(
                 "target with empty custom metadata".as_bytes(),
                 &[HashAlgorithm::Sha256],
                 hashmap!(),
@@ -1971,7 +1971,7 @@ mod test {
     fn test_fetch_target_description_custom() {
         block_on(test_fetch_target_description(
             "custom/metadata".to_string(),
-            TargetDescription::from_reader_with_custom(
+            TargetDescription::from_slice_with_custom(
                 "target with lots of custom metadata".as_bytes(),
                 &[HashAlgorithm::Sha256],
                 hashmap!(

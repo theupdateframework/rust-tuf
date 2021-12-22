@@ -102,7 +102,7 @@ async fn init_server(
     //// build the targets ////
 
     let target_file: &[u8] = b"things fade, alternatives exclude";
-    let target_description = TargetDescription::from_reader(target_file, &[HashAlgorithm::Sha256])?;
+    let target_description = TargetDescription::from_slice(target_file, &[HashAlgorithm::Sha256])?;
 
     let target_path = TargetPath::new("foo-bar".into())?;
 

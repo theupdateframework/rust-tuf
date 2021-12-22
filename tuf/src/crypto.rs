@@ -3,6 +3,8 @@
 use {
     data_encoding::{BASE64URL, HEXLOWER},
     derp::{self, Der, Tag},
+    futures_io::AsyncRead,
+    futures_util::AsyncReadExt as _,
     ring::{
         digest::{self, SHA256, SHA512},
         rand::SystemRandom,
@@ -18,7 +20,6 @@ use {
         collections::HashMap,
         fmt::{self, Debug, Display},
         hash,
-        io::Read,
         str::FromStr,
     },
     untrusted::Input,
@@ -98,11 +99,39 @@ pub(crate) fn calculate_hash(data: &[u8], hash_alg: HashAlgorithm) -> HashValue 
     HashValue::new(context.finish().as_ref().to_vec())
 }
 
-/// Calculate the size and hash digest from a given `Read`.
-pub fn calculate_hashes<R: Read>(
+/// Calculate the size and hash digest from a given `AsyncRead`.
+pub fn calculate_hashes_from_slice(
+    buf: &[u8],
+    hash_algs: &[HashAlgorithm],
+) -> Result<HashMap<HashAlgorithm, HashValue>> {
+    if hash_algs.is_empty() {
+        return Err(Error::IllegalArgument(
+            "Cannot provide empty set of hash algorithms".into(),
+        ));
+    }
+
+    let mut hashes = HashMap::new();
+    for alg in hash_algs {
+        let mut context = alg.digest_context()?;
+        context.update(buf);
+
+        hashes.insert(
+            alg.clone(),
+            HashValue::new(context.finish().as_ref().to_vec()),
+        );
+    }
+
+    Ok(hashes)
+}
+
+/// Calculate the size and hash digest from a given `AsyncRead`.
+pub async fn calculate_hashes_from_reader<R>(
     mut read: R,
     hash_algs: &[HashAlgorithm],
-) -> Result<(u64, HashMap<HashAlgorithm, HashValue>)> {
+) -> Result<(u64, HashMap<HashAlgorithm, HashValue>)>
+where
+    R: AsyncRead + Unpin,
+{
     if hash_algs.is_empty() {
         return Err(Error::IllegalArgument(
             "Cannot provide empty set of hash algorithms".into(),
@@ -117,7 +146,7 @@ pub fn calculate_hashes<R: Read>(
 
     let mut buf = vec![0; 1024];
     loop {
-        match read.read(&mut buf) {
+        match read.read(&mut buf).await {
             Ok(read_bytes) => {
                 if read_bytes == 0 {
                     break;
