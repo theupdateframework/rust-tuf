@@ -180,7 +180,7 @@ impl<R: AsyncRead + Unpin> AsyncRead for SafeReader<R> {
         }
 
         if let Some((ref mut context, _)) = self.hasher {
-            context.update(&buf[..(read_bytes)]);
+            context.update(&buf[..read_bytes]);
         }
 
         Poll::Ready(Ok(read_bytes))

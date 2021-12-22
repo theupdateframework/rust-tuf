@@ -2,13 +2,13 @@
 
 use chrono::offset::Utc;
 use chrono::{DateTime, Duration};
+use futures_io::AsyncRead;
 use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
 use serde::ser::{Error as SerializeError, Serialize, Serializer};
 use serde_derive::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display};
-use std::io::Read;
 use std::marker::PhantomData;
 use std::str;
 
@@ -1600,15 +1600,17 @@ impl TargetDescription {
     ///
     /// ```
     /// # use data_encoding::BASE64URL;
+    /// # use futures_executor::block_on;
     /// # use tuf::crypto::{HashAlgorithm,HashValue};
     /// # use tuf::metadata::TargetDescription;
     /// #
+    /// # block_on(async {
     /// let bytes: &[u8] = b"it was a pleasure to burn";
     ///
     /// let target_description = TargetDescription::from_reader(
     ///     bytes,
     ///     &[HashAlgorithm::Sha256, HashAlgorithm::Sha512],
-    /// ).unwrap();
+    /// ).await.unwrap();
     ///
     /// let s = "Rd9zlbzrdWfeL7gnIEi05X-Yv2TCpy4qqZM1N72ZWQs=";
     /// let sha256 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
@@ -1620,12 +1622,13 @@ impl TargetDescription {
     /// assert_eq!(target_description.length(), bytes.len() as u64);
     /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
     /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
+    /// # })
     /// ```
-    pub fn from_reader<R>(read: R, hash_algs: &[HashAlgorithm]) -> Result<Self>
+    pub async fn from_reader<R>(read: R, hash_algs: &[HashAlgorithm]) -> Result<Self>
     where
-        R: Read,
+        R: AsyncRead + Unpin,
     {
-        let (length, hashes) = crypto::calculate_hashes_from_reader(read, hash_algs)?;
+        let (length, hashes) = crypto::calculate_hashes_from_reader(read, hash_algs).await?;
         Ok(TargetDescription {
             length,
             hashes,
@@ -1638,11 +1641,13 @@ impl TargetDescription {
     ///
     /// ```
     /// # use data_encoding::BASE64URL;
+    /// # use futures_executor::block_on;
     /// # use serde_json::Value;
     /// # use std::collections::HashMap;
     /// # use tuf::crypto::{HashAlgorithm,HashValue};
     /// # use tuf::metadata::TargetDescription;
     /// #
+    /// # block_on(async {
     /// let bytes: &[u8] = b"it was a pleasure to burn";
     ///
     /// let mut custom = HashMap::new();
@@ -1652,7 +1657,7 @@ impl TargetDescription {
     ///     bytes,
     ///     &[HashAlgorithm::Sha256, HashAlgorithm::Sha512],
     ///     custom,
-    /// ).unwrap();
+    /// ).await.unwrap();
     ///
     /// let s = "Rd9zlbzrdWfeL7gnIEi05X-Yv2TCpy4qqZM1N72ZWQs=";
     /// let sha256 = HashValue::new(BASE64URL.decode(s.as_bytes()).unwrap());
@@ -1665,16 +1670,17 @@ impl TargetDescription {
     /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha256), Some(&sha256));
     /// assert_eq!(target_description.hashes().get(&HashAlgorithm::Sha512), Some(&sha512));
     /// assert_eq!(target_description.custom().and_then(|c| c.get("Hello")), Some(&"World".into()));
+    /// })
     /// ```
-    pub fn from_reader_with_custom<R>(
+    pub async fn from_reader_with_custom<R>(
         read: R,
         hash_algs: &[HashAlgorithm],
         custom: HashMap<String, serde_json::Value>,
     ) -> Result<Self>
     where
-        R: Read,
+        R: AsyncRead + Unpin,
     {
-        let (length, hashes) = crypto::calculate_hashes_from_reader(read, hash_algs)?;
+        let (length, hashes) = crypto::calculate_hashes_from_reader(read, hash_algs).await?;
         Ok(TargetDescription {
             length,
             hashes,
@@ -1837,16 +1843,16 @@ impl TargetsMetadataBuilder {
     }
 
     /// Add target to the target metadata.
-    pub fn insert_target_from_reader<R>(
+    pub async fn insert_target_from_reader<R>(
         self,
         path: TargetPath,
         read: R,
         hash_algs: &[HashAlgorithm],
     ) -> Result<Self>
     where
-        R: Read,
+        R: AsyncRead + Unpin,
     {
-        let description = TargetDescription::from_reader(read, hash_algs)?;
+        let description = TargetDescription::from_reader(read, hash_algs).await?;
         Ok(self.insert_target_description(path, description))
     }
 
@@ -2050,6 +2056,7 @@ mod test {
     use crate::interchange::Json;
     use crate::verify::verify_signatures;
     use chrono::prelude::*;
+    use futures_executor::block_on;
     use maplit::{hashmap, hashset};
     use matches::assert_matches;
     use pretty_assertions::assert_eq;
@@ -2148,7 +2155,7 @@ mod test {
     #[test]
     fn serde_target_description() {
         let s: &[u8] = b"from water does all life begin";
-        let description = TargetDescription::from_reader(s, &[HashAlgorithm::Sha256]).unwrap();
+        let description = TargetDescription::from_slice(s, &[HashAlgorithm::Sha256]).unwrap();
         let jsn_str = serde_json::to_string(&description).unwrap();
         let jsn = json!({
             "length": 30,
@@ -2643,75 +2650,78 @@ mod test {
 
     #[test]
     fn serde_targets_metadata() {
-        let targets = TargetsMetadataBuilder::new()
-            .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
-            .insert_target_description(
-                TargetPath::new("foo".into()).unwrap(),
-                TargetDescription::from_reader(&b"foo"[..], &[HashAlgorithm::Sha256]).unwrap(),
-            )
-            .insert_target_description(
-                TargetPath::new("bar".into()).unwrap(),
-                TargetDescription::from_reader_with_custom(
-                    &b"foo"[..],
-                    &[HashAlgorithm::Sha256],
-                    HashMap::new(),
+        block_on(async {
+            let targets = TargetsMetadataBuilder::new()
+                .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
+                .insert_target_description(
+                    TargetPath::new("foo".into()).unwrap(),
+                    TargetDescription::from_slice(&b"foo"[..], &[HashAlgorithm::Sha256]).unwrap(),
                 )
-                .unwrap(),
-            )
-            .insert_target_description(
-                TargetPath::new("baz".into()).unwrap(),
-                TargetDescription::from_reader_with_custom(
-                    &b"foo"[..],
-                    &[HashAlgorithm::Sha256],
-                    hashmap! {
-                        "foo".into() => 1.into(),
-                        "bar".into() => "baz".into(),
-                    },
+                .insert_target_description(
+                    TargetPath::new("bar".into()).unwrap(),
+                    TargetDescription::from_slice_with_custom(
+                        &b"foo"[..],
+                        &[HashAlgorithm::Sha256],
+                        HashMap::new(),
+                    )
+                    .unwrap(),
                 )
-                .unwrap(),
-            )
-            .build()
-            .unwrap();
+                .insert_target_description(
+                    TargetPath::new("baz".into()).unwrap(),
+                    TargetDescription::from_reader_with_custom(
+                        &b"foo"[..],
+                        &[HashAlgorithm::Sha256],
+                        hashmap! {
+                            "foo".into() => 1.into(),
+                            "bar".into() => "baz".into(),
+                        },
+                    )
+                    .await
+                    .unwrap(),
+                )
+                .build()
+                .unwrap();
 
-        let jsn = json!({
-            "_type": "targets",
-            "spec_version": "1.0",
-            "version": 1,
-            "expires": "2017-01-01T00:00:00Z",
-            "targets": {
-                "foo": {
-                    "length": 3,
-                    "hashes": {
-                        "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
-                            bfa0f98a5e886266e7ae",
+            let jsn = json!({
+                "_type": "targets",
+                "spec_version": "1.0",
+                "version": 1,
+                "expires": "2017-01-01T00:00:00Z",
+                "targets": {
+                    "foo": {
+                        "length": 3,
+                        "hashes": {
+                            "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                                bfa0f98a5e886266e7ae",
+                        },
+                    },
+                    "bar": {
+                        "length": 3,
+                        "hashes": {
+                            "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                                bfa0f98a5e886266e7ae",
+                        },
+                        "custom": {},
+                    },
+                    "baz": {
+                        "length": 3,
+                        "hashes": {
+                            "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                                bfa0f98a5e886266e7ae",
+                        },
+                        "custom": {
+                            "foo": 1,
+                            "bar": "baz",
+                        },
                     },
                 },
-                "bar": {
-                    "length": 3,
-                    "hashes": {
-                        "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
-                            bfa0f98a5e886266e7ae",
-                    },
-                    "custom": {},
-                },
-                "baz": {
-                    "length": 3,
-                    "hashes": {
-                        "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
-                            bfa0f98a5e886266e7ae",
-                    },
-                    "custom": {
-                        "foo": 1,
-                        "bar": "baz",
-                    },
-                },
-            },
-        });
+            });
 
-        let encoded = serde_json::to_value(&targets).unwrap();
-        assert_eq!(encoded, jsn);
-        let decoded: TargetsMetadata = serde_json::from_value(encoded).unwrap();
-        assert_eq!(decoded, targets);
+            let encoded = serde_json::to_value(&targets).unwrap();
+            assert_eq!(encoded, jsn);
+            let decoded: TargetsMetadata = serde_json::from_value(encoded).unwrap();
+            assert_eq!(decoded, targets);
+        })
     }
 
     #[test]
