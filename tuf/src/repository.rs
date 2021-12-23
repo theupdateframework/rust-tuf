@@ -53,9 +53,9 @@ where
     /// [Client]: crate::client::Client
     fn fetch_metadata<'a>(
         &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>>;
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>>;
 
     /// Fetch the given target.
     ///
@@ -67,8 +67,8 @@ where
     /// [Client]: crate::client::Client
     fn fetch_target<'a>(
         &'a self,
-        target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>>;
+        target_path: &TargetPath,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>>;
 }
 
 /// A writable TUF repository. Most implementors of this trait should also implement
@@ -82,17 +82,17 @@ where
     ///
     /// [extension]: crate::interchange::DataInterchange::extension
     fn store_metadata<'a>(
-        &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
+        &'a mut self,
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>>;
 
     /// Store the provided `target` in a location identified by `target_path`, overwriting any
     /// existing target at that location.
     fn store_target<'a>(
-        &'a self,
-        target_path: &'a TargetPath,
+        &'a mut self,
+        target_path: &TargetPath,
         target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>>;
 }
@@ -119,37 +119,58 @@ where
 {
     fn fetch_metadata<'a>(
         &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         (**self).fetch_metadata(meta_path, version)
     }
 
     fn fetch_target<'a>(
         &'a self,
-        target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        target_path: &TargetPath,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         (**self).fetch_target(target_path)
     }
 }
 
-impl<T, D> RepositoryStorage<D> for &T
+impl<T, D> RepositoryProvider<D> for &mut T
+where
+    T: RepositoryProvider<D>,
+    D: DataInterchange + Sync,
+{
+    fn fetch_metadata<'a>(
+        &'a self,
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        (**self).fetch_metadata(meta_path, version)
+    }
+
+    fn fetch_target<'a>(
+        &'a self,
+        target_path: &TargetPath,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        (**self).fetch_target(target_path)
+    }
+}
+
+impl<T, D> RepositoryStorage<D> for &mut T
 where
     T: RepositoryStorage<D>,
     D: DataInterchange + Sync,
 {
     fn store_metadata<'a>(
-        &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
+        &'a mut self,
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
         (**self).store_metadata(meta_path, version, metadata)
     }
 
     fn store_target<'a>(
-        &'a self,
-        target_path: &'a TargetPath,
+        &'a mut self,
+        target_path: &TargetPath,
         target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
         (**self).store_target(target_path, target)
@@ -162,17 +183,17 @@ where
     D: DataInterchange + Sync,
 {
     fn store_metadata<'a>(
-        &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
+        &'a mut self,
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
         (**self).store_metadata(meta_path, version, metadata)
     }
 
     fn store_target<'a>(
-        &'a self,
-        target_path: &'a TargetPath,
+        &'a mut self,
+        target_path: &TargetPath,
         target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
         (**self).store_target(target_path, target)
@@ -186,16 +207,16 @@ where
 {
     fn fetch_metadata<'a>(
         &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         (**self).fetch_metadata(meta_path, version)
     }
 
     fn fetch_target<'a>(
         &'a self,
-        target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        target_path: &TargetPath,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         (**self).fetch_target(target_path)
     }
 }
@@ -207,40 +228,17 @@ where
 {
     fn fetch_metadata<'a>(
         &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         (**self).fetch_metadata(meta_path, version)
     }
 
     fn fetch_target<'a>(
         &'a self,
-        target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        target_path: &TargetPath,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         (**self).fetch_target(target_path)
-    }
-}
-
-impl<T, D> RepositoryStorage<D> for Arc<T>
-where
-    T: RepositoryStorage<D> + ?Sized,
-    D: DataInterchange + Sync,
-{
-    fn store_metadata<'a>(
-        &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
-    ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_metadata(meta_path, version, metadata)
-    }
-
-    fn store_target<'a>(
-        &'a self,
-        target_path: &'a TargetPath,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
-    ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_target(target_path, target)
     }
 }
 
@@ -276,6 +274,15 @@ impl<R, D> Repository<R, D> {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn into_inner(self) -> R {
+        self.repository
+    }
+
+    #[cfg(test)]
+    pub(crate) fn as_inner(&self) -> &R {
+        &self.repository
     }
 }
 
@@ -326,17 +333,18 @@ where
     ///
     /// It is **critical** that none of the bytes from the returned `AsyncRead` are used until it
     /// has been fully consumed as the data is untrusted.
-    pub(crate) async fn fetch_target<'a>(
-        &'a self,
-        target_path: &'a TargetPath,
-        target_description: &'a TargetDescription,
-    ) -> Result<impl AsyncRead + Send + Unpin> {
+    pub(crate) async fn fetch_target(
+        &self,
+        target_path: &TargetPath,
+        target_description: &TargetDescription,
+    ) -> Result<impl AsyncRead + Send + Unpin + '_> {
         let (hash_alg, value) = crypto::hash_preference(target_description.hashes())?;
+        let len = target_description.length();
 
         self.repository
             .fetch_target(target_path)
             .await?
-            .check_length_and_hash(target_description.length(), Some((hash_alg, value.clone())))
+            .check_length_and_hash(len, Some((hash_alg, value.clone())))
     }
 }
 
@@ -350,7 +358,7 @@ where
     ///
     /// [extension]: crate::interchange::DataInterchange::extension
     pub async fn store_metadata<'a, M>(
-        &'a self,
+        &'a mut self,
         path: &'a MetadataPath,
         version: &'a MetadataVersion,
         metadata: &'a RawSignedMetadata<D, M>,
@@ -367,7 +375,7 @@ where
 
     /// Store the provided `target` in a location identified by `target_path`.
     pub async fn store_target<'a>(
-        &'a self,
+        &'a mut self,
         target_path: &'a TargetPath,
         target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> Result<()> {
@@ -405,7 +413,7 @@ mod test {
     #[test]
     fn repository_rejects_mismatched_path() {
         block_on(async {
-            let repo = Repository::<_, Json>::new(EphemeralRepository::new());
+            let mut repo = Repository::<_, Json>::new(EphemeralRepository::new());
             let fake_metadata = RawSignedMetadata::<Json, RootMetadata>::new(vec![]);
 
             repo.store_metadata(
@@ -448,7 +456,7 @@ mod test {
             let _metadata = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
             let data_hash = crypto::calculate_hash(data, HashAlgorithm::Sha256);
 
-            let repo = EphemeralRepository::new();
+            let mut repo = EphemeralRepository::new();
             repo.store_metadata(&path, &version, &mut &*data)
                 .await
                 .unwrap();
@@ -476,7 +484,7 @@ mod test {
             let version = MetadataVersion::None;
             let data: &[u8] = b"corrupt metadata";
 
-            let repo = EphemeralRepository::new();
+            let mut repo = EphemeralRepository::new();
             repo.store_metadata(&path, &version, &mut &*data)
                 .await
                 .unwrap();
@@ -505,7 +513,7 @@ mod test {
             let data: &[u8] = b"reasonably sized metadata";
             let _metadata = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
 
-            let repo = EphemeralRepository::new();
+            let mut repo = EphemeralRepository::new();
             repo.store_metadata(&path, &version, &mut &*data)
                 .await
                 .unwrap();
@@ -528,7 +536,7 @@ mod test {
             let version = MetadataVersion::None;
             let data: &[u8] = b"very big metadata";
 
-            let repo = EphemeralRepository::new();
+            let mut repo = EphemeralRepository::new();
             repo.store_metadata(&path, &version, &mut &*data)
                 .await
                 .unwrap();
@@ -548,7 +556,7 @@ mod test {
     fn repository_rejects_corrupt_targets() {
         block_on(async {
             let repo = EphemeralRepository::new();
-            let client = Repository::<_, Json>::new(repo);
+            let mut client = Repository::<_, Json>::new(repo);
 
             let data: &[u8] = b"like tears in the rain";
             let target_description =
@@ -563,6 +571,7 @@ mod test {
             let mut buf = Vec::new();
             read.read_to_end(&mut buf).await.unwrap();
             assert_eq!(buf.as_slice(), data);
+            drop(read);
 
             let bad_data: &[u8] = b"you're in a desert";
             client.store_target(&path, &mut &*bad_data).await.unwrap();
@@ -579,30 +588,7 @@ mod test {
         block_on(async {
             let repo: Box<dyn RepositoryStorageProvider<Json>> =
                 Box::new(EphemeralRepository::new());
-            let client = Repository::<_, Json>::new(repo);
-
-            let data: &[u8] = b"like tears in the rain";
-            let target_description =
-                TargetDescription::from_slice(data, &[HashAlgorithm::Sha256]).unwrap();
-            let path = TargetPath::new("batty".into()).unwrap();
-            client.store_target(&path, &mut &*data).await.unwrap();
-
-            let mut read = client
-                .fetch_target(&path, &target_description)
-                .await
-                .unwrap();
-            let mut buf = Vec::new();
-            read.read_to_end(&mut buf).await.unwrap();
-            assert_eq!(buf.as_slice(), data);
-        })
-    }
-
-    #[test]
-    fn repository_takes_arc_trait_objects() {
-        block_on(async {
-            let repo: Arc<dyn RepositoryStorageProvider<Json>> =
-                Arc::new(EphemeralRepository::new());
-            let client = Repository::<_, Json>::new(repo);
+            let mut client = Repository::<_, Json>::new(repo);
 
             let data: &[u8] = b"like tears in the rain";
             let target_description =

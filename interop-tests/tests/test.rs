@@ -181,7 +181,7 @@ where
             &MetadataVersion::Number(1),
             1,
             public_keys,
-            &self.local,
+            &mut self.local,
             remote,
         )
         .await

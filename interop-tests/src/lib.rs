@@ -102,7 +102,7 @@ pub fn read_dir_files(path: &Path) -> BTreeMap<PathBuf, String> {
 // updates the root metadata. If root_signer is Some, use that to sign the
 // metadata, otherwise use keys["root"].
 async fn update_root(
-    repo: &FileSystemRepository<JsonPretty>,
+    repo: &mut FileSystemRepository<JsonPretty>,
     keys: &RoleKeys,
     root_signer: Option<&dyn PrivateKey>,
     version: u32,
@@ -155,7 +155,7 @@ async fn update_root(
 
 // adds a target and updates the non-root metadata files.
 async fn add_target(
-    repo: &FileSystemRepository<JsonPretty>,
+    repo: &mut FileSystemRepository<JsonPretty>,
     keys: &RoleKeys,
     step: u8,
     consistent_snapshot: bool,
@@ -267,13 +267,13 @@ pub async fn generate_repos(
     let json_keys = init_json_keys(keys_path);
     let mut keys = init_role_keys(&json_keys);
     let dir0 = Path::new(dir).join("0");
-    let repo = FileSystemRepositoryBuilder::new(dir0)
+    let mut repo = FileSystemRepositoryBuilder::new(dir0)
         .metadata_prefix(Path::new("repository"))
         .targets_prefix(Path::new("repository").join("targets"))
         .build()?;
 
-    update_root(&repo, &keys, None, 1, consistent_snapshot).await;
-    add_target(&repo, &keys, 0, consistent_snapshot).await;
+    update_root(&mut repo, &keys, None, 1, consistent_snapshot).await;
+    add_target(&mut repo, &keys, 0, consistent_snapshot).await;
 
     // Queue up a series of key rotations
     let mut i: u8 = 1;
@@ -287,7 +287,7 @@ pub async fn generate_repos(
     for r in rotations.iter() {
         // Initialize new repo and copy the files from the previous step.
         let dir_i = Path::new(dir).join(i.to_string());
-        let repo = FileSystemRepositoryBuilder::new(dir_i)
+        let mut repo = FileSystemRepositoryBuilder::new(dir_i)
             .metadata_prefix(Path::new("repository"))
             .targets_prefix(Path::new("repository").join("targets"))
             .build()
@@ -311,14 +311,14 @@ pub async fn generate_repos(
             None => None,
         };
         update_root(
-            &repo,
+            &mut repo,
             &keys,
             root_signer.as_ref().map(|x| x as &dyn PrivateKey),
             (i + 1).into(),
             consistent_snapshot,
         )
         .await;
-        add_target(&repo, &keys, i, consistent_snapshot).await;
+        add_target(&mut repo, &keys, i, consistent_snapshot).await;
         i += 1;
     }
     Ok(())

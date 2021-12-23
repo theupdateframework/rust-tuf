@@ -115,13 +115,13 @@ where
 {
     fn fetch_metadata<'a>(
         &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        async move {
-            let mut path = self.metadata_path.clone();
-            path.extend(meta_path.components::<D>(version));
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        let mut path = self.metadata_path.clone();
+        path.extend(meta_path.components::<D>(version));
 
+        async move {
             let reader: Box<dyn AsyncRead + Send + Unpin> =
                 Box::new(AllowStdIo::new(File::open(&path)?));
             Ok(reader)
@@ -131,12 +131,12 @@ where
 
     fn fetch_target<'a>(
         &'a self,
-        target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
-        async move {
-            let mut path = self.targets_path.clone();
-            path.extend(target_path.components());
+        target_path: &TargetPath,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        let mut path = self.targets_path.clone();
+        path.extend(target_path.components());
 
+        async move {
             if !path.exists() {
                 return Err(Error::NotFound);
             }
@@ -151,18 +151,18 @@ where
 
 impl<D> RepositoryStorage<D> for FileSystemRepository<D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange + Sync + Send,
 {
     fn store_metadata<'a>(
-        &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
+        &'a mut self,
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
-        async move {
-            let mut path = self.metadata_path.clone();
-            path.extend(meta_path.components::<D>(version));
+        let mut path = self.metadata_path.clone();
+        path.extend(meta_path.components::<D>(version));
 
+        async move {
             if path.exists() {
                 debug!("Metadata path exists. Overwriting: {:?}", path);
             }
@@ -177,14 +177,14 @@ where
     }
 
     fn store_target<'a>(
-        &'a self,
-        target_path: &'a TargetPath,
+        &'a mut self,
+        target_path: &TargetPath,
         read: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
-        async move {
-            let mut path = self.targets_path.clone();
-            path.extend(target_path.components());
+        let mut path = self.targets_path.clone();
+        path.extend(target_path.components());
 
+        async move {
             if path.exists() {
                 debug!("Target path exists. Overwriting: {:?}", path);
             }
@@ -256,7 +256,7 @@ mod test {
                 .prefix("rust-tuf")
                 .tempdir()
                 .unwrap();
-            let repo = FileSystemRepositoryBuilder::<Json>::new(temp_dir.path().to_path_buf())
+            let mut repo = FileSystemRepositoryBuilder::<Json>::new(temp_dir.path().to_path_buf())
                 .metadata_prefix("meta")
                 .targets_prefix("targs")
                 .build()

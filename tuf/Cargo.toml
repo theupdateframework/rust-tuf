@@ -27,7 +27,6 @@ hyper_013 = { package = "hyper", version = "0.13.2", default-features = false, f
 hyper_014 = { package = "hyper", version = "0.14.15", default-features = false, features = [ "stream", "client", "http1" ], optional = true }
 itoa = "0.4"
 log = "0.4"
-parking_lot = "0.11"
 percent-encoding = "2.1"
 ring = { version = "0.16" }
 serde = "1"

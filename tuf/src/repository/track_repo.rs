@@ -10,8 +10,7 @@ use {
         future::{BoxFuture, FutureExt},
         io::{AsyncReadExt, Cursor},
     },
-    parking_lot::Mutex,
-    std::sync::Arc,
+    std::sync::{Arc, Mutex},
 };
 
 #[derive(Debug, PartialEq)]
@@ -102,7 +101,11 @@ impl<R> TrackRepository<R> {
     }
 
     pub(crate) fn take_tracks(&self) -> Vec<Track> {
-        self.tracks.lock().drain(..).collect()
+        self.tracks.lock().unwrap().drain(..).collect()
+    }
+
+    pub(crate) fn as_inner_mut(&mut self) -> &mut R {
+        &mut self.repo
     }
 }
 
@@ -112,23 +115,26 @@ where
     D: DataInterchange + Sync,
 {
     fn store_metadata<'a>(
-        &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
+        &'a mut self,
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
+        let meta_path = meta_path.clone();
+        let version = version.clone();
         async move {
             let mut buf = Vec::new();
             metadata.read_to_end(&mut buf).await?;
 
             let () = self
                 .repo
-                .store_metadata(meta_path, version, &mut buf.as_slice())
+                .store_metadata(&meta_path, &version, &mut buf.as_slice())
                 .await?;
 
             self.tracks
                 .lock()
-                .push(Track::store(meta_path, version, buf));
+                .unwrap()
+                .push(Track::store(&meta_path, &version, buf));
 
             Ok(())
         }
@@ -136,8 +142,8 @@ where
     }
 
     fn store_target<'a>(
-        &'a self,
-        target_path: &'a TargetPath,
+        &'a mut self,
+        target_path: &TargetPath,
         target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
         self.repo.store_target(target_path, target)
@@ -151,19 +157,23 @@ where
 {
     fn fetch_metadata<'a>(
         &'a self,
-        meta_path: &'a MetadataPath,
-        version: &'a MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        let meta_path = meta_path.clone();
+        let version = version.clone();
         async move {
-            let fut = self.repo.fetch_metadata(meta_path, version);
+            let fut = self.repo.fetch_metadata(&meta_path, &version);
             match fut.await {
                 Ok(mut rdr) => {
                     let mut buf = Vec::new();
                     rdr.read_to_end(&mut buf).await?;
 
-                    self.tracks
-                        .lock()
-                        .push(Track::fetch_found(meta_path, version, buf.clone()));
+                    self.tracks.lock().unwrap().push(Track::fetch_found(
+                        &meta_path,
+                        &version,
+                        buf.clone(),
+                    ));
 
                     let rdr: Box<dyn AsyncRead + Send + Unpin> = Box::new(Cursor::new(buf));
 
@@ -172,7 +182,8 @@ where
                 Err(err) => {
                     self.tracks
                         .lock()
-                        .push(Track::FetchErr(meta_path.clone(), version.clone()));
+                        .unwrap()
+                        .push(Track::FetchErr(meta_path, version));
                     Err(err)
                 }
             }
@@ -182,8 +193,8 @@ where
 
     fn fetch_target<'a>(
         &'a self,
-        target_path: &'a TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin>>> {
+        target_path: &TargetPath,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         self.repo.fetch_target(target_path)
     }
 }
