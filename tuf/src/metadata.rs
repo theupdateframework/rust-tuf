@@ -2564,7 +2564,7 @@ mod test {
 
     // Deserialize timestamp metadata with optional length and hashes
     #[test]
-    fn serde_timestamp_metadata_optional_length_and_hashes() {
+    fn serde_timestamp_metadata_without_length_and_hashes() {
         let description = MetadataDescription::new(1, None, HashMap::new()).unwrap();
 
         let timestamp = TimestampMetadataBuilder::from_metadata_description(description)

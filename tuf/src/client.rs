@@ -685,7 +685,7 @@ where
             if snapshot_hashes.is_empty() {
                 None
             } else {
-                let (alg, value) = crypto::hash_preference(snapshot_description.hashes())?;
+                let (alg, value) = crypto::hash_preference(snapshot_hashes)?;
                 Some((alg, value.clone()))
             }
         };
@@ -769,7 +769,7 @@ where
             if targets_hashes.is_empty() {
                 None
             } else {
-                let (alg, value) = crypto::hash_preference(targets_description.hashes())?;
+                let (alg, value) = crypto::hash_preference(targets_hashes)?;
                 Some((alg, value.clone()))
             }
         };
@@ -2269,7 +2269,7 @@ mod test {
     #[test]
     fn client_can_update_with_unknown_len_and_hashes() {
         block_on(async {
-            let repo = EphemeralRepository::<Json>::new();
+            let mut repo = EphemeralRepository::<Json>::new();
 
             let root = RootMetadataBuilder::new()
                 .consistent_snapshot(true)
@@ -2304,10 +2304,14 @@ mod test {
             .await
             .unwrap();
 
+            // Create a targets metadata description, and deliberately don't set the metadata length
+            // or hashes.
+            let targets_description = MetadataDescription::new(1, None, HashMap::new()).unwrap();
+
             let snapshot = SnapshotMetadataBuilder::new()
                 .insert_metadata_description(
                     MetadataPath::from_role(&Role::Targets),
-                    MetadataDescription::new(1, None, HashMap::new()).unwrap(),
+                    targets_description,
                 )
                 .signed::<Json>(&KEYS[2])
                 .unwrap()
@@ -2322,13 +2326,16 @@ mod test {
             .await
             .unwrap();
 
-            let timestamp = TimestampMetadataBuilder::from_metadata_description(
-                MetadataDescription::new(1, None, HashMap::new()).unwrap(),
-            )
-            .signed::<Json>(&KEYS[3])
-            .unwrap()
-            .to_raw()
-            .unwrap();
+            // Create a snapshot metadata description, and deliberately don't set the metadata length
+            // or hashes.
+            let timestamp_description = MetadataDescription::new(1, None, HashMap::new()).unwrap();
+
+            let timestamp =
+                TimestampMetadataBuilder::from_metadata_description(timestamp_description)
+                    .signed::<Json>(&KEYS[3])
+                    .unwrap()
+                    .to_raw()
+                    .unwrap();
 
             repo.store_metadata(
                 &MetadataPath::from_role(&Role::Timestamp),
