@@ -482,7 +482,9 @@ impl TargetDescription {
 #[derive(Deserialize)]
 pub struct MetadataDescription {
     version: u32,
-    length: usize,
+    #[serde(default)]
+    length: Option<usize>,
+    #[serde(default)]
     hashes: BTreeMap<crypto::HashAlgorithm, crypto::HashValue>,
 }
 
