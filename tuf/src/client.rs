@@ -337,6 +337,17 @@ where
         Self::new(config, tuf, local, remote).await
     }
 
+    /// Create a new TUF client. It will trust and update the TUF database.
+    pub async fn from_database(
+        config: Config,
+        tuf: Database<D>,
+        local: L,
+        remote: R,
+    ) -> Result<Self> {
+        let (local, remote) = (Repository::new(local), Repository::new(remote));
+        Self::new(config, tuf, local, remote).await
+    }
+
     /// Construct a client with the given parts.
     ///
     /// Note: Since this was created by a prior [Client], it does not try to load
@@ -357,6 +368,7 @@ where
         }
     }
 
+    /// Create a new TUF client. It will trust this TUF database.
     async fn new(
         config: Config,
         mut tuf: Database<D>,
@@ -1265,6 +1277,7 @@ mod test {
         WithTrustedLocal,
         WithTrustedRoot,
         WithTrustedRootKeys,
+        FromDatabase,
     }
 
     #[test]
@@ -1356,6 +1369,13 @@ mod test {
         ))
     }
 
+    #[test]
+    fn from_database_loads_metadata_from_local_repo() {
+        block_on(constructors_load_metadata_from_local_repo(
+            ConstructorMode::FromDatabase,
+        ))
+    }
+
     async fn constructors_load_metadata_from_local_repo(constructor_mode: ConstructorMode) {
         // Store an expired root in the local store.
         let mut local = EphemeralRepository::<Json>::new();
@@ -1431,6 +1451,14 @@ mod test {
             )
             .await
             .unwrap(),
+            ConstructorMode::FromDatabase => Client::from_database(
+                Config::default(),
+                Database::from_trusted_root(&metadata1.root).unwrap(),
+                track_local,
+                track_remote,
+            )
+            .await
+            .unwrap(),
         };
 
         assert_eq!(client.tuf.trusted_root().version(), 1);
@@ -1489,6 +1517,29 @@ mod test {
                     client.local.as_inner().take_tracks(),
                     vec![
                         Track::fetch_meta_found(&MetadataVersion::Number(1), &metadata1.root),
+                        Track::FetchErr(
+                            MetadataPath::from_role(&Role::Root),
+                            MetadataVersion::Number(2)
+                        ),
+                        Track::fetch_meta_found(
+                            &MetadataVersion::None,
+                            metadata1.timestamp.as_ref().unwrap()
+                        ),
+                        Track::fetch_meta_found(
+                            &MetadataVersion::None,
+                            metadata1.snapshot.as_ref().unwrap()
+                        ),
+                        Track::fetch_meta_found(
+                            &MetadataVersion::None,
+                            metadata1.targets.as_ref().unwrap()
+                        ),
+                    ],
+                );
+            }
+            ConstructorMode::FromDatabase => {
+                assert_eq!(
+                    client.local.as_inner().take_tracks(),
+                    vec![
                         Track::FetchErr(
                             MetadataPath::from_role(&Role::Root),
                             MetadataVersion::Number(2)

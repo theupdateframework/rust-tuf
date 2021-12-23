@@ -270,6 +270,93 @@ where
     }
 }
 
+/// A collection of [RawSignedMetadata] that describes the metadata at one
+/// commit.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RawSignedMetadataSet<D> {
+    root: Option<RawSignedMetadata<D, RootMetadata>>,
+    targets: Option<RawSignedMetadata<D, TargetsMetadata>>,
+    snapshot: Option<RawSignedMetadata<D, SnapshotMetadata>>,
+    timestamp: Option<RawSignedMetadata<D, TimestampMetadata>>,
+}
+
+impl<D> RawSignedMetadataSet<D> {
+    /// Returns a reference to the built root metadata, if any.
+    pub fn root(&self) -> Option<&RawSignedMetadata<D, RootMetadata>> {
+        self.root.as_ref()
+    }
+
+    /// Returns a reference to the built targets metadata, if any.
+    pub fn targets(&self) -> Option<&RawSignedMetadata<D, TargetsMetadata>> {
+        self.targets.as_ref()
+    }
+
+    /// Returns a reference to the built snapshot metadata, if any.
+    pub fn snapshot(&self) -> Option<&RawSignedMetadata<D, SnapshotMetadata>> {
+        self.snapshot.as_ref()
+    }
+
+    /// Returns a reference to the built timestamp metadata, if any.
+    pub fn timestamp(&self) -> Option<&RawSignedMetadata<D, TimestampMetadata>> {
+        self.timestamp.as_ref()
+    }
+}
+
+/// Builder for [RawSignedMetadataSet].
+#[derive(Default)]
+pub struct RawSignedMetadataSetBuilder<D>
+where
+    D: DataInterchange,
+{
+    metadata: RawSignedMetadataSet<D>,
+}
+
+impl<D> RawSignedMetadataSetBuilder<D>
+where
+    D: DataInterchange,
+{
+    /// Create a new [RawSignedMetadataSetBuilder].
+    pub fn new() -> Self {
+        Self {
+            metadata: RawSignedMetadataSet {
+                root: None,
+                targets: None,
+                snapshot: None,
+                timestamp: None,
+            },
+        }
+    }
+
+    /// Set or replace the root metadata.
+    pub fn root(mut self, root: RawSignedMetadata<D, RootMetadata>) -> Self {
+        self.metadata.root = Some(root);
+        self
+    }
+
+    /// Set or replace the targets metadata.
+    pub fn targets(mut self, targets: RawSignedMetadata<D, TargetsMetadata>) -> Self {
+        self.metadata.targets = Some(targets);
+        self
+    }
+
+    /// Set or replace the snapshot metadata.
+    pub fn snapshot(mut self, snapshot: RawSignedMetadata<D, SnapshotMetadata>) -> Self {
+        self.metadata.snapshot = Some(snapshot);
+        self
+    }
+
+    /// Set or replace the timestamp metadata.
+    pub fn timestamp(mut self, timestamp: RawSignedMetadata<D, TimestampMetadata>) -> Self {
+        self.metadata.timestamp = Some(timestamp);
+        self
+    }
+
+    /// Return a [RawSignedMetadataSet].
+    pub fn build(self) -> RawSignedMetadataSet<D> {
+        self.metadata
+    }
+}
+
 /// Helper to construct `SignedMetadata`.
 #[derive(Debug, Clone)]
 pub struct SignedMetadataBuilder<D, M>
