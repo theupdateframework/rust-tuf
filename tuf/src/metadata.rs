@@ -1452,16 +1452,17 @@ impl TargetPath {
     ///
     /// ```
     /// # use tuf::metadata::TargetPath;
-    /// assert!(TargetPath::new("foo".into()).is_ok());
-    /// assert!(TargetPath::new("/foo".into()).is_err());
-    /// assert!(TargetPath::new("../foo".into()).is_err());
-    /// assert!(TargetPath::new("foo/..".into()).is_err());
-    /// assert!(TargetPath::new("foo/../bar".into()).is_err());
-    /// assert!(TargetPath::new("..foo".into()).is_ok());
-    /// assert!(TargetPath::new("foo/..bar".into()).is_ok());
-    /// assert!(TargetPath::new("foo/bar..".into()).is_ok());
+    /// assert!(TargetPath::new("foo").is_ok());
+    /// assert!(TargetPath::new("/foo").is_err());
+    /// assert!(TargetPath::new("../foo").is_err());
+    /// assert!(TargetPath::new("foo/..").is_err());
+    /// assert!(TargetPath::new("foo/../bar").is_err());
+    /// assert!(TargetPath::new("..foo").is_ok());
+    /// assert!(TargetPath::new("foo/..bar").is_ok());
+    /// assert!(TargetPath::new("foo/bar..").is_ok());
     /// ```
-    pub fn new(path: String) -> Result<Self> {
+    pub fn new<P: Into<String>>(path: P) -> Result<Self> {
+        let path = path.into();
         safe_path(&path)?;
         Ok(TargetPath(path))
     }
@@ -1471,7 +1472,7 @@ impl TargetPath {
     ///
     /// ```
     /// # use tuf::metadata::TargetPath;
-    /// let path = TargetPath::new("foo/bar".into()).unwrap();
+    /// let path = TargetPath::new("foo/bar").unwrap();
     /// assert_eq!(path.components(), ["foo".to_string(), "bar".to_string()]);
     /// ```
     pub fn components(&self) -> Vec<String> {
@@ -1482,18 +1483,18 @@ impl TargetPath {
     ///
     /// ```
     /// # use tuf::metadata::TargetPath;
-    /// let path1 = TargetPath::new("foo".into()).unwrap();
-    /// let path2 = TargetPath::new("foo/bar".into()).unwrap();
+    /// let path1 = TargetPath::new("foo").unwrap();
+    /// let path2 = TargetPath::new("foo/bar").unwrap();
     /// assert!(!path2.is_child(&path1));
     ///
-    /// let path1 = TargetPath::new("foo/".into()).unwrap();
-    /// let path2 = TargetPath::new("foo/bar".into()).unwrap();
+    /// let path1 = TargetPath::new("foo/").unwrap();
+    /// let path2 = TargetPath::new("foo/bar").unwrap();
     /// assert!(path2.is_child(&path1));
     ///
-    /// let path2 = TargetPath::new("foo/bar/baz".into()).unwrap();
+    /// let path2 = TargetPath::new("foo/bar/baz").unwrap();
     /// assert!(path2.is_child(&path1));
     ///
-    /// let path2 = TargetPath::new("wat".into()).unwrap();
+    /// let path2 = TargetPath::new("wat").unwrap();
     /// assert!(!path2.is_child(&path1))
     /// ```
     pub fn is_child(&self, parent: &Self) -> bool {
@@ -2204,7 +2205,7 @@ mod test {
 
         for case in test_cases {
             let expected = case.0;
-            let target = TargetPath::new(case.1.into()).unwrap();
+            let target = TargetPath::new(case.1).unwrap();
             let parents = case
                 .2
                 .iter()
@@ -2799,11 +2800,11 @@ mod test {
             let targets = TargetsMetadataBuilder::new()
                 .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
                 .insert_target_description(
-                    TargetPath::new("foo".into()).unwrap(),
+                    TargetPath::new("foo").unwrap(),
                     TargetDescription::from_slice(&b"foo"[..], &[HashAlgorithm::Sha256]).unwrap(),
                 )
                 .insert_target_description(
-                    TargetPath::new("bar".into()).unwrap(),
+                    TargetPath::new("bar").unwrap(),
                     TargetDescription::from_slice_with_custom(
                         &b"foo"[..],
                         &[HashAlgorithm::Sha256],
@@ -2812,7 +2813,7 @@ mod test {
                     .unwrap(),
                 )
                 .insert_target_description(
-                    TargetPath::new("baz".into()).unwrap(),
+                    TargetPath::new("baz").unwrap(),
                     TargetDescription::from_reader_with_custom(
                         &b"foo"[..],
                         &[HashAlgorithm::Sha256],
@@ -2879,7 +2880,7 @@ mod test {
                 false,
                 1,
                 hashset!(key.public().key_id().clone()),
-                hashset!(TargetPath::new("baz/quux".into()).unwrap()),
+                hashset!(TargetPath::new("baz/quux").unwrap()),
             )
             .unwrap()],
         )
@@ -3062,7 +3063,7 @@ mod test {
                 false,
                 1,
                 hashset!(key.key_id().clone()),
-                hashset!(TargetPath::new("bar".into()).unwrap()),
+                hashset!(TargetPath::new("bar").unwrap()),
             )
             .unwrap()],
         )
@@ -3081,7 +3082,7 @@ mod test {
             false,
             1,
             hashset!(key.key_id().clone()),
-            hashset!(TargetPath::new("bar".into()).unwrap()),
+            hashset!(TargetPath::new("bar").unwrap()),
         )
         .unwrap();
 

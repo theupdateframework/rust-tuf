@@ -61,7 +61,7 @@ async fn init_client(
     )
     .await?;
     let _ = client.update().await?;
-    let target_path = TargetPath::new("foo-bar".into())?;
+    let target_path = TargetPath::new("foo-bar")?;
     client.fetch_target_to_local(&target_path).await
 }
 
@@ -106,7 +106,7 @@ async fn init_server(
     let target_file: &[u8] = b"things fade, alternatives exclude";
     let target_description = TargetDescription::from_slice(target_file, &[HashAlgorithm::Sha256])?;
 
-    let target_path = TargetPath::new("foo-bar".into())?;
+    let target_path = TargetPath::new("foo-bar")?;
 
     // According to TUF section 5.5.2, when consistent snapshot is enabled, target files should be
     // stored at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.

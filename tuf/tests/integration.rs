@@ -75,7 +75,7 @@ fn simple_delegation() {
                 .iter()
                 .cloned()
                 .collect(),
-            vec![TargetPath::new("foo".into()).unwrap()]
+            vec![TargetPath::new("foo").unwrap()]
                 .iter()
                 .cloned()
                 .collect(),
@@ -95,7 +95,7 @@ fn simple_delegation() {
     let target_file: &[u8] = b"bar";
     let delegation = TargetsMetadataBuilder::new()
         .insert_target_from_slice(
-            TargetPath::new("foo".into()).unwrap(),
+            TargetPath::new("foo").unwrap(),
             target_file,
             &[HashAlgorithm::Sha256],
         )
@@ -112,7 +112,7 @@ fn simple_delegation() {
     .unwrap();
 
     assert!(tuf
-        .target_description(&TargetPath::new("foo".into()).unwrap())
+        .target_description(&TargetPath::new("foo").unwrap())
         .is_ok());
 }
 
@@ -182,7 +182,7 @@ fn nested_delegation() {
                 .iter()
                 .cloned()
                 .collect(),
-            vec![TargetPath::new("foo".into()).unwrap()]
+            vec![TargetPath::new("foo").unwrap()]
                 .iter()
                 .cloned()
                 .collect(),
@@ -207,7 +207,7 @@ fn nested_delegation() {
             false,
             1,
             vec![delegation_b_key.public().key_id().clone()].iter().cloned().collect(),
-            vec![TargetPath::new("foo".into()).unwrap()].iter().cloned().collect(),
+            vec![TargetPath::new("foo").unwrap()].iter().cloned().collect(),
         )
         .unwrap()],
     )
@@ -232,7 +232,7 @@ fn nested_delegation() {
 
     let delegation = TargetsMetadataBuilder::new()
         .insert_target_from_slice(
-            TargetPath::new("foo".into()).unwrap(),
+            TargetPath::new("foo").unwrap(),
             target_file,
             &[HashAlgorithm::Sha256],
         )
@@ -249,7 +249,7 @@ fn nested_delegation() {
     .unwrap();
 
     assert!(tuf
-        .target_description(&TargetPath::new("foo".into()).unwrap())
+        .target_description(&TargetPath::new("foo").unwrap())
         .is_ok());
 }
 
@@ -312,7 +312,7 @@ fn rejects_bad_delegation_signatures() {
                 .iter()
                 .cloned()
                 .collect(),
-            vec![TargetPath::new("foo".into()).unwrap()]
+            vec![TargetPath::new("foo").unwrap()]
                 .iter()
                 .cloned()
                 .collect(),
@@ -332,7 +332,7 @@ fn rejects_bad_delegation_signatures() {
     let target_file: &[u8] = b"bar";
     let delegation = TargetsMetadataBuilder::new()
         .insert_target_from_slice(
-            TargetPath::new("foo".into()).unwrap(),
+            TargetPath::new("foo").unwrap(),
             target_file,
             &[HashAlgorithm::Sha256],
         )
@@ -351,7 +351,7 @@ fn rejects_bad_delegation_signatures() {
     );
 
     assert_matches!(
-        tuf.target_description(&TargetPath::new("foo".into()).unwrap()),
+        tuf.target_description(&TargetPath::new("foo").unwrap()),
         Err(Error::TargetUnavailable)
     );
 }
@@ -443,7 +443,7 @@ fn diamond_delegation() {
                     .iter()
                     .cloned()
                     .collect(),
-                vec![TargetPath::new("foo".into()).unwrap()]
+                vec![TargetPath::new("foo").unwrap()]
                     .iter()
                     .cloned()
                     .collect(),
@@ -457,7 +457,7 @@ fn diamond_delegation() {
                     .iter()
                     .cloned()
                     .collect(),
-                vec![TargetPath::new("bar".into()).unwrap()]
+                vec![TargetPath::new("bar").unwrap()]
                     .iter()
                     .cloned()
                     .collect(),
@@ -483,7 +483,7 @@ fn diamond_delegation() {
             false,
             1,
             vec![delegation_c_key.public().key_id().clone()].iter().cloned().collect(),
-            vec![TargetPath::new("foo".into()).unwrap()].iter().cloned().collect(),
+            vec![TargetPath::new("foo").unwrap()].iter().cloned().collect(),
         )
         .unwrap()],
     )
@@ -512,7 +512,7 @@ fn diamond_delegation() {
             1,
             // oops, wrong key.
             vec![delegation_b_key.public().key_id().clone()].iter().cloned().collect(),
-            vec![TargetPath::new("bar".into()).unwrap()].iter().cloned().collect(),
+            vec![TargetPath::new("bar").unwrap()].iter().cloned().collect(),
         )
         .unwrap()],
     )
@@ -538,13 +538,13 @@ fn diamond_delegation() {
 
     let delegation = TargetsMetadataBuilder::new()
         .insert_target_from_slice(
-            TargetPath::new("foo".into()).unwrap(),
+            TargetPath::new("foo").unwrap(),
             foo_target_file,
             &[HashAlgorithm::Sha256],
         )
         .unwrap()
         .insert_target_from_slice(
-            TargetPath::new("bar".into()).unwrap(),
+            TargetPath::new("bar").unwrap(),
             bar_target_file,
             &[HashAlgorithm::Sha256],
         )
@@ -572,11 +572,11 @@ fn diamond_delegation() {
     );
 
     assert!(tuf
-        .target_description(&TargetPath::new("foo".into()).unwrap())
+        .target_description(&TargetPath::new("foo").unwrap())
         .is_ok());
 
     assert_matches!(
-        tuf.target_description(&TargetPath::new("bar".into()).unwrap()),
+        tuf.target_description(&TargetPath::new("bar").unwrap()),
         Err(Error::TargetUnavailable)
     );
 }

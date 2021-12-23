@@ -561,7 +561,7 @@ mod test {
             let data: &[u8] = b"like tears in the rain";
             let target_description =
                 TargetDescription::from_slice(data, &[HashAlgorithm::Sha256]).unwrap();
-            let path = TargetPath::new("batty".into()).unwrap();
+            let path = TargetPath::new("batty").unwrap();
             client.store_target(&path, &mut &*data).await.unwrap();
 
             let mut read = client
@@ -593,7 +593,7 @@ mod test {
             let data: &[u8] = b"like tears in the rain";
             let target_description =
                 TargetDescription::from_slice(data, &[HashAlgorithm::Sha256]).unwrap();
-            let path = TargetPath::new("batty".into()).unwrap();
+            let path = TargetPath::new("batty").unwrap();
             client.store_target(&path, &mut &*data).await.unwrap();
 
             let mut read = client
