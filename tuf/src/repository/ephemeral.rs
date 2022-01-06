@@ -134,7 +134,7 @@ mod test {
             let mut repo = EphemeralRepository::<Json>::new();
 
             let data: &[u8] = b"like tears in the rain";
-            let path = TargetPath::new("batty".into()).unwrap();
+            let path = TargetPath::new("batty").unwrap();
             repo.store_target(&path, &mut &*data).await.unwrap();
 
             let mut read = repo.fetch_target(&path).await.unwrap();

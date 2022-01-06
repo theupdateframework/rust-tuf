@@ -267,7 +267,7 @@ mod test {
             assert!(temp_dir.path().join("targs").exists());
 
             let data: &[u8] = b"like tears in the rain";
-            let path = TargetPath::new("foo/bar/baz".into()).unwrap();
+            let path = TargetPath::new("foo/bar/baz").unwrap();
             repo.store_target(&path, &mut &*data).await.unwrap();
             assert!(temp_dir
                 .path()
