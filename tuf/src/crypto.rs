@@ -64,36 +64,60 @@ fn python_tuf_compatibility_keyid_hash_algorithms() -> Option<Vec<String>> {
     Some(vec!["sha256".to_string(), "sha512".to_string()])
 }
 
-/// Given a map of hash algorithms and their values, get the prefered algorithm and the hash
-/// calculated by it. Returns an `Err` if there is no match.
+/// Given a map of hash algorithms and their values and retains the supported
+/// hashes. Returns an `Err` if there is no match.
 ///
 /// ```
 /// use std::collections::HashMap;
-/// use tuf::crypto::{hash_preference, HashValue, HashAlgorithm};
+/// use tuf::crypto::{retain_supported_hashes, HashValue, HashAlgorithm};
 ///
 /// let mut map = HashMap::new();
-/// assert!(hash_preference(&map).is_err());
+/// assert!(retain_supported_hashes(&map).is_empty());
 ///
-/// let _ = map.insert(HashAlgorithm::Sha512, HashValue::new(vec![0x00, 0x01]));
-/// assert_eq!(hash_preference(&map).unwrap().0, &HashAlgorithm::Sha512);
+/// let sha512_value = HashValue::new(vec![0x00, 0x01]);
+/// let _ = map.insert(HashAlgorithm::Sha512, sha512_value.clone());
+/// assert_eq!(
+///     retain_supported_hashes(&map),
+///     vec![
+///         (&HashAlgorithm::Sha512, sha512_value.clone()),
+///     ],
+/// );
 ///
-/// let _ = map.insert(HashAlgorithm::Sha256, HashValue::new(vec![0x02, 0x03]));
-/// assert_eq!(hash_preference(&map).unwrap().0, &HashAlgorithm::Sha512);
+/// let sha256_value = HashValue::new(vec![0x02, 0x03]);
+/// let _ = map.insert(HashAlgorithm::Sha256, sha256_value.clone());
+/// assert_eq!(
+///     retain_supported_hashes(&map),
+///     vec![
+///         (&HashAlgorithm::Sha512, sha512_value.clone()),
+///         (&HashAlgorithm::Sha256, sha256_value.clone()),
+///     ],
+/// );
+///
+/// let md5_value = HashValue::new(vec![0x04, 0x05]);
+/// let _ = map.insert(HashAlgorithm::Unknown("md5".into()), md5_value);
+/// assert_eq!(
+///     retain_supported_hashes(&map),
+///     vec![
+///         (&HashAlgorithm::Sha512, sha512_value),
+///         (&HashAlgorithm::Sha256, sha256_value),
+///     ],
+/// );
 /// ```
-pub fn hash_preference<'a>(
+pub fn retain_supported_hashes<'a>(
     hashes: &'a HashMap<HashAlgorithm, HashValue>,
-) -> Result<(&'static HashAlgorithm, &'a HashValue)> {
+) -> Vec<(&'static HashAlgorithm, HashValue)> {
+    let mut data = vec![];
     for alg in HASH_ALG_PREFS {
-        match hashes.get(alg) {
-            Some(v) => return Ok((alg, v)),
-            None => continue,
+        if let Some(value) = hashes.get(alg) {
+            data.push((alg, value.clone()));
         }
     }
-    Err(Error::NoSupportedHashAlgorithm)
+
+    data
 }
 
 #[cfg(test)]
-pub(crate) fn calculate_hash(data: &[u8], hash_alg: HashAlgorithm) -> HashValue {
+pub(crate) fn calculate_hash(data: &[u8], hash_alg: &HashAlgorithm) -> HashValue {
     let mut context = hash_alg.digest_context().unwrap();
     context.update(data);
     HashValue::new(context.finish().as_ref().to_vec())
@@ -222,8 +246,9 @@ fn calculate_key_id(
 /// Wrapper type for public key's ID.
 ///
 /// # Calculating
-/// A `KeyId` is calculated as the hex digest of the SHA-256 hash of the canonical form of the
-/// public key, or `hexdigest(sha256(cjson(public_key)))`.
+///
+/// A `KeyId` is calculated as the hex digest of the SHA-256 hash of the
+/// canonical form of the public key, or `hexdigest(sha256(cjson(public_key)))`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct KeyId(String);
 
@@ -264,14 +289,17 @@ pub enum SignatureScheme {
     /// [Ed25519](https://ed25519.cr.yp.to/)
     #[serde(rename = "ed25519")]
     Ed25519,
+
     /// [RSASSA-PSS](https://tools.ietf.org/html/rfc5756) calculated over SHA256
     #[cfg(feature = "unstable_rsa")]
     #[serde(rename = "rsassa-pss-sha256")]
     RsaSsaPssSha256,
+
     /// [RSASSA-PSS](https://tools.ietf.org/html/rfc5756) calculated over SHA512
     #[cfg(feature = "unstable_rsa")]
     #[serde(rename = "rsassa-pss-sha512")]
     RsaSsaPssSha512,
+
     /// Placeholder for an unknown scheme.
     Unknown(String),
 }
@@ -315,9 +343,11 @@ impl Debug for SignatureValue {
 pub enum KeyType {
     /// [Ed25519](https://ed25519.cr.yp.to/)
     Ed25519,
+
     /// [RSA](https://en.wikipedia.org/wiki/RSA_%28cryptosystem%29)
     #[cfg(feature = "unstable_rsa")]
     Rsa,
+
     /// Placeholder for an unknown key type.
     Unknown(String),
 }

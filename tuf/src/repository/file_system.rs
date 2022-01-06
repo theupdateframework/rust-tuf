@@ -241,7 +241,7 @@ mod test {
                         &MetadataPath::from_role(&Role::Root),
                         &MetadataVersion::None,
                         None,
-                        None
+                        vec![],
                     )
                     .await,
                 Err(Error::NotFound)

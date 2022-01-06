@@ -111,7 +111,8 @@ async fn init_server(
     // According to TUF section 5.5.2, when consistent snapshot is enabled, target files should be
     // stored at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.
     if consistent_snapshot {
-        let (_, value) = crypto::hash_preference(target_description.hashes())?;
+        let hashes = crypto::retain_supported_hashes(target_description.hashes());
+        let (_, value) = hashes.first().unwrap();
         let hash_prefixed_path = target_path.with_hash_prefix(value)?;
         let _ = remote
             .store_target(&hash_prefixed_path, &mut &*target_file)
