@@ -15,7 +15,9 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 mod file_system;
-pub use self::file_system::{FileSystemRepository, FileSystemRepositoryBuilder};
+pub use self::file_system::{
+    FileSystemRepository, FileSystemRepositoryBuilder, FileSystemTransaction,
+};
 
 #[cfg(any(feature = "hyper_013", feature = "hyper_014"))]
 mod http;
@@ -24,7 +26,7 @@ mod http;
 pub use self::http::{HttpRepository, HttpRepositoryBuilder};
 
 mod ephemeral;
-pub use self::ephemeral::EphemeralRepository;
+pub use self::ephemeral::{EphemeralRepository, EphemeralTransaction};
 
 #[cfg(test)]
 mod error_repo;
@@ -69,6 +71,39 @@ where
         &'a self,
         target_path: &TargetPath,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>>;
+}
+
+/// Test helper to help read a metadata file from a repository into a string.
+#[cfg(test)]
+pub(crate) async fn fetch_metadata_to_string<D, R>(
+    repo: &R,
+    meta_path: &MetadataPath,
+    version: &MetadataVersion,
+) -> Result<String>
+where
+    D: DataInterchange + Sync,
+    R: RepositoryProvider<D>,
+{
+    let mut reader = repo.fetch_metadata(meta_path, version).await?;
+    let mut buf = String::new();
+    reader.read_to_string(&mut buf).await.unwrap();
+    Ok(buf)
+}
+
+/// Test helper to help read a target file from a repository into a string.
+#[cfg(test)]
+pub(crate) async fn fetch_target_to_string<D, R>(
+    repo: &R,
+    target_path: &TargetPath,
+) -> Result<String>
+where
+    D: DataInterchange + Sync,
+    R: RepositoryProvider<D>,
+{
+    let mut reader = repo.fetch_target(target_path).await?;
+    let mut buf = String::new();
+    reader.read_to_string(&mut buf).await.unwrap();
+    Ok(buf)
 }
 
 /// A writable TUF repository. Most implementors of this trait should also implement
