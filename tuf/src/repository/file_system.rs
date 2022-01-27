@@ -4,12 +4,12 @@ use futures_io::AsyncRead;
 use futures_util::future::{BoxFuture, FutureExt};
 use futures_util::io::{copy, AllowStdIo};
 use log::debug;
+use std::collections::HashMap;
 use std::fs::{DirBuilder, File};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use tempfile::NamedTempFile;
+use tempfile::{NamedTempFile, TempPath};
 
-use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{MetadataPath, MetadataVersion, TargetPath};
 use crate::repository::{RepositoryProvider, RepositoryStorage};
@@ -82,6 +82,7 @@ where
 }
 
 /// A repository contained on the local file system.
+#[derive(Debug)]
 pub struct FileSystemRepository<D>
 where
     D: DataInterchange,
@@ -107,6 +108,42 @@ where
             .targets_prefix("targets")
             .build()
     }
+
+    /// Returns a [FileSystemBatchUpdate] for manipulating this repository. This allows callers to
+    /// stage a number of mutations, and optionally write them all at once.
+    pub fn batch_update(&mut self) -> FileSystemBatchUpdate<D> {
+        FileSystemBatchUpdate {
+            repo: self,
+            metadata: HashMap::new(),
+            targets: HashMap::new(),
+        }
+    }
+
+    fn metadata_path(&self, meta_path: &MetadataPath, version: &MetadataVersion) -> PathBuf {
+        let mut path = self.metadata_path.clone();
+        path.extend(meta_path.components::<D>(version));
+        path
+    }
+
+    fn target_path(&self, target_path: &TargetPath) -> PathBuf {
+        let mut path = self.targets_path.clone();
+        path.extend(target_path.components());
+        path
+    }
+
+    fn fetch_path(
+        &self,
+        path: &Path,
+    ) -> BoxFuture<'_, Result<Box<dyn AsyncRead + Send + Unpin + '_>>> {
+        let reader = File::open(&path);
+
+        async move {
+            let reader = reader?;
+            let reader: Box<dyn AsyncRead + Send + Unpin> = Box::new(AllowStdIo::new(reader));
+            Ok(reader)
+        }
+        .boxed()
+    }
 }
 
 impl<D> RepositoryProvider<D> for FileSystemRepository<D>
@@ -118,34 +155,16 @@ where
         meta_path: &MetadataPath,
         version: &MetadataVersion,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        let mut path = self.metadata_path.clone();
-        path.extend(meta_path.components::<D>(version));
-
-        async move {
-            let reader: Box<dyn AsyncRead + Send + Unpin> =
-                Box::new(AllowStdIo::new(File::open(&path)?));
-            Ok(reader)
-        }
-        .boxed()
+        let path = self.metadata_path(meta_path, version);
+        self.fetch_path(&path)
     }
 
     fn fetch_target<'a>(
         &'a self,
         target_path: &TargetPath,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        let mut path = self.targets_path.clone();
-        path.extend(target_path.components());
-
-        async move {
-            if !path.exists() {
-                return Err(Error::NotFound);
-            }
-
-            let reader: Box<dyn AsyncRead + Send + Unpin> =
-                Box::new(AllowStdIo::new(File::open(&path)?));
-            Ok(reader)
-        }
-        .boxed()
+        let path = self.target_path(target_path);
+        self.fetch_path(&path)
     }
 }
 
@@ -159,8 +178,7 @@ where
         version: &MetadataVersion,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
-        let mut path = self.metadata_path.clone();
-        path.extend(meta_path.components::<D>(version));
+        let path = self.metadata_path(meta_path, version);
 
         async move {
             if path.exists() {
@@ -181,8 +199,7 @@ where
         target_path: &TargetPath,
         read: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
-        let mut path = self.targets_path.clone();
-        path.extend(target_path.components());
+        let path = self.target_path(target_path);
 
         async move {
             if path.exists() {
@@ -192,6 +209,118 @@ where
             let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
             copy(read, &mut temp_file).await?;
             temp_file.into_inner().persist(&path)?;
+
+            Ok(())
+        }
+        .boxed()
+    }
+}
+
+/// [FileSystemBatchUpdate] is a special repository that is designed to write the metadata and
+/// targets to an [FileSystemRepository] in a single batch.
+///
+/// Note: `FileSystemBatchUpdate::commit()` must be called in order to write the metadata and
+/// targets to the [FileSystemRepository]. Otherwise any queued changes will be lost on drop.
+#[derive(Debug)]
+pub struct FileSystemBatchUpdate<'a, D: DataInterchange> {
+    repo: &'a mut FileSystemRepository<D>,
+    metadata: HashMap<PathBuf, TempPath>,
+    targets: HashMap<PathBuf, TempPath>,
+}
+
+impl<'a, D> FileSystemBatchUpdate<'a, D>
+where
+    D: DataInterchange + Sync,
+{
+    /// Write all the metadata and targets the [FileSystemBatchUpdate] to the source
+    /// [FileSystemRepository] in a single batch operation.
+    ///
+    /// Note: While this function will atomically write each file, it's possible that this could
+    /// fail with part of the files written if we experience a system error during the process.
+    pub async fn commit(self) -> Result<()> {
+        for (path, tmp_path) in self.targets {
+            if path.exists() {
+                debug!("Target path exists. Overwriting: {:?}", path);
+            }
+            tmp_path.persist(path)?;
+        }
+
+        for (path, tmp_path) in self.metadata {
+            if path.exists() {
+                debug!("Metadata path exists. Overwriting: {:?}", path);
+            }
+            tmp_path.persist(path)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<D> RepositoryProvider<D> for FileSystemBatchUpdate<'_, D>
+where
+    D: DataInterchange + Sync,
+{
+    fn fetch_metadata<'a>(
+        &'a self,
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        let path = self.repo.metadata_path(meta_path, version);
+        if let Some(temp_path) = self.metadata.get(&path) {
+            self.repo.fetch_path(temp_path)
+        } else {
+            self.repo.fetch_path(&path)
+        }
+    }
+
+    fn fetch_target<'a>(
+        &'a self,
+        target_path: &TargetPath,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        let path = self.repo.target_path(target_path);
+        if let Some(temp_path) = self.targets.get(&path) {
+            self.repo.fetch_path(temp_path)
+        } else {
+            self.repo.fetch_path(&path)
+        }
+    }
+}
+
+impl<D> RepositoryStorage<D> for FileSystemBatchUpdate<'_, D>
+where
+    D: DataInterchange + Sync,
+{
+    fn store_metadata<'a>(
+        &'a mut self,
+        meta_path: &MetadataPath,
+        version: &MetadataVersion,
+        read: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+    ) -> BoxFuture<'a, Result<()>> {
+        let path = self.repo.metadata_path(meta_path, version);
+        let metadata = &mut self.metadata;
+
+        async move {
+            let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
+            copy(read, &mut temp_file).await?;
+            metadata.insert(path, temp_file.into_inner().into_temp_path());
+
+            Ok(())
+        }
+        .boxed()
+    }
+
+    fn store_target<'a>(
+        &'a mut self,
+        target_path: &TargetPath,
+        read: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+    ) -> BoxFuture<'a, Result<()>> {
+        let path = self.repo.target_path(target_path);
+        let targets = &mut self.targets;
+
+        async move {
+            let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
+            copy(read, &mut temp_file).await?;
+            targets.insert(path, temp_file.into_inner().into_temp_path());
 
             Ok(())
         }
@@ -216,9 +345,10 @@ fn create_temp_file(path: &Path) -> Result<NamedTempFile> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::error::Error;
     use crate::interchange::Json;
     use crate::metadata::{Role, RootMetadata};
-    use crate::repository::Repository;
+    use crate::repository::{fetch_metadata_to_string, fetch_target_to_string, Repository};
     use futures_executor::block_on;
     use futures_util::io::AsyncReadExt;
     use matches::assert_matches;
@@ -295,6 +425,114 @@ mod test {
             buf.clear();
             read.read_to_end(&mut buf).await.unwrap();
             assert_eq!(buf.as_slice(), bad_data);
+        })
+    }
+
+    #[test]
+    fn file_system_repo_batch_update() {
+        block_on(async {
+            let temp_dir = tempfile::Builder::new()
+                .prefix("rust-tuf")
+                .tempdir()
+                .unwrap();
+            let mut repo = FileSystemRepositoryBuilder::<Json>::new(temp_dir.path().to_path_buf())
+                .metadata_prefix("meta")
+                .targets_prefix("targs")
+                .build()
+                .unwrap();
+
+            let meta_path = MetadataPath::new("meta").unwrap();
+            let meta_version = MetadataVersion::None;
+            let target_path = TargetPath::new("target").unwrap();
+
+            // First, write some stuff to the repository.
+            let committed_meta = "committed meta";
+            let committed_target = "committed target";
+
+            repo.store_metadata(&meta_path, &meta_version, &mut committed_meta.as_bytes())
+                .await
+                .unwrap();
+
+            repo.store_target(&target_path, &mut committed_target.as_bytes())
+                .await
+                .unwrap();
+
+            let mut batch = repo.batch_update();
+
+            // Make sure we can read back the committed stuff.
+            assert_eq!(
+                fetch_metadata_to_string(&batch, &meta_path, &meta_version)
+                    .await
+                    .unwrap(),
+                committed_meta,
+            );
+            assert_eq!(
+                fetch_target_to_string(&batch, &target_path).await.unwrap(),
+                committed_target,
+            );
+
+            // Next, stage some stuff in the batch_update.
+            let staged_meta = "staged meta";
+            let staged_target = "staged target";
+            batch
+                .store_metadata(&meta_path, &meta_version, &mut staged_meta.as_bytes())
+                .await
+                .unwrap();
+            batch
+                .store_target(&target_path, &mut staged_target.as_bytes())
+                .await
+                .unwrap();
+
+            // Make sure it got staged.
+            assert_eq!(
+                fetch_metadata_to_string(&batch, &meta_path, &meta_version)
+                    .await
+                    .unwrap(),
+                staged_meta,
+            );
+            assert_eq!(
+                fetch_target_to_string(&batch, &target_path).await.unwrap(),
+                staged_target,
+            );
+
+            // Next, drop the batch_update. We shouldn't have written the data back to the
+            // repository.
+            drop(batch);
+
+            assert_eq!(
+                fetch_metadata_to_string(&repo, &meta_path, &meta_version)
+                    .await
+                    .unwrap(),
+                committed_meta,
+            );
+            assert_eq!(
+                fetch_target_to_string(&repo, &target_path).await.unwrap(),
+                committed_target,
+            );
+
+            // Do the batch_update again, but this time write the data.
+            let mut batch = repo.batch_update();
+            batch
+                .store_metadata(&meta_path, &meta_version, &mut staged_meta.as_bytes())
+                .await
+                .unwrap();
+            batch
+                .store_target(&target_path, &mut staged_target.as_bytes())
+                .await
+                .unwrap();
+            batch.commit().await.unwrap();
+
+            // Make sure the new data got to the repository.
+            assert_eq!(
+                fetch_metadata_to_string(&repo, &meta_path, &meta_version)
+                    .await
+                    .unwrap(),
+                staged_meta,
+            );
+            assert_eq!(
+                fetch_target_to_string(&repo, &target_path).await.unwrap(),
+                staged_target,
+            );
         })
     }
 }
