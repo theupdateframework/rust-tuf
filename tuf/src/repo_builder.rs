@@ -24,6 +24,9 @@ use {
 mod private {
     use super::*;
 
+    /// Implement the [sealed] pattern to make public traits that cannot be externally modified.
+    ///
+    /// [sealed]: https://rust-lang.github.io/api-guidelines/future-proofing.html#sealed-traits-protect-against-downstream-implementations-c-sealed
     pub trait Sealed {}
 
     impl Sealed for Root {}
@@ -33,7 +36,12 @@ mod private {
     impl<D: DataInterchange> Sealed for Done<D> {}
 }
 
-/// Trait to track each of the repository building states.
+/// Trait to track each of the [RepoBuilder] building states.
+///
+/// This trait is [sealed] to make
+/// sure external users cannot implement the `State` crate with unexpected states.
+///
+/// [sealed]: https://rust-lang.github.io/api-guidelines/future-proofing.html#sealed-traits-protect-against-downstream-implementations-c-sealed
 pub trait State: private::Sealed {}
 
 /// State to create a root metadata.
@@ -41,6 +49,8 @@ pub trait State: private::Sealed {}
 pub struct Root {
     builder: RootMetadataBuilder,
 }
+
+impl State for Root {}
 
 /// State to create a targets metadata.
 #[doc(hidden)]
@@ -60,6 +70,8 @@ impl<D: DataInterchange> Targets<D> {
     }
 }
 
+impl<D: DataInterchange> State for Targets<D> {}
+
 /// State to create a snapshot metadata.
 #[doc(hidden)]
 pub struct Snapshot<D: DataInterchange> {
@@ -69,6 +81,8 @@ pub struct Snapshot<D: DataInterchange> {
     targets_hash_algorithms: Vec<HashAlgorithm>,
     inherit_targets: bool,
 }
+
+impl<D: DataInterchange> State for Snapshot<D> {}
 
 impl<D: DataInterchange> Snapshot<D> {
     fn new(
@@ -160,6 +174,8 @@ impl<D: DataInterchange> Timestamp<D> {
     }
 }
 
+impl<D: DataInterchange> State for Timestamp<D> {}
+
 /// The final state for building repository metadata.
 pub struct Done<D: DataInterchange> {
     staged_root: Option<Staged<D, RootMetadata>>,
@@ -168,10 +184,6 @@ pub struct Done<D: DataInterchange> {
     staged_timestamp: Option<Staged<D, TimestampMetadata>>,
 }
 
-impl State for Root {}
-impl<D: DataInterchange> State for Targets<D> {}
-impl<D: DataInterchange> State for Snapshot<D> {}
-impl<D: DataInterchange> State for Timestamp<D> {}
 impl<D: DataInterchange> State for Done<D> {}
 
 struct Staged<D: DataInterchange, M: Metadata> {
