@@ -510,17 +510,8 @@ where
         }
     }
 
-    /// Initialize a [RootMetadataBuilder] with the configured keys, and the
-    /// following defaults:
-    ///
-    /// * If the [RepoBuilder] was created for a new repository,  was created with a [Database], the version will be 1
-    ///
-    /// and pass it to the closure for further configuration. The builder then
-    /// will be used to generate a new root metadata and stage
-    ///
-    /// Generate a new metadata This function will generate a new root metadata,
-    /// which will automatically increment the version, and set the expiration
-    /// to the default expiration of one year.
+    /// This function will generate a new root metadata, which will automatically increment the
+    /// version, and set the expiration to the default expiration of 1 year.
     pub fn with_root_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Targets<D>>>
     where
         F: FnOnce(RootMetadataBuilder) -> RootMetadataBuilder,
@@ -553,9 +544,8 @@ where
         })
     }
 
-    /// This function will generate a new targets metadata, which will
-    /// automatically increment the version, and set the expiration to the
-    /// default expiration of 3 months.
+    /// This function will generate a new targets metadata, which will automatically increment the
+    /// version, and set the expiration to the default expiration of 3 months.
     pub fn with_targets_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Snapshot<D>>>
     where
         F: FnOnce(TargetsMetadataBuilder) -> TargetsMetadataBuilder,
@@ -563,9 +553,8 @@ where
         self.create_root_if_necessary()?.with_targets_builder(f)
     }
 
-    /// This function will generate a new snapshot metadata, which will
-    /// automatically increment the version, and set the expiration to the
-    /// default expiration of 3 months.
+    /// This function will generate a new snapshot metadata, which will automatically increment the
+    /// version, and set the expiration to the default expiration of 7 days.
     pub fn with_snapshot_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>>
     where
         F: FnOnce(SnapshotMetadataBuilder) -> SnapshotMetadataBuilder,
@@ -573,9 +562,8 @@ where
         self.create_root_if_necessary()?.with_snapshot_builder(f)
     }
 
-    /// This function will generate a new timestamp metadata, which will
-    /// automatically increment the version, and set the expiration to the
-    /// default expiration of 3 months.
+    /// This function will generate a new timestamp metadata, which will automatically increment
+    /// the version, and set the expiration to the default expiration of 1 day.
     pub fn with_timestamp_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Done<D>>>
     where
         F: FnOnce(TimestampMetadataBuilder) -> TimestampMetadataBuilder,
@@ -748,9 +736,8 @@ where
         Ok(self)
     }
 
-    /// This function will generate a new targets metadata, which will
-    /// automatically increment the version, and set the expiration to the
-    /// default expiration of 3 months.
+    /// This function will generate a new targets metadata, which will automatically increment the
+    /// version, and set the expiration to the default expiration of 3 months.
     pub fn with_targets_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Snapshot<D>>>
     where
         F: FnOnce(TargetsMetadataBuilder) -> TargetsMetadataBuilder,
@@ -791,9 +778,8 @@ where
         })
     }
 
-    /// This function will generate a new snapshot metadata, which will
-    /// automatically increment the version, and set the expiration to the
-    /// default expiration of 3 months.
+    /// This function will generate a new snapshot metadata, which will automatically increment the
+    /// version, and set the expiration to the default expiration of 7 days.
     pub fn with_snapshot_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>>
     where
         F: FnOnce(SnapshotMetadataBuilder) -> SnapshotMetadataBuilder,
@@ -801,9 +787,8 @@ where
         self.create_targets_if_necessary()?.with_snapshot_builder(f)
     }
 
-    /// This function will generate a new timestamp metadata, which will
-    /// automatically increment the version, and set the expiration to the
-    /// default expiration of 3 months.
+    /// This function will generate a new timestamp metadata, which will automatically increment
+    /// the version, and set the expiration to the default expiration of 1 day.
     pub fn with_timestamp_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Done<D>>>
     where
         F: FnOnce(TimestampMetadataBuilder) -> TimestampMetadataBuilder,
@@ -909,9 +894,8 @@ where
         }
     }
 
-    /// This function will generate a new snapshot metadata, which will automatically
-    /// increment the version, and set the expiration to the default expiration of
-    /// 7 days.
+    /// This function will generate a new snapshot metadata, which will automatically increment the
+    /// version, and set the expiration to the default expiration of 7 days.
     pub fn with_snapshot_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>>
     where
         F: FnOnce(SnapshotMetadataBuilder) -> SnapshotMetadataBuilder,
@@ -973,9 +957,8 @@ where
         })
     }
 
-    /// This function will generate a new timestamp metadata, which will
-    /// automatically increment the version, and set the expiration to the
-    /// default expiration of 3 months.
+    /// This function will generate a new timestamp metadata, which will automatically increment
+    /// the version, and set the expiration to the default expiration of 1 day.
     pub fn with_timestamp_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Done<D>>>
     where
         F: FnOnce(TimestampMetadataBuilder) -> TimestampMetadataBuilder,
@@ -1076,9 +1059,8 @@ where
         }
     }
 
-    /// Build timestamp metadata for this repository, then write all metadata to
-    /// the repository. Before writing the metadata to `repo`, this will test
-    /// that a client can update to this metadata to make sure it is valid.
+    /// This function will generate a new timestamp metadata, which will automatically increment
+    /// the version, and set the expiration to the default expiration of 1 day.
     pub fn with_timestamp_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Done<D>>>
     where
         F: FnOnce(TimestampMetadataBuilder) -> TimestampMetadataBuilder,
