@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 mod file_system;
 pub use self::file_system::{
-    FileSystemRepository, FileSystemRepositoryBuilder, FileSystemTransaction,
+    FileSystemBatchUpdate, FileSystemRepository, FileSystemRepositoryBuilder,
 };
 
 #[cfg(any(feature = "hyper_013", feature = "hyper_014"))]
@@ -26,7 +26,7 @@ mod http;
 pub use self::http::{HttpRepository, HttpRepositoryBuilder};
 
 mod ephemeral;
-pub use self::ephemeral::{EphemeralRepository, EphemeralTransaction};
+pub use self::ephemeral::{EphemeralBatchUpdate, EphemeralRepository};
 
 #[cfg(test)]
 mod error_repo;

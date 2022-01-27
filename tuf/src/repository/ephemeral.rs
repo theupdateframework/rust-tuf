@@ -33,11 +33,11 @@ where
         }
     }
 
-    /// Returns a [EphemeralTransaction] for manipulating this repository. This allows callers to
-    /// stage a number of mutations, and optionally commit them all at once.
-    pub fn transaction(&mut self) -> EphemeralTransaction<'_, D> {
-        EphemeralTransaction {
-            commit_repo: self,
+    /// Returns a [EphemeralBatchUpdate] for manipulating this repository. This allows callers to
+    /// stage a number of mutations, and optionally atomically write them all at once.
+    pub fn batch_update(&mut self) -> EphemeralBatchUpdate<'_, D> {
+        EphemeralBatchUpdate {
+            parent_repo: self,
             staging_repo: EphemeralRepository::new(),
         }
     }
@@ -121,34 +121,35 @@ where
     }
 }
 
-/// [EphemeralTransaction] is a special repository that is designed to atomically commit metadata
-/// and targets to an [EphemeralRepository]. It can be used as a normal repository.
+/// [EphemeralBatchUpdate] is a special repository that is designed to write the metadata and
+/// targets to an [EphemeralRepository] in a single batch.
 ///
-/// Note: `EphemeralTransaction::commit()` must be called in order to write the metadata and targets
-/// to the [EphemeralRepository]. Otherwise any stored file will be lost on drop.
+/// Note: `EphemeralBatchUpdate::commit()` must be called in order to write the metadata and
+/// targets to the [EphemeralRepository]. Otherwise any queued changes will be lost on drop.
 #[derive(Debug)]
-pub struct EphemeralTransaction<'a, D> {
-    commit_repo: &'a mut EphemeralRepository<D>,
+pub struct EphemeralBatchUpdate<'a, D> {
+    parent_repo: &'a mut EphemeralRepository<D>,
     staging_repo: EphemeralRepository<D>,
 }
 
-impl<'a, D> EphemeralTransaction<'a, D>
+impl<'a, D> EphemeralBatchUpdate<'a, D>
 where
     D: DataInterchange + Sync,
 {
-    /// Write all the metadata and targets in the transaction.
+    /// Write all the metadata and targets in the [EphemeralBatchUpdate] to the source
+    /// [EphemeralRepository] in a single batch operation.
     pub fn commit(self) {
-        self.commit_repo
+        self.parent_repo
             .metadata
             .extend(self.staging_repo.metadata.into_iter());
 
-        self.commit_repo
+        self.parent_repo
             .targets
             .extend(self.staging_repo.targets.into_iter());
     }
 }
 
-impl<D> RepositoryProvider<D> for EphemeralTransaction<'_, D>
+impl<D> RepositoryProvider<D> for EphemeralBatchUpdate<'_, D>
 where
     D: DataInterchange + Sync,
 {
@@ -161,7 +162,7 @@ where
         let bytes = if let Some(bytes) = self.staging_repo.metadata.get(&key) {
             Ok(bytes)
         } else {
-            self.commit_repo.metadata.get(&key).ok_or(Error::NotFound)
+            self.parent_repo.metadata.get(&key).ok_or(Error::NotFound)
         };
         bytes_to_reader(bytes).boxed()
     }
@@ -173,7 +174,7 @@ where
         let bytes = if let Some(bytes) = self.staging_repo.targets.get(target_path) {
             Ok(bytes)
         } else {
-            self.commit_repo
+            self.parent_repo
                 .targets
                 .get(target_path)
                 .ok_or(Error::NotFound)
@@ -182,7 +183,7 @@ where
     }
 }
 
-impl<D> RepositoryStorage<D> for EphemeralTransaction<'_, D>
+impl<D> RepositoryStorage<D> for EphemeralBatchUpdate<'_, D>
 where
     D: DataInterchange + Sync,
 {
@@ -247,7 +248,7 @@ mod test {
     }
 
     #[test]
-    fn ephemeral_repo_transaction() {
+    fn ephemeral_repo_batch_update() {
         block_on(async {
             let mut repo = EphemeralRepository::<Json>::new();
 
@@ -267,45 +268,47 @@ mod test {
                 .await
                 .unwrap();
 
-            let mut tx = repo.transaction();
+            let mut batch = repo.batch_update();
 
             // Make sure we can read back the committed stuff.
             assert_eq!(
-                fetch_metadata_to_string(&tx, &meta_path, &meta_version)
+                fetch_metadata_to_string(&batch, &meta_path, &meta_version)
                     .await
                     .unwrap(),
                 committed_meta,
             );
             assert_eq!(
-                fetch_target_to_string(&tx, &target_path).await.unwrap(),
+                fetch_target_to_string(&batch, &target_path).await.unwrap(),
                 committed_target,
             );
 
-            // Next, stage some stuff in the transaction.
+            // Next, stage some stuff in the batch_update.
             let staged_meta = "staged meta";
             let staged_target = "staged target";
-            tx.store_metadata(&meta_path, &meta_version, &mut staged_meta.as_bytes())
+            batch
+                .store_metadata(&meta_path, &meta_version, &mut staged_meta.as_bytes())
                 .await
                 .unwrap();
-            tx.store_target(&target_path, &mut staged_target.as_bytes())
+            batch
+                .store_target(&target_path, &mut staged_target.as_bytes())
                 .await
                 .unwrap();
 
             // Make sure it got staged.
             assert_eq!(
-                fetch_metadata_to_string(&tx, &meta_path, &meta_version)
+                fetch_metadata_to_string(&batch, &meta_path, &meta_version)
                     .await
                     .unwrap(),
                 staged_meta,
             );
             assert_eq!(
-                fetch_target_to_string(&tx, &target_path).await.unwrap(),
+                fetch_target_to_string(&batch, &target_path).await.unwrap(),
                 staged_target,
             );
 
-            // Next, drop the transaction. We shouldn't have written the data back to the
+            // Next, drop the batch_update. We shouldn't have written the data back to the
             // repository.
-            drop(tx);
+            drop(batch);
 
             assert_eq!(
                 fetch_metadata_to_string(&repo, &meta_path, &meta_version)
@@ -318,15 +321,17 @@ mod test {
                 committed_target,
             );
 
-            // Do the transaction again, but this time commit the data.
-            let mut tx = repo.transaction();
-            tx.store_metadata(&meta_path, &meta_version, &mut staged_meta.as_bytes())
+            // Do the batch_update again, but this time write the data.
+            let mut batch = repo.batch_update();
+            batch
+                .store_metadata(&meta_path, &meta_version, &mut staged_meta.as_bytes())
                 .await
                 .unwrap();
-            tx.store_target(&target_path, &mut staged_target.as_bytes())
+            batch
+                .store_target(&target_path, &mut staged_target.as_bytes())
                 .await
                 .unwrap();
-            tx.commit();
+            batch.commit();
 
             // Make sure the new data got to the repository.
             assert_eq!(

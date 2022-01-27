@@ -109,10 +109,10 @@ where
             .build()
     }
 
-    /// Returns a [FileSystemTransaction] for manipulating this repository. This allows callers to
-    /// stage a number of mutations, and optionally commit them all at once.
-    pub fn transaction(&mut self) -> FileSystemTransaction<D> {
-        FileSystemTransaction {
+    /// Returns a [FileSystemBatchUpdate] for manipulating this repository. This allows callers to
+    /// stage a number of mutations, and optionally write them all at once.
+    pub fn batch_update(&mut self) -> FileSystemBatchUpdate<D> {
+        FileSystemBatchUpdate {
             repo: self,
             metadata: HashMap::new(),
             targets: HashMap::new(),
@@ -216,23 +216,24 @@ where
     }
 }
 
-/// [FileSystemTransaction] is a special repository that is designed to atomically commit metadata
-/// and targets to an [FileSystemRepository]. It can be used as a normal repository.
+/// [FileSystemBatchUpdate] is a special repository that is designed to write the metadata and
+/// targets to an [FileSystemRepository] in a single batch.
 ///
-/// Note: `FileSystemTransaction::commit()` must be called in order to write the metadata and
-/// targets to the [FileSystemRepository]. Otherwise any stored file will be lost on drop.
+/// Note: `FileSystemBatchUpdate::commit()` must be called in order to write the metadata and
+/// targets to the [FileSystemRepository]. Otherwise any queued changes will be lost on drop.
 #[derive(Debug)]
-pub struct FileSystemTransaction<'a, D: DataInterchange> {
+pub struct FileSystemBatchUpdate<'a, D: DataInterchange> {
     repo: &'a mut FileSystemRepository<D>,
     metadata: HashMap<PathBuf, TempPath>,
     targets: HashMap<PathBuf, TempPath>,
 }
 
-impl<'a, D> FileSystemTransaction<'a, D>
+impl<'a, D> FileSystemBatchUpdate<'a, D>
 where
     D: DataInterchange + Sync,
 {
-    /// Write all the metadata and targets in the transaction.
+    /// Write all the metadata and targets the [FileSystemBatchUpdate] to the source
+    /// [FileSystemRepository] in a single batch operation.
     ///
     /// Note: While this function will atomically write each file, it's possible that this could
     /// fail with part of the files written if we experience a system error during the process.
@@ -255,7 +256,7 @@ where
     }
 }
 
-impl<D> RepositoryProvider<D> for FileSystemTransaction<'_, D>
+impl<D> RepositoryProvider<D> for FileSystemBatchUpdate<'_, D>
 where
     D: DataInterchange + Sync,
 {
@@ -285,7 +286,7 @@ where
     }
 }
 
-impl<D> RepositoryStorage<D> for FileSystemTransaction<'_, D>
+impl<D> RepositoryStorage<D> for FileSystemBatchUpdate<'_, D>
 where
     D: DataInterchange + Sync,
 {
@@ -428,7 +429,7 @@ mod test {
     }
 
     #[test]
-    fn file_system_repo_transaction() {
+    fn file_system_repo_batch_update() {
         block_on(async {
             let temp_dir = tempfile::Builder::new()
                 .prefix("rust-tuf")
@@ -456,45 +457,47 @@ mod test {
                 .await
                 .unwrap();
 
-            let mut tx = repo.transaction();
+            let mut batch = repo.batch_update();
 
             // Make sure we can read back the committed stuff.
             assert_eq!(
-                fetch_metadata_to_string(&tx, &meta_path, &meta_version)
+                fetch_metadata_to_string(&batch, &meta_path, &meta_version)
                     .await
                     .unwrap(),
                 committed_meta,
             );
             assert_eq!(
-                fetch_target_to_string(&tx, &target_path).await.unwrap(),
+                fetch_target_to_string(&batch, &target_path).await.unwrap(),
                 committed_target,
             );
 
-            // Next, stage some stuff in the transaction.
+            // Next, stage some stuff in the batch_update.
             let staged_meta = "staged meta";
             let staged_target = "staged target";
-            tx.store_metadata(&meta_path, &meta_version, &mut staged_meta.as_bytes())
+            batch
+                .store_metadata(&meta_path, &meta_version, &mut staged_meta.as_bytes())
                 .await
                 .unwrap();
-            tx.store_target(&target_path, &mut staged_target.as_bytes())
+            batch
+                .store_target(&target_path, &mut staged_target.as_bytes())
                 .await
                 .unwrap();
 
             // Make sure it got staged.
             assert_eq!(
-                fetch_metadata_to_string(&tx, &meta_path, &meta_version)
+                fetch_metadata_to_string(&batch, &meta_path, &meta_version)
                     .await
                     .unwrap(),
                 staged_meta,
             );
             assert_eq!(
-                fetch_target_to_string(&tx, &target_path).await.unwrap(),
+                fetch_target_to_string(&batch, &target_path).await.unwrap(),
                 staged_target,
             );
 
-            // Next, drop the transaction. We shouldn't have written the data back to the
+            // Next, drop the batch_update. We shouldn't have written the data back to the
             // repository.
-            drop(tx);
+            drop(batch);
 
             assert_eq!(
                 fetch_metadata_to_string(&repo, &meta_path, &meta_version)
@@ -507,15 +510,17 @@ mod test {
                 committed_target,
             );
 
-            // Do the transaction again, but this time commit the data.
-            let mut tx = repo.transaction();
-            tx.store_metadata(&meta_path, &meta_version, &mut staged_meta.as_bytes())
+            // Do the batch_update again, but this time write the data.
+            let mut batch = repo.batch_update();
+            batch
+                .store_metadata(&meta_path, &meta_version, &mut staged_meta.as_bytes())
                 .await
                 .unwrap();
-            tx.store_target(&target_path, &mut staged_target.as_bytes())
+            batch
+                .store_target(&target_path, &mut staged_target.as_bytes())
                 .await
                 .unwrap();
-            tx.commit().await.unwrap();
+            batch.commit().await.unwrap();
 
             // Make sure the new data got to the repository.
             assert_eq!(
