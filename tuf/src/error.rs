@@ -125,6 +125,12 @@ impl From<tempfile::PersistError> for Error {
     }
 }
 
+impl From<tempfile::PathPersistError> for Error {
+    fn from(err: tempfile::PathPersistError) -> Error {
+        Error::Opaque(format!("Error persisting temp file: {:?}", err))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
