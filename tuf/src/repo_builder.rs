@@ -2108,4 +2108,244 @@ mod tests {
             assert_eq!(&buf, target_file);
         })
     }
+
+    #[test]
+    fn test_do_not_require_all_keys_to_be_online() {
+        block_on(async {
+            let mut remote = EphemeralRepository::<Json>::new();
+
+            // First, write some metadata to the repo.
+            let expires1 = Utc.ymd(2038, 1, 1).and_hms(0, 0, 0);
+            let metadata1 = RepoBuilder::create(&mut remote)
+                .trusted_root_keys(&[&KEYS[0]])
+                .trusted_targets_keys(&[&KEYS[1]])
+                .trusted_snapshot_keys(&[&KEYS[2]])
+                .trusted_timestamp_keys(&[&KEYS[3]])
+                .with_root_builder(|builder| builder.consistent_snapshot(true).expires(expires1))
+                .unwrap()
+                .with_targets_builder(|builder| builder.expires(expires1))
+                .unwrap()
+                .with_snapshot_builder(|builder| builder.expires(expires1))
+                .unwrap()
+                .with_timestamp_builder(|builder| builder.expires(expires1))
+                .unwrap()
+                .commit()
+                .await
+                .unwrap();
+
+            // We wrote all the metadata.
+            assert!(metadata1.root().is_some());
+            assert!(metadata1.timestamp().is_some());
+            assert!(metadata1.snapshot().is_some());
+            assert!(metadata1.targets().is_some());
+
+            let mut expected_metadata: BTreeMap<_, _> = vec![
+                (
+                    (
+                        MetadataPath::from_role(&Role::Root),
+                        MetadataVersion::Number(1),
+                    ),
+                    metadata1.root().unwrap().as_bytes(),
+                ),
+                (
+                    (MetadataPath::from_role(&Role::Root), MetadataVersion::None),
+                    metadata1.root().unwrap().as_bytes(),
+                ),
+                (
+                    (
+                        MetadataPath::from_role(&Role::Targets),
+                        MetadataVersion::Number(1),
+                    ),
+                    metadata1.targets().unwrap().as_bytes(),
+                ),
+                (
+                    (
+                        MetadataPath::from_role(&Role::Targets),
+                        MetadataVersion::None,
+                    ),
+                    metadata1.targets().unwrap().as_bytes(),
+                ),
+                (
+                    (
+                        MetadataPath::from_role(&Role::Snapshot),
+                        MetadataVersion::Number(1),
+                    ),
+                    metadata1.snapshot().unwrap().as_bytes(),
+                ),
+                (
+                    (
+                        MetadataPath::from_role(&Role::Snapshot),
+                        MetadataVersion::None,
+                    ),
+                    metadata1.snapshot().unwrap().as_bytes(),
+                ),
+                (
+                    (
+                        MetadataPath::from_role(&Role::Timestamp),
+                        MetadataVersion::None,
+                    ),
+                    metadata1.timestamp().unwrap().as_bytes(),
+                ),
+            ]
+            .into_iter()
+            .collect();
+
+            assert_repo(&remote, &expected_metadata);
+
+            let mut db = Database::from_trusted_metadata(&metadata1).unwrap();
+
+            // Next, write another batch, but only have the timestamp, snapshot, and targets keys.
+            let expires2 = Utc.ymd(2038, 1, 2).and_hms(0, 0, 0);
+            let metadata2 = RepoBuilder::from_database(&mut remote, &db)
+                .trusted_targets_keys(&[&KEYS[1]])
+                .trusted_snapshot_keys(&[&KEYS[2]])
+                .trusted_timestamp_keys(&[&KEYS[3]])
+                .skip_root()
+                .with_targets_builder(|builder| builder.expires(expires2))
+                .unwrap()
+                .with_snapshot_builder(|builder| builder.expires(expires2))
+                .unwrap()
+                .with_timestamp_builder(|builder| builder.expires(expires2))
+                .unwrap()
+                .commit()
+                .await
+                .unwrap();
+
+            assert!(db.update_metadata(&metadata2).unwrap());
+
+            assert!(metadata2.root().is_none());
+            assert!(metadata2.targets().is_some());
+            assert!(metadata2.snapshot().is_some());
+            assert!(metadata2.timestamp().is_some());
+
+            expected_metadata.extend(
+                vec![
+                    (
+                        (
+                            MetadataPath::from_role(&Role::Targets),
+                            MetadataVersion::Number(2),
+                        ),
+                        metadata2.targets().unwrap().as_bytes(),
+                    ),
+                    (
+                        (
+                            MetadataPath::from_role(&Role::Targets),
+                            MetadataVersion::None,
+                        ),
+                        metadata2.targets().unwrap().as_bytes(),
+                    ),
+                    (
+                        (
+                            MetadataPath::from_role(&Role::Snapshot),
+                            MetadataVersion::Number(2),
+                        ),
+                        metadata2.snapshot().unwrap().as_bytes(),
+                    ),
+                    (
+                        (
+                            MetadataPath::from_role(&Role::Snapshot),
+                            MetadataVersion::None,
+                        ),
+                        metadata2.snapshot().unwrap().as_bytes(),
+                    ),
+                    (
+                        (
+                            MetadataPath::from_role(&Role::Timestamp),
+                            MetadataVersion::None,
+                        ),
+                        metadata2.timestamp().unwrap().as_bytes(),
+                    ),
+                ]
+                .into_iter(),
+            );
+
+            assert_repo(&remote, &expected_metadata);
+
+            // Now, only have the timestamp and snapshot keys online.
+            let expires3 = Utc.ymd(2038, 1, 3).and_hms(0, 0, 0);
+            let metadata3 = RepoBuilder::from_database(&mut remote, &db)
+                .trusted_snapshot_keys(&[&KEYS[2]])
+                .trusted_timestamp_keys(&[&KEYS[3]])
+                .skip_root()
+                .skip_targets()
+                .with_snapshot_builder(|builder| builder.expires(expires3))
+                .unwrap()
+                .with_timestamp_builder(|builder| builder.expires(expires3))
+                .unwrap()
+                .commit()
+                .await
+                .unwrap();
+
+            assert!(db.update_metadata(&metadata3).unwrap());
+
+            // We only have timestamp and snapshot.
+            assert!(metadata3.root().is_none());
+            assert!(metadata3.targets().is_none());
+            assert!(metadata3.snapshot().is_some());
+            assert!(metadata3.timestamp().is_some());
+
+            expected_metadata.extend(
+                vec![
+                    (
+                        (
+                            MetadataPath::from_role(&Role::Snapshot),
+                            MetadataVersion::Number(3),
+                        ),
+                        metadata3.snapshot().unwrap().as_bytes(),
+                    ),
+                    (
+                        (
+                            MetadataPath::from_role(&Role::Snapshot),
+                            MetadataVersion::None,
+                        ),
+                        metadata3.snapshot().unwrap().as_bytes(),
+                    ),
+                    (
+                        (
+                            MetadataPath::from_role(&Role::Timestamp),
+                            MetadataVersion::None,
+                        ),
+                        metadata3.timestamp().unwrap().as_bytes(),
+                    ),
+                ]
+                .into_iter(),
+            );
+
+            assert_repo(&remote, &expected_metadata);
+
+            // Finally, only have the timestamp keys online.
+            let expires4 = Utc.ymd(2038, 1, 4).and_hms(0, 0, 0);
+            let metadata4 = RepoBuilder::from_database(&mut remote, &db)
+                .trusted_timestamp_keys(&[&KEYS[3]])
+                .skip_root()
+                .skip_targets()
+                .skip_snapshot()
+                .with_timestamp_builder(|builder| builder.expires(expires4))
+                .unwrap()
+                .commit()
+                .await
+                .unwrap();
+
+            assert!(db.update_metadata(&metadata4).unwrap());
+
+            // We only have timestamp and snapshot.
+            assert!(metadata4.root().is_none());
+            assert!(metadata4.targets().is_none());
+            assert!(metadata4.snapshot().is_none());
+            assert!(metadata4.timestamp().is_some());
+
+            expected_metadata.extend(
+                vec![(
+                    (
+                        MetadataPath::from_role(&Role::Timestamp),
+                        MetadataVersion::None,
+                    ),
+                    metadata4.timestamp().unwrap().as_bytes(),
+                )]
+                .into_iter(),
+            );
+
+            assert_repo(&remote, &expected_metadata);
+        })
+    }
 }
