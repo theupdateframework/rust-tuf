@@ -41,6 +41,11 @@ where
             staging_repo: EphemeralRepository::new(),
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn metadata(&self) -> &HashMap<(MetadataPath, MetadataVersion), Box<[u8]>> {
+        &self.metadata
+    }
 }
 
 impl<D> Default for EphemeralRepository<D>
