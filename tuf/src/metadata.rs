@@ -603,13 +603,13 @@ impl RootMetadataBuilder {
     ///
     /// * version: 1,
     /// * expires: 365 days from the current time.
-    /// * consistent snapshot: false
+    /// * consistent snapshot: true
     /// * role thresholds: 1
     pub fn new() -> Self {
         RootMetadataBuilder {
             version: 1,
             expires: Utc::now() + Duration::days(365),
-            consistent_snapshot: false,
+            consistent_snapshot: true,
             keys: HashMap::new(),
             root_threshold: 1,
             root_key_ids: Vec::new(),
@@ -2338,7 +2338,7 @@ mod test {
             "spec_version": "1.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
-            "consistent_snapshot": false,
+            "consistent_snapshot": true,
             "keys": {
                 "09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1": {
                     "keytype": "ed25519",

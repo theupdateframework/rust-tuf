@@ -82,7 +82,7 @@ async fn init_server(
         .trusted_snapshot_keys(&[&snapshot_key])
         .trusted_targets_keys(&[&targets_key])
         .trusted_timestamp_keys(&[&timestamp_key])
-        .with_root_builder(|builder| builder.consistent_snapshot(consistent_snapshot))
+        .stage_root_with_builder(|builder| builder.consistent_snapshot(consistent_snapshot))
         .unwrap()
         .add_target(target_path.clone(), Cursor::new(target_file))
         .await
