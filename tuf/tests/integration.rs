@@ -53,9 +53,11 @@ fn simple_delegation() {
             .trusted_snapshot_keys(&[&snapshot_key])
             .trusted_targets_keys(&[&targets_key])
             .trusted_timestamp_keys(&[&timestamp_key])
-            .with_targets_builder(|builder| builder.delegations(delegations))
+            .stage_root()
             .unwrap()
-            .with_snapshot_builder(|builder| {
+            .stage_targets_with_builder(|builder| builder.delegations(delegations))
+            .unwrap()
+            .stage_snapshot_with_builder(|builder| {
                 builder.insert_metadata_description(
                     MetadataPath::new("delegation").unwrap(),
                     MetadataDescription::from_slice(&[0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
@@ -132,9 +134,11 @@ fn nested_delegation() {
             .trusted_snapshot_keys(&[&snapshot_key])
             .trusted_targets_keys(&[&targets_key])
             .trusted_timestamp_keys(&[&timestamp_key])
-            .with_targets_builder(|builder| builder.delegations(delegations))
+            .stage_root()
             .unwrap()
-            .with_snapshot_builder(|builder| {
+            .stage_targets_with_builder(|builder| builder.delegations(delegations))
+            .unwrap()
+            .stage_snapshot_with_builder(|builder| {
                 builder
                     .insert_metadata_description(
                         MetadataPath::new("delegation-a").unwrap(),
@@ -245,9 +249,11 @@ fn rejects_bad_delegation_signatures() {
             .trusted_snapshot_keys(&[&snapshot_key])
             .trusted_targets_keys(&[&targets_key])
             .trusted_timestamp_keys(&[&timestamp_key])
-            .with_targets_builder(|builder| builder.delegations(delegations))
+            .stage_root()
             .unwrap()
-            .with_snapshot_builder(|builder| {
+            .stage_targets_with_builder(|builder| builder.delegations(delegations))
+            .unwrap()
+            .stage_snapshot_with_builder(|builder| {
                 builder.insert_metadata_description(
                     MetadataPath::new("delegation").unwrap(),
                     MetadataDescription::from_slice(&[0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
@@ -358,9 +364,11 @@ fn diamond_delegation() {
             .trusted_snapshot_keys(&[&etc_key])
             .trusted_targets_keys(&[&targets_key])
             .trusted_timestamp_keys(&[&etc_key])
-            .with_targets_builder(|builder| builder.delegations(delegations))
+            .stage_root()
             .unwrap()
-            .with_snapshot_builder(|builder| {
+            .stage_targets_with_builder(|builder| builder.delegations(delegations))
+            .unwrap()
+            .stage_snapshot_with_builder(|builder| {
                 builder
                     .insert_metadata_description(
                         MetadataPath::new("delegation-a").unwrap(),

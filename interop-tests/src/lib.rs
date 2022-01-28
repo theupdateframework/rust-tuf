@@ -124,7 +124,7 @@ async fn update_root(
     }
 
     let _metadata = repo_builder
-        .with_root_builder(|builder| {
+        .stage_root_with_builder(|builder| {
             builder
                 .expires(expiration)
                 .version(version)

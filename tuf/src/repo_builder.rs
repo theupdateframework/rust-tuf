@@ -15,7 +15,7 @@ use {
         repository::RepositoryStorage,
         Error, Result,
     },
-    chrono::Utc,
+    chrono::{Duration, Utc},
     futures_io::{AsyncRead, AsyncSeek},
     futures_util::AsyncSeekExt as _,
     std::{collections::HashMap, io::SeekFrom, marker::PhantomData},
@@ -44,7 +44,7 @@ mod private {
 /// [sealed]: https://rust-lang.github.io/api-guidelines/future-proofing.html#sealed-traits-protect-against-downstream-implementations-c-sealed
 pub trait State: private::Sealed {}
 
-/// State to create a root metadata.
+/// State to stage a root metadata.
 #[doc(hidden)]
 pub struct Root {
     builder: RootMetadataBuilder,
@@ -52,7 +52,7 @@ pub struct Root {
 
 impl State for Root {}
 
-/// State to create a targets metadata.
+/// State to stage a targets metadata.
 #[doc(hidden)]
 pub struct Targets<D: DataInterchange> {
     staged_root: Option<Staged<D, RootMetadata>>,
@@ -64,7 +64,7 @@ impl<D: DataInterchange> Targets<D> {
     fn new(staged_root: Option<Staged<D, RootMetadata>>) -> Self {
         Self {
             staged_root,
-            builder: TargetsMetadataBuilder::new(),
+            builder: TargetsMetadataBuilder::new().expires(Utc::now() + Duration::days(90)),
             file_hash_algorithms: vec![HashAlgorithm::Sha256],
         }
     }
@@ -72,7 +72,7 @@ impl<D: DataInterchange> Targets<D> {
 
 impl<D: DataInterchange> State for Targets<D> {}
 
-/// State to create a snapshot metadata.
+/// State to stage a snapshot metadata.
 #[doc(hidden)]
 pub struct Snapshot<D: DataInterchange> {
     staged_root: Option<Staged<D, RootMetadata>>,
@@ -126,7 +126,7 @@ impl<D: DataInterchange> Snapshot<D> {
     }
 }
 
-/// State to create a timestamp metadata.
+/// State to stage a timestamp metadata.
 pub struct Timestamp<D: DataInterchange> {
     staged_root: Option<Staged<D, RootMetadata>>,
     staged_targets: Option<Staged<D, TargetsMetadata>>,
@@ -287,21 +287,18 @@ where
                 _interchange: PhantomData,
             },
             state: Root {
-                builder: RootMetadataBuilder::new(),
+                builder: RootMetadataBuilder::new()
+                    .consistent_snapshot(true)
+                    .root_threshold(1)
+                    .targets_threshold(1)
+                    .snapshot_threshold(1)
+                    .timestamp_threshold(1),
             },
         }
     }
 
-    /// Create a [RepoBuilder] for creating metadata based off the latest
-    /// metadata in the [Database]. It will prepare to stage a new root metadata
-    /// based off the database's trusted root metadata:
-    ///
-    /// * root version to be 1 after the trusted root's version
-    /// * consistent snapshot to match the trusted root's consistent snapshot
-    /// * root threshold to match the trusted root's root threshold
-    /// * targets threshold to match the trusted root's targets threshold
-    /// * snapshot threshold to match the trusted root's snapshot threshold
-    /// * timestamp threshold to match the trusted root's timestamp threshold
+    /// Create a [RepoBuilder] for creating metadata based off the latest metadata in the
+    /// [Database].
     ///
     /// # Examples
     ///
@@ -339,7 +336,7 @@ where
     ///     .trusted_targets_keys(&[&key])
     ///     .trusted_snapshot_keys(&[&key])
     ///     .trusted_timestamp_keys(&[&key])
-    ///     .create_root()
+    ///     .stage_root()
     ///     .unwrap()
     ///     .commit()
     ///     .await
@@ -376,9 +373,8 @@ where
         }
     }
 
-    /// Sign the root metadata with `keys`, but do not include the keys as
-    /// trusted root keys in the root metadata. This is typically used to
-    /// support root key rotation.
+    /// Sign the root metadata with `keys`, but do not include the keys as trusted root keys in the
+    /// root metadata. This is typically used to support root key rotation.
     pub fn signing_root_keys(mut self, keys: &[&'a dyn PrivateKey]) -> Self {
         for key in keys {
             self.ctx.signing_root_keys.push(*key);
@@ -386,9 +382,8 @@ where
         self
     }
 
-    /// Sign the targets metadata with `keys`, but do not include the keys as
-    /// trusted targets keys in the root metadata. This is typically used to
-    /// support targets key rotation.
+    /// Sign the targets metadata with `keys`, but do not include the keys as trusted targets keys
+    /// in the root metadata. This is typically used to support targets key rotation.
     pub fn signing_targets_keys(mut self, keys: &[&'a dyn PrivateKey]) -> Self {
         for key in keys {
             self.ctx.signing_targets_keys.push(*key);
@@ -396,9 +391,8 @@ where
         self
     }
 
-    /// Sign the snapshot metadata with `keys`, but do not include the keys as
-    /// trusted snapshot keys in the root metadata. This is typically used to
-    /// support snapshot key rotation.
+    /// Sign the snapshot metadata with `keys`, but do not include the keys as trusted snapshot keys
+    /// in the root metadata. This is typically used to support snapshot key rotation.
     pub fn signing_snapshot_keys(mut self, keys: &[&'a dyn PrivateKey]) -> Self {
         for key in keys {
             self.ctx.signing_snapshot_keys.push(*key);
@@ -406,9 +400,8 @@ where
         self
     }
 
-    /// Sign the timestamp metadata with `keys`, but do not include the keys as
-    /// trusted timestamp keys in the root metadata. This is typically used to
-    /// support timestamp key rotation.
+    /// Sign the timestamp metadata with `keys`, but do not include the keys as trusted timestamp
+    /// keys in the root metadata. This is typically used to support timestamp key rotation.
     pub fn signing_timestamp_keys(mut self, keys: &[&'a dyn PrivateKey]) -> Self {
         for key in keys {
             self.ctx.signing_timestamp_keys.push(*key);
@@ -416,8 +409,8 @@ where
         self
     }
 
-    /// Sign the root metadata with `keys`, and include the keys as
-    /// trusted root keys in the root metadata.
+    /// Sign the root metadata with `keys`, and include the keys as trusted root keys in the root
+    /// metadata.
     pub fn trusted_root_keys(mut self, keys: &[&'a dyn PrivateKey]) -> Self {
         for key in keys {
             self.ctx.trusted_root_keys.push(*key);
@@ -426,8 +419,8 @@ where
         self
     }
 
-    /// Sign the targets metadata with `keys`, and include the keys as
-    /// trusted targets keys in the targets metadata.
+    /// Sign the targets metadata with `keys`, and include the keys as trusted targets keys in the
+    /// targets metadata.
     pub fn trusted_targets_keys(mut self, keys: &[&'a dyn PrivateKey]) -> Self {
         for key in keys {
             self.ctx.trusted_targets_keys.push(*key);
@@ -436,8 +429,8 @@ where
         self
     }
 
-    /// Sign the snapshot metadata with `keys`, and include the keys as
-    /// trusted snapshot keys in the root metadata.
+    /// Sign the snapshot metadata with `keys`, and include the keys as trusted snapshot keys in the
+    /// root metadata.
     pub fn trusted_snapshot_keys(mut self, keys: &[&'a dyn PrivateKey]) -> Self {
         for key in keys {
             self.ctx.trusted_snapshot_keys.push(*key);
@@ -456,53 +449,46 @@ where
         self
     }
 
-    /// Create a root metadata using the default settings.
-    pub fn create_root(self) -> Result<RepoBuilder<'a, D, R, Targets<D>>> {
-        self.with_root_builder(|builder| builder)
+    /// Stage a root metadata.
+    ///
+    /// If this is a new repository, the root will be staged with:
+    ///
+    /// * version: 1
+    /// * consistent_snapshot: true
+    /// * expires: 365 days from the current day.
+    /// * root_threshold: 1
+    /// * targets_threshold: 1
+    /// * snapshot_threshold: 1
+    /// * timestamp_threshold: 1
+    ///
+    /// Otherwise, it will be staged with:
+    ///
+    /// * version: 1 after the trusted root's version
+    /// * expires: 365 days from the current day.
+    /// * consistent_snapshot: match the trusted root's consistent snapshot
+    /// * root_threshold: match the trusted root's root threshold
+    /// * targets_threshold: match the trusted root's targets threshold
+    /// * snapshot_threshold: match the trusted root's snapshot threshold
+    /// * timestamp_threshold: match the trusted root's timestamp threshold
+    pub fn stage_root(self) -> Result<RepoBuilder<'a, D, R, Targets<D>>> {
+        self.stage_root_with_builder(|builder| builder)
     }
 
-    /// Create a targets metadata using the default settings.
+    /// Stage a new root using the default settings if:
     ///
-    /// Note: This will also create a root metadata with the default settings if
-    /// necessary.
-    pub fn create_targets(self) -> Result<RepoBuilder<'a, D, R, Snapshot<D>>> {
-        self.create_root_if_necessary()?.create_targets()
-    }
-
-    /// Create a snapshot metadata using the default settings.
-    ///
-    /// Note: This will also:
-    /// * create a root metadata with the default settings if necessary.
-    /// * create a targets metadata if necessary.
-    pub fn create_snapshot(self) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>> {
-        self.create_root_if_necessary()?.create_snapshot()
-    }
-
-    /// Create a timestamp metadata using the default settings.
-    ///
-    /// Note: This will also:
-    /// * create a root metadata with the default settings if necessary.
-    /// * create a targets metadata if necessary.
-    /// * create a snapshot metadata if necessary.
-    pub fn create_timestamp(self) -> Result<RepoBuilder<'a, D, R, Done<D>>> {
-        self.create_root_if_necessary()?.create_timestamp()
-    }
-
-    /// Create a new root using the default settings if one is required.
-    /// For example:
-    ///
-    /// * This is new metadata.
-    /// * The passed in keys are different than the keys in the trusted root.
-    /// * The metadata has expired.
-    pub fn create_root_if_necessary(self) -> Result<RepoBuilder<'a, D, R, Targets<D>>> {
+    /// * There is no trusted root metadata.
+    /// * The trusted keys are different from the keys that are in the trusted root.
+    /// * The trusted root metadata has expired.
+    pub fn stage_root_if_necessary(self) -> Result<RepoBuilder<'a, D, R, Targets<D>>> {
         if self.need_new_root() {
-            self.create_root()
+            self.stage_root()
         } else {
             Ok(self.skip_root())
         }
     }
 
-    /// Skip creating the root metadata.
+    /// Skip creating the root metadata. This may cause [commit](#method.commit-4) to fail if this
+    /// is a new repository.
     pub fn skip_root(self) -> RepoBuilder<'a, D, R, Targets<D>> {
         RepoBuilder {
             ctx: self.ctx,
@@ -510,9 +496,30 @@ where
         }
     }
 
-    /// This function will generate a new root metadata, which will automatically increment the
-    /// version, and set the expiration to the default expiration of 1 year.
-    pub fn with_root_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Targets<D>>>
+    /// Initialize a [RootMetadataBuilder] and pass it to the closure for further configuration.
+    /// This builder will then be used to generate and stage a new [RootMetadata] for eventual
+    /// commitment to the repository.
+    ///
+    /// If this is a new repository, the builder will be initialized with the following defaults:
+    ///
+    /// * version: 1
+    /// * consistent_snapshot: true
+    /// * expires: 365 days from the current day.
+    /// * root_threshold: 1
+    /// * targets_threshold: 1
+    /// * snapshot_threshold: 1
+    /// * timestamp_threshold: 1
+    ///
+    /// Otherwise, it will be initialized with:
+    ///
+    /// * version: 1 after the trusted root's version
+    /// * expires: 365 days from the current day.
+    /// * consistent_snapshot: match the trusted root's consistent snapshot
+    /// * root_threshold: match the trusted root's root threshold
+    /// * targets_threshold: match the trusted root's targets threshold
+    /// * snapshot_threshold: match the trusted root's snapshot threshold
+    /// * timestamp_threshold: match the trusted root's timestamp threshold
+    pub fn stage_root_with_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Targets<D>>>
     where
         F: FnOnce(RootMetadataBuilder) -> RootMetadataBuilder,
     {
@@ -524,7 +531,11 @@ where
             1
         };
 
-        let root_builder = self.state.builder.version(next_version);
+        let root_builder = self
+            .state
+            .builder
+            .version(next_version)
+            .expires(Utc::now() + Duration::days(365));
         let root = f(root_builder).build()?;
 
         let raw_root = sign(
@@ -544,41 +555,37 @@ where
         })
     }
 
-    /// This function will generate a new targets metadata, which will automatically increment the
-    /// version, and set the expiration to the default expiration of 3 months.
-    pub fn with_targets_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Snapshot<D>>>
+    /// Add a target that's loaded in from the reader. This will store the target in the repository,
+    /// and may stage a root metadata if necessary.
+    ///
+    /// This will hash the file with [HashAlgorithm::Sha256].
+    ///
+    /// See [RepoBuilder<Targets>::add_target] for more details.
+    pub async fn add_target<Rd>(
+        self,
+        target_path: TargetPath,
+        reader: Rd,
+    ) -> Result<RepoBuilder<'a, D, R, Targets<D>>>
     where
-        F: FnOnce(TargetsMetadataBuilder) -> TargetsMetadataBuilder,
+        Rd: AsyncRead + AsyncSeek + Unpin + Send,
     {
-        self.create_root_if_necessary()?.with_targets_builder(f)
+        self.stage_root_if_necessary()?
+            .add_target(target_path, reader)
+            .await
     }
 
-    /// This function will generate a new snapshot metadata, which will automatically increment the
-    /// version, and set the expiration to the default expiration of 7 days.
-    pub fn with_snapshot_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>>
-    where
-        F: FnOnce(SnapshotMetadataBuilder) -> SnapshotMetadataBuilder,
-    {
-        self.create_root_if_necessary()?.with_snapshot_builder(f)
-    }
-
-    /// This function will generate a new timestamp metadata, which will automatically increment
-    /// the version, and set the expiration to the default expiration of 1 day.
-    pub fn with_timestamp_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Done<D>>>
-    where
-        F: FnOnce(TimestampMetadataBuilder) -> TimestampMetadataBuilder,
-    {
-        self.create_root_if_necessary()?.with_timestamp_builder(f)
-    }
-
-    /// If keys have changed, rewrite the root metadata. Otherwise do nothing.
+    /// Validate and write the metadata to the repository.
+    ///
+    /// This may stage a root, targets, snapshot, and timestamp metadata if necessary.
+    ///
+    /// See [RepoBuilder::commit] for more details.
     pub async fn commit(self) -> Result<RawSignedMetadataSet<D>> {
-        self.create_root_if_necessary()?.commit().await
+        self.stage_root_if_necessary()?.commit().await
     }
 
     /// Check if we need a new root database.
     fn need_new_root(&self) -> bool {
-        // If we don't have a database yet, we need to create the first root
+        // If we don't have a database yet, we need to stage the first root
         // metadata.
         let root = if let Some(db) = self.ctx.db {
             db.trusted_root()
@@ -641,36 +648,18 @@ where
         self
     }
 
-    /// Create a targets metadata using the default settings.
-    pub fn create_targets(self) -> Result<RepoBuilder<'a, D, R, Snapshot<D>>> {
-        self.with_targets_builder(|builder| builder)
+    /// Stage a targets metadata using the default settings.
+    pub fn stage_targets(self) -> Result<RepoBuilder<'a, D, R, Snapshot<D>>> {
+        self.stage_targets_with_builder(|builder| builder)
     }
 
-    /// Create a snapshot metadata using the default settings.
+    /// Stage a new targets using the default settings if:
     ///
-    /// Note: This will also:
-    /// * create a targets metadata if necessary.
-    pub fn create_snapshot(self) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>> {
-        self.create_targets_if_necessary()?.create_snapshot()
-    }
-
-    /// Create a timestamp metadata using the default settings.
-    ///
-    /// Note: This will also:
-    /// * create a targets metadata if necessary.
-    /// * create a snapshot metadata if necessary.
-    pub fn create_timestamp(self) -> Result<RepoBuilder<'a, D, R, Done<D>>> {
-        self.create_targets_if_necessary()?.create_timestamp()
-    }
-
-    /// Create a new targets using the default settings if one is required.
-    /// For example:
-    ///
-    /// * This is new metadata.
-    /// * The metadata has expired.
-    pub fn create_targets_if_necessary(self) -> Result<RepoBuilder<'a, D, R, Snapshot<D>>> {
+    /// * There is no trusted targets metadata.
+    /// * The trusted targets metadata has expired.
+    pub fn stage_targets_if_necessary(self) -> Result<RepoBuilder<'a, D, R, Snapshot<D>>> {
         if self.need_new_targets() {
-            self.with_targets_builder(|builder| builder)
+            self.stage_targets_with_builder(|builder| builder)
         } else {
             Ok(self.skip_targets())
         }
@@ -684,9 +673,10 @@ where
         }
     }
 
-    /// Add a target that's loaded in from the reader.
+    /// Add a target that's loaded in from the reader. This will store the target in the repository.
     ///
-    /// Note: This will store the target in the repository.
+    /// This will hash the file with the hash specified in [RepoBuilder::file_hash_algorithms]. If
+    /// none was specified, the file will be hashed with [HashAlgorithm::Sha256].
     pub async fn add_target<Rd>(
         mut self,
         target_path: TargetPath,
@@ -736,9 +726,15 @@ where
         Ok(self)
     }
 
-    /// This function will generate a new targets metadata, which will automatically increment the
-    /// version, and set the expiration to the default expiration of 3 months.
-    pub fn with_targets_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Snapshot<D>>>
+    /// Initialize a [TargetsMetadataBuilder] and pass it to the closure for further configuration.
+    /// This builder will then be used to generate and stage a new [TargetsMetadata] for eventual
+    /// commitment to the repository.
+    ///
+    /// This builder will be initialized with:
+    ///
+    /// * version: 1 if a new repository, otherwise 1 past the trusted targets's version.
+    /// * expires: 90 days from the current day.
+    pub fn stage_targets_with_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Snapshot<D>>>
     where
         F: FnOnce(TargetsMetadataBuilder) -> TargetsMetadataBuilder,
     {
@@ -778,30 +774,13 @@ where
         })
     }
 
-    /// This function will generate a new snapshot metadata, which will automatically increment the
-    /// version, and set the expiration to the default expiration of 7 days.
-    pub fn with_snapshot_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>>
-    where
-        F: FnOnce(SnapshotMetadataBuilder) -> SnapshotMetadataBuilder,
-    {
-        self.create_targets_if_necessary()?.with_snapshot_builder(f)
-    }
-
-    /// This function will generate a new timestamp metadata, which will automatically increment
-    /// the version, and set the expiration to the default expiration of 1 day.
-    pub fn with_timestamp_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Done<D>>>
-    where
-        F: FnOnce(TimestampMetadataBuilder) -> TimestampMetadataBuilder,
-    {
-        self.create_targets_if_necessary()?
-            .with_timestamp_builder(f)
-    }
-
-    /// Write the metadata to the repository. Before writing the metadata to `repo`,
-    /// this will test that a client can update to this metadata to make sure it
-    /// is valid.
+    /// Validate and write the metadata to the repository.
+    ///
+    /// This may stage a targets, snapshot, and timestamp metadata if necessary.
+    ///
+    /// See [RepoBuilder::commit](#method.commit-4) for more details.
     pub async fn commit(self) -> Result<RawSignedMetadataSet<D>> {
-        self.create_targets_if_necessary()?.commit().await
+        self.stage_targets_if_necessary()?.commit().await
     }
 
     /// Commit the metadata for this repository without validating it.
@@ -810,7 +789,7 @@ where
     /// validating that it is correct.
     #[cfg(test)]
     pub async fn commit_skip_validation(self) -> Result<RawSignedMetadataSet<D>> {
-        self.create_targets_if_necessary()?
+        self.stage_targets_if_necessary()?
             .commit_skip_validation()
             .await
     }
@@ -860,27 +839,18 @@ where
         self
     }
 
-    /// Create a snapshot metadata using the default settings.
-    pub fn create_snapshot(self) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>> {
-        self.with_snapshot_builder(|builder| builder)
+    /// Stage a snapshot metadata using the default settings.
+    pub fn stage_snapshot(self) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>> {
+        self.stage_snapshot_with_builder(|builder| builder)
     }
 
-    /// Create a timestamp metadata using the default settings.
+    /// Stage a new snapshot using the default settings if:
     ///
-    /// Note: This will also:
-    /// * create a snapshot metadata if necessary.
-    pub fn create_timestamp(self) -> Result<RepoBuilder<'a, D, R, Done<D>>> {
-        self.create_snapshot_if_necessary()?.create_timestamp()
-    }
-
-    /// Create a new snapshot using the default settings if one is required.
-    /// For example:
-    ///
-    /// * This is new metadata.
-    /// * The metadata has expired.
-    pub fn create_snapshot_if_necessary(self) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>> {
+    /// * There is no trusted snapshot metadata.
+    /// * The trusted snapshot metadata has expired.
+    pub fn stage_snapshot_if_necessary(self) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>> {
         if self.need_new_snapshot() {
-            self.create_snapshot()
+            self.stage_snapshot()
         } else {
             Ok(self.skip_snapshot())
         }
@@ -894,9 +864,15 @@ where
         }
     }
 
-    /// This function will generate a new snapshot metadata, which will automatically increment the
-    /// version, and set the expiration to the default expiration of 7 days.
-    pub fn with_snapshot_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>>
+    /// Initialize a [SnapshotMetadataBuilder] and pass it to the closure for further configuration.
+    /// This builder will then be used to generate and stage a new [SnapshotMetadata] for eventual
+    /// commitment to the repository.
+    ///
+    /// This builder will be initialized with:
+    ///
+    /// * version: 1 if a new repository, otherwise 1 past the trusted snapshot's version.
+    /// * expires: 7 days from the current day.
+    pub fn stage_snapshot_with_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Timestamp<D>>>
     where
         F: FnOnce(SnapshotMetadataBuilder) -> SnapshotMetadataBuilder,
     {
@@ -914,7 +890,9 @@ where
             1
         };
 
-        let mut snapshot_builder = SnapshotMetadataBuilder::new().version(next_version);
+        let mut snapshot_builder = SnapshotMetadataBuilder::new()
+            .version(next_version)
+            .expires(Utc::now() + Duration::days(7));
 
         // Insert all the metadata from the trusted snapshot.
         if self.state.inherit_targets {
@@ -957,21 +935,13 @@ where
         })
     }
 
-    /// This function will generate a new timestamp metadata, which will automatically increment
-    /// the version, and set the expiration to the default expiration of 1 day.
-    pub fn with_timestamp_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Done<D>>>
-    where
-        F: FnOnce(TimestampMetadataBuilder) -> TimestampMetadataBuilder,
-    {
-        self.create_snapshot_if_necessary()?
-            .with_timestamp_builder(f)
-    }
-
-    /// Write the metadata to the repository. Before writing the metadata to `repo`,
-    /// this will test that a client can update to this metadata to make sure it
-    /// is valid.
+    /// Validate and write the metadata to the repository.
+    ///
+    /// This may stage a snapshot and timestamp metadata if necessary.
+    ///
+    /// See [RepoBuilder::commit](#method.commit-4) for more details.
     pub async fn commit(self) -> Result<RawSignedMetadataSet<D>> {
-        self.create_snapshot_if_necessary()?.commit().await
+        self.stage_snapshot_if_necessary()?.commit().await
     }
 
     /// Commit the metadata for this repository without validating it.
@@ -980,7 +950,7 @@ where
     /// validating that it is correct.
     #[cfg(test)]
     pub async fn commit_skip_validation(self) -> Result<RawSignedMetadataSet<D>> {
-        self.create_snapshot_if_necessary()?
+        self.stage_snapshot_if_necessary()?
             .commit_skip_validation()
             .await
     }
@@ -1023,24 +993,23 @@ where
         self
     }
 
-    /// Create a timestamp metadata using the default settings.
+    /// Stage a timestamp metadata using the default settings.
     ///
     /// Note: This will also:
-    /// * create a root metadata with the default settings if necessary.
-    /// * create a targets metadata if necessary.
-    /// * create a snapshot metadata if necessary.
-    pub fn create_timestamp(self) -> Result<RepoBuilder<'a, D, R, Done<D>>> {
+    /// * stage a root metadata with the default settings if necessary.
+    /// * stage a targets metadata if necessary.
+    /// * stage a snapshot metadata if necessary.
+    pub fn stage_timestamp(self) -> Result<RepoBuilder<'a, D, R, Done<D>>> {
         self.with_timestamp_builder(|builder| builder)
     }
 
-    /// Create a new timestamp using the default settings if one is required.
-    /// For example:
+    /// Stage a new timestamp using the default settings if:
     ///
-    /// * This is new metadata.
-    /// * The metadata has expired.
-    pub fn create_timestamp_if_necessary(self) -> Result<RepoBuilder<'a, D, R, Done<D>>> {
+    /// * There is no trusted timestamp metadata.
+    /// * The trusted timestamp metadata has expired.
+    pub fn stage_timestamp_if_necessary(self) -> Result<RepoBuilder<'a, D, R, Done<D>>> {
         if self.need_new_timestamp() {
-            self.create_timestamp()
+            self.stage_timestamp()
         } else {
             Ok(self.skip_timestamp())
         }
@@ -1059,8 +1028,14 @@ where
         }
     }
 
-    /// This function will generate a new timestamp metadata, which will automatically increment
-    /// the version, and set the expiration to the default expiration of 1 day.
+    /// Initialize a [TimestampMetadataBuilder] and pass it to the closure for further configuration.
+    /// This builder will then be used to generate and stage a new [TimestampMetadata] for eventual
+    /// commitment to the repository.
+    ///
+    /// This builder will be initialized with:
+    ///
+    /// * version: 1 if a new repository, otherwise 1 past the trusted snapshot's version.
+    /// * expires: 1 day from the current day.
     pub fn with_timestamp_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Done<D>>>
     where
         F: FnOnce(TimestampMetadataBuilder) -> TimestampMetadataBuilder,
@@ -1089,8 +1064,9 @@ where
                 .ok_or(Error::MissingMetadata(Role::Timestamp))?
         };
 
-        let timestamp_builder =
-            TimestampMetadataBuilder::from_metadata_description(description).version(next_version);
+        let timestamp_builder = TimestampMetadataBuilder::from_metadata_description(description)
+            .version(next_version)
+            .expires(Utc::now() + Duration::days(1));
 
         let timestamp = f(timestamp_builder).build()?;
         let raw_timestamp = sign(
@@ -1115,11 +1091,9 @@ where
         })
     }
 
-    /// Write the metadata to the repository. Before writing the metadata to `repo`,
-    /// this will test that a client can update to this metadata to make sure it
-    /// is valid.
+    /// See [RepoBuilder::commit](#method.commit-4) for more details.
     pub async fn commit(self) -> Result<RawSignedMetadataSet<D>> {
-        self.create_timestamp_if_necessary()?.commit().await
+        self.stage_timestamp_if_necessary()?.commit().await
     }
 
     /// Commit the metadata for this repository without validating it.
@@ -1128,7 +1102,7 @@ where
     /// validating that it is correct.
     #[cfg(test)]
     pub async fn commit_skip_validation(self) -> Result<RawSignedMetadataSet<D>> {
-        self.create_timestamp_if_necessary()?
+        self.stage_timestamp_if_necessary()?
             .commit_skip_validation()
             .await
     }
@@ -1157,9 +1131,9 @@ where
     D: DataInterchange + Sync,
     R: RepositoryStorage<D>,
 {
-    /// Commit the metadata for this repository, then write all metadata to the
-    /// repository. Before writing the metadata to `repo`, this will test that a
-    /// client can update to this metadata to make sure it is valid.
+    /// Commit the metadata for this repository, then write all metadata to the repository. Before
+    /// writing the metadata to `repo`, this will test that a client can update to this metadata to
+    /// make sure it is valid.
     pub async fn commit(mut self) -> Result<RawSignedMetadataSet<D>> {
         self.validate_built_metadata()?;
         self.write_repo().await?;
@@ -1168,8 +1142,8 @@ where
 
     /// Commit the metadata for this repository without validating it.
     ///
-    /// Warning: This can write invalid metadata to a repository without
-    /// validating that it is correct.
+    /// Warning: This can write invalid metadata to a repository without validating that it is
+    /// correct.
     #[cfg(test)]
     pub async fn commit_skip_validation(mut self) -> Result<RawSignedMetadataSet<D>> {
         self.write_repo().await?;
@@ -1535,16 +1509,16 @@ mod tests {
     }
 
     #[test]
-    fn test_create_and_update_repo_not_consistent_snapshot() {
-        block_on(check_create_and_update_repo(false));
+    fn test_stage_and_update_repo_not_consistent_snapshot() {
+        block_on(check_stage_and_update_repo(false));
     }
 
     #[test]
-    fn test_create_and_update_repo_consistent_snapshot() {
-        block_on(check_create_and_update_repo(true));
+    fn test_stage_and_update_repo_consistent_snapshot() {
+        block_on(check_stage_and_update_repo(true));
     }
 
-    async fn check_create_and_update_repo(consistent_snapshot: bool) {
+    async fn check_stage_and_update_repo(consistent_snapshot: bool) {
         // We'll write all the metadata to this remote repository.
         let mut remote = EphemeralRepository::<Json>::new();
 
@@ -1555,7 +1529,7 @@ mod tests {
             .trusted_targets_keys(&[&KEYS[1], &KEYS[2], &KEYS[3]])
             .trusted_snapshot_keys(&[&KEYS[2], &KEYS[3], &KEYS[4]])
             .trusted_timestamp_keys(&[&KEYS[3], &KEYS[4], &KEYS[5]])
-            .with_root_builder(|builder| {
+            .stage_root_with_builder(|builder| {
                 builder
                     .expires(expires1)
                     .consistent_snapshot(consistent_snapshot)
@@ -1565,11 +1539,11 @@ mod tests {
                     .timestamp_threshold(2)
             })
             .unwrap()
-            .with_targets_builder(|builder| builder.expires(expires1))
+            .stage_targets_with_builder(|builder| builder.expires(expires1))
             .unwrap()
             .snapshot_includes_length(true)
             .snapshot_includes_hashes(&[HashAlgorithm::Sha256])
-            .with_snapshot_builder(|builder| builder.expires(expires1))
+            .stage_snapshot_with_builder(|builder| builder.expires(expires1))
             .unwrap()
             .timestamp_includes_length(true)
             .timestamp_includes_hashes(&[HashAlgorithm::Sha256])
@@ -1683,13 +1657,13 @@ mod tests {
             .trusted_targets_keys(&[&KEYS[1], &KEYS[2], &KEYS[3]])
             .trusted_snapshot_keys(&[&KEYS[2], &KEYS[3], &KEYS[4]])
             .trusted_timestamp_keys(&[&KEYS[3], &KEYS[4], &KEYS[5]])
-            .with_root_builder(|builder| builder.expires(expires2))
+            .stage_root_with_builder(|builder| builder.expires(expires2))
             .unwrap()
-            .with_targets_builder(|builder| builder.expires(expires2))
+            .stage_targets_with_builder(|builder| builder.expires(expires2))
             .unwrap()
             .snapshot_includes_length(false)
             .snapshot_includes_hashes(&[])
-            .with_snapshot_builder(|builder| builder.expires(expires2))
+            .stage_snapshot_with_builder(|builder| builder.expires(expires2))
             .unwrap()
             .timestamp_includes_length(false)
             .timestamp_includes_hashes(&[])
@@ -1801,7 +1775,7 @@ mod tests {
             .trusted_targets_keys(&[&KEYS[0]])
             .trusted_snapshot_keys(&[&KEYS[0]])
             .trusted_timestamp_keys(&[&KEYS[0]])
-            .with_root_builder(|builder| builder.consistent_snapshot(consistent_snapshot))
+            .stage_root_with_builder(|builder| builder.consistent_snapshot(consistent_snapshot))
             .unwrap()
             .commit()
             .await
@@ -1858,7 +1832,7 @@ mod tests {
             .trusted_targets_keys(&[&KEYS[0]])
             .trusted_snapshot_keys(&[&KEYS[0]])
             .trusted_timestamp_keys(&[&KEYS[0]])
-            .with_root_builder(|builder| builder.consistent_snapshot(consistent_snapshot))
+            .stage_root_with_builder(|builder| builder.consistent_snapshot(consistent_snapshot))
             .unwrap()
             .commit()
             .await
@@ -1922,7 +1896,7 @@ mod tests {
             .trusted_targets_keys(&[&KEYS[0]])
             .trusted_snapshot_keys(&[&KEYS[0]])
             .trusted_timestamp_keys(&[&KEYS[0]])
-            .create_root()
+            .stage_root()
             .unwrap()
             .commit()
             .await
@@ -1962,7 +1936,7 @@ mod tests {
                     .trusted_targets_keys(&[&KEYS[0]])
                     .trusted_snapshot_keys(&[&KEYS[0]])
                     .trusted_timestamp_keys(&[&KEYS[0]])
-                    .with_root_builder(|builder| builder.version(3))
+                    .stage_root_with_builder(|builder| builder.version(3))
                     .unwrap()
                     .commit().await,
                 Err(Error::VerificationFailure(s))
@@ -1986,7 +1960,7 @@ mod tests {
                 .trusted_targets_keys(&[&KEYS[0]])
                 .trusted_snapshot_keys(&[&KEYS[0]])
                 .trusted_timestamp_keys(&[&KEYS[0]])
-                .with_root_builder(|builder| builder.consistent_snapshot(false))
+                .stage_root_with_builder(|builder| builder.consistent_snapshot(false))
                 .unwrap()
                 .file_hash_algorithms(hash_algs)
                 .add_target(target_path.clone(), Cursor::new(target_file))
@@ -2044,7 +2018,7 @@ mod tests {
                 .trusted_targets_keys(&[&KEYS[0]])
                 .trusted_snapshot_keys(&[&KEYS[0]])
                 .trusted_timestamp_keys(&[&KEYS[0]])
-                .with_root_builder(|builder| builder.consistent_snapshot(true))
+                .stage_root_with_builder(|builder| builder.consistent_snapshot(true))
                 .unwrap()
                 .file_hash_algorithms(hash_algs)
                 .add_target(target_path.clone(), Cursor::new(target_file))
@@ -2103,11 +2077,13 @@ mod tests {
                 .trusted_targets_keys(&[&KEYS[1]])
                 .trusted_snapshot_keys(&[&KEYS[2]])
                 .trusted_timestamp_keys(&[&KEYS[3]])
-                .with_root_builder(|builder| builder.consistent_snapshot(true).expires(expires1))
+                .stage_root_with_builder(|builder| {
+                    builder.consistent_snapshot(true).expires(expires1)
+                })
                 .unwrap()
-                .with_targets_builder(|builder| builder.expires(expires1))
+                .stage_targets_with_builder(|builder| builder.expires(expires1))
                 .unwrap()
-                .with_snapshot_builder(|builder| builder.expires(expires1))
+                .stage_snapshot_with_builder(|builder| builder.expires(expires1))
                 .unwrap()
                 .with_timestamp_builder(|builder| builder.expires(expires1))
                 .unwrap()
@@ -2183,9 +2159,9 @@ mod tests {
                 .trusted_snapshot_keys(&[&KEYS[2]])
                 .trusted_timestamp_keys(&[&KEYS[3]])
                 .skip_root()
-                .with_targets_builder(|builder| builder.expires(expires2))
+                .stage_targets_with_builder(|builder| builder.expires(expires2))
                 .unwrap()
-                .with_snapshot_builder(|builder| builder.expires(expires2))
+                .stage_snapshot_with_builder(|builder| builder.expires(expires2))
                 .unwrap()
                 .with_timestamp_builder(|builder| builder.expires(expires2))
                 .unwrap()
@@ -2250,7 +2226,7 @@ mod tests {
                 .trusted_timestamp_keys(&[&KEYS[3]])
                 .skip_root()
                 .skip_targets()
-                .with_snapshot_builder(|builder| builder.expires(expires3))
+                .stage_snapshot_with_builder(|builder| builder.expires(expires3))
                 .unwrap()
                 .with_timestamp_builder(|builder| builder.expires(expires3))
                 .unwrap()
