@@ -1216,7 +1216,7 @@ where
                 .repo
                 .store_metadata(
                     &MetadataPath::from_role(&Role::Root),
-                    &MetadataVersion::Number(root.metadata.version()),
+                    MetadataVersion::Number(root.metadata.version()),
                     &mut root.raw.as_bytes(),
                 )
                 .await?;
@@ -1225,7 +1225,7 @@ where
                 .repo
                 .store_metadata(
                     &MetadataPath::from_role(&Role::Root),
-                    &MetadataVersion::None,
+                    MetadataVersion::None,
                     &mut root.raw.as_bytes(),
                 )
                 .await?;
@@ -1241,7 +1241,7 @@ where
             let path = MetadataPath::from_role(&Role::Targets);
             self.ctx
                 .repo
-                .store_metadata(&path, &MetadataVersion::None, &mut targets.raw.as_bytes())
+                .store_metadata(&path, MetadataVersion::None, &mut targets.raw.as_bytes())
                 .await?;
 
             if consistent_snapshot {
@@ -1249,7 +1249,7 @@ where
                     .repo
                     .store_metadata(
                         &path,
-                        &MetadataVersion::Number(targets.metadata.version()),
+                        MetadataVersion::Number(targets.metadata.version()),
                         &mut targets.raw.as_bytes(),
                     )
                     .await?;
@@ -1260,7 +1260,7 @@ where
             let path = MetadataPath::from_role(&Role::Snapshot);
             self.ctx
                 .repo
-                .store_metadata(&path, &MetadataVersion::None, &mut snapshot.raw.as_bytes())
+                .store_metadata(&path, MetadataVersion::None, &mut snapshot.raw.as_bytes())
                 .await?;
 
             if consistent_snapshot {
@@ -1268,7 +1268,7 @@ where
                     .repo
                     .store_metadata(
                         &path,
-                        &MetadataVersion::Number(snapshot.metadata.version()),
+                        MetadataVersion::Number(snapshot.metadata.version()),
                         &mut snapshot.raw.as_bytes(),
                     )
                     .await?;
@@ -1280,7 +1280,7 @@ where
                 .repo
                 .store_metadata(
                     &MetadataPath::from_role(&Role::Timestamp),
-                    &MetadataVersion::None,
+                    MetadataVersion::None,
                     &mut timestamp.raw.as_bytes(),
                 )
                 .await?;
