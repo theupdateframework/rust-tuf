@@ -678,9 +678,26 @@ where
     /// This will hash the file with the hash specified in [RepoBuilder::file_hash_algorithms]. If
     /// none was specified, the file will be hashed with [HashAlgorithm::Sha256].
     pub async fn add_target<Rd>(
+        self,
+        target_path: TargetPath,
+        reader: Rd,
+    ) -> Result<RepoBuilder<'a, D, R, Targets<D>>>
+    where
+        Rd: AsyncRead + AsyncSeek + Unpin + Send,
+    {
+        self.add_target_with_custom(target_path, reader, HashMap::new())
+            .await
+    }
+
+    /// Add a target that's loaded in from the reader. This will store the target in the repository.
+    ///
+    /// This will hash the file with the hash specified in [RepoBuilder::file_hash_algorithms]. If
+    /// none was specified, the file will be hashed with [HashAlgorithm::Sha256].
+    pub async fn add_target_with_custom<Rd>(
         mut self,
         target_path: TargetPath,
         mut reader: Rd,
+        custom: HashMap<String, serde_json::Value>,
     ) -> Result<RepoBuilder<'a, D, R, Targets<D>>>
     where
         Rd: AsyncRead + AsyncSeek + Unpin + Send,
@@ -693,8 +710,12 @@ where
             return Err(Error::MissingMetadata(Role::Root));
         };
 
-        let target_description =
-            TargetDescription::from_reader(&mut reader, &self.state.file_hash_algorithms).await?;
+        let target_description = TargetDescription::from_reader_with_custom(
+            &mut reader,
+            &self.state.file_hash_algorithms,
+            custom,
+        )
+        .await?;
 
         // According to TUF section 5.5.2, when consistent snapshot is enabled, target files should be
         // stored at `$HASH.FILENAME.EXT`. Otherwise it is stored at `FILENAME.EXT`.
@@ -1310,6 +1331,7 @@ mod tests {
         futures_executor::block_on,
         futures_util::io::{AsyncReadExt, Cursor},
         lazy_static::lazy_static,
+        maplit::hashmap,
         matches::assert_matches,
         pretty_assertions::assert_eq,
         std::collections::BTreeMap,
@@ -2010,8 +2032,14 @@ mod tests {
 
             let hash_algs = &[HashAlgorithm::Sha256, HashAlgorithm::Sha512];
 
-            let target_path = TargetPath::new("foo/bar").unwrap();
-            let target_file: &[u8] = b"things fade, alternatives exclude";
+            let target_path1 = TargetPath::new("foo/bar").unwrap();
+            let target_file1: &[u8] = b"things fade, alternatives exclude";
+
+            let target_path2 = TargetPath::new("baz").unwrap();
+            let target_file2: &[u8] = b"hello world";
+            let target_custom2 = hashmap! {
+                "hello".into() => "world".into(),
+            };
 
             let metadata = RepoBuilder::create(&mut repo)
                 .trusted_root_keys(&[&KEYS[0]])
@@ -2021,7 +2049,14 @@ mod tests {
                 .stage_root_with_builder(|builder| builder.consistent_snapshot(true))
                 .unwrap()
                 .file_hash_algorithms(hash_algs)
-                .add_target(target_path.clone(), Cursor::new(target_file))
+                .add_target(target_path1.clone(), Cursor::new(target_file1))
+                .await
+                .unwrap()
+                .add_target_with_custom(
+                    target_path2.clone(),
+                    Cursor::new(target_file2),
+                    target_custom2.clone(),
+                )
                 .await
                 .unwrap()
                 .commit()
@@ -2029,15 +2064,20 @@ mod tests {
                 .unwrap();
 
             // Make sure the target was written correctly with hash prefixes.
-            for hash_alg in hash_algs {
-                let hash = crypto::calculate_hash(target_file, hash_alg);
-                let target_path = target_path.with_hash_prefix(&hash).unwrap();
+            for (target_path, target_file) in &[
+                (&target_path1, &target_file1),
+                (&target_path2, &target_file2),
+            ] {
+                for hash_alg in hash_algs {
+                    let hash = crypto::calculate_hash(target_file, hash_alg);
+                    let target_path = target_path.with_hash_prefix(&hash).unwrap();
 
-                let mut rdr = repo.fetch_target(&target_path).await.unwrap();
-                let mut buf = vec![];
-                rdr.read_to_end(&mut buf).await.unwrap();
+                    let mut rdr = repo.fetch_target(&target_path).await.unwrap();
+                    let mut buf = vec![];
+                    rdr.read_to_end(&mut buf).await.unwrap();
 
-                assert_eq!(&buf, target_file);
+                    assert_eq!(&buf, *target_file);
+                }
             }
 
             let mut client = Client::with_trusted_root(
@@ -2051,17 +2091,34 @@ mod tests {
 
             client.update().await.unwrap();
 
-            // Make sure the target description is correct.
+            // Make sure the target descriptions ar correct.
             assert_eq!(
-                client.fetch_target_description(&target_path).await.unwrap(),
-                TargetDescription::from_slice(target_file, hash_algs).unwrap(),
+                client
+                    .fetch_target_description(&target_path1)
+                    .await
+                    .unwrap(),
+                TargetDescription::from_slice(target_file1, hash_algs).unwrap(),
             );
 
-            // Make sure we can fetch the target.
-            let mut rdr = client.fetch_target(&target_path).await.unwrap();
-            let mut buf = vec![];
-            rdr.read_to_end(&mut buf).await.unwrap();
-            assert_eq!(&buf, target_file);
+            assert_eq!(
+                client
+                    .fetch_target_description(&target_path2)
+                    .await
+                    .unwrap(),
+                TargetDescription::from_slice_with_custom(target_file2, hash_algs, target_custom2)
+                    .unwrap(),
+            );
+
+            // Make sure we can fetch the targets.
+            for (target_path, target_file) in &[
+                (&target_path1, &target_file1),
+                (&target_path2, &target_file2),
+            ] {
+                let mut rdr = client.fetch_target(target_path).await.unwrap();
+                let mut buf = vec![];
+                rdr.read_to_end(&mut buf).await.unwrap();
+                assert_eq!(&buf, *target_file);
+            }
         })
     }
 
