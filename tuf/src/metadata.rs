@@ -205,7 +205,7 @@ impl Display for Role {
 }
 
 /// Enum used for addressing versioned TUF metadata.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Hash)]
 pub enum MetadataVersion {
     /// The metadata is unversioned. This is the latest version of the metadata.
     None,
@@ -1021,12 +1021,12 @@ impl MetadataPath {
     /// # use tuf::metadata::{MetadataPath, MetadataVersion};
     /// #
     /// let path = MetadataPath::new("foo/bar").unwrap();
-    /// assert_eq!(path.components::<Json>(&MetadataVersion::None),
+    /// assert_eq!(path.components::<Json>(MetadataVersion::None),
     ///            ["foo".to_string(), "bar.json".to_string()]);
-    /// assert_eq!(path.components::<Json>(&MetadataVersion::Number(1)),
+    /// assert_eq!(path.components::<Json>(MetadataVersion::Number(1)),
     ///            ["foo".to_string(), "1.bar.json".to_string()]);
     /// ```
-    pub fn components<D>(&self, version: &MetadataVersion) -> Vec<String>
+    pub fn components<D>(&self, version: MetadataVersion) -> Vec<String>
     where
         D: DataInterchange,
     {

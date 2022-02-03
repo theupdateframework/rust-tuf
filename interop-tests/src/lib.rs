@@ -200,7 +200,7 @@ async fn add_target(
 
     repo.store_metadata(
         &targets_path,
-        &version_prefix,
+        version_prefix,
         &mut signed_targets.to_raw().unwrap().as_bytes(),
     )
     .await
@@ -217,7 +217,7 @@ async fn add_target(
 
     repo.store_metadata(
         &snapshot_path,
-        &version_prefix,
+        version_prefix,
         &mut snapshot.to_raw().unwrap().as_bytes(),
     )
     .await
@@ -234,7 +234,7 @@ async fn add_target(
     // Timestamp doesn't require a version prefix even in consistent_snapshot.
     repo.store_metadata(
         &timestamp_path,
-        &MetadataVersion::None,
+        MetadataVersion::None,
         &mut timestamp.to_raw().unwrap().as_bytes(),
     )
     .await

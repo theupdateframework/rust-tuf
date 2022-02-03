@@ -178,7 +178,7 @@ where
         // Connect to the client with our initial keys.
         let mut client = Client::with_trusted_root_keys(
             Config::default(),
-            &MetadataVersion::Number(1),
+            MetadataVersion::Number(1),
             1,
             public_keys,
             &mut self.local,
@@ -218,7 +218,7 @@ where
 
     let mut buf = Vec::new();
     let mut reader = remote
-        .fetch_metadata(&root_path, &MetadataVersion::Number(1))
+        .fetch_metadata(&root_path, MetadataVersion::Number(1))
         .await
         .unwrap();
     reader.read_to_end(&mut buf).await.unwrap();
