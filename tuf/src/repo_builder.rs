@@ -1643,10 +1643,19 @@ mod tests {
         .await
         .unwrap();
         client.update().await.unwrap();
-        assert_eq!(client.trusted_root().version(), 1);
-        assert_eq!(client.trusted_targets().map(|m| m.version()), Some(1));
-        assert_eq!(client.trusted_snapshot().map(|m| m.version()), Some(1));
-        assert_eq!(client.trusted_timestamp().map(|m| m.version()), Some(1));
+        assert_eq!(client.database().trusted_root().version(), 1);
+        assert_eq!(
+            client.database().trusted_targets().map(|m| m.version()),
+            Some(1)
+        );
+        assert_eq!(
+            client.database().trusted_snapshot().map(|m| m.version()),
+            Some(1)
+        );
+        assert_eq!(
+            client.database().trusted_timestamp().map(|m| m.version()),
+            Some(1)
+        );
 
         // Create a new metadata, derived from the tuf database we created
         // with the client.
@@ -1752,10 +1761,19 @@ mod tests {
         // And make sure the client can update to the latest metadata.
         let mut client = Client::from_parts(parts);
         client.update().await.unwrap();
-        assert_eq!(client.trusted_root().version(), 2);
-        assert_eq!(client.trusted_targets().map(|m| m.version()), Some(2));
-        assert_eq!(client.trusted_snapshot().map(|m| m.version()), Some(2));
-        assert_eq!(client.trusted_timestamp().map(|m| m.version()), Some(2));
+        assert_eq!(client.database().trusted_root().version(), 2);
+        assert_eq!(
+            client.database().trusted_targets().map(|m| m.version()),
+            Some(2)
+        );
+        assert_eq!(
+            client.database().trusted_snapshot().map(|m| m.version()),
+            Some(2)
+        );
+        assert_eq!(
+            client.database().trusted_timestamp().map(|m| m.version()),
+            Some(2)
+        );
     }
 
     #[test]
@@ -1792,7 +1810,7 @@ mod tests {
         .unwrap();
 
         assert!(client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 1);
+        assert_eq!(client.database().trusted_root().version(), 1);
 
         // Make sure doing another commit makes no changes.
         let mut parts = client.into_parts();
@@ -1809,7 +1827,7 @@ mod tests {
 
         let mut client = Client::from_parts(parts);
         assert!(!client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 1);
+        assert_eq!(client.database().trusted_root().version(), 1);
     }
 
     #[test]
@@ -1849,15 +1867,19 @@ mod tests {
         .unwrap();
 
         assert!(client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 1);
+        assert_eq!(client.database().trusted_root().version(), 1);
         assert_eq!(
-            client.trusted_root().root_keys().collect::<Vec<_>>(),
+            client
+                .database()
+                .trusted_root()
+                .root_keys()
+                .collect::<Vec<_>>(),
             vec![KEYS[1].public()],
         );
 
         // Another update should not fetch anything.
         assert!(!client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 1);
+        assert_eq!(client.database().trusted_root().version(), 1);
 
         // Now bump the root to version 2. We sign the root metadata with both
         // key 1 and 2, but the builder should only trust key 2.
@@ -1874,19 +1896,23 @@ mod tests {
 
         let mut client = Client::from_parts(parts);
         assert!(client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 2);
+        assert_eq!(client.database().trusted_root().version(), 2);
         assert_eq!(
-            client.trusted_root().consistent_snapshot(),
+            client.database().trusted_root().consistent_snapshot(),
             consistent_snapshot
         );
         assert_eq!(
-            client.trusted_root().root_keys().collect::<Vec<_>>(),
+            client
+                .database()
+                .trusted_root()
+                .root_keys()
+                .collect::<Vec<_>>(),
             vec![KEYS[2].public()],
         );
 
         // Another update should not fetch anything.
         assert!(!client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 2);
+        assert_eq!(client.database().trusted_root().version(), 2);
 
         // Now bump the root to version 3. The metadata will only be signed with
         // key 2, and trusted by key 2.
@@ -1904,15 +1930,19 @@ mod tests {
 
         let mut client = Client::from_parts(parts);
         assert!(client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 3);
+        assert_eq!(client.database().trusted_root().version(), 3);
         assert_eq!(
-            client.trusted_root().root_keys().collect::<Vec<_>>(),
+            client
+                .database()
+                .trusted_root()
+                .root_keys()
+                .collect::<Vec<_>>(),
             vec![KEYS[2].public()],
         );
 
         // Another update should not fetch anything.
         assert!(!client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 3);
+        assert_eq!(client.database().trusted_root().version(), 3);
     }
 
     #[test]

@@ -315,9 +315,12 @@ impl<R, D> Repository<R, D> {
         self.repository
     }
 
-    #[cfg(test)]
     pub(crate) fn as_inner(&self) -> &R {
         &self.repository
+    }
+
+    pub(crate) fn as_inner_mut(&mut self) -> &mut R {
+        &mut self.repository
     }
 }
 
