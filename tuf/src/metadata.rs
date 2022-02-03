@@ -2802,12 +2802,21 @@ mod test {
         block_on(async {
             let targets = TargetsMetadataBuilder::new()
                 .expires(Utc.ymd(2017, 1, 1).and_hms(0, 0, 0))
-                .insert_target_description(
-                    TargetPath::new("foo").unwrap(),
-                    TargetDescription::from_slice(&b"foo"[..], &[HashAlgorithm::Sha256]).unwrap(),
+                .insert_target_from_slice(
+                    TargetPath::new("insert-target-from-slice").unwrap(),
+                    &b"foo"[..],
+                    &[HashAlgorithm::Sha256],
                 )
+                .unwrap()
+                .insert_target_from_reader(
+                    TargetPath::new("insert-target-from-reader").unwrap(),
+                    &b"foo"[..],
+                    &[HashAlgorithm::Sha256],
+                )
+                .await
+                .unwrap()
                 .insert_target_description(
-                    TargetPath::new("bar").unwrap(),
+                    TargetPath::new("insert-target-description-from-slice-with-custom").unwrap(),
                     TargetDescription::from_slice_with_custom(
                         &b"foo"[..],
                         &[HashAlgorithm::Sha256],
@@ -2816,7 +2825,7 @@ mod test {
                     .unwrap(),
                 )
                 .insert_target_description(
-                    TargetPath::new("baz").unwrap(),
+                    TargetPath::new("insert-target-description-from-reader-with-custom").unwrap(),
                     TargetDescription::from_reader_with_custom(
                         &b"foo"[..],
                         &[HashAlgorithm::Sha256],
@@ -2837,21 +2846,28 @@ mod test {
                 "version": 1,
                 "expires": "2017-01-01T00:00:00Z",
                 "targets": {
-                    "foo": {
+                    "insert-target-from-slice": {
                         "length": 3,
                         "hashes": {
                             "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
                                 bfa0f98a5e886266e7ae",
                         },
                     },
-                    "bar": {
+                    "insert-target-description-from-slice-with-custom": {
                         "length": 3,
                         "hashes": {
                             "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
                                 bfa0f98a5e886266e7ae",
                         },
                     },
-                    "baz": {
+                    "insert-target-from-reader": {
+                        "length": 3,
+                        "hashes": {
+                            "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                                bfa0f98a5e886266e7ae",
+                        },
+                    },
+                    "insert-target-description-from-reader-with-custom": {
                         "length": 3,
                         "hashes": {
                             "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\

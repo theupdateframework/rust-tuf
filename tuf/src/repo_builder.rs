@@ -1974,31 +1974,50 @@ mod tests {
 
             let hash_algs = &[HashAlgorithm::Sha256, HashAlgorithm::Sha512];
 
-            let target_path = TargetPath::new("foo/bar").unwrap();
-            let target_file: &[u8] = b"things fade, alternatives exclude";
+            let target_path1 = TargetPath::new("foo/default").unwrap();
+            let target_path1_hashed = TargetPath::new(
+                "foo/522dd05a607a520657daa19c061a0271224030307117c2e661505e14601d1e44.default",
+            )
+            .unwrap();
+            let target_file1: &[u8] = b"things fade, alternatives exclude";
+
+            let target_path2 = TargetPath::new("foo/custom").unwrap();
+            let target_path2_hashed = TargetPath::new(
+                "foo/b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9.custom",
+            )
+            .unwrap();
+            let target_file2: &[u8] = b"hello world";
 
             let metadata = RepoBuilder::create(&mut repo)
                 .trusted_root_keys(&[&KEYS[0]])
                 .trusted_targets_keys(&[&KEYS[0]])
                 .trusted_snapshot_keys(&[&KEYS[0]])
                 .trusted_timestamp_keys(&[&KEYS[0]])
-                .stage_root_with_builder(|builder| builder.consistent_snapshot(false))
+                .add_target(target_path1.clone(), Cursor::new(target_file1))
+                .await
                 .unwrap()
                 .file_hash_algorithms(hash_algs)
-                .add_target(target_path.clone(), Cursor::new(target_file))
+                .add_target(target_path2.clone(), Cursor::new(target_file2))
                 .await
                 .unwrap()
                 .commit()
                 .await
                 .unwrap();
 
-            // Make sure the target was written correctly.
-            let mut rdr = repo.fetch_target(&target_path).await.unwrap();
+            // Make sure the targets were written correctly.
+            let mut rdr = repo.fetch_target(&target_path1_hashed).await.unwrap();
             let mut buf = vec![];
             rdr.read_to_end(&mut buf).await.unwrap();
             drop(rdr);
 
-            assert_eq!(&buf, target_file);
+            assert_eq!(&buf, target_file1);
+
+            let mut rdr = repo.fetch_target(&target_path2_hashed).await.unwrap();
+            let mut buf = vec![];
+            rdr.read_to_end(&mut buf).await.unwrap();
+            drop(rdr);
+
+            assert_eq!(&buf, target_file2);
 
             let mut client = Client::with_trusted_root(
                 Config::default(),
@@ -2011,17 +2030,34 @@ mod tests {
 
             client.update().await.unwrap();
 
-            // Make sure the target description is correct.
+            // Make sure the target descriptions are correct.
             assert_eq!(
-                client.fetch_target_description(&target_path).await.unwrap(),
-                TargetDescription::from_slice(target_file, hash_algs).unwrap(),
+                client
+                    .fetch_target_description(&target_path1)
+                    .await
+                    .unwrap(),
+                TargetDescription::from_slice(target_file1, &[HashAlgorithm::Sha256]).unwrap(),
             );
 
-            // Make sure we can fetch the target.
-            let mut rdr = client.fetch_target(&target_path).await.unwrap();
+            assert_eq!(
+                client
+                    .fetch_target_description(&target_path2)
+                    .await
+                    .unwrap(),
+                TargetDescription::from_slice(target_file2, hash_algs).unwrap(),
+            );
+
+            // Make sure we can fetch the targets.
+            let mut rdr = client.fetch_target(&target_path1).await.unwrap();
             let mut buf = vec![];
             rdr.read_to_end(&mut buf).await.unwrap();
-            assert_eq!(&buf, target_file);
+            assert_eq!(&buf, target_file1);
+            drop(rdr);
+
+            let mut rdr = client.fetch_target(&target_path2).await.unwrap();
+            let mut buf = vec![];
+            rdr.read_to_end(&mut buf).await.unwrap();
+            assert_eq!(&buf, target_file2);
         })
     }
 
