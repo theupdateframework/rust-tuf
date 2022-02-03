@@ -1372,7 +1372,7 @@ mod test {
             .unwrap()
             .stage_snapshot_with_builder(|bld| bld.version(2))
             .unwrap()
-            .with_timestamp_builder(|bld| bld.version(2))
+            .stage_timestamp_with_builder(|bld| bld.version(2))
             .unwrap()
             .commit()
             .await
@@ -1591,7 +1591,7 @@ mod test {
                 .unwrap()
                 .stage_snapshot_with_builder(|bld| bld.version(2))
                 .unwrap()
-                .with_timestamp_builder(|bld| bld.version(2))
+                .stage_timestamp_with_builder(|bld| bld.version(2))
                 .unwrap()
                 .commit()
                 .await
@@ -1671,7 +1671,7 @@ mod test {
                 .unwrap()
                 .stage_snapshot_with_builder(|bld| bld.version(2))
                 .unwrap()
-                .with_timestamp_builder(|bld| bld.version(2))
+                .stage_timestamp_with_builder(|bld| bld.version(2))
                 .unwrap()
                 .commit_skip_validation()
                 .await
@@ -1725,7 +1725,7 @@ mod test {
                 .unwrap()
                 .stage_snapshot_with_builder(|bld| bld.version(2))
                 .unwrap()
-                .with_timestamp_builder(|bld| bld.version(2))
+                .stage_timestamp_with_builder(|bld| bld.version(2))
                 .unwrap()
                 .commit()
                 .await
@@ -2130,7 +2130,7 @@ mod test {
                 .unwrap()
                 .stage_snapshot_with_builder(|bld| bld.version(2))
                 .unwrap()
-                .with_timestamp_builder(|bld| bld.version(2))
+                .stage_timestamp_with_builder(|bld| bld.version(2))
                 .unwrap()
                 .commit()
                 .await

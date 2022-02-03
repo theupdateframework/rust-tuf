@@ -1000,7 +1000,7 @@ where
     /// * stage a targets metadata if necessary.
     /// * stage a snapshot metadata if necessary.
     pub fn stage_timestamp(self) -> Result<RepoBuilder<'a, D, R, Done<D>>> {
-        self.with_timestamp_builder(|builder| builder)
+        self.stage_timestamp_with_builder(|builder| builder)
     }
 
     /// Stage a new timestamp using the default settings if:
@@ -1036,7 +1036,7 @@ where
     ///
     /// * version: 1 if a new repository, otherwise 1 past the trusted snapshot's version.
     /// * expires: 1 day from the current day.
-    pub fn with_timestamp_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Done<D>>>
+    pub fn stage_timestamp_with_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Done<D>>>
     where
         F: FnOnce(TimestampMetadataBuilder) -> TimestampMetadataBuilder,
     {
@@ -1547,7 +1547,7 @@ mod tests {
             .unwrap()
             .timestamp_includes_length(true)
             .timestamp_includes_hashes(&[HashAlgorithm::Sha256])
-            .with_timestamp_builder(|builder| builder.expires(expires1))
+            .stage_timestamp_with_builder(|builder| builder.expires(expires1))
             .unwrap()
             .commit()
             .await
@@ -1667,7 +1667,7 @@ mod tests {
             .unwrap()
             .timestamp_includes_length(false)
             .timestamp_includes_hashes(&[])
-            .with_timestamp_builder(|builder| builder.expires(expires2))
+            .stage_timestamp_with_builder(|builder| builder.expires(expires2))
             .unwrap()
             .commit()
             .await
@@ -2085,7 +2085,7 @@ mod tests {
                 .unwrap()
                 .stage_snapshot_with_builder(|builder| builder.expires(expires1))
                 .unwrap()
-                .with_timestamp_builder(|builder| builder.expires(expires1))
+                .stage_timestamp_with_builder(|builder| builder.expires(expires1))
                 .unwrap()
                 .commit()
                 .await
@@ -2163,7 +2163,7 @@ mod tests {
                 .unwrap()
                 .stage_snapshot_with_builder(|builder| builder.expires(expires2))
                 .unwrap()
-                .with_timestamp_builder(|builder| builder.expires(expires2))
+                .stage_timestamp_with_builder(|builder| builder.expires(expires2))
                 .unwrap()
                 .commit()
                 .await
@@ -2228,7 +2228,7 @@ mod tests {
                 .skip_targets()
                 .stage_snapshot_with_builder(|builder| builder.expires(expires3))
                 .unwrap()
-                .with_timestamp_builder(|builder| builder.expires(expires3))
+                .stage_timestamp_with_builder(|builder| builder.expires(expires3))
                 .unwrap()
                 .commit()
                 .await
@@ -2278,7 +2278,7 @@ mod tests {
                 .skip_root()
                 .skip_targets()
                 .skip_snapshot()
-                .with_timestamp_builder(|builder| builder.expires(expires4))
+                .stage_timestamp_with_builder(|builder| builder.expires(expires4))
                 .unwrap()
                 .commit()
                 .await
