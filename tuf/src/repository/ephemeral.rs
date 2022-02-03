@@ -13,7 +13,7 @@ use crate::repository::{RepositoryProvider, RepositoryStorage};
 use crate::Result;
 
 /// An ephemeral repository contained solely in memory.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct EphemeralRepository<D> {
     metadata: HashMap<(MetadataPath, MetadataVersion), Box<[u8]>>,
     targets: HashMap<TargetPath, Box<[u8]>>,
@@ -45,15 +45,6 @@ where
     #[cfg(test)]
     pub(crate) fn metadata(&self) -> &HashMap<(MetadataPath, MetadataVersion), Box<[u8]>> {
         &self.metadata
-    }
-}
-
-impl<D> Default for EphemeralRepository<D>
-where
-    D: DataInterchange,
-{
-    fn default() -> Self {
-        EphemeralRepository::new()
     }
 }
 
@@ -225,11 +216,19 @@ mod test {
     use crate::interchange::Json;
     use crate::repository::{fetch_metadata_to_string, fetch_target_to_string};
     use futures_executor::block_on;
+    use matches::assert_matches;
 
     #[test]
     fn ephemeral_repo_targets() {
         block_on(async {
             let mut repo = EphemeralRepository::<Json>::new();
+
+            let path = TargetPath::new("batty").unwrap();
+            if let Err(err) = repo.fetch_target(&path).await {
+                assert_matches!(err, Error::NotFound);
+            } else {
+                panic!("expected fetch_target to fail");
+            }
 
             let data: &[u8] = b"like tears in the rain";
             let path = TargetPath::new("batty").unwrap();
