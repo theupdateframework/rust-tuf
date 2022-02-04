@@ -1021,7 +1021,7 @@ where
     /// * stage a targets metadata if necessary.
     /// * stage a snapshot metadata if necessary.
     pub fn stage_timestamp(self) -> Result<RepoBuilder<'a, D, R, Done<D>>> {
-        self.with_timestamp_builder(|builder| builder)
+        self.stage_timestamp_with_builder(|builder| builder)
     }
 
     /// Stage a new timestamp using the default settings if:
@@ -1057,7 +1057,7 @@ where
     ///
     /// * version: 1 if a new repository, otherwise 1 past the trusted snapshot's version.
     /// * expires: 1 day from the current day.
-    pub fn with_timestamp_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Done<D>>>
+    pub fn stage_timestamp_with_builder<F>(self, f: F) -> Result<RepoBuilder<'a, D, R, Done<D>>>
     where
         F: FnOnce(TimestampMetadataBuilder) -> TimestampMetadataBuilder,
     {
@@ -1569,7 +1569,7 @@ mod tests {
             .unwrap()
             .timestamp_includes_length(true)
             .timestamp_includes_hashes(&[HashAlgorithm::Sha256])
-            .with_timestamp_builder(|builder| builder.expires(expires1))
+            .stage_timestamp_with_builder(|builder| builder.expires(expires1))
             .unwrap()
             .commit()
             .await
@@ -1665,10 +1665,19 @@ mod tests {
         .await
         .unwrap();
         client.update().await.unwrap();
-        assert_eq!(client.trusted_root().version(), 1);
-        assert_eq!(client.trusted_targets().map(|m| m.version()), Some(1));
-        assert_eq!(client.trusted_snapshot().map(|m| m.version()), Some(1));
-        assert_eq!(client.trusted_timestamp().map(|m| m.version()), Some(1));
+        assert_eq!(client.database().trusted_root().version(), 1);
+        assert_eq!(
+            client.database().trusted_targets().map(|m| m.version()),
+            Some(1)
+        );
+        assert_eq!(
+            client.database().trusted_snapshot().map(|m| m.version()),
+            Some(1)
+        );
+        assert_eq!(
+            client.database().trusted_timestamp().map(|m| m.version()),
+            Some(1)
+        );
 
         // Create a new metadata, derived from the tuf database we created
         // with the client.
@@ -1689,7 +1698,7 @@ mod tests {
             .unwrap()
             .timestamp_includes_length(false)
             .timestamp_includes_hashes(&[])
-            .with_timestamp_builder(|builder| builder.expires(expires2))
+            .stage_timestamp_with_builder(|builder| builder.expires(expires2))
             .unwrap()
             .commit()
             .await
@@ -1774,10 +1783,19 @@ mod tests {
         // And make sure the client can update to the latest metadata.
         let mut client = Client::from_parts(parts);
         client.update().await.unwrap();
-        assert_eq!(client.trusted_root().version(), 2);
-        assert_eq!(client.trusted_targets().map(|m| m.version()), Some(2));
-        assert_eq!(client.trusted_snapshot().map(|m| m.version()), Some(2));
-        assert_eq!(client.trusted_timestamp().map(|m| m.version()), Some(2));
+        assert_eq!(client.database().trusted_root().version(), 2);
+        assert_eq!(
+            client.database().trusted_targets().map(|m| m.version()),
+            Some(2)
+        );
+        assert_eq!(
+            client.database().trusted_snapshot().map(|m| m.version()),
+            Some(2)
+        );
+        assert_eq!(
+            client.database().trusted_timestamp().map(|m| m.version()),
+            Some(2)
+        );
     }
 
     #[test]
@@ -1814,7 +1832,7 @@ mod tests {
         .unwrap();
 
         assert!(client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 1);
+        assert_eq!(client.database().trusted_root().version(), 1);
 
         // Make sure doing another commit makes no changes.
         let mut parts = client.into_parts();
@@ -1831,7 +1849,7 @@ mod tests {
 
         let mut client = Client::from_parts(parts);
         assert!(!client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 1);
+        assert_eq!(client.database().trusted_root().version(), 1);
     }
 
     #[test]
@@ -1871,15 +1889,19 @@ mod tests {
         .unwrap();
 
         assert!(client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 1);
+        assert_eq!(client.database().trusted_root().version(), 1);
         assert_eq!(
-            client.trusted_root().root_keys().collect::<Vec<_>>(),
+            client
+                .database()
+                .trusted_root()
+                .root_keys()
+                .collect::<Vec<_>>(),
             vec![KEYS[1].public()],
         );
 
         // Another update should not fetch anything.
         assert!(!client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 1);
+        assert_eq!(client.database().trusted_root().version(), 1);
 
         // Now bump the root to version 2. We sign the root metadata with both
         // key 1 and 2, but the builder should only trust key 2.
@@ -1896,19 +1918,23 @@ mod tests {
 
         let mut client = Client::from_parts(parts);
         assert!(client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 2);
+        assert_eq!(client.database().trusted_root().version(), 2);
         assert_eq!(
-            client.trusted_root().consistent_snapshot(),
+            client.database().trusted_root().consistent_snapshot(),
             consistent_snapshot
         );
         assert_eq!(
-            client.trusted_root().root_keys().collect::<Vec<_>>(),
+            client
+                .database()
+                .trusted_root()
+                .root_keys()
+                .collect::<Vec<_>>(),
             vec![KEYS[2].public()],
         );
 
         // Another update should not fetch anything.
         assert!(!client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 2);
+        assert_eq!(client.database().trusted_root().version(), 2);
 
         // Now bump the root to version 3. The metadata will only be signed with
         // key 2, and trusted by key 2.
@@ -1926,15 +1952,19 @@ mod tests {
 
         let mut client = Client::from_parts(parts);
         assert!(client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 3);
+        assert_eq!(client.database().trusted_root().version(), 3);
         assert_eq!(
-            client.trusted_root().root_keys().collect::<Vec<_>>(),
+            client
+                .database()
+                .trusted_root()
+                .root_keys()
+                .collect::<Vec<_>>(),
             vec![KEYS[2].public()],
         );
 
         // Another update should not fetch anything.
         assert!(!client.update().await.unwrap());
-        assert_eq!(client.trusted_root().version(), 3);
+        assert_eq!(client.database().trusted_root().version(), 3);
     }
 
     #[test]
@@ -2178,7 +2208,7 @@ mod tests {
                 .unwrap()
                 .stage_snapshot_with_builder(|builder| builder.expires(expires1))
                 .unwrap()
-                .with_timestamp_builder(|builder| builder.expires(expires1))
+                .stage_timestamp_with_builder(|builder| builder.expires(expires1))
                 .unwrap()
                 .commit()
                 .await
@@ -2256,7 +2286,7 @@ mod tests {
                 .unwrap()
                 .stage_snapshot_with_builder(|builder| builder.expires(expires2))
                 .unwrap()
-                .with_timestamp_builder(|builder| builder.expires(expires2))
+                .stage_timestamp_with_builder(|builder| builder.expires(expires2))
                 .unwrap()
                 .commit()
                 .await
@@ -2321,7 +2351,7 @@ mod tests {
                 .skip_targets()
                 .stage_snapshot_with_builder(|builder| builder.expires(expires3))
                 .unwrap()
-                .with_timestamp_builder(|builder| builder.expires(expires3))
+                .stage_timestamp_with_builder(|builder| builder.expires(expires3))
                 .unwrap()
                 .commit()
                 .await
@@ -2371,7 +2401,7 @@ mod tests {
                 .skip_root()
                 .skip_targets()
                 .skip_snapshot()
-                .with_timestamp_builder(|builder| builder.expires(expires4))
+                .stage_timestamp_with_builder(|builder| builder.expires(expires4))
                 .unwrap()
                 .commit()
                 .await
