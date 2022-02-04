@@ -2217,7 +2217,7 @@ mod test {
                 .local_repo_mut()
                 .store_metadata(
                     &MetadataPath::from_role(&Role::Timestamp),
-                    &MetadataVersion::None,
+                    MetadataVersion::None,
                     &mut metadata2.timestamp().unwrap().as_bytes(),
                 )
                 .await
@@ -2227,7 +2227,7 @@ mod test {
                 .remote_repo_mut()
                 .store_metadata(
                     &MetadataPath::from_role(&Role::Timestamp),
-                    &MetadataVersion::None,
+                    MetadataVersion::None,
                     &mut metadata2.timestamp().unwrap().as_bytes(),
                 )
                 .await
@@ -2242,7 +2242,7 @@ mod test {
                 &fetch_metadata_to_string(
                     client.local_repo(),
                     &MetadataPath::from_role(&Role::Timestamp),
-                    &MetadataVersion::None,
+                    MetadataVersion::None,
                 )
                 .await
                 .unwrap(),
@@ -2253,7 +2253,7 @@ mod test {
                 &fetch_metadata_to_string(
                     client.remote_repo(),
                     &MetadataPath::from_role(&Role::Timestamp),
-                    &MetadataVersion::None,
+                    MetadataVersion::None,
                 )
                 .await
                 .unwrap(),
