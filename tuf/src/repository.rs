@@ -277,6 +277,68 @@ where
     }
 }
 
+impl<D> RepositoryProvider<D> for &dyn RepositoryProvider<D>
+where
+    D: DataInterchange + Sync,
+{
+    fn fetch_metadata<'a>(
+        &'a self,
+        meta_path: &MetadataPath,
+        version: MetadataVersion,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        (**self).fetch_metadata(meta_path, version)
+    }
+
+    fn fetch_target<'a>(
+        &'a self,
+        target_path: &TargetPath,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        (**self).fetch_target(target_path)
+    }
+}
+
+impl<D> RepositoryProvider<D> for &mut dyn RepositoryProvider<D>
+where
+    D: DataInterchange + Sync,
+{
+    fn fetch_metadata<'a>(
+        &'a self,
+        meta_path: &MetadataPath,
+        version: MetadataVersion,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        (**self).fetch_metadata(meta_path, version)
+    }
+
+    fn fetch_target<'a>(
+        &'a self,
+        target_path: &TargetPath,
+    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        (**self).fetch_target(target_path)
+    }
+}
+
+impl<D> RepositoryStorage<D> for &mut dyn RepositoryStorage<D>
+where
+    D: DataInterchange + Sync,
+{
+    fn store_metadata<'a>(
+        &'a mut self,
+        meta_path: &MetadataPath,
+        version: MetadataVersion,
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+    ) -> BoxFuture<'a, Result<()>> {
+        (**self).store_metadata(meta_path, version, metadata)
+    }
+
+    fn store_target<'a>(
+        &'a mut self,
+        target_path: &TargetPath,
+        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+    ) -> BoxFuture<'a, Result<()>> {
+        (**self).store_target(target_path, target)
+    }
+}
+
 /// A wrapper around an implementation of [`RepositoryProvider`] and/or [`RepositoryStorage`] tied
 /// to a specific [`DataInterchange`](crate::interchange::DataInterchange) that will enforce
 /// provided length limits and hash checks.
@@ -669,5 +731,17 @@ mod test {
             read.read_to_end(&mut buf).await.unwrap();
             assert_eq!(buf.as_slice(), data);
         })
+    }
+
+    #[test]
+    fn repository_dyn_impls_repository_traits() {
+        let mut repo = EphemeralRepository::new();
+
+        fn storage<T: RepositoryStorage<Json>>(_t: T) {}
+        fn provider<T: RepositoryProvider<Json>>(_t: T) {}
+
+        provider(&repo as &dyn RepositoryProvider<Json>);
+        provider(&mut repo as &mut dyn RepositoryProvider<Json>);
+        storage(&mut repo as &mut dyn RepositoryStorage<Json>);
     }
 }
