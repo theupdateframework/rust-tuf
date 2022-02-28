@@ -1,7 +1,7 @@
 [package]
 name = "tuf"
 edition = "2018"
-version = "0.3.0-beta5"
+version = "0.3.0-beta6"
 authors = [ "heartsucker <heartsucker@autistici.org>", "Erick Tryzelaar <etryzelaar@google.com>" ]
 description = "Library for The Update Framework (TUF)"
 homepage = "https://github.com/theupdateframework/rust-tuf"
