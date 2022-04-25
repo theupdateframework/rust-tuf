@@ -516,8 +516,8 @@ mod test {
     use crate::interchange::Json;
     use crate::metadata::{MetadataPath, MetadataVersion, Role, RootMetadata, SnapshotMetadata};
     use crate::repository::EphemeralRepository;
+    use assert_matches::assert_matches;
     use futures_executor::block_on;
-    use matches::assert_matches;
 
     #[test]
     fn repository_forwards_not_found_error() {
