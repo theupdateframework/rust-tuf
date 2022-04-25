@@ -471,7 +471,7 @@ where
             self.repository.fetch_target(target_path).await?
         };
 
-        Ok(target.check_length_and_hash(length, hashes)?)
+        target.check_length_and_hash(length, hashes)
     }
 }
 
