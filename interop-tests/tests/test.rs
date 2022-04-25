@@ -34,9 +34,9 @@
 //! step name, that just contains the name of the step. This is used to verify that we can still
 //! download targets at each step of the test.
 
+use assert_matches::assert_matches;
 use futures_executor::block_on;
 use futures_util::io::AsyncReadExt;
-use matches::assert_matches;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
