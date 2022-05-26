@@ -43,9 +43,7 @@ use std::path::{Path, PathBuf};
 use tuf::client::{Client, Config};
 use tuf::crypto::PublicKey;
 use tuf::interchange::{DataInterchange, Json, JsonPretty};
-use tuf::metadata::{
-    MetadataPath, MetadataVersion, RawSignedMetadata, Role, RootMetadata, TargetPath,
-};
+use tuf::metadata::{MetadataPath, MetadataVersion, RawSignedMetadata, RootMetadata, TargetPath};
 use tuf::repository::{
     EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, RepositoryProvider,
 };
@@ -214,7 +212,7 @@ where
 {
     let remote = init_remote::<D>(dir).unwrap();
 
-    let root_path = MetadataPath::from_role(&Role::Root);
+    let root_path = MetadataPath::root();
 
     let mut buf = Vec::new();
     let mut reader = remote

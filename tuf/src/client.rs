@@ -62,8 +62,8 @@ use crate::database::Database;
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
-    Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, Role, RootMetadata,
-    SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata,
+    Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, RootMetadata, SnapshotMetadata,
+    TargetDescription, TargetPath, TargetsMetadata,
 };
 use crate::repository::{Repository, RepositoryProvider, RepositoryStorage};
 use crate::verify::Verified;
@@ -128,7 +128,7 @@ where
     ///     .timestamp_key(public_key.clone())
     ///     .signed::<Json>(&private_key)?;
     ///
-    /// let root_path = MetadataPath::from_role(&Role::Root);
+    /// let root_path = MetadataPath::root();
     /// let root_version = MetadataVersion::Number(root_version);
     ///
     /// local.store_metadata(
@@ -148,7 +148,7 @@ where
     /// ```
     pub async fn with_trusted_local(config: Config, local: L, remote: R) -> Result<Self> {
         let (local, remote) = (Repository::new(local), Repository::new(remote));
-        let root_path = MetadataPath::from_role(&Role::Root);
+        let root_path = MetadataPath::root();
 
         // FIXME should this be MetadataVersion::None so we bootstrap with the latest version?
         let root_version = MetadataVersion::Number(1);
@@ -261,7 +261,7 @@ where
     ///     .timestamp_key(public_key.clone())
     ///     .signed::<Json>(&private_key)?;
     ///
-    /// let root_path = MetadataPath::from_role(&Role::Root);
+    /// let root_path = MetadataPath::root();
     /// let root_version = MetadataVersion::Number(root_version);
     ///
     /// remote.store_metadata(
@@ -295,7 +295,7 @@ where
     {
         let (mut local, remote) = (Repository::new(local), Repository::new(remote));
 
-        let root_path = MetadataPath::from_role(&Role::Root);
+        let root_path = MetadataPath::root();
         let (fetched, raw_root) = fetch_metadata_from_local_or_else_remote(
             &root_path,
             root_version,
@@ -481,7 +481,7 @@ where
     where
         Remote: RepositoryProvider<D>,
     {
-        let root_path = MetadataPath::from_role(&Role::Root);
+        let root_path = MetadataPath::root();
 
         let mut updated = false;
 
@@ -558,7 +558,7 @@ where
         // where we check timestamp/snapshot/targets/delegations for expiration.
         if tuf.trusted_root().expires() <= &Utc::now() {
             error!("Root metadata expired, potential freeze attack");
-            return Err(Error::ExpiredMetadata(Role::Root));
+            return Err(Error::ExpiredMetadata(MetadataPath::root()));
         }
 
         /////////////////////////////////////////
@@ -590,7 +590,7 @@ where
     where
         Remote: RepositoryProvider<D>,
     {
-        let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
+        let timestamp_path = MetadataPath::timestamp();
 
         /////////////////////////////////////////
         // TUF-1.0.9 §5.2:
@@ -657,7 +657,7 @@ where
     {
         let snapshot_description = match tuf.trusted_timestamp() {
             Some(ts) => Ok(ts.snapshot()),
-            None => Err(Error::MissingMetadata(Role::Timestamp)),
+            None => Err(Error::MissingMetadata(MetadataPath::timestamp())),
         }?
         .clone();
 
@@ -673,7 +673,7 @@ where
             MetadataVersion::None
         };
 
-        let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
+        let snapshot_path = MetadataPath::snapshot();
 
         // https://theupdateframework.github.io/specification/v1.0.26/#update-snapshot 5.5.1:
 
@@ -734,7 +734,7 @@ where
         Remote: RepositoryProvider<D>,
     {
         let targets_description = match tuf.trusted_snapshot() {
-            Some(sn) => match sn.meta().get(&MetadataPath::from_role(&Role::Targets)) {
+            Some(sn) => match sn.meta().get(&MetadataPath::targets()) {
                 Some(d) => Ok(d),
                 None => Err(Error::VerificationFailure(
                     "Snapshot metadata did not contain a description of the \
@@ -742,7 +742,7 @@ where
                         .into(),
                 )),
             },
-            None => Err(Error::MissingMetadata(Role::Snapshot)),
+            None => Err(Error::MissingMetadata(MetadataPath::snapshot())),
         }?
         .clone();
 
@@ -757,7 +757,7 @@ where
             MetadataVersion::None
         };
 
-        let targets_path = MetadataPath::from_role(&Role::Targets);
+        let targets_path = MetadataPath::targets();
 
         // https://theupdateframework.github.io/specification/v1.0.26/#update-targets 5.6.1:
         //
@@ -850,7 +850,7 @@ where
         let snapshot = self
             .tuf
             .trusted_snapshot()
-            .ok_or(Error::MissingMetadata(Role::Snapshot))?
+            .ok_or_else(|| Error::MissingMetadata(MetadataPath::snapshot()))?
             .clone();
         let (_, target_description) = self
             .lookup_target_description(false, 0, target, &snapshot, None)
@@ -879,11 +879,11 @@ where
         let (targets, targets_role) = match targets {
             Some((t, role)) => (t.clone(), role),
             None => match self.tuf.trusted_targets() {
-                Some(t) => (t.clone(), MetadataPath::from_role(&Role::Targets)),
+                Some(t) => (t.clone(), MetadataPath::targets()),
                 None => {
                     return (
                         default_terminate,
-                        Err(Error::MissingMetadata(Role::Targets)),
+                        Err(Error::MissingMetadata(MetadataPath::targets())),
                     );
                 }
             },
@@ -1416,10 +1416,7 @@ mod test {
                             MetadataVersion::Number(1),
                             metadata1.root().unwrap()
                         ),
-                        Track::FetchErr(
-                            MetadataPath::from_role(&Role::Root),
-                            MetadataVersion::Number(2)
-                        ),
+                        Track::FetchErr(MetadataPath::root(), MetadataVersion::Number(2)),
                     ],
                 );
             }
@@ -1427,7 +1424,7 @@ mod test {
                 assert_eq!(
                     client.local_repo().take_tracks(),
                     vec![Track::FetchErr(
-                        MetadataPath::from_role(&Role::Root),
+                        MetadataPath::root(),
                         MetadataVersion::Number(2)
                     )],
                 );
@@ -1440,10 +1437,7 @@ mod test {
                             MetadataVersion::Number(1),
                             metadata1.root().unwrap()
                         ),
-                        Track::FetchErr(
-                            MetadataPath::from_role(&Role::Root),
-                            MetadataVersion::Number(2)
-                        ),
+                        Track::FetchErr(MetadataPath::root(), MetadataVersion::Number(2)),
                     ],
                 );
             }
@@ -1451,7 +1445,7 @@ mod test {
                 assert_eq!(
                     client.local_repo().take_tracks(),
                     vec![Track::FetchErr(
-                        MetadataPath::from_role(&Role::Root),
+                        MetadataPath::root(),
                         MetadataVersion::Number(2)
                     )],
                 );
@@ -1467,10 +1461,7 @@ mod test {
             client.remote_repo().take_tracks(),
             vec![
                 Track::fetch_meta_found(MetadataVersion::Number(2), metadata2.root().unwrap()),
-                Track::FetchErr(
-                    MetadataPath::from_role(&Role::Root),
-                    MetadataVersion::Number(3)
-                ),
+                Track::FetchErr(MetadataPath::root(), MetadataVersion::Number(3)),
                 Track::fetch_meta_found(MetadataVersion::None, metadata2.timestamp().unwrap()),
                 Track::fetch_meta_found(MetadataVersion::Number(2), metadata2.snapshot().unwrap()),
                 Track::fetch_meta_found(MetadataVersion::Number(2), metadata2.targets().unwrap()),
@@ -1495,10 +1486,7 @@ mod test {
         assert_eq!(
             client.remote_repo().take_tracks(),
             vec![
-                Track::FetchErr(
-                    MetadataPath::from_role(&Role::Root),
-                    MetadataVersion::Number(3)
-                ),
+                Track::FetchErr(MetadataPath::root(), MetadataVersion::Number(3)),
                 Track::fetch_meta_found(MetadataVersion::None, metadata2.timestamp().unwrap()),
             ]
         );
@@ -1549,14 +1537,8 @@ mod test {
             assert_eq!(
                 client.local_repo().take_tracks(),
                 vec![
-                    Track::FetchErr(
-                        MetadataPath::from_role(&Role::Root),
-                        MetadataVersion::Number(2)
-                    ),
-                    Track::FetchErr(
-                        MetadataPath::from_role(&Role::Timestamp),
-                        MetadataVersion::None
-                    )
+                    Track::FetchErr(MetadataPath::root(), MetadataVersion::Number(2)),
+                    Track::FetchErr(MetadataPath::timestamp(), MetadataVersion::None)
                 ],
             );
 
@@ -1588,10 +1570,7 @@ mod test {
                 client.remote_repo().take_tracks(),
                 vec![
                     Track::fetch_meta_found(MetadataVersion::Number(2), metadata2.root().unwrap()),
-                    Track::FetchErr(
-                        MetadataPath::from_role(&Role::Root),
-                        MetadataVersion::Number(3)
-                    ),
+                    Track::FetchErr(MetadataPath::root(), MetadataVersion::Number(3)),
                     Track::fetch_meta_found(MetadataVersion::None, metadata2.timestamp().unwrap()),
                     Track::fetch_meta_found(
                         MetadataVersion::Number(2),
@@ -1683,10 +1662,7 @@ mod test {
                 client.local_repo().take_tracks(),
                 vec![
                     Track::fetch_meta_found(MetadataVersion::Number(2), metadata2.root().unwrap()),
-                    Track::FetchErr(
-                        MetadataPath::from_role(&Role::Root),
-                        MetadataVersion::Number(3)
-                    )
+                    Track::FetchErr(MetadataPath::root(), MetadataVersion::Number(3))
                 ],
             );
 
@@ -1728,7 +1704,7 @@ mod test {
 
             local
                 .store_metadata(
-                    &MetadataPath::from_role(&Role::Timestamp),
+                    &MetadataPath::timestamp(),
                     MetadataVersion::None,
                     &mut junk_timestamp.as_bytes(),
                 )
@@ -1769,12 +1745,9 @@ mod test {
             assert_eq!(
                 client.local_repo().take_tracks(),
                 vec![
-                    Track::FetchErr(
-                        MetadataPath::from_role(&Role::Root),
-                        MetadataVersion::Number(2)
-                    ),
+                    Track::FetchErr(MetadataPath::root(), MetadataVersion::Number(2)),
                     Track::FetchFound {
-                        path: MetadataPath::from_role(&Role::Timestamp),
+                        path: MetadataPath::timestamp(),
                         version: MetadataVersion::None,
                         metadata: junk_timestamp.into(),
                     },
@@ -1815,8 +1788,8 @@ mod test {
             .await
             .unwrap();
 
-        let root_path = MetadataPath::from_role(&Role::Root);
-        let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
+        let root_path = MetadataPath::root();
+        let timestamp_path = MetadataPath::timestamp();
 
         let targets_version;
         let snapshot_version;
@@ -2216,7 +2189,7 @@ mod test {
             client
                 .local_repo_mut()
                 .store_metadata(
-                    &MetadataPath::from_role(&Role::Timestamp),
+                    &MetadataPath::timestamp(),
                     MetadataVersion::None,
                     &mut metadata2.timestamp().unwrap().as_bytes(),
                 )
@@ -2226,7 +2199,7 @@ mod test {
             client
                 .remote_repo_mut()
                 .store_metadata(
-                    &MetadataPath::from_role(&Role::Timestamp),
+                    &MetadataPath::timestamp(),
                     MetadataVersion::None,
                     &mut metadata2.timestamp().unwrap().as_bytes(),
                 )
@@ -2241,7 +2214,7 @@ mod test {
                 &timestamp2,
                 &fetch_metadata_to_string(
                     client.local_repo(),
-                    &MetadataPath::from_role(&Role::Timestamp),
+                    &MetadataPath::timestamp(),
                     MetadataVersion::None,
                 )
                 .await
@@ -2252,7 +2225,7 @@ mod test {
                 &timestamp2,
                 &fetch_metadata_to_string(
                     client.remote_repo(),
-                    &MetadataPath::from_role(&Role::Timestamp),
+                    &MetadataPath::timestamp(),
                     MetadataVersion::None,
                 )
                 .await
@@ -2282,7 +2255,7 @@ mod test {
                 .unwrap();
 
             repo.store_metadata(
-                &MetadataPath::from_role(&Role::Root),
+                &MetadataPath::root(),
                 MetadataVersion::Number(1),
                 &mut root.as_bytes(),
             )
@@ -2296,7 +2269,7 @@ mod test {
                 .unwrap();
 
             repo.store_metadata(
-                &MetadataPath::from_role(&Role::Targets),
+                &MetadataPath::targets(),
                 MetadataVersion::Number(1),
                 &mut targets.as_bytes(),
             )
@@ -2308,17 +2281,14 @@ mod test {
             let targets_description = MetadataDescription::new(1, None, HashMap::new()).unwrap();
 
             let snapshot = SnapshotMetadataBuilder::new()
-                .insert_metadata_description(
-                    MetadataPath::from_role(&Role::Targets),
-                    targets_description,
-                )
+                .insert_metadata_description(MetadataPath::targets(), targets_description)
                 .signed::<Json>(&KEYS[2])
                 .unwrap()
                 .to_raw()
                 .unwrap();
 
             repo.store_metadata(
-                &MetadataPath::from_role(&Role::Snapshot),
+                &MetadataPath::snapshot(),
                 MetadataVersion::Number(1),
                 &mut snapshot.as_bytes(),
             )
@@ -2337,7 +2307,7 @@ mod test {
                     .unwrap();
 
             repo.store_metadata(
-                &MetadataPath::from_role(&Role::Timestamp),
+                &MetadataPath::timestamp(),
                 MetadataVersion::None,
                 &mut timestamp.as_bytes(),
             )
