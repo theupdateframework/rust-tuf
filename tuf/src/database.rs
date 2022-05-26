@@ -1,6 +1,6 @@
 //! Components needed to verify TUF metadata and targets.
 
-use chrono::offset::Utc;
+use chrono::{offset::Utc, DateTime};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
@@ -113,13 +113,33 @@ impl<D: DataInterchange> Database<D> {
     where
         I: IntoIterator<Item = &'a PublicKey>,
     {
+        Self::from_metadata_with_trusted_keys_and_start_time(
+            &Utc::now(),
+            metadata_set,
+            root_threshold,
+            root_keys,
+        )
+    }
+
+    /// Create a new [`Database`] struct from a set of metadata that is assumed to be trusted. The
+    /// signed root metadata in the `metadata_set` must be signed with at least a `root_threshold`
+    /// of the provided root_keys. It is not necessary for the root metadata to contain these keys.
+    pub fn from_metadata_with_trusted_keys_and_start_time<'a, I>(
+        start_time: &DateTime<Utc>,
+        metadata_set: &RawSignedMetadataSet<D>,
+        root_threshold: u32,
+        root_keys: I,
+    ) -> Result<Self>
+    where
+        I: IntoIterator<Item = &'a PublicKey>,
+    {
         let mut db = if let Some(root) = metadata_set.root() {
             Database::from_root_with_trusted_keys(root, root_threshold, root_keys)?
         } else {
             return Err(Error::MissingMetadata(MetadataPath::root()));
         };
 
-        db.update_metadata_after_root(metadata_set)?;
+        db.update_metadata_after_root(start_time, metadata_set)?;
 
         Ok(db)
     }
@@ -132,13 +152,27 @@ impl<D: DataInterchange> Database<D> {
     /// signed properly. This exposes us to potential parser exploits. This method should only be
     /// used if the metadata is loaded from a trusted source.
     pub fn from_trusted_metadata(metadata_set: &RawSignedMetadataSet<D>) -> Result<Self> {
+        Self::from_trusted_metadata_with_start_time(metadata_set, &Utc::now())
+    }
+
+    /// Create a new [`Database`] struct from a set of metadata that is assumed to be trusted.
+    ///
+    /// **WARNING**: This is trust-on-first-use (TOFU) and offers weaker security guarantees than
+    /// the related method [`Database::from_metadata_with_trusted_keys`] because this method needs
+    /// to deserialize the root metadata from `metadata_set` before we have verified it has been
+    /// signed properly. This exposes us to potential parser exploits. This method should only be
+    /// used if the metadata is loaded from a trusted source.
+    pub fn from_trusted_metadata_with_start_time(
+        metadata_set: &RawSignedMetadataSet<D>,
+        start_time: &DateTime<Utc>,
+    ) -> Result<Self> {
         let mut db = if let Some(root) = metadata_set.root() {
             Database::from_trusted_root(root)?
         } else {
             return Err(Error::MissingMetadata(MetadataPath::root()));
         };
 
-        db.update_metadata_after_root(metadata_set)?;
+        db.update_metadata_after_root(start_time, metadata_set)?;
 
         Ok(db)
     }
@@ -170,6 +204,15 @@ impl<D: DataInterchange> Database<D> {
 
     /// Verify and update metadata. Returns true if any of the metadata was updated.
     pub fn update_metadata(&mut self, metadata: &RawSignedMetadataSet<D>) -> Result<bool> {
+        self.update_metadata_with_start_time(metadata, &Utc::now())
+    }
+
+    /// Verify and update metadata. Returns true if any of the metadata was updated.
+    pub fn update_metadata_with_start_time(
+        &mut self,
+        metadata: &RawSignedMetadataSet<D>,
+        start_time: &DateTime<Utc>,
+    ) -> Result<bool> {
         let updated = if let Some(root) = metadata.root() {
             self.update_root(root)?;
             true
@@ -177,7 +220,7 @@ impl<D: DataInterchange> Database<D> {
             false
         };
 
-        if self.update_metadata_after_root(metadata)? {
+        if self.update_metadata_after_root(start_time, metadata)? {
             Ok(true)
         } else {
             Ok(updated)
@@ -186,23 +229,24 @@ impl<D: DataInterchange> Database<D> {
 
     fn update_metadata_after_root(
         &mut self,
+        start_time: &DateTime<Utc>,
         metadata_set: &RawSignedMetadataSet<D>,
     ) -> Result<bool> {
         let mut updated = false;
         if let Some(timestamp) = metadata_set.timestamp() {
-            if self.update_timestamp(timestamp)?.is_some() {
+            if self.update_timestamp(start_time, timestamp)?.is_some() {
                 updated = true;
             }
         }
 
         if let Some(snapshot) = metadata_set.snapshot() {
-            if self.update_snapshot(snapshot)? {
+            if self.update_snapshot(start_time, snapshot)? {
                 updated = true;
             }
         }
 
         if let Some(targets) = metadata_set.targets() {
-            if self.update_targets(targets)? {
+            if self.update_targets(start_time, targets)? {
                 updated = true;
             }
         }
@@ -309,6 +353,7 @@ impl<D: DataInterchange> Database<D> {
     /// Returns a reference to the parsed metadata if the metadata was newer.
     pub fn update_timestamp(
         &mut self,
+        start_time: &DateTime<Utc>,
         raw_timestamp: &RawSignedMetadata<D, TimestampMetadata>,
     ) -> Result<Option<&Verified<TimestampMetadata>>> {
         let verified = {
@@ -387,7 +432,7 @@ impl<D: DataInterchange> Database<D> {
             //     timestamp metadata file has expired, discard it, abort the update cycle, and
             //     report the potential freeze attack.
 
-            if new_timestamp.expires() <= &Utc::now() {
+            if new_timestamp.expires() <= start_time {
                 return Err(Error::ExpiredMetadata(MetadataPath::timestamp()));
             }
 
@@ -401,14 +446,15 @@ impl<D: DataInterchange> Database<D> {
     /// Verify and update the snapshot metadata.
     pub fn update_snapshot(
         &mut self,
+        start_time: &DateTime<Utc>,
         raw_snapshot: &RawSignedMetadata<D, SnapshotMetadata>,
     ) -> Result<bool> {
         let verified = {
             /////////////////////////////////////////
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
             // this metadata expired isn't part of the spec. Do we actually want to do this?
-            let trusted_root = self.trusted_root_unexpired()?;
-            let trusted_timestamp = self.trusted_timestamp_unexpired()?;
+            let trusted_root = self.trusted_root_unexpired(start_time)?;
+            let trusted_timestamp = self.trusted_timestamp_unexpired(start_time)?;
 
             if let Some(trusted_snapshot) = &self.trusted_snapshot {
                 match trusted_timestamp
@@ -578,15 +624,17 @@ impl<D: DataInterchange> Database<D> {
     /// Verify and update the targets metadata.
     pub fn update_targets(
         &mut self,
+        start_time: &DateTime<Utc>,
         raw_targets: &RawSignedMetadata<D, TargetsMetadata>,
     ) -> Result<bool> {
         let verified = {
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
             // this metadata expired isn't part of the spec. Do we actually want to do this?
-            let trusted_root = self.trusted_root_unexpired()?;
+            let trusted_root = self.trusted_root_unexpired(start_time)?;
             let trusted_targets_version = self.trusted_targets.as_ref().map(|t| t.version());
 
             self.verify_target_or_delegated_target(
+                start_time,
                 &MetadataPath::targets(),
                 raw_targets,
                 trusted_root.targets().threshold(),
@@ -606,6 +654,7 @@ impl<D: DataInterchange> Database<D> {
     /// Verify and update a delegation metadata.
     pub fn update_delegated_targets(
         &mut self,
+        start_time: &DateTime<Utc>,
         parent_role: &MetadataPath,
         role: &MetadataPath,
         raw_delegated_targets: &RawSignedMetadata<D, TargetsMetadata>,
@@ -613,9 +662,9 @@ impl<D: DataInterchange> Database<D> {
         let verified = {
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
             // this metadata expired isn't part of the spec. Do we actually want to do this?
-            let _ = self.trusted_root_unexpired()?;
-            let _ = self.trusted_snapshot_unexpired()?;
-            let trusted_targets = self.trusted_targets_unexpired()?;
+            let _ = self.trusted_root_unexpired(start_time)?;
+            let _ = self.trusted_snapshot_unexpired(start_time)?;
+            let trusted_targets = self.trusted_targets_unexpired(start_time)?;
 
             if trusted_targets.delegations().is_none() {
                 return Err(Error::VerificationFailure(
@@ -636,6 +685,7 @@ impl<D: DataInterchange> Database<D> {
                 self.trusted_delegations.get(role).map(|t| t.version());
 
             self.verify_target_or_delegated_target(
+                start_time,
                 role,
                 raw_delegated_targets,
                 threshold,
@@ -654,6 +704,7 @@ impl<D: DataInterchange> Database<D> {
 
     fn verify_target_or_delegated_target<'a>(
         &self,
+        start_time: &DateTime<Utc>,
         role: &MetadataPath,
         raw_targets: &RawSignedMetadata<D, TargetsMetadata>,
         trusted_targets_threshold: u32,
@@ -662,7 +713,7 @@ impl<D: DataInterchange> Database<D> {
     ) -> Result<Option<Verified<TargetsMetadata>>> {
         // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
         // this metadata expired isn't part of the spec. Do we actually want to do this?
-        let trusted_snapshot = self.trusted_snapshot_unexpired()?;
+        let trusted_snapshot = self.trusted_snapshot_unexpired(start_time)?;
 
         let trusted_targets_description = trusted_snapshot.meta().get(role).ok_or_else(|| {
             Error::VerificationFailure(format!(
@@ -745,7 +796,7 @@ impl<D: DataInterchange> Database<D> {
         //     metadata file is expired, discard it, abort the update cycle, and report the
         //     potential freeze attack.
 
-        if new_targets.expires() <= &Utc::now() {
+        if new_targets.expires() <= start_time {
             return Err(Error::ExpiredMetadata(role.clone()));
         }
 
@@ -807,15 +858,28 @@ impl<D: DataInterchange> Database<D> {
     /// metadata. This may mean the target exists somewhere in the metadata, but the chain of trust
     /// to that target may be invalid or incomplete.
     pub fn target_description(&self, target_path: &TargetPath) -> Result<TargetDescription> {
-        let _ = self.trusted_root_unexpired()?;
-        let _ = self.trusted_snapshot_unexpired()?;
-        let targets = self.trusted_targets_unexpired()?;
+        self.target_description_with_start_time(&Utc::now(), target_path)
+    }
+
+    /// Get a reference to the description needed to verify the target defined by the given
+    /// `TargetPath`. Returns an `Error` if the target is not defined in the trusted
+    /// metadata. This may mean the target exists somewhere in the metadata, but the chain of trust
+    /// to that target may be invalid or incomplete.
+    pub fn target_description_with_start_time(
+        &self,
+        start_time: &DateTime<Utc>,
+        target_path: &TargetPath,
+    ) -> Result<TargetDescription> {
+        let _ = self.trusted_root_unexpired(start_time)?;
+        let _ = self.trusted_snapshot_unexpired(start_time)?;
+        let targets = self.trusted_targets_unexpired(start_time)?;
 
         if let Some(d) = targets.targets().get(target_path) {
             return Ok(d.clone());
         }
 
         fn lookup<D: DataInterchange>(
+            start_time: &DateTime<Utc>,
             tuf: &Database<D>,
             default_terminate: bool,
             current_depth: u32,
@@ -842,7 +906,7 @@ impl<D: DataInterchange> Database<D> {
                     None => return (delegation.terminating(), None),
                 };
 
-                if trusted_delegation.expires() <= &Utc::now() {
+                if trusted_delegation.expires() <= start_time {
                     return (delegation.terminating(), None);
                 }
 
@@ -854,6 +918,7 @@ impl<D: DataInterchange> Database<D> {
                     let mut new_parents = parents.to_vec();
                     new_parents.push(delegation.paths().clone());
                     let (term, res) = lookup(
+                        start_time,
                         tuf,
                         delegation.terminating(),
                         current_depth + 1,
@@ -875,9 +940,18 @@ impl<D: DataInterchange> Database<D> {
         match targets.delegations() {
             Some(d) => {
                 let mut visited = HashSet::new();
-                lookup(self, false, 0, target_path, d, &[], &mut visited)
-                    .1
-                    .ok_or(Error::TargetUnavailable)
+                lookup(
+                    start_time,
+                    self,
+                    false,
+                    0,
+                    target_path,
+                    d,
+                    &[],
+                    &mut visited,
+                )
+                .1
+                .ok_or(Error::TargetUnavailable)
             }
             None => Err(Error::TargetUnavailable),
         }
@@ -890,18 +964,33 @@ impl<D: DataInterchange> Database<D> {
         self.trusted_delegations.clear();
     }
 
-    fn trusted_root_unexpired(&self) -> Result<&RootMetadata> {
+    fn trusted_root_unexpired(&self, start_time: &DateTime<Utc>) -> Result<&RootMetadata> {
         let trusted_root = &self.trusted_root;
-        if trusted_root.expires() <= &Utc::now() {
+        if trusted_root.expires() <= start_time {
             return Err(Error::ExpiredMetadata(MetadataPath::root()));
         }
         Ok(trusted_root)
     }
 
-    fn trusted_snapshot_unexpired(&self) -> Result<&SnapshotMetadata> {
+    fn trusted_timestamp_unexpired(
+        &self,
+        start_time: &DateTime<Utc>,
+    ) -> Result<&TimestampMetadata> {
+        match self.trusted_timestamp {
+            Some(ref trusted_timestamp) => {
+                if trusted_timestamp.expires() <= start_time {
+                    return Err(Error::ExpiredMetadata(MetadataPath::timestamp()));
+                }
+                Ok(trusted_timestamp)
+            }
+            None => Err(Error::MissingMetadata(MetadataPath::timestamp())),
+        }
+    }
+
+    fn trusted_snapshot_unexpired(&self, start_time: &DateTime<Utc>) -> Result<&SnapshotMetadata> {
         match self.trusted_snapshot {
             Some(ref trusted_snapshot) => {
-                if trusted_snapshot.expires() <= &Utc::now() {
+                if trusted_snapshot.expires() <= start_time {
                     return Err(Error::ExpiredMetadata(MetadataPath::snapshot()));
                 }
                 Ok(trusted_snapshot)
@@ -910,27 +999,15 @@ impl<D: DataInterchange> Database<D> {
         }
     }
 
-    fn trusted_targets_unexpired(&self) -> Result<&TargetsMetadata> {
+    fn trusted_targets_unexpired(&self, start_time: &DateTime<Utc>) -> Result<&TargetsMetadata> {
         match self.trusted_targets {
             Some(ref trusted_targets) => {
-                if trusted_targets.expires() <= &Utc::now() {
+                if trusted_targets.expires() <= start_time {
                     return Err(Error::ExpiredMetadata(MetadataPath::targets()));
                 }
                 Ok(trusted_targets)
             }
             None => Err(Error::MissingMetadata(MetadataPath::targets())),
-        }
-    }
-
-    fn trusted_timestamp_unexpired(&self) -> Result<&TimestampMetadata> {
-        match self.trusted_timestamp {
-            Some(ref trusted_timestamp) => {
-                if trusted_timestamp.expires() <= &Utc::now() {
-                    return Err(Error::ExpiredMetadata(MetadataPath::timestamp()));
-                }
-                Ok(trusted_timestamp)
-            }
-            None => Err(Error::MissingMetadata(MetadataPath::timestamp())),
         }
     }
 }
@@ -1140,6 +1217,8 @@ mod test {
 
     #[test]
     fn good_timestamp_update() {
+        let now = Utc::now();
+
         let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
@@ -1164,16 +1243,18 @@ mod test {
         let raw_timestamp = timestamp.to_raw().unwrap();
 
         assert_matches!(
-            tuf.update_timestamp(&raw_timestamp),
+            tuf.update_timestamp(&now, &raw_timestamp),
             Ok(Some(_parsed_timestamp))
         );
 
         // second update should do nothing
-        assert_matches!(tuf.update_timestamp(&raw_timestamp), Ok(None))
+        assert_matches!(tuf.update_timestamp(&now, &raw_timestamp), Ok(None))
     }
 
     #[test]
     fn bad_timestamp_update_wrong_key() {
+        let now = Utc::now();
+
         let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
@@ -1199,11 +1280,13 @@ mod test {
                 .to_raw()
                 .unwrap();
 
-        assert!(tuf.update_timestamp(&raw_timestamp).is_err())
+        assert!(tuf.update_timestamp(&now, &raw_timestamp).is_err())
     }
 
     #[test]
     fn good_snapshot_update() {
+        let now = Utc::now();
+
         let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
@@ -1227,16 +1310,18 @@ mod test {
                 .to_raw()
                 .unwrap();
 
-        tuf.update_timestamp(&raw_timestamp).unwrap();
+        tuf.update_timestamp(&now, &raw_timestamp).unwrap();
 
-        assert_matches!(tuf.update_snapshot(&raw_snapshot), Ok(true));
+        assert_matches!(tuf.update_snapshot(&now, &raw_snapshot), Ok(true));
 
         // second update should do nothing
-        assert_matches!(tuf.update_snapshot(&raw_snapshot), Ok(false));
+        assert_matches!(tuf.update_snapshot(&now, &raw_snapshot), Ok(false));
     }
 
     #[test]
     fn bad_snapshot_update_wrong_key() {
+        let now = Utc::now();
+
         let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
@@ -1263,13 +1348,15 @@ mod test {
                 .to_raw()
                 .unwrap();
 
-        tuf.update_timestamp(&raw_timestamp).unwrap();
+        tuf.update_timestamp(&now, &raw_timestamp).unwrap();
 
-        assert!(tuf.update_snapshot(&raw_snapshot).is_err());
+        assert!(tuf.update_snapshot(&now, &raw_snapshot).is_err());
     }
 
     #[test]
     fn bad_snapshot_update_wrong_version() {
+        let now = Utc::now();
+
         let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
@@ -1295,7 +1382,7 @@ mod test {
                 .to_raw()
                 .unwrap();
 
-        tuf.update_timestamp(&raw_timestamp).unwrap();
+        tuf.update_timestamp(&now, &raw_timestamp).unwrap();
 
         let raw_snapshot = SnapshotMetadataBuilder::new()
             .version(1)
@@ -1304,11 +1391,13 @@ mod test {
             .to_raw()
             .unwrap();
 
-        assert!(tuf.update_snapshot(&raw_snapshot).is_err());
+        assert!(tuf.update_snapshot(&now, &raw_snapshot).is_err());
     }
 
     #[test]
     fn good_targets_update() {
+        let now = Utc::now();
+
         let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
@@ -1341,17 +1430,19 @@ mod test {
                 .to_raw()
                 .unwrap();
 
-        tuf.update_timestamp(&raw_timestamp).unwrap();
-        tuf.update_snapshot(&raw_snapshot).unwrap();
+        tuf.update_timestamp(&now, &raw_timestamp).unwrap();
+        tuf.update_snapshot(&now, &raw_snapshot).unwrap();
 
-        assert_matches!(tuf.update_targets(&raw_targets), Ok(true));
+        assert_matches!(tuf.update_targets(&now, &raw_targets), Ok(true));
 
         // second update should do nothing
-        assert_matches!(tuf.update_targets(&raw_targets), Ok(false));
+        assert_matches!(tuf.update_targets(&now, &raw_targets), Ok(false));
     }
 
     #[test]
     fn bad_targets_update_wrong_key() {
+        let now = Utc::now();
+
         let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
@@ -1385,14 +1476,16 @@ mod test {
                 .to_raw()
                 .unwrap();
 
-        tuf.update_timestamp(&raw_timestamp).unwrap();
-        tuf.update_snapshot(&raw_snapshot).unwrap();
+        tuf.update_timestamp(&now, &raw_timestamp).unwrap();
+        tuf.update_snapshot(&now, &raw_snapshot).unwrap();
 
-        assert!(tuf.update_targets(&raw_targets).is_err());
+        assert!(tuf.update_targets(&now, &raw_targets).is_err());
     }
 
     #[test]
     fn bad_targets_update_wrong_version() {
+        let now = Utc::now();
+
         let raw_root = RootMetadataBuilder::new()
             .root_key(KEYS[0].public().clone())
             .snapshot_key(KEYS[1].public().clone())
@@ -1425,8 +1518,8 @@ mod test {
                 .to_raw()
                 .unwrap();
 
-        tuf.update_timestamp(&raw_timestamp).unwrap();
-        tuf.update_snapshot(&raw_snapshot).unwrap();
+        tuf.update_timestamp(&now, &raw_timestamp).unwrap();
+        tuf.update_snapshot(&now, &raw_snapshot).unwrap();
 
         let raw_targets = TargetsMetadataBuilder::new()
             .version(1)
@@ -1435,7 +1528,7 @@ mod test {
             .to_raw()
             .unwrap();
 
-        assert!(tuf.update_targets(&raw_targets).is_err());
+        assert!(tuf.update_targets(&now, &raw_targets).is_err());
     }
 
     #[test]
