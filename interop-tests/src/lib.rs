@@ -154,7 +154,7 @@ async fn add_target(
         .expires(expiration)
         .version(version);
 
-    let targets_path = MetadataPath::from_role(&Role::Targets);
+    let targets_path = MetadataPath::targets();
     for i in 0..step + 1 {
         let step_str = format!("{}", i);
         let target_data = step_str.as_bytes();
@@ -206,7 +206,7 @@ async fn add_target(
     .await
     .unwrap();
 
-    let snapshot_path = MetadataPath::from_role(&Role::Snapshot);
+    let snapshot_path = MetadataPath::snapshot();
     let snapshot = SnapshotMetadataBuilder::new()
         .expires(expiration)
         .version(version)
@@ -223,7 +223,7 @@ async fn add_target(
     .await
     .unwrap();
 
-    let timestamp_path = MetadataPath::from_role(&Role::Timestamp);
+    let timestamp_path = MetadataPath::timestamp();
     let timestamp = TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
         .unwrap()
         .expires(expiration)

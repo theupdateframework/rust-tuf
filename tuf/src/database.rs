@@ -9,9 +9,8 @@ use crate::crypto::PublicKey;
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
-    Delegations, Metadata, MetadataPath, RawSignedMetadata, RawSignedMetadataSet, Role,
-    RootMetadata, SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata,
-    TimestampMetadata,
+    Delegations, Metadata, MetadataPath, RawSignedMetadata, RawSignedMetadataSet, RootMetadata,
+    SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata, TimestampMetadata,
 };
 use crate::verify::{self, Verified};
 use crate::Result;
@@ -117,7 +116,7 @@ impl<D: DataInterchange> Database<D> {
         let mut db = if let Some(root) = metadata_set.root() {
             Database::from_root_with_trusted_keys(root, root_threshold, root_keys)?
         } else {
-            return Err(Error::MissingMetadata(Role::Root));
+            return Err(Error::MissingMetadata(MetadataPath::root()));
         };
 
         db.update_metadata_after_root(metadata_set)?;
@@ -136,7 +135,7 @@ impl<D: DataInterchange> Database<D> {
         let mut db = if let Some(root) = metadata_set.root() {
             Database::from_trusted_root(root)?
         } else {
-            return Err(Error::MissingMetadata(Role::Root));
+            return Err(Error::MissingMetadata(MetadataPath::root()));
         };
 
         db.update_metadata_after_root(metadata_set)?;
@@ -415,7 +414,7 @@ impl<D: DataInterchange> Database<D> {
             //     report the potential freeze attack.
 
             if new_timestamp.expires() <= &Utc::now() {
-                return Err(Error::ExpiredMetadata(Role::Timestamp));
+                return Err(Error::ExpiredMetadata(MetadataPath::timestamp()));
             }
 
             new_timestamp
@@ -557,7 +556,7 @@ impl<D: DataInterchange> Database<D> {
             .unwrap_or(0)
             != verified
                 .meta()
-                .get(&MetadataPath::from_role(&Role::Targets))
+                .get(&MetadataPath::targets())
                 .map(|m| m.version())
                 .unwrap_or(0)
         {
@@ -614,7 +613,7 @@ impl<D: DataInterchange> Database<D> {
             // snapshot, not here.
             let trusted_targets_description = trusted_snapshot
                 .meta()
-                .get(&MetadataPath::from_role(&Role::Targets))
+                .get(&MetadataPath::targets())
                 .ok_or_else(|| {
                     Error::VerificationFailure(
                         "Snapshot metadata had no description of the targets metadata".into(),
@@ -694,7 +693,7 @@ impl<D: DataInterchange> Database<D> {
             //     metadata file is expired, discard it, abort the update cycle, and report the
             //     potential freeze attack.
             if new_targets.expires() <= &Utc::now() {
-                return Err(Error::ExpiredMetadata(Role::Snapshot));
+                return Err(Error::ExpiredMetadata(MetadataPath::snapshot()));
             }
 
             new_targets
@@ -713,7 +712,7 @@ impl<D: DataInterchange> Database<D> {
     ) -> Option<(u32, Vec<&PublicKey>)> {
         // Find the parent TargetsMetadata that is expected to refer to `role`.
         let trusted_parent = {
-            if parent_role == &MetadataPath::from_role(&Role::Targets) {
+            if parent_role == &MetadataPath::targets() {
                 self.trusted_targets()?
             } else {
                 self.trusted_delegations.get(parent_role)?
@@ -832,7 +831,7 @@ impl<D: DataInterchange> Database<D> {
 
             if new_delegation.expires() <= &Utc::now() {
                 // TODO this needs to be chagned to accept a MetadataPath and not Role
-                return Err(Error::ExpiredMetadata(Role::Targets));
+                return Err(Error::ExpiredMetadata(MetadataPath::targets()));
             }
 
             new_delegation
@@ -934,7 +933,7 @@ impl<D: DataInterchange> Database<D> {
     fn trusted_root_unexpired(&self) -> Result<&RootMetadata> {
         let trusted_root = &self.trusted_root;
         if trusted_root.expires() <= &Utc::now() {
-            return Err(Error::ExpiredMetadata(Role::Root));
+            return Err(Error::ExpiredMetadata(MetadataPath::root()));
         }
         Ok(trusted_root)
     }
@@ -943,11 +942,11 @@ impl<D: DataInterchange> Database<D> {
         match self.trusted_snapshot {
             Some(ref trusted_snapshot) => {
                 if trusted_snapshot.expires() <= &Utc::now() {
-                    return Err(Error::ExpiredMetadata(Role::Snapshot));
+                    return Err(Error::ExpiredMetadata(MetadataPath::snapshot()));
                 }
                 Ok(trusted_snapshot)
             }
-            None => Err(Error::MissingMetadata(Role::Snapshot)),
+            None => Err(Error::MissingMetadata(MetadataPath::snapshot())),
         }
     }
 
@@ -955,22 +954,22 @@ impl<D: DataInterchange> Database<D> {
         match self.trusted_targets {
             Some(ref trusted_targets) => {
                 if trusted_targets.expires() <= &Utc::now() {
-                    return Err(Error::ExpiredMetadata(Role::Targets));
+                    return Err(Error::ExpiredMetadata(MetadataPath::targets()));
                 }
                 Ok(trusted_targets)
             }
-            None => Err(Error::MissingMetadata(Role::Targets)),
+            None => Err(Error::MissingMetadata(MetadataPath::targets())),
         }
     }
     fn trusted_timestamp_unexpired(&self) -> Result<&TimestampMetadata> {
         match self.trusted_timestamp {
             Some(ref trusted_timestamp) => {
                 if trusted_timestamp.expires() <= &Utc::now() {
-                    return Err(Error::ExpiredMetadata(Role::Timestamp));
+                    return Err(Error::ExpiredMetadata(MetadataPath::timestamp()));
                 }
                 Ok(trusted_timestamp)
             }
-            None => Err(Error::MissingMetadata(Role::Timestamp)),
+            None => Err(Error::MissingMetadata(MetadataPath::timestamp())),
         }
     }
 }

@@ -4,8 +4,7 @@ use maplit::hashmap;
 use tuf::crypto::{Ed25519PrivateKey, HashAlgorithm, PrivateKey};
 use tuf::interchange::Json;
 use tuf::metadata::{
-    Delegation, Delegations, MetadataDescription, MetadataPath, Role, TargetPath,
-    TargetsMetadataBuilder,
+    Delegation, Delegations, MetadataDescription, MetadataPath, TargetPath, TargetsMetadataBuilder,
 };
 use tuf::repo_builder::RepoBuilder;
 use tuf::repository::EphemeralRepository;
@@ -85,7 +84,7 @@ fn simple_delegation() {
         let raw_delegation = delegation.to_raw().unwrap();
 
         tuf.update_delegation(
-            &MetadataPath::from_role(&Role::Targets),
+            &MetadataPath::targets(),
             &MetadataPath::new("delegation").unwrap(),
             &raw_delegation,
         )
@@ -180,7 +179,7 @@ fn nested_delegation() {
         let raw_delegation = delegation.to_raw().unwrap();
 
         tuf.update_delegation(
-            &MetadataPath::from_role(&Role::Targets),
+            &MetadataPath::targets(),
             &MetadataPath::new("delegation-a").unwrap(),
             &raw_delegation,
         )
@@ -281,7 +280,7 @@ fn rejects_bad_delegation_signatures() {
 
         assert_matches!(
             tuf.update_delegation(
-                &MetadataPath::from_role(&Role::Targets),
+                &MetadataPath::targets(),
                 &MetadataPath::new("delegation").unwrap(),
                 &raw_delegation
             ),
@@ -415,7 +414,7 @@ fn diamond_delegation() {
         let raw_delegation = delegation.to_raw().unwrap();
 
         tuf.update_delegation(
-            &MetadataPath::from_role(&Role::Targets),
+            &MetadataPath::targets(),
             &MetadataPath::new("delegation-a").unwrap(),
             &raw_delegation,
         )
@@ -444,7 +443,7 @@ fn diamond_delegation() {
         let raw_delegation = delegation.to_raw().unwrap();
 
         tuf.update_delegation(
-            &MetadataPath::from_role(&Role::Targets),
+            &MetadataPath::targets(),
             &MetadataPath::new("delegation-b").unwrap(),
             &raw_delegation,
         )
