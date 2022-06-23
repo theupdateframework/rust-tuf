@@ -1214,16 +1214,18 @@ where
             return Err(Error::MissingMetadata(MetadataPath::root()));
         };
 
+        let now = Utc::now();
+
         if let Some(ref timestamp) = self.state.staged_timestamp {
-            db.update_timestamp(&timestamp.raw)?;
+            db.update_timestamp(&now, &timestamp.raw)?;
         }
 
         if let Some(ref snapshot) = self.state.staged_snapshot {
-            db.update_snapshot(&snapshot.raw)?;
+            db.update_snapshot(&now, &snapshot.raw)?;
         }
 
         if let Some(ref targets) = self.state.staged_targets {
-            db.update_targets(&targets.raw)?;
+            db.update_targets(&now, &targets.raw)?;
         }
 
         Ok(())

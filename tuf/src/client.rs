@@ -51,7 +51,7 @@
 //! # }
 //! ```
 
-use chrono::offset::Utc;
+use chrono::{offset::Utc, DateTime};
 use futures_io::AsyncRead;
 use log::{error, warn};
 use std::future::Future;
@@ -374,13 +374,32 @@ where
         local: Repository<L, D>,
         remote: Repository<R, D>,
     ) -> Result<Self> {
+        let start_time = Utc::now();
+
         let res = async {
-            let _r = Self::update_root_with_repos(&config, &mut tuf, None, &local).await?;
-            let _ts = Self::update_timestamp_with_repos(&config, &mut tuf, None, &local).await?;
-            let _sn =
-                Self::update_snapshot_with_repos(&config, &mut tuf, None, &local, false).await?;
-            let _ta =
-                Self::update_targets_with_repos(&config, &mut tuf, None, &local, false).await?;
+            let _r =
+                Self::update_root_with_repos(&start_time, &config, &mut tuf, None, &local).await?;
+            let _ts =
+                Self::update_timestamp_with_repos(&start_time, &config, &mut tuf, None, &local)
+                    .await?;
+            let _sn = Self::update_snapshot_with_repos(
+                &start_time,
+                &config,
+                &mut tuf,
+                None,
+                &local,
+                false,
+            )
+            .await?;
+            let _ta = Self::update_targets_with_repos(
+                &start_time,
+                &config,
+                &mut tuf,
+                None,
+                &local,
+                false,
+            )
+            .await?;
 
             Ok(())
         }
@@ -405,10 +424,20 @@ where
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
     pub async fn update(&mut self) -> Result<bool> {
-        let r = self.update_root().await?;
-        let ts = self.update_timestamp().await?;
-        let sn = self.update_snapshot().await?;
-        let ta = self.update_targets().await?;
+        self.update_with_start_time(&Utc::now()).await
+    }
+
+    /// Update TUF metadata from the remote repository, using the specified time to determine if
+    /// the metadata is expired.
+    ///
+    /// Returns `true` if an update occurred and `false` otherwise.
+    ///
+    /// **WARNING**: Using an older time opens up users to a freeze attack.
+    pub async fn update_with_start_time(&mut self, start_time: &DateTime<Utc>) -> Result<bool> {
+        let r = self.update_root(start_time).await?;
+        let ts = self.update_timestamp(start_time).await?;
+        let sn = self.update_snapshot(start_time).await?;
+        let ta = self.update_targets(start_time).await?;
 
         Ok(r || ts || sn || ta)
     }
@@ -462,8 +491,9 @@ where
     /// Update TUF root metadata from the remote repository.
     ///
     /// Returns `true` if an update occurred and `false` otherwise.
-    pub async fn update_root(&mut self) -> Result<bool> {
+    pub async fn update_root(&mut self, start_time: &DateTime<Utc>) -> Result<bool> {
         Self::update_root_with_repos(
+            start_time,
             &self.config,
             &mut self.tuf,
             Some(&mut self.local),
@@ -473,6 +503,7 @@ where
     }
 
     async fn update_root_with_repos<Remote>(
+        start_time: &DateTime<Utc>,
         config: &Config,
         tuf: &mut Database<D>,
         mut local: Option<&mut Repository<L, D>>,
@@ -556,7 +587,7 @@ where
 
         // TODO: Consider moving the root metadata expiration check into `tuf::Database`, since that's
         // where we check timestamp/snapshot/targets/delegations for expiration.
-        if tuf.trusted_root().expires() <= &Utc::now() {
+        if tuf.trusted_root().expires() <= start_time {
             error!("Root metadata expired, potential freeze attack");
             return Err(Error::ExpiredMetadata(MetadataPath::root()));
         }
@@ -571,8 +602,9 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    async fn update_timestamp(&mut self) -> Result<bool> {
+    async fn update_timestamp(&mut self, start_time: &DateTime<Utc>) -> Result<bool> {
         Self::update_timestamp_with_repos(
+            start_time,
             &self.config,
             &mut self.tuf,
             Some(&mut self.local),
@@ -582,6 +614,7 @@ where
     }
 
     async fn update_timestamp_with_repos<Remote>(
+        start_time: &DateTime<Utc>,
         config: &Config,
         tuf: &mut Database<D>,
         local: Option<&mut Repository<L, D>>,
@@ -609,7 +642,10 @@ where
             )
             .await?;
 
-        if tuf.update_timestamp(&raw_signed_timestamp)?.is_some() {
+        if tuf
+            .update_timestamp(start_time, &raw_signed_timestamp)?
+            .is_some()
+        {
             /////////////////////////////////////////
             // TUF-1.0.9 §5.2.4:
             //
@@ -633,9 +669,10 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    async fn update_snapshot(&mut self) -> Result<bool> {
+    async fn update_snapshot(&mut self, start_time: &DateTime<Utc>) -> Result<bool> {
         let consistent_snapshot = self.tuf.trusted_root().consistent_snapshot();
         Self::update_snapshot_with_repos(
+            start_time,
             &self.config,
             &mut self.tuf,
             Some(&mut self.local),
@@ -646,6 +683,7 @@ where
     }
 
     async fn update_snapshot_with_repos<Remote>(
+        start_time: &DateTime<Utc>,
         config: &Config,
         tuf: &mut Database<D>,
         local: Option<&mut Repository<L, D>>,
@@ -693,7 +731,7 @@ where
 
         // https://theupdateframework.github.io/specification/v1.0.26/#update-snapshot 5.5.3 through
         // 5.5.6 are checked in [Database].
-        if tuf.update_snapshot(&raw_signed_snapshot)? {
+        if tuf.update_snapshot(start_time, &raw_signed_snapshot)? {
             // https://theupdateframework.github.io/specification/v1.0.26/#update-snapshot 5.5.7:
             //
             // Persist snapshot metadata. The client MUST write the file to non-volatile storage as
@@ -711,9 +749,10 @@ where
     }
 
     /// Returns `true` if an update occurred and `false` otherwise.
-    async fn update_targets(&mut self) -> Result<bool> {
+    async fn update_targets(&mut self, start_time: &DateTime<Utc>) -> Result<bool> {
         let consistent_snapshot = self.tuf.trusted_root().consistent_snapshot();
         Self::update_targets_with_repos(
+            start_time,
             &self.config,
             &mut self.tuf,
             Some(&mut self.local),
@@ -724,6 +763,7 @@ where
     }
 
     async fn update_targets_with_repos<Remote>(
+        start_time: &DateTime<Utc>,
         config: &Config,
         tuf: &mut Database<D>,
         local: Option<&mut Repository<L, D>>,
@@ -775,7 +815,7 @@ where
             .fetch_metadata(&targets_path, version, targets_length, target_hashes)
             .await?;
 
-        if tuf.update_targets(&raw_signed_targets)? {
+        if tuf.update_targets(start_time, &raw_signed_targets)? {
             /////////////////////////////////////////
             // TUF-1.0.9 §5.4.4:
             //
@@ -803,7 +843,23 @@ where
         &mut self,
         target: &TargetPath,
     ) -> Result<impl AsyncRead + Send + Unpin + '_> {
-        let target_description = self.fetch_target_description(target).await?;
+        self.fetch_target_with_start_time(target, &Utc::now()).await
+    }
+
+    /// Fetch a target from the remote repo.
+    ///
+    /// It is **critical** that none of the bytes written to the `write` are used until this future
+    /// returns `Ok`, as the hash of the target is not verified until all bytes are read from the
+    /// repository.
+    pub async fn fetch_target_with_start_time(
+        &mut self,
+        target: &TargetPath,
+        start_time: &DateTime<Utc>,
+    ) -> Result<impl AsyncRead + Send + Unpin + '_> {
+        let target_description = self
+            .fetch_target_description_with_start_time(target, start_time)
+            .await?;
+
         // TODO: Check the local repository to see if it already has the target.
         self.remote
             .fetch_target(
@@ -820,7 +876,23 @@ where
     /// returns `Ok`, as the hash of the target is not verified until all bytes are read from the
     /// repository.
     pub async fn fetch_target_to_local(&mut self, target: &TargetPath) -> Result<()> {
-        let target_description = self.fetch_target_description(target).await?;
+        self.fetch_target_to_local_with_start_time(target, &Utc::now())
+            .await
+    }
+
+    /// Fetch a target from the remote repo and write it to the local repo.
+    ///
+    /// It is **critical** that none of the bytes written to the `write` are used until this future
+    /// returns `Ok`, as the hash of the target is not verified until all bytes are read from the
+    /// repository.
+    pub async fn fetch_target_to_local_with_start_time(
+        &mut self,
+        target: &TargetPath,
+        start_time: &DateTime<Utc>,
+    ) -> Result<()> {
+        let target_description = self
+            .fetch_target_description_with_start_time(target, start_time)
+            .await?;
 
         // Since the async read we fetch from the remote repository has internal
         // lifetimes, we need to break up client into sub-objects so that rust
@@ -847,19 +919,40 @@ where
         &mut self,
         target: &TargetPath,
     ) -> Result<TargetDescription> {
+        self.fetch_target_description_with_start_time(target, &Utc::now())
+            .await
+    }
+
+    /// Fetch a target description from the remote repo and return it.
+    pub async fn fetch_target_description_with_start_time(
+        &mut self,
+        target: &TargetPath,
+        start_time: &DateTime<Utc>,
+    ) -> Result<TargetDescription> {
         let snapshot = self
             .tuf
             .trusted_snapshot()
             .ok_or_else(|| Error::MissingMetadata(MetadataPath::snapshot()))?
             .clone();
+
+        /////////////////////////////////////////
+        // https://theupdateframework.github.io/specification/v1.0.30/#update-targets:
+        //
+        //     7. **Perform a pre-order depth-first search for metadata about the
+        //     desired target, beginning with the top-level targets role.** Note: If
+        //     any metadata requested in steps 5.6.7.1 - 5.6.7.2 cannot be downloaded nor
+        //     validated, end the search and report that the target cannot be found.
+
         let (_, target_description) = self
-            .lookup_target_description(false, 0, target, &snapshot, None)
+            .lookup_target_description(start_time, false, 0, target, &snapshot, None)
             .await;
+
         target_description
     }
 
     async fn lookup_target_description(
         &mut self,
+        start_time: &DateTime<Utc>,
         default_terminate: bool,
         current_depth: u32,
         target: &TargetPath,
@@ -961,6 +1054,7 @@ where
             };
 
             match self.tuf.update_delegated_targets(
+                start_time,
                 &targets_role,
                 delegation.role(),
                 &raw_signed_meta,
@@ -995,6 +1089,7 @@ where
                         .clone();
                     let f: Pin<Box<dyn Future<Output = _>>> =
                         Box::pin(self.lookup_target_description(
+                            start_time,
                             delegation.terminating(),
                             current_depth + 1,
                             target,

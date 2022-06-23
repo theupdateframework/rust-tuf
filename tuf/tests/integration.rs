@@ -1,4 +1,5 @@
 use assert_matches::assert_matches;
+use chrono::offset::Utc;
 use futures_executor::block_on;
 use maplit::hashmap;
 use tuf::crypto::{Ed25519PrivateKey, HashAlgorithm, PrivateKey};
@@ -21,6 +22,8 @@ const ED25519_6_PK8: &[u8] = include_bytes!("./ed25519/ed25519-6.pk8.der");
 #[test]
 fn simple_delegation() {
     block_on(async {
+        let now = Utc::now();
+
         let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let snapshot_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap();
         let targets_key = Ed25519PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap();
@@ -84,6 +87,7 @@ fn simple_delegation() {
         let raw_delegation = delegation.to_raw().unwrap();
 
         tuf.update_delegated_targets(
+            &now,
             &MetadataPath::targets(),
             &MetadataPath::new("delegation").unwrap(),
             &raw_delegation,
@@ -99,6 +103,8 @@ fn simple_delegation() {
 #[test]
 fn nested_delegation() {
     block_on(async {
+        let now = Utc::now();
+
         let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let snapshot_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap();
         let targets_key = Ed25519PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap();
@@ -179,6 +185,7 @@ fn nested_delegation() {
         let raw_delegation = delegation.to_raw().unwrap();
 
         tuf.update_delegated_targets(
+            &now,
             &MetadataPath::targets(),
             &MetadataPath::new("delegation-a").unwrap(),
             &raw_delegation,
@@ -201,6 +208,7 @@ fn nested_delegation() {
         let raw_delegation = delegation.to_raw().unwrap();
 
         tuf.update_delegated_targets(
+            &now,
             &MetadataPath::new("delegation-a").unwrap(),
             &MetadataPath::new("delegation-b").unwrap(),
             &raw_delegation,
@@ -216,6 +224,8 @@ fn nested_delegation() {
 #[test]
 fn rejects_bad_delegation_signatures() {
     block_on(async {
+        let now = Utc::now();
+
         let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let snapshot_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap();
         let targets_key = Ed25519PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap();
@@ -280,6 +290,7 @@ fn rejects_bad_delegation_signatures() {
 
         assert_matches!(
             tuf.update_delegated_targets(
+                &now,
                 &MetadataPath::targets(),
                 &MetadataPath::new("delegation").unwrap(),
                 &raw_delegation
@@ -297,6 +308,8 @@ fn rejects_bad_delegation_signatures() {
 #[test]
 fn diamond_delegation() {
     block_on(async {
+        let now = Utc::now();
+
         let etc_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let targets_key = Ed25519PrivateKey::from_pkcs8(ED25519_2_PK8).unwrap();
         let delegation_a_key = Ed25519PrivateKey::from_pkcs8(ED25519_3_PK8).unwrap();
@@ -474,6 +487,7 @@ fn diamond_delegation() {
         //// Verify we can trust delegation-a and delegation-b..
 
         tuf.update_delegated_targets(
+            &now,
             &MetadataPath::targets(),
             &MetadataPath::new("delegation-a").unwrap(),
             &raw_delegation_a,
@@ -481,6 +495,7 @@ fn diamond_delegation() {
         .unwrap();
 
         tuf.update_delegated_targets(
+            &now,
             &MetadataPath::targets(),
             &MetadataPath::new("delegation-b").unwrap(),
             &raw_delegation_b,
@@ -491,6 +506,7 @@ fn diamond_delegation() {
 
         assert_matches!(
             tuf.update_delegated_targets(
+                &now,
                 &MetadataPath::new("delegation-b").unwrap(),
                 &MetadataPath::new("delegation-c").unwrap(),
                 &raw_delegation_c
@@ -499,6 +515,7 @@ fn diamond_delegation() {
         );
 
         tuf.update_delegated_targets(
+            &now,
             &MetadataPath::new("delegation-a").unwrap(),
             &MetadataPath::new("delegation-c").unwrap(),
             &raw_delegation_c,
