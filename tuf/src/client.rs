@@ -960,10 +960,11 @@ where
                 }
             };
 
-            match self
-                .tuf
-                .update_delegation(&targets_role, delegation.role(), &raw_signed_meta)
-            {
+            match self.tuf.update_delegated_targets(
+                &targets_role,
+                delegation.role(),
+                &raw_signed_meta,
+            ) {
                 Ok(_) => {
                     /////////////////////////////////////////
                     // TUF-1.0.9 §5.4.4:

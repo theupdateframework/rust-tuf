@@ -168,34 +168,6 @@ impl<D: DataInterchange> Database<D> {
         &self.trusted_delegations
     }
 
-    fn trusted_timestamp_version(&self) -> u32 {
-        self.trusted_timestamp
-            .as_ref()
-            .map(|t| t.version())
-            .unwrap_or(0)
-    }
-
-    fn trusted_snapshot_version(&self) -> u32 {
-        self.trusted_snapshot
-            .as_ref()
-            .map(|t| t.version())
-            .unwrap_or(0)
-    }
-
-    fn trusted_targets_version(&self) -> u32 {
-        self.trusted_targets
-            .as_ref()
-            .map(|t| t.version())
-            .unwrap_or(0)
-    }
-
-    fn trusted_delegation_version(&self, role: &MetadataPath) -> u32 {
-        self.trusted_delegations
-            .get(role)
-            .map(|t| t.version())
-            .unwrap_or(0)
-    }
-
     /// Verify and update metadata. Returns true if any of the metadata was updated.
     pub fn update_metadata(&mut self, metadata: &RawSignedMetadataSet<D>) -> Result<bool> {
         let updated = if let Some(root) = metadata.root() {
@@ -370,20 +342,20 @@ impl<D: DataInterchange> Database<D> {
             //     new timestamp metadata file is older than the trusted timestamp metadata file,
             //     discard it, abort the update cycle, and report the potential rollback attack.
 
-            let trusted_timestamp_version = self.trusted_timestamp_version();
-
-            match new_timestamp.version().cmp(&trusted_timestamp_version) {
-                Ordering::Less => {
-                    return Err(Error::VerificationFailure(format!(
-                        "Attempted to roll back timestamp metadata at version {} to {}.",
-                        trusted_timestamp_version,
-                        new_timestamp.version()
-                    )));
+            if let Some(trusted_timestamp) = &self.trusted_timestamp {
+                match new_timestamp.version().cmp(&trusted_timestamp.version()) {
+                    Ordering::Less => {
+                        return Err(Error::VerificationFailure(format!(
+                            "Attempted to roll back timestamp metadata at version {} to {}.",
+                            trusted_timestamp.version(),
+                            new_timestamp.version()
+                        )));
+                    }
+                    Ordering::Equal => {
+                        return Ok(None);
+                    }
+                    Ordering::Greater => {}
                 }
-                Ordering::Equal => {
-                    return Ok(None);
-                }
-                Ordering::Greater => {}
             }
 
             /////////////////////////////////////////
@@ -400,8 +372,10 @@ impl<D: DataInterchange> Database<D> {
             // FIXME(#297): forgetting the trusted snapshot here is not part of the spec. Do we need to
             // do it?
 
-            if self.trusted_snapshot_version() != new_timestamp.snapshot().version() {
-                self.trusted_snapshot = None;
+            if let Some(trusted_snapshot) = &self.trusted_snapshot {
+                if trusted_snapshot.version() != new_timestamp.snapshot().version() {
+                    self.trusted_snapshot = None;
+                }
             }
 
             /////////////////////////////////////////
@@ -435,24 +409,25 @@ impl<D: DataInterchange> Database<D> {
             // this metadata expired isn't part of the spec. Do we actually want to do this?
             let trusted_root = self.trusted_root_unexpired()?;
             let trusted_timestamp = self.trusted_timestamp_unexpired()?;
-            let trusted_snapshot_version = self.trusted_snapshot_version();
 
-            match trusted_timestamp
-                .snapshot()
-                .version()
-                .cmp(&trusted_snapshot_version)
-            {
-                Ordering::Less => {
-                    return Err(Error::VerificationFailure(format!(
-                        "Attempted to roll back snapshot metadata at version {} to {}.",
-                        trusted_snapshot_version,
-                        trusted_timestamp.snapshot().version()
-                    )));
+            if let Some(trusted_snapshot) = &self.trusted_snapshot {
+                match trusted_timestamp
+                    .snapshot()
+                    .version()
+                    .cmp(&trusted_snapshot.version())
+                {
+                    Ordering::Less => {
+                        return Err(Error::VerificationFailure(format!(
+                            "Attempted to roll back snapshot metadata at version {} to {}.",
+                            trusted_snapshot.version(),
+                            trusted_timestamp.snapshot().version()
+                        )));
+                    }
+                    Ordering::Equal => {
+                        return Ok(false);
+                    }
+                    Ordering::Greater => {}
                 }
-                Ordering::Equal => {
-                    return Ok(false);
-                }
-                Ordering::Greater => {}
             }
 
             /////////////////////////////////////////
@@ -510,12 +485,14 @@ impl<D: DataInterchange> Database<D> {
             //     new snapshot metadata file is older than the trusted metadata file, discard it,
             //     abort the update cycle, and report the potential rollback attack.
 
-            if new_snapshot.version() < trusted_snapshot_version {
-                return Err(Error::VerificationFailure(format!(
-                    "Attempted to roll back snapshot metadata at version {} to {}",
-                    trusted_snapshot_version,
-                    new_snapshot.version(),
-                )));
+            if let Some(trusted_snapshot) = &self.trusted_snapshot {
+                if new_snapshot.version() < trusted_snapshot.version() {
+                    return Err(Error::VerificationFailure(format!(
+                        "Attempted to roll back snapshot metadata at version {} to {}",
+                        trusted_snapshot.version(),
+                        new_snapshot.version(),
+                    )));
+                }
             }
 
             /////////////////////////////////////////
@@ -607,100 +584,172 @@ impl<D: DataInterchange> Database<D> {
             // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
             // this metadata expired isn't part of the spec. Do we actually want to do this?
             let trusted_root = self.trusted_root_unexpired()?;
-            let trusted_snapshot = self.trusted_snapshot_unexpired()?;
+            let trusted_targets_version = self.trusted_targets.as_ref().map(|t| t.version());
 
-            // FIXME(#295): TUF-1.0.5 §5.3.3.2 says this check should be done when updating the
-            // snapshot, not here.
-            let trusted_targets_description = trusted_snapshot
-                .meta()
-                .get(&MetadataPath::targets())
+            self.verify_target_or_delegated_target(
+                &MetadataPath::targets(),
+                raw_targets,
+                trusted_root.targets().threshold(),
+                trusted_root.targets_keys(),
+                trusted_targets_version,
+            )?
+        };
+
+        if let Some(verified) = verified {
+            self.trusted_targets = Some(verified);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Verify and update a delegation metadata.
+    pub fn update_delegated_targets(
+        &mut self,
+        parent_role: &MetadataPath,
+        role: &MetadataPath,
+        raw_delegated_targets: &RawSignedMetadata<D, TargetsMetadata>,
+    ) -> Result<bool> {
+        let verified = {
+            // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
+            // this metadata expired isn't part of the spec. Do we actually want to do this?
+            let _ = self.trusted_root_unexpired()?;
+            let _ = self.trusted_snapshot_unexpired()?;
+            let trusted_targets = self.trusted_targets_unexpired()?;
+
+            if trusted_targets.delegations().is_none() {
+                return Err(Error::VerificationFailure(
+                    "Delegations not authorized".into(),
+                ));
+            };
+
+            let (threshold, keys) = self
+                .find_delegation_threshold_and_keys(parent_role, role)?
                 .ok_or_else(|| {
-                    Error::VerificationFailure(
-                        "Snapshot metadata had no description of the targets metadata".into(),
-                    )
+                    Error::VerificationFailure(format!(
+                        "The delegated targets role {:?} is not known to the delegating targets role {}",
+                        role, parent_role,
+                    ))
                 })?;
 
-            let trusted_targets_version = self.trusted_targets_version();
+            let trusted_delegated_targets_version =
+                self.trusted_delegations.get(role).map(|t| t.version());
 
-            match trusted_targets_description
-                .version()
-                .cmp(&trusted_targets_version)
-            {
+            self.verify_target_or_delegated_target(
+                role,
+                raw_delegated_targets,
+                threshold,
+                keys.into_iter(),
+                trusted_delegated_targets_version,
+            )?
+        };
+
+        if let Some(verified) = verified {
+            let _ = self.trusted_delegations.insert(role.clone(), verified);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn verify_target_or_delegated_target<'a>(
+        &self,
+        role: &MetadataPath,
+        raw_targets: &RawSignedMetadata<D, TargetsMetadata>,
+        trusted_targets_threshold: u32,
+        trusted_targets_keys: impl Iterator<Item = &'a PublicKey>,
+        trusted_targets_version: Option<u32>,
+    ) -> Result<Option<Verified<TargetsMetadata>>> {
+        // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
+        // this metadata expired isn't part of the spec. Do we actually want to do this?
+        let trusted_snapshot = self.trusted_snapshot_unexpired()?;
+
+        let trusted_targets_description = trusted_snapshot.meta().get(role).ok_or_else(|| {
+            Error::VerificationFailure(format!(
+                "Snapshot metadata had no description of the {} metadata",
+                role
+            ))
+        })?;
+
+        /////////////////////////////////////////
+        // TUF-1.0.5 §5.4.1:
+        //
+        //     Check against snapshot metadata. The hashes and version number of the new
+        //     targets metadata file MUST match the hashes (if any) and version number listed
+        //     in the trusted snapshot metadata. This is done, in part, to prevent a
+        //     mix-and-match attack by man-in-the-middle attackers. If the new targets metadata
+        //     file does not match, discard it, abort the update cycle, and report the failure.
+
+        // FIXME: rust-tuf checks the hash during download, but it would be better if we
+        // checked the hash here to make it easier to validate we've correctly implemented the
+        // spec.
+
+        // NOTE(https://github.com/theupdateframework/specification/pull/112): Technically
+        // we're supposed to check the version before checking the signature, but we do it
+        // afterwards. That PR proposes formally moving the version check to after signature
+        // verification.
+
+        /////////////////////////////////////////
+        // TUF-1.0.5 §5.4.2:
+        //
+        //     Check for an arbitrary software attack. The new targets metadata file MUST have
+        //     been signed by a threshold of keys specified in the trusted root metadata file.
+        //     If the new targets metadata file is not signed as required, discard it, abort
+        //     the update cycle, and report the failure.
+
+        let new_targets = verify::verify_signatures(
+            raw_targets,
+            trusted_targets_threshold,
+            trusted_targets_keys,
+        )?;
+
+        /////////////////////////////////////////
+        // FIXME(https://github.com/theupdateframework/specification/pull/112): Actually check
+        // the version.
+
+        // FIXME(#295): TUF-1.0.5 §5.3.3.2 says this check should be done when updating the
+        // snapshot, not here.
+        if new_targets.version() != trusted_targets_description.version() {
+            return Err(Error::VerificationFailure(format!(
+                "The snapshot metadata reported that the {} metadata should be at \
+                     version {} but version {} was found instead.",
+                role,
+                trusted_targets_description.version(),
+                new_targets.version()
+            )));
+        }
+
+        if let Some(trusted_targets_version) = trusted_targets_version {
+            match new_targets.version().cmp(&trusted_targets_version) {
                 Ordering::Less => {
                     return Err(Error::VerificationFailure(format!(
-                        "Attempted to roll back targets metadata at version {} to {}.",
+                        "Attempted to roll back {} metadata at version {} to {}.",
+                        role,
                         trusted_targets_version,
                         trusted_targets_description.version()
                     )));
                 }
                 Ordering::Equal => {
-                    return Ok(false);
+                    return Ok(None);
                 }
                 Ordering::Greater => {}
             }
+        }
 
-            /////////////////////////////////////////
-            // TUF-1.0.5 §5.4.1:
-            //
-            //     Check against snapshot metadata. The hashes and version number of the new
-            //     targets metadata file MUST match the hashes (if any) and version number listed
-            //     in the trusted snapshot metadata. This is done, in part, to prevent a
-            //     mix-and-match attack by man-in-the-middle attackers. If the new targets metadata
-            //     file does not match, discard it, abort the update cycle, and report the failure.
+        /////////////////////////////////////////
+        // TUF-1.0.5 §5.4.3:
+        //
+        //     Check for a freeze attack. The latest known time should be lower than the
+        //     expiration timestamp in the new targets metadata file. If so, the new targets
+        //     metadata file becomes the trusted targets metadata file. If the new targets
+        //     metadata file is expired, discard it, abort the update cycle, and report the
+        //     potential freeze attack.
 
-            // FIXME: rust-tuf checks the hash during download, but it would be better if we
-            // checked the hash here to make it easier to validate we've correctly implemented the
-            // spec.
+        if new_targets.expires() <= &Utc::now() {
+            return Err(Error::ExpiredMetadata(role.clone()));
+        }
 
-            // NOTE(https://github.com/theupdateframework/specification/pull/112): Technically
-            // we're supposed to check the version before checking the signature, but we do it
-            // afterwards. That PR proposes formally moving the version check to after signature
-            // verification.
-
-            /////////////////////////////////////////
-            // TUF-1.0.5 §5.4.2:
-            //
-            //     Check for an arbitrary software attack. The new targets metadata file MUST have
-            //     been signed by a threshold of keys specified in the trusted root metadata file.
-            //     If the new targets metadata file is not signed as required, discard it, abort
-            //     the update cycle, and report the failure.
-
-            let new_targets = verify::verify_signatures(
-                raw_targets,
-                trusted_root.targets().threshold(),
-                trusted_root.targets_keys(),
-            )?;
-
-            /////////////////////////////////////////
-            // FIXME(https://github.com/theupdateframework/specification/pull/112): Actually check
-            // the version.
-
-            if new_targets.version() != trusted_targets_description.version() {
-                return Err(Error::VerificationFailure(format!(
-                    "The timestamp metadata reported that the targets metadata should be at \
-                     version {} but version {} was found instead.",
-                    trusted_targets_description.version(),
-                    new_targets.version()
-                )));
-            }
-
-            /////////////////////////////////////////
-            // TUF-1.0.5 §5.4.3:
-            //
-            //     Check for a freeze attack. The latest known time should be lower than the
-            //     expiration timestamp in the new targets metadata file. If so, the new targets
-            //     metadata file becomes the trusted targets metadata file. If the new targets
-            //     metadata file is expired, discard it, abort the update cycle, and report the
-            //     potential freeze attack.
-            if new_targets.expires() <= &Utc::now() {
-                return Err(Error::ExpiredMetadata(MetadataPath::snapshot()));
-            }
-
-            new_targets
-        };
-
-        self.trusted_targets = Some(verified);
-        Ok(true)
+        Ok(Some(new_targets))
     }
 
     /// Find the signing keys and metadata for the delegation given by `role`, as seen from the
@@ -709,20 +758,24 @@ impl<D: DataInterchange> Database<D> {
         &self,
         parent_role: &MetadataPath,
         role: &MetadataPath,
-    ) -> Option<(u32, Vec<&PublicKey>)> {
+    ) -> Result<Option<(u32, Vec<&PublicKey>)>> {
         // Find the parent TargetsMetadata that is expected to refer to `role`.
-        let trusted_parent = {
-            if parent_role == &MetadataPath::targets() {
-                self.trusted_targets()?
+        let trusted_parent = if parent_role == &MetadataPath::targets() {
+            if let Some(trusted_targets) = self.trusted_targets() {
+                trusted_targets
             } else {
-                self.trusted_delegations.get(parent_role)?
+                return Err(Error::MissingMetadata(parent_role.clone()));
             }
+        } else if let Some(trusted_parent) = self.trusted_delegations.get(parent_role) {
+            trusted_parent
+        } else {
+            return Err(Error::MissingMetadata(parent_role.clone()));
         };
 
         // Only consider targets metadata that define delegations.
         let trusted_delegations = match trusted_parent.delegations() {
             Some(d) => d,
-            None => return None,
+            None => return Ok(None),
         };
 
         for trusted_delegation in trusted_delegations.roles() {
@@ -743,103 +796,10 @@ impl<D: DataInterchange> Database<D> {
                 })
                 .collect();
 
-            return Some((trusted_delegation.threshold(), authorized_keys));
+            return Ok(Some((trusted_delegation.threshold(), authorized_keys)));
         }
 
-        None
-    }
-
-    /// Verify and update a delegation metadata.
-    pub fn update_delegation(
-        &mut self,
-        parent_role: &MetadataPath,
-        role: &MetadataPath,
-        raw_delegation: &RawSignedMetadata<D, TargetsMetadata>,
-    ) -> Result<bool> {
-        let verified = {
-            // FIXME(https://github.com/theupdateframework/specification/issues/113) Checking if
-            // this metadata expired isn't part of the spec. Do we actually want to do this?
-            let _ = self.trusted_root_unexpired()?;
-            let trusted_snapshot = self.trusted_snapshot_unexpired()?;
-            let trusted_targets = self.trusted_targets_unexpired()?;
-
-            if trusted_targets.delegations().is_none() {
-                return Err(Error::VerificationFailure(
-                    "Delegations not authorized".into(),
-                ));
-            };
-
-            let trusted_delegation_description = match trusted_snapshot.meta().get(role) {
-                Some(d) => d,
-                None => {
-                    return Err(Error::VerificationFailure(format!(
-                        "The degated role {:?} was not present in the snapshot metadata.",
-                        role
-                    )));
-                }
-            };
-
-            let trusted_delegation_version = self.trusted_delegation_version(role);
-
-            if trusted_delegation_description.version() < trusted_delegation_version {
-                return Err(Error::VerificationFailure(format!(
-                    "Snapshot metadata did listed delegation {:?} version as {} but current\
-                     version is {}",
-                    role,
-                    trusted_delegation_description.version(),
-                    trusted_delegation_version
-                )));
-            }
-
-            // FIXME(#279) update_delegation trusts tuf::Client to provide too much information,
-            // making this difficult to verify as correct.
-
-            /////////////////////////////////////////
-            // TUF-1.0.5 §5.4.1:
-            //
-            //     Check against snapshot metadata. The hashes and version number of the new
-            //     targets metadata file MUST match the hashes (if any) and version number listed
-            //     in the trusted snapshot metadata. This is done, in part, to prevent a
-            //     mix-and-match attack by man-in-the-middle attackers. If the new targets metadata
-            //     file does not match, discard it, abort the update cycle, and report the failure.
-
-            let (threshold, keys) = self
-                .find_delegation_threshold_and_keys(parent_role, role)
-                .ok_or_else(|| {
-                    Error::VerificationFailure(format!(
-                        "The delegated role {:?} is not known to the base \
-                        targets metadata or any known delegated targets metadata",
-                        role
-                    ))
-                })?;
-
-            let new_delegation = verify::verify_signatures(raw_delegation, threshold, keys)?;
-
-            if trusted_delegation_version == trusted_delegation_description.version() {
-                return Ok(false);
-            }
-
-            if new_delegation.version() != trusted_delegation_description.version() {
-                return Err(Error::VerificationFailure(format!(
-                    "The snapshot metadata reported that the delegation {:?} should be at \
-                     version {} but version {} was found instead.",
-                    role,
-                    trusted_delegation_description.version(),
-                    new_delegation.version(),
-                )));
-            }
-
-            if new_delegation.expires() <= &Utc::now() {
-                // TODO this needs to be chagned to accept a MetadataPath and not Role
-                return Err(Error::ExpiredMetadata(MetadataPath::targets()));
-            }
-
-            new_delegation
-        };
-
-        let _ = self.trusted_delegations.insert(role.clone(), verified);
-
-        Ok(true)
+        Ok(None)
     }
 
     /// Get a reference to the description needed to verify the target defined by the given
@@ -961,6 +921,7 @@ impl<D: DataInterchange> Database<D> {
             None => Err(Error::MissingMetadata(MetadataPath::targets())),
         }
     }
+
     fn trusted_timestamp_unexpired(&self) -> Result<&TimestampMetadata> {
         match self.trusted_timestamp {
             Some(ref trusted_timestamp) => {
