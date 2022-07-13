@@ -41,6 +41,7 @@ use {
 
 use crate::error::Error;
 use crate::interchange::cjson::shims;
+use crate::metadata::MetadataPath;
 use crate::Result;
 
 const HASH_ALG_PREFS: &[HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
@@ -828,7 +829,7 @@ impl PublicKey {
     }
 
     /// Use this key to verify a message with a signature.
-    pub fn verify(&self, msg: &[u8], sig: &Signature) -> Result<()> {
+    pub fn verify(&self, role: &MetadataPath, msg: &[u8], sig: &Signature) -> Result<()> {
         let alg: &dyn ring::signature::VerificationAlgorithm = match self.scheme {
             SignatureScheme::Ed25519 => &ED25519,
             #[cfg(feature = "unstable_rsa")]
@@ -842,7 +843,7 @@ impl PublicKey {
 
         let key = ring::signature::UnparsedPublicKey::new(alg, &self.value.0);
         key.verify(msg, &sig.value.0)
-            .map_err(|_| Error::BadSignature)
+            .map_err(|_| Error::BadSignature(role.clone()))
     }
 }
 
@@ -1231,12 +1232,12 @@ mod test {
         let key =
             RsaPrivateKey::from_pkcs8(rsa::PK8_2048, SignatureScheme::RsaSsaPssSha256).unwrap();
         let sig = key.sign(msg).unwrap();
-        key.public.verify(msg, &sig).unwrap();
+        key.public.verify(&MetadataPath::root(), msg, &sig).unwrap();
 
         let key =
             RsaPrivateKey::from_pkcs8(rsa::PK8_2048, SignatureScheme::RsaSsaPssSha512).unwrap();
         let sig = key.sign(msg).unwrap();
-        key.public.verify(msg, &sig).unwrap();
+        key.public.verify(&MetadataPath::root(), msg, &sig).unwrap();
     }
 
     #[cfg(feature = "unstable_rsa")]
@@ -1247,12 +1248,12 @@ mod test {
         let key =
             RsaPrivateKey::from_pkcs8(rsa::PK8_4096, SignatureScheme::RsaSsaPssSha256).unwrap();
         let sig = key.sign(msg).unwrap();
-        key.public.verify(msg, &sig).unwrap();
+        key.public.verify(&MetadataPath::root(), msg, &sig).unwrap();
 
         let key =
             RsaPrivateKey::from_pkcs8(rsa::PK8_4096, SignatureScheme::RsaSsaPssSha512).unwrap();
         let sig = key.sign(msg).unwrap();
-        key.public.verify(msg, &sig).unwrap();
+        key.public.verify(&MetadataPath::root(), msg, &sig).unwrap();
     }
 
     #[cfg(feature = "unstable_rsa")]
@@ -1279,7 +1280,8 @@ mod test {
         let pub_key =
             PublicKey::from_spki(&key.public.as_spki().unwrap(), SignatureScheme::Ed25519).unwrap();
 
-        assert_matches!(pub_key.verify(msg, &sig), Ok(()));
+        let role = MetadataPath::root();
+        assert_matches!(pub_key.verify(&role, msg, &sig), Ok(()));
 
         // Make sure we match what ring expects.
         let ring_key = ring::signature::Ed25519KeyPair::from_pkcs8(ed25519::PK8_1).unwrap();
@@ -1292,7 +1294,11 @@ mod test {
             .public()
             .clone();
 
-        assert_matches!(bad_pub_key.verify(msg, &sig), Err(Error::BadSignature));
+        assert_matches!(
+            bad_pub_key.verify(&role, msg, &sig),
+            Err(Error::BadSignature(r))
+            if r == role
+        );
     }
 
     #[test]
@@ -1301,9 +1307,10 @@ mod test {
         let pub_key = PublicKey::from_ed25519(ed25519::PUBLIC_KEY).unwrap();
         assert_eq!(key.public(), &pub_key);
 
+        let role = MetadataPath::root();
         let msg = b"test";
         let sig = key.sign(msg).unwrap();
-        assert_matches!(pub_key.verify(msg, &sig), Ok(()));
+        assert_matches!(pub_key.verify(&role, msg, &sig), Ok(()));
 
         // Make sure we match what ring expects.
         let ring_key = ring::signature::Ed25519KeyPair::from_pkcs8(ed25519::PK8_1).unwrap();
@@ -1316,7 +1323,11 @@ mod test {
             .public()
             .clone();
 
-        assert_matches!(bad_pub_key.verify(msg, &sig), Err(Error::BadSignature));
+        assert_matches!(
+            bad_pub_key.verify(&role, msg, &sig),
+            Err(Error::BadSignature(r))
+            if r == role
+        );
     }
 
     #[test]
@@ -1333,9 +1344,10 @@ mod test {
         .unwrap();
         assert_eq!(key.public(), &pub_key);
 
+        let role = MetadataPath::root();
         let msg = b"test";
         let sig = key.sign(msg).unwrap();
-        assert_matches!(pub_key.verify(msg, &sig), Ok(()));
+        assert_matches!(pub_key.verify(&role, msg, &sig), Ok(()));
 
         // Make sure we match what ring expects.
         let ring_key = ring::signature::Ed25519KeyPair::from_pkcs8(ed25519::PK8_1).unwrap();
@@ -1348,7 +1360,11 @@ mod test {
             .public()
             .clone();
 
-        assert_matches!(bad_pub_key.verify(msg, &sig), Err(Error::BadSignature));
+        assert_matches!(
+            bad_pub_key.verify(&role, msg, &sig),
+            Err(Error::BadSignature(r))
+            if r == role
+        );
     }
 
     #[test]

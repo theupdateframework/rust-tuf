@@ -6,14 +6,15 @@ use futures_util::io::{copy, AllowStdIo};
 use log::debug;
 use std::collections::HashMap;
 use std::fs::{DirBuilder, File};
+use std::io;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use tempfile::{NamedTempFile, TempPath};
 
+use crate::error::{Error, Result};
 use crate::interchange::DataInterchange;
 use crate::metadata::{MetadataPath, MetadataVersion, TargetPath};
 use crate::repository::{RepositoryProvider, RepositoryStorage};
-use crate::Result;
 
 /// A builder to create a repository contained on the local file system.
 pub struct FileSystemRepositoryBuilder<D> {
@@ -131,11 +132,43 @@ where
         path
     }
 
-    fn fetch_path(
+    fn fetch_metadata_from_path(
         &self,
+        meta_path: &MetadataPath,
+        version: MetadataVersion,
         path: &Path,
     ) -> BoxFuture<'_, Result<Box<dyn AsyncRead + Send + Unpin + '_>>> {
-        let reader = File::open(&path);
+        let reader = File::open(&path).map_err(|err| {
+            if err.kind() == io::ErrorKind::NotFound {
+                Error::MetadataNotFound {
+                    path: meta_path.clone(),
+                    version,
+                }
+            } else {
+                Error::Io(err)
+            }
+        });
+
+        async move {
+            let reader = reader?;
+            let reader: Box<dyn AsyncRead + Send + Unpin> = Box::new(AllowStdIo::new(reader));
+            Ok(reader)
+        }
+        .boxed()
+    }
+
+    fn fetch_target_from_path(
+        &self,
+        target_path: &TargetPath,
+        path: &Path,
+    ) -> BoxFuture<'_, Result<Box<dyn AsyncRead + Send + Unpin + '_>>> {
+        let reader = File::open(&path).map_err(|err| {
+            if err.kind() == io::ErrorKind::NotFound {
+                Error::TargetNotFound(target_path.clone())
+            } else {
+                Error::Io(err)
+            }
+        });
 
         async move {
             let reader = reader?;
@@ -156,7 +189,7 @@ where
         version: MetadataVersion,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         let path = self.metadata_path(meta_path, version);
-        self.fetch_path(&path)
+        self.fetch_metadata_from_path(meta_path, version, &path)
     }
 
     fn fetch_target<'a>(
@@ -164,7 +197,7 @@ where
         target_path: &TargetPath,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         let path = self.target_path(target_path);
-        self.fetch_path(&path)
+        self.fetch_target_from_path(target_path, &path)
     }
 }
 
@@ -267,9 +300,11 @@ where
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         let path = self.repo.metadata_path(meta_path, version);
         if let Some(temp_path) = self.metadata.get(&path) {
-            self.repo.fetch_path(temp_path)
+            self.repo
+                .fetch_metadata_from_path(meta_path, version, temp_path)
         } else {
-            self.repo.fetch_path(&path)
+            self.repo
+                .fetch_metadata_from_path(meta_path, version, &path)
         }
     }
 
@@ -279,9 +314,9 @@ where
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         let path = self.repo.target_path(target_path);
         if let Some(temp_path) = self.targets.get(&path) {
-            self.repo.fetch_path(temp_path)
+            self.repo.fetch_target_from_path(target_path, temp_path)
         } else {
-            self.repo.fetch_path(&path)
+            self.repo.fetch_target_from_path(target_path, &path)
         }
     }
 }
@@ -374,7 +409,11 @@ mod test {
                         vec![],
                     )
                     .await,
-                Err(Error::NotFound)
+                Err(Error::MetadataNotFound {
+                    path,
+                    version,
+                })
+                if path == MetadataPath::root() && version == MetadataVersion::None
             );
         })
     }

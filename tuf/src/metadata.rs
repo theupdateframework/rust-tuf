@@ -216,6 +216,15 @@ pub enum MetadataVersion {
     Number(u32),
 }
 
+impl Display for MetadataVersion {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            MetadataVersion::None => f.write_str("none"),
+            MetadataVersion::Number(version) => write!(f, "{}", version),
+        }
+    }
+}
+
 impl MetadataVersion {
     /// Converts this struct into the string used for addressing metadata.
     pub fn prefix(&self) -> String {
@@ -1592,9 +1601,9 @@ impl TargetPath {
     }
 }
 
-impl ToString for TargetPath {
-    fn to_string(&self) -> String {
-        self.0.clone()
+impl Display for TargetPath {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
@@ -2507,7 +2516,12 @@ mod test {
         let raw_root = signed.to_raw().unwrap();
 
         assert_matches!(
-            verify_signatures(&raw_root, 1, &[root_key.public().clone()]),
+            verify_signatures(
+                &MetadataPath::root(),
+                &raw_root,
+                1,
+                &[root_key.public().clone()]
+            ),
             Ok(_)
         );
     }
@@ -2527,7 +2541,12 @@ mod test {
         let raw_root = decoded.to_raw().unwrap();
 
         assert_matches!(
-            verify_signatures(&raw_root, 1, &[root_key.public().clone()]),
+            verify_signatures(
+                &MetadataPath::root(),
+                &raw_root,
+                1,
+                &[root_key.public().clone()]
+            ),
             Ok(_)
         );
     }
@@ -2550,11 +2569,17 @@ mod test {
             serde_json::from_value(jsn).unwrap();
         let raw_root = decoded.to_raw().unwrap();
         assert_matches!(
-            verify_signatures(&raw_root, 2, &[root_key.public().clone()]),
-            Err(Error::VerificationFailure(_))
+            verify_signatures(&MetadataPath::root(), &raw_root, 2, &[root_key.public().clone()]),
+            Err(Error::MetadataMissingSignatures { role, number_of_valid_signatures: 1, threshold: 2 })
+            if role == MetadataPath::root()
         );
         assert_matches!(
-            verify_signatures(&raw_root, 1, &[root_key.public().clone()]),
+            verify_signatures(
+                &MetadataPath::root(),
+                &raw_root,
+                1,
+                &[root_key.public().clone()]
+            ),
             Ok(_)
         );
     }
@@ -2595,11 +2620,21 @@ mod test {
 
         // Ensure the signatures are valid as-is.
         assert_matches!(
-            verify_signatures(&standard.to_raw().unwrap(), 1, &public_keys),
+            verify_signatures(
+                &M::ROLE.into(),
+                &standard.to_raw().unwrap(),
+                1,
+                &public_keys
+            ),
             Ok(_)
         );
         assert_matches!(
-            verify_signatures(&custom.to_raw().unwrap(), 1, std::iter::once(key.public())),
+            verify_signatures(
+                &M::ROLE.into(),
+                &custom.to_raw().unwrap(),
+                1,
+                std::iter::once(key.public())
+            ),
             Ok(_)
         );
 
@@ -2608,15 +2643,23 @@ mod test {
         std::mem::swap(&mut standard.metadata, &mut custom.metadata);
         assert_matches!(
             verify_signatures(
+                &M::ROLE.into(),
                 &standard.to_raw().unwrap(),
                 1,
                 std::iter::once(key.public())
             ),
-            Err(Error::VerificationFailure(_))
+            Err(Error::MetadataMissingSignatures { role, number_of_valid_signatures: 0, threshold: 1 })
+            if role == M::ROLE.into()
         );
         assert_matches!(
-            verify_signatures(&custom.to_raw().unwrap(), 1, std::iter::once(key.public())),
-            Err(Error::VerificationFailure(_))
+            verify_signatures(
+                &M::ROLE.into(),
+                &custom.to_raw().unwrap(),
+                1,
+                std::iter::once(key.public())
+            ),
+            Err(Error::MetadataMissingSignatures { role, number_of_valid_signatures: 0, threshold: 1 })
+            if role == M::ROLE.into()
         );
     }
 

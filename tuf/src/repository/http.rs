@@ -147,7 +147,8 @@ const URLENCODE_FRAGMENT: &percent_encoding::AsciiSet = &percent_encoding::CONTR
 const URLENCODE_PATH: &percent_encoding::AsciiSet =
     &URLENCODE_FRAGMENT.add(b'#').add(b'?').add(b'{').add(b'}');
 
-fn extend_uri(uri: Uri, prefix: &Option<Vec<String>>, components: &[String]) -> Result<Uri> {
+fn extend_uri(uri: &Uri, prefix: &Option<Vec<String>>, components: &[String]) -> Result<Uri> {
+    let uri = uri.clone();
     let mut uri_parts = uri.into_parts();
 
     let (path, query) = match &uri_parts.path_and_query {
@@ -207,32 +208,13 @@ where
     C: Connect + Clone + Send + Sync + 'static,
     D: DataInterchange,
 {
-    async fn get<'a>(
-        &'a self,
-        prefix: &'a Option<Vec<String>>,
-        components: &'a [String],
-    ) -> Result<Response<Body>> {
-        let base_uri = self.uri.clone();
-        let uri = extend_uri(base_uri, prefix, components)?;
-
+    async fn get<'a>(&'a self, uri: &Uri) -> Result<Response<Body>> {
         let req = Request::builder()
-            .uri(&uri)
+            .uri(uri)
             .header("User-Agent", &*self.user_agent)
             .body(Body::default())?;
 
-        let resp = self.client.request(req).await?;
-        let status = resp.status();
-
-        if status == StatusCode::OK {
-            Ok(resp)
-        } else if status == StatusCode::NOT_FOUND {
-            Err(Error::NotFound)
-        } else {
-            Err(Error::BadHttpStatus {
-                code: status,
-                uri: uri.to_string(),
-            })
-        }
+        Ok(self.client.request(req).await?)
     }
 }
 
@@ -246,20 +228,37 @@ where
         meta_path: &MetadataPath,
         version: MetadataVersion,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        let meta_path = meta_path.clone();
         let components = meta_path.components::<D>(version);
-        async move {
-            let resp = self.get(&self.metadata_prefix, &components).await?;
+        let uri = extend_uri(&self.uri, &self.metadata_prefix, &components);
 
+        async move {
             // TODO(#278) check content length if known and fail early if the payload is too large.
 
-            let reader = resp
-                .into_body()
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
-                .into_async_read()
-                .enforce_minimum_bitrate(self.min_bytes_per_second);
+            let uri = uri?;
+            let resp = self.get(&uri).await?;
 
-            let reader: Box<dyn AsyncRead + Send + Unpin> = Box::new(reader);
-            Ok(reader)
+            let status = resp.status();
+            if status == StatusCode::OK {
+                let reader = resp
+                    .into_body()
+                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+                    .into_async_read()
+                    .enforce_minimum_bitrate(self.min_bytes_per_second);
+
+                let reader: Box<dyn AsyncRead + Send + Unpin> = Box::new(reader);
+                Ok(reader)
+            } else if status == StatusCode::NOT_FOUND {
+                Err(Error::MetadataNotFound {
+                    path: meta_path,
+                    version,
+                })
+            } else {
+                Err(Error::BadHttpStatus {
+                    code: status,
+                    uri: uri.to_string(),
+                })
+            }
         }
         .boxed()
     }
@@ -268,19 +267,34 @@ where
         &'a self,
         target_path: &TargetPath,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+        let target_path = target_path.clone();
         let components = target_path.components();
+        let uri = extend_uri(&self.uri, &self.targets_prefix, &components);
 
         async move {
             // TODO(#278) check content length if known and fail early if the payload is too large.
-            let resp = self.get(&self.targets_prefix, &components).await?;
 
-            let reader = resp
-                .into_body()
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
-                .into_async_read()
-                .enforce_minimum_bitrate(self.min_bytes_per_second);
+            let uri = uri?;
+            let resp = self.get(&uri).await?;
 
-            Ok(Box::new(reader) as Box<dyn AsyncRead + Send + Unpin>)
+            let status = resp.status();
+            if status == StatusCode::OK {
+                let reader = resp
+                    .into_body()
+                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+                    .into_async_read()
+                    .enforce_minimum_bitrate(self.min_bytes_per_second);
+
+                let reader: Box<dyn AsyncRead + Send + Unpin> = Box::new(reader);
+                Ok(reader)
+            } else if status == StatusCode::NOT_FOUND {
+                Err(Error::TargetNotFound(target_path))
+            } else {
+                Err(Error::BadHttpStatus {
+                    code: status,
+                    uri: uri.to_string(),
+                })
+            }
         }
         .boxed()
     }
@@ -319,7 +333,7 @@ mod test {
         ];
 
         let uri = base_uri.parse::<Uri>().unwrap();
-        let extended_uri = extend_uri(uri, &prefix, &components).unwrap();
+        let extended_uri = extend_uri(&uri, &prefix, &components).unwrap();
 
         let url =
             http_repository_extend_using_url(Url::parse(base_uri).unwrap(), &prefix, &components);
@@ -338,7 +352,7 @@ mod test {
         let prefix = Some(vec![String::from("prefix")]);
         let components = [String::from("chars to encode#?")];
         let uri = base_uri.parse::<Uri>().unwrap();
-        let extended_uri = extend_uri(uri, &prefix, &components)
+        let extended_uri = extend_uri(&uri, &prefix, &components)
             .expect("correctly generated a URI with a zone id");
 
         let url =
@@ -359,7 +373,7 @@ mod test {
         let components = [];
 
         let uri = base_uri.parse::<Uri>().unwrap();
-        let extended_uri = extend_uri(uri, &prefix, &components).unwrap();
+        let extended_uri = extend_uri(&uri, &prefix, &components).unwrap();
 
         let url =
             http_repository_extend_using_url(Url::parse(base_uri).unwrap(), &prefix, &components);
@@ -379,7 +393,7 @@ mod test {
         ];
 
         let uri = base_uri.parse::<Uri>().unwrap();
-        let extended_uri = extend_uri(uri, &prefix, &components).unwrap();
+        let extended_uri = extend_uri(&uri, &prefix, &components).unwrap();
 
         let url =
             http_repository_extend_using_url(Url::parse(base_uri).unwrap(), &prefix, &components);
@@ -402,7 +416,7 @@ mod test {
         ];
 
         let uri = base_uri.parse::<Uri>().unwrap();
-        let extended_uri = extend_uri(uri, &prefix, &components).unwrap();
+        let extended_uri = extend_uri(&uri, &prefix, &components).unwrap();
 
         let url =
             http_repository_extend_using_url(Url::parse(base_uri).unwrap(), &prefix, &components);
@@ -424,7 +438,7 @@ mod test {
             String::from("components_two"),
         ];
         let uri = base_uri.parse::<Uri>().unwrap();
-        let extended_uri = extend_uri(uri, &prefix, &components)
+        let extended_uri = extend_uri(&uri, &prefix, &components)
             .expect("correctly generated a URI with a zone id");
         assert_eq!(
             extended_uri.to_string(),

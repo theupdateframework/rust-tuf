@@ -4,6 +4,7 @@ use {
     crate::{
         crypto::{self, HashAlgorithm, PrivateKey},
         database::Database,
+        error::{Error, Result},
         interchange::DataInterchange,
         metadata::{
             Metadata, MetadataDescription, MetadataPath, MetadataVersion, RawSignedMetadata,
@@ -13,7 +14,6 @@ use {
             TimestampMetadataBuilder,
         },
         repository::RepositoryStorage,
-        Error, Result,
     },
     chrono::{Duration, Utc},
     futures_io::{AsyncRead, AsyncSeek},
@@ -525,7 +525,7 @@ where
     {
         let next_version = if let Some(db) = self.ctx.db {
             db.trusted_root().version().checked_add(1).ok_or_else(|| {
-                Error::VerificationFailure("root version should be less than max u32".into())
+                Error::MetadataVersionMustBeSmallerThanMaxU32(MetadataPath::root())
             })?
         } else {
             1
@@ -762,7 +762,7 @@ where
         let next_version = if let Some(db) = self.ctx.db {
             if let Some(trusted_targets) = db.trusted_targets() {
                 trusted_targets.version().checked_add(1).ok_or_else(|| {
-                    Error::VerificationFailure("targets version should be less than max u32".into())
+                    Error::MetadataVersionMustBeSmallerThanMaxU32(MetadataPath::targets())
                 })?
             } else {
                 1
@@ -900,9 +900,7 @@ where
         let next_version = if let Some(db) = self.ctx.db {
             if let Some(trusted_snapshot) = db.trusted_snapshot() {
                 trusted_snapshot.version().checked_add(1).ok_or_else(|| {
-                    Error::VerificationFailure(
-                        "snapshot version should be less than max u32".into(),
-                    )
+                    Error::MetadataVersionMustBeSmallerThanMaxU32(MetadataPath::snapshot())
                 })?
             } else {
                 1
@@ -1062,9 +1060,7 @@ where
         let next_version = if let Some(db) = self.ctx.db {
             if let Some(trusted_timestamp) = db.trusted_timestamp() {
                 trusted_timestamp.version().checked_add(1).ok_or_else(|| {
-                    Error::VerificationFailure(
-                        "timestamp version should be less than max u32".into(),
-                    )
+                    Error::MetadataVersionMustBeSmallerThanMaxU32(MetadataPath::timestamp())
                 })?
             } else {
                 1
@@ -1954,9 +1950,14 @@ mod tests {
                     .trusted_timestamp_keys(&[&KEYS[0]])
                     .stage_root_with_builder(|builder| builder.version(3))
                     .unwrap()
-                    .commit().await,
-                Err(Error::VerificationFailure(s))
-                if &s == "Attempted to roll back root metadata at version 1 to 3."
+                    .commit()
+                    .await,
+                Err(Error::MetadataAttemptedRollBack {
+                    role,
+                    trusted_version: 1,
+                    new_version: 3,
+                })
+                if role == MetadataPath::root()
             );
         })
     }

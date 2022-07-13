@@ -55,7 +55,7 @@ use std::pin::Pin;
 
 use crate::crypto::{self, HashAlgorithm, HashValue, PublicKey};
 use crate::database::Database;
-use crate::error::Error;
+use crate::error::{Error, Result};
 use crate::interchange::DataInterchange;
 use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, RootMetadata, SnapshotMetadata,
@@ -63,7 +63,6 @@ use crate::metadata::{
 };
 use crate::repository::{Repository, RepositoryProvider, RepositoryStorage};
 use crate::verify::Verified;
-use crate::Result;
 
 /// A client that interacts with TUF repositories.
 #[derive(Debug)]
@@ -402,7 +401,7 @@ where
         .await;
 
         match res {
-            Ok(()) | Err(Error::NotFound) => {}
+            Ok(()) | Err(Error::MetadataNotFound { .. }) => {}
             Err(err) => {
                 warn!("error loading local metadata: : {}", err);
             }
@@ -537,7 +536,7 @@ where
 
             let raw_signed_root = match res {
                 Ok(raw_signed_root) => raw_signed_root,
-                Err(Error::NotFound) => {
+                Err(Error::MetadataNotFound { .. }) => {
                     break;
                 }
                 Err(err) => {
@@ -772,11 +771,10 @@ where
         let targets_description = match tuf.trusted_snapshot() {
             Some(sn) => match sn.meta().get(&MetadataPath::targets()) {
                 Some(d) => Ok(d),
-                None => Err(Error::VerificationFailure(
-                    "Snapshot metadata did not contain a description of the \
-                     current targets metadata."
-                        .into(),
-                )),
+                None => Err(Error::MissingMetadataDescription {
+                    parent_role: MetadataPath::snapshot(),
+                    child_role: MetadataPath::targets(),
+                }),
             },
             None => Err(Error::MissingMetadata(MetadataPath::snapshot())),
         }?
@@ -960,7 +958,10 @@ where
                 "Walking the delegation graph would have exceeded the configured max depth: {}",
                 self.config.max_delegation_depth
             );
-            return (default_terminate, Err(Error::NotFound));
+            return (
+                default_terminate,
+                Err(Error::TargetNotFound(target.clone())),
+            );
         }
 
         // these clones are dumb, but we need immutable values and not references for update
@@ -984,13 +985,18 @@ where
 
         let delegations = match targets.delegations() {
             Some(d) => d,
-            None => return (default_terminate, Err(Error::NotFound)),
+            None => {
+                return (
+                    default_terminate,
+                    Err(Error::TargetNotFound(target.clone())),
+                )
+            }
         };
 
         for delegation in delegations.roles().iter() {
             if !delegation.paths().iter().any(|p| target.is_child(p)) {
                 if delegation.terminating() {
-                    return (true, Err(Error::NotFound));
+                    return (true, Err(Error::TargetNotFound(target.clone())));
                 } else {
                     continue;
                 }
@@ -999,7 +1005,7 @@ where
             let role_meta = match snapshot.meta().get(delegation.role()) {
                 Some(m) => m,
                 None if delegation.terminating() => {
-                    return (true, Err(Error::NotFound));
+                    return (true, Err(Error::TargetNotFound(target.clone())));
                 }
                 None => {
                     continue;
@@ -1105,7 +1111,10 @@ where
             };
         }
 
-        (default_terminate, Err(Error::NotFound))
+        (
+            default_terminate,
+            Err(Error::TargetNotFound(target.clone())),
+        )
     }
 }
 
@@ -1156,7 +1165,7 @@ where
         .await
     {
         Ok(raw_meta) => Ok((false, raw_meta)),
-        Err(Error::NotFound) => {
+        Err(Error::MetadataNotFound { .. }) => {
             let raw_meta = remote
                 .fetch_metadata(path, version, max_length, hashes)
                 .await?;
@@ -1338,7 +1347,8 @@ mod test {
 
             assert_matches!(
                 Client::with_trusted_local(Config::default(), &mut local, &remote).await,
-                Err(Error::NotFound)
+                Err(Error::MetadataNotFound { path, version })
+                if path == MetadataPath::root() && version == MetadataVersion::Number(1)
             );
 
             assert_matches!(
@@ -1351,7 +1361,8 @@ mod test {
                     &remote,
                 )
                 .await,
-                Err(Error::NotFound)
+                Err(Error::MetadataNotFound { path, version })
+                if path == MetadataPath::root() && version == MetadataVersion::Number(1)
             );
         })
     }
@@ -1383,7 +1394,8 @@ mod test {
                     &remote,
                 )
                 .await,
-                Err(Error::VerificationFailure(_))
+                Err(Error::MetadataMissingSignatures { role, number_of_valid_signatures: 0, threshold: 1 })
+                if role == MetadataPath::root()
             );
         })
     }
