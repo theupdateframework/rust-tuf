@@ -1,10 +1,6 @@
 //! Error types and converters.
 
 use data_encoding::DecodeError;
-#[cfg(feature = "hyper_013")]
-use hyper_013 as hyper;
-#[cfg(feature = "hyper_014")]
-use hyper_014 as hyper;
 use std::io;
 use std::path::Path;
 use thiserror::Error;
@@ -46,7 +42,7 @@ pub enum Error {
     },
 
     /// Errors that can occur parsing HTTP streams.
-    #[cfg(any(feature = "hyper_013", feature = "hyper_014"))]
+    #[cfg(feature = "hyper")]
     #[error("hyper: {0}")]
     Hyper(#[from] hyper::Error),
 

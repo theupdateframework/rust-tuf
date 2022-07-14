@@ -19,10 +19,10 @@ pub use self::file_system::{
     FileSystemBatchUpdate, FileSystemRepository, FileSystemRepositoryBuilder,
 };
 
-#[cfg(any(feature = "hyper_013", feature = "hyper_014"))]
+#[cfg(feature = "hyper")]
 mod http;
 
-#[cfg(any(feature = "hyper_013", feature = "hyper_014"))]
+#[cfg(feature = "hyper")]
 pub use self::http::{HttpRepository, HttpRepositoryBuilder};
 
 mod ephemeral;
