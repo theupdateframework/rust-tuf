@@ -8,10 +8,6 @@ use hyper::body::Body;
 use hyper::client::connect::Connect;
 use hyper::Client;
 use hyper::Request;
-#[cfg(feature = "hyper_013")]
-use hyper_013 as hyper;
-#[cfg(feature = "hyper_014")]
-use hyper_014 as hyper;
 use percent_encoding::utf8_percent_encode;
 use std::io;
 use std::marker::PhantomData;

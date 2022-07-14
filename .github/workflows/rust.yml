@@ -41,12 +41,6 @@ jobs:
           command: test
           args: ${{ matrix.features }}
 
-      - name: Run Tests with Hyper 0.13
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: "--manifest-path tuf/Cargo.toml --no-default-features --features hyper_013/default"
-
       - name: Run Tests with RSA
         uses: actions-rs/cargo@v1
         with:
