@@ -440,13 +440,16 @@ impl Ed25519PrivateKey {
             .map_err(|_| Error::Opaque("Failed to generate Ed25519 key".into()))
     }
 
-    /// Create a new `PrivateKey` from an ed25519 keypair, a 64 byte slice, where the first 32
-    /// bytes are the ed25519 seed, and the second 32 bytes are the public key.
+    /// Create a new `PrivateKey` from an ed25519 keypair. The keypair is a 64 byte slice, where the
+    /// first 32 bytes are the ed25519 seed, and the second 32 bytes are the public key.
     pub fn from_ed25519(key: &[u8]) -> Result<Self> {
         Self::from_ed25519_with_keyid_hash_algorithms(key, None)
     }
 
-    fn from_ed25519_with_keyid_hash_algorithms(
+    /// Create a new `PrivateKey` from an ed25519 keypair with a custom `keyid_hash_algorithms`. The
+    /// keypair is a 64 byte slice, where the first 32 bytes are the ed25519 seed, and the second 32
+    /// bytes are the public key.
+    pub fn from_ed25519_with_keyid_hash_algorithms(
         key: &[u8],
         keyid_hash_algorithms: Option<Vec<String>>,
     ) -> Result<Self> {
