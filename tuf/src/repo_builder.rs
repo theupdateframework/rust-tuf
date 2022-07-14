@@ -707,7 +707,10 @@ where
         } else if let Some(db) = self.ctx.db {
             db.trusted_root().consistent_snapshot()
         } else {
-            return Err(Error::MissingMetadata(MetadataPath::root()));
+            return Err(Error::MetadataNotFound {
+                path: MetadataPath::root(),
+                version: MetadataVersion::None,
+            });
         };
 
         let target_description = TargetDescription::from_reader_with_custom(
@@ -1076,7 +1079,10 @@ where
                 .db
                 .and_then(|db| db.trusted_timestamp())
                 .map(|timestamp| timestamp.snapshot().clone())
-                .ok_or_else(|| Error::MissingMetadata(MetadataPath::timestamp()))?
+                .ok_or_else(|| Error::MetadataNotFound {
+                    path: MetadataPath::timestamp(),
+                    version: MetadataVersion::None,
+                })?
         };
 
         let timestamp_builder = TimestampMetadataBuilder::from_metadata_description(description)
@@ -1207,7 +1213,10 @@ where
         } else if let Some(ref root) = self.state.staged_root {
             Database::from_trusted_root(&root.raw)?
         } else {
-            return Err(Error::MissingMetadata(MetadataPath::root()));
+            return Err(Error::MetadataNotFound {
+                path: MetadataPath::root(),
+                version: MetadataVersion::None,
+            });
         };
 
         let now = Utc::now();
@@ -1251,7 +1260,10 @@ where
         } else if let Some(db) = self.ctx.db {
             db.trusted_root().consistent_snapshot()
         } else {
-            return Err(Error::MissingMetadata(MetadataPath::root()));
+            return Err(Error::MetadataNotFound {
+                path: MetadataPath::root(),
+                version: MetadataVersion::None,
+            });
         };
 
         if let Some(ref targets) = self.state.staged_targets {
@@ -1952,7 +1964,7 @@ mod tests {
                     .unwrap()
                     .commit()
                     .await,
-                Err(Error::MetadataAttemptedRollBack {
+                Err(Error::AttemptedMetadataRollBack {
                     role,
                     trusted_version: 1,
                     new_version: 3,

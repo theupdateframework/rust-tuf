@@ -145,7 +145,10 @@ where
                     version,
                 }
             } else {
-                Error::Io(err)
+                Error::IoPath {
+                    path: path.to_path_buf(),
+                    err,
+                }
             }
         });
 
@@ -166,7 +169,10 @@ where
             if err.kind() == io::ErrorKind::NotFound {
                 Error::TargetNotFound(target_path.clone())
             } else {
-                Error::Io(err)
+                Error::IoPath {
+                    path: path.to_path_buf(),
+                    err,
+                }
             }
         });
 
@@ -219,8 +225,16 @@ where
             }
 
             let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
-            copy(metadata, &mut temp_file).await?;
-            temp_file.into_inner().persist(&path)?;
+            if let Err(err) = copy(metadata, &mut temp_file).await {
+                return Err(Error::IoPath { path, err });
+            }
+            temp_file
+                .into_inner()
+                .persist(&path)
+                .map_err(|err| Error::IoPath {
+                    path,
+                    err: err.error,
+                })?;
 
             Ok(())
         }
@@ -240,8 +254,16 @@ where
             }
 
             let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
-            copy(read, &mut temp_file).await?;
-            temp_file.into_inner().persist(&path)?;
+            if let Err(err) = copy(read, &mut temp_file).await {
+                return Err(Error::IoPath { path, err });
+            }
+            temp_file
+                .into_inner()
+                .persist(&path)
+                .map_err(|err| Error::IoPath {
+                    path,
+                    err: err.error,
+                })?;
 
             Ok(())
         }
@@ -275,14 +297,17 @@ where
             if path.exists() {
                 debug!("Target path exists. Overwriting: {:?}", path);
             }
-            tmp_path.persist(path)?;
+            tmp_path.persist(&path).map_err(|err| Error::IoPath {
+                path,
+                err: err.error,
+            })?;
         }
 
         for (path, tmp_path) in self.metadata {
             if path.exists() {
                 debug!("Metadata path exists. Overwriting: {:?}", path);
             }
-            tmp_path.persist(path)?;
+            tmp_path.persist(path).map_err(|err| err.error)?;
         }
 
         Ok(())
@@ -336,7 +361,9 @@ where
 
         async move {
             let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
-            copy(read, &mut temp_file).await?;
+            if let Err(err) = copy(read, &mut temp_file).await {
+                return Err(Error::IoPath { path, err });
+            }
             metadata.insert(path, temp_file.into_inner().into_temp_path());
 
             Ok(())
@@ -354,7 +381,9 @@ where
 
         async move {
             let mut temp_file = AllowStdIo::new(create_temp_file(&path)?);
-            copy(read, &mut temp_file).await?;
+            if let Err(err) = copy(read, &mut temp_file).await {
+                return Err(Error::IoPath { path, err });
+            }
             targets.insert(path, temp_file.into_inner().into_temp_path());
 
             Ok(())
@@ -370,10 +399,22 @@ fn create_temp_file(path: &Path) -> Result<NamedTempFile> {
     // non-atomically copying the file to another mountpoint.
 
     if let Some(parent) = path.parent() {
-        DirBuilder::new().recursive(true).create(parent)?;
-        Ok(NamedTempFile::new_in(parent)?)
+        DirBuilder::new()
+            .recursive(true)
+            .create(parent)
+            .map_err(|err| Error::IoPath {
+                path: parent.to_path_buf(),
+                err,
+            })?;
+        Ok(NamedTempFile::new_in(parent).map_err(|err| Error::IoPath {
+            path: parent.to_path_buf(),
+            err,
+        })?)
     } else {
-        Ok(NamedTempFile::new_in(".")?)
+        Ok(NamedTempFile::new_in(".").map_err(|err| Error::IoPath {
+            path: path.to_path_buf(),
+            err,
+        })?)
     }
 }
 

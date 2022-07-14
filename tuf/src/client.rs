@@ -690,7 +690,10 @@ where
     {
         let snapshot_description = match tuf.trusted_timestamp() {
             Some(ts) => Ok(ts.snapshot()),
-            None => Err(Error::MissingMetadata(MetadataPath::timestamp())),
+            None => Err(Error::MetadataNotFound {
+                path: MetadataPath::timestamp(),
+                version: MetadataVersion::None,
+            }),
         }?
         .clone();
 
@@ -776,7 +779,10 @@ where
                     child_role: MetadataPath::targets(),
                 }),
             },
-            None => Err(Error::MissingMetadata(MetadataPath::snapshot())),
+            None => Err(Error::MetadataNotFound {
+                path: MetadataPath::snapshot(),
+                version: MetadataVersion::None,
+            }),
         }?
         .clone();
 
@@ -926,7 +932,10 @@ where
         let snapshot = self
             .tuf
             .trusted_snapshot()
-            .ok_or_else(|| Error::MissingMetadata(MetadataPath::snapshot()))?
+            .ok_or_else(|| Error::MetadataNotFound {
+                path: MetadataPath::snapshot(),
+                version: MetadataVersion::None,
+            })?
             .clone();
 
         /////////////////////////////////////////
@@ -973,7 +982,10 @@ where
                 None => {
                     return (
                         default_terminate,
-                        Err(Error::MissingMetadata(MetadataPath::targets())),
+                        Err(Error::MetadataNotFound {
+                            path: MetadataPath::targets(),
+                            version: MetadataVersion::None,
+                        }),
                     );
                 }
             },

@@ -39,10 +39,9 @@ use {
     },
 };
 
-use crate::error::Error;
+use crate::error::{derp_error_to_error, Error, Result};
 use crate::interchange::cjson::shims;
 use crate::metadata::MetadataPath;
-use crate::Result;
 
 const HASH_ALG_PREFS: &[HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
 
@@ -244,7 +243,8 @@ fn calculate_key_id(
         signature_scheme,
         keyid_hash_algorithms,
         public_key,
-    )?;
+    )
+    .map_err(derp_error_to_error)?;
     let public_key = Json::canonicalize(&Json::serialize(&public_key)?)?;
     let mut context = digest::Context::new(&SHA256);
     context.update(&public_key);
@@ -370,13 +370,6 @@ impl SignatureValue {
     /// Note: It is unlikely that you ever want to do this manually.
     pub fn new(bytes: Vec<u8>) -> Self {
         SignatureValue(bytes)
-    }
-
-    /// Create a new `SignatureValue` from the given hex string.
-    ///
-    /// Note: It is unlikely that you ever want to do this manually.
-    pub fn from_hex(string: &str) -> Result<Self> {
-        Ok(SignatureValue(HEXLOWER.decode(string.as_bytes())?))
     }
 
     /// Return the signature as bytes.
@@ -666,7 +659,7 @@ impl RsaPrivateKey {
             )));
         }
 
-        let pub_key = extract_rsa_pub_from_pkcs8(der_key)?;
+        let pub_key = extract_rsa_pub_from_pkcs8(der_key).map_err(derp_error_to_error)?;
 
         let public = PublicKey::new(
             KeyType::Rsa,
@@ -756,22 +749,24 @@ impl PublicKey {
     ) -> Result<Self> {
         let input = Input::from(der_bytes);
 
-        let (typ, value) = input.read_all(derp::Error::Read, |input| {
-            derp::nested(input, Tag::Sequence, |input| {
-                let typ = derp::nested(input, Tag::Sequence, |input| {
-                    let typ = derp::expect_tag_and_get_value(input, Tag::Oid)?;
+        let (typ, value) = input
+            .read_all(derp::Error::Read, |input| {
+                derp::nested(input, Tag::Sequence, |input| {
+                    let typ = derp::nested(input, Tag::Sequence, |input| {
+                        let typ = derp::expect_tag_and_get_value(input, Tag::Oid)?;
 
-                    let typ = KeyType::from_oid(typ.as_slice_less_safe())
-                        .map_err(|_| derp::Error::WrongValue)?;
+                        let typ = KeyType::from_oid(typ.as_slice_less_safe())
+                            .map_err(|_| derp::Error::WrongValue)?;
 
-                    // for RSA / ed25519 this is null, so don't both parsing it
-                    derp::read_null(input)?;
-                    Ok(typ)
-                })?;
-                let value = derp::bit_string_with_no_unused_bits(input)?;
-                Ok((typ, value.as_slice_less_safe().to_vec()))
+                        // for RSA / ed25519 this is null, so don't both parsing it
+                        derp::read_null(input)?;
+                        Ok(typ)
+                    })?;
+                    let value = derp::bit_string_with_no_unused_bits(input)?;
+                    Ok((typ, value.as_slice_less_safe().to_vec()))
+                })
             })
-        })?;
+            .map_err(derp_error_to_error)?;
 
         Self::new(typ, scheme, keyid_hash_algorithms, value)
     }
@@ -805,7 +800,7 @@ impl PublicKey {
     ///
     /// See the documentation on `KeyValue` for more information on SPKI.
     pub fn as_spki(&self) -> Result<Vec<u8>> {
-        Ok(write_spki(&self.value.0, &self.typ)?)
+        write_spki(&self.value.0, &self.typ).map_err(derp_error_to_error)
     }
 
     /// An immutable reference to the key's type.
@@ -1432,7 +1427,10 @@ mod test {
         let s = "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db";
         let jsn = json!(s);
         let parsed: SignatureValue = serde_json::from_str(&format!("\"{}\"", s)).unwrap();
-        assert_eq!(parsed, SignatureValue::from_hex(s).unwrap());
+        assert_eq!(
+            parsed,
+            SignatureValue(HEXLOWER.decode(s.as_bytes()).unwrap())
+        );
         let encoded = serde_json::to_value(&parsed).unwrap();
         assert_eq!(encoded, jsn);
     }

@@ -9,8 +9,9 @@ use crate::crypto::PublicKey;
 use crate::error::Error;
 use crate::interchange::DataInterchange;
 use crate::metadata::{
-    Delegations, Metadata, MetadataPath, RawSignedMetadata, RawSignedMetadataSet, RootMetadata,
-    SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata, TimestampMetadata,
+    Delegations, Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, RawSignedMetadataSet,
+    RootMetadata, SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata,
+    TimestampMetadata,
 };
 use crate::verify::{self, Verified};
 use crate::Result;
@@ -139,7 +140,10 @@ impl<D: DataInterchange> Database<D> {
         let mut db = if let Some(root) = metadata_set.root() {
             Database::from_root_with_trusted_keys(root, root_threshold, root_keys)?
         } else {
-            return Err(Error::MissingMetadata(MetadataPath::root()));
+            return Err(Error::MetadataNotFound {
+                path: MetadataPath::root(),
+                version: MetadataVersion::None,
+            });
         };
 
         db.update_metadata_after_root(start_time, metadata_set)?;
@@ -172,7 +176,10 @@ impl<D: DataInterchange> Database<D> {
         let mut db = if let Some(root) = metadata_set.root() {
             Database::from_trusted_root(root)?
         } else {
-            return Err(Error::MissingMetadata(MetadataPath::root()));
+            return Err(Error::MetadataNotFound {
+                path: MetadataPath::root(),
+                version: MetadataVersion::None,
+            });
         };
 
         db.update_metadata_after_root(start_time, metadata_set)?;
@@ -303,7 +310,7 @@ impl<D: DataInterchange> Database<D> {
             })?;
 
             if new_root.version() != next_root_version {
-                return Err(Error::MetadataAttemptedRollBack {
+                return Err(Error::AttemptedMetadataRollBack {
                     role: MetadataPath::root(),
                     trusted_version: trusted_root.version(),
                     new_version: new_root.version(),
@@ -396,7 +403,7 @@ impl<D: DataInterchange> Database<D> {
             if let Some(trusted_timestamp) = &self.trusted_timestamp {
                 match new_timestamp.version().cmp(&trusted_timestamp.version()) {
                     Ordering::Less => {
-                        return Err(Error::MetadataAttemptedRollBack {
+                        return Err(Error::AttemptedMetadataRollBack {
                             role: MetadataPath::timestamp(),
                             trusted_version: trusted_timestamp.version(),
                             new_version: new_timestamp.version(),
@@ -469,7 +476,7 @@ impl<D: DataInterchange> Database<D> {
                     .cmp(&trusted_snapshot.version())
                 {
                     Ordering::Less => {
-                        return Err(Error::MetadataAttemptedRollBack {
+                        return Err(Error::AttemptedMetadataRollBack {
                             role: MetadataPath::snapshot(),
                             trusted_version: trusted_snapshot.version(),
                             new_version: trusted_timestamp.snapshot().version(),
@@ -519,7 +526,7 @@ impl<D: DataInterchange> Database<D> {
             // the version.
 
             if new_snapshot.version() != trusted_timestamp.snapshot().version() {
-                return Err(Error::MetadataUnexpectedVersion {
+                return Err(Error::WrongMetadataVersion {
                     parent_role: MetadataPath::timestamp(),
                     child_role: MetadataPath::snapshot(),
                     expected_version: trusted_timestamp.snapshot().version(),
@@ -540,7 +547,7 @@ impl<D: DataInterchange> Database<D> {
 
             if let Some(trusted_snapshot) = &self.trusted_snapshot {
                 if new_snapshot.version() < trusted_snapshot.version() {
-                    return Err(Error::MetadataAttemptedRollBack {
+                    return Err(Error::AttemptedMetadataRollBack {
                         role: MetadataPath::snapshot(),
                         trusted_version: trusted_snapshot.version(),
                         new_version: new_snapshot.version(),
@@ -770,7 +777,7 @@ impl<D: DataInterchange> Database<D> {
         // FIXME(#295): TUF-1.0.5 §5.3.3.2 says this check should be done when updating the
         // snapshot, not here.
         if new_targets.version() != trusted_targets_description.version() {
-            return Err(Error::MetadataUnexpectedVersion {
+            return Err(Error::WrongMetadataVersion {
                 parent_role: MetadataPath::snapshot(),
                 child_role: role.clone(),
                 expected_version: trusted_targets_description.version(),
@@ -781,7 +788,7 @@ impl<D: DataInterchange> Database<D> {
         if let Some(trusted_targets_version) = trusted_targets_version {
             match new_targets.version().cmp(&trusted_targets_version) {
                 Ordering::Less => {
-                    return Err(Error::MetadataAttemptedRollBack {
+                    return Err(Error::AttemptedMetadataRollBack {
                         role: role.clone(),
                         trusted_version: trusted_targets_version,
                         new_version: new_targets.version(),
@@ -822,12 +829,18 @@ impl<D: DataInterchange> Database<D> {
             if let Some(trusted_targets) = self.trusted_targets() {
                 trusted_targets
             } else {
-                return Err(Error::MissingMetadata(parent_role.clone()));
+                return Err(Error::MetadataNotFound {
+                    path: parent_role.clone(),
+                    version: MetadataVersion::None,
+                });
             }
         } else if let Some(trusted_parent) = self.trusted_delegations.get(parent_role) {
             trusted_parent
         } else {
-            return Err(Error::MissingMetadata(parent_role.clone()));
+            return Err(Error::MetadataNotFound {
+                path: parent_role.clone(),
+                version: MetadataVersion::None,
+            });
         };
 
         // Only consider targets metadata that define delegations.
@@ -990,7 +1003,10 @@ impl<D: DataInterchange> Database<D> {
                 }
                 Ok(trusted_timestamp)
             }
-            None => Err(Error::MissingMetadata(MetadataPath::timestamp())),
+            None => Err(Error::MetadataNotFound {
+                path: MetadataPath::timestamp(),
+                version: MetadataVersion::None,
+            }),
         }
     }
 
@@ -1002,7 +1018,10 @@ impl<D: DataInterchange> Database<D> {
                 }
                 Ok(trusted_snapshot)
             }
-            None => Err(Error::MissingMetadata(MetadataPath::snapshot())),
+            None => Err(Error::MetadataNotFound {
+                path: MetadataPath::snapshot(),
+                version: MetadataVersion::None,
+            }),
         }
     }
 
@@ -1014,7 +1033,10 @@ impl<D: DataInterchange> Database<D> {
                 }
                 Ok(trusted_targets)
             }
-            None => Err(Error::MissingMetadata(MetadataPath::targets())),
+            None => Err(Error::MetadataNotFound {
+                path: MetadataPath::targets(),
+                version: MetadataVersion::None,
+            }),
         }
     }
 }
@@ -1206,7 +1228,7 @@ mod test {
         // second update with the same metadata should fail.
         assert_matches!(
             tuf.update_root(&raw_root),
-            Err(Error::MetadataAttemptedRollBack { role, trusted_version: 2, new_version: 2 })
+            Err(Error::AttemptedMetadataRollBack { role, trusted_version: 2, new_version: 2 })
             if role == MetadataPath::root()
         );
     }

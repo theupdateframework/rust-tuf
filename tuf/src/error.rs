@@ -1,6 +1,5 @@
 //! Error types and converters.
 
-use data_encoding::DecodeError;
 use std::io;
 use thiserror::Error;
 
@@ -14,7 +13,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Error, Debug)]
 pub enum Error {
     /// The metadata had a bad signature.
-    #[error("bad signature")]
+    #[error("metadata {0} has a bad signature")]
     BadSignature(MetadataPath),
 
     /// There was a problem encoding or decoding.
@@ -30,51 +29,56 @@ pub enum Error {
     IllegalArgument(String),
 
     /// Generic error for HTTP connections.
-    #[error("http: {0}")]
-    Http(#[from] http::Error),
+    #[error("http error for {uri}")]
+    Http {
+        /// URI Resource that resulted in the error.
+        uri: String,
+
+        /// The error.
+        #[source]
+        err: http::Error,
+    },
+
+    /// Errors that can occur parsing HTTP streams.
+    #[cfg(feature = "hyper")]
+    #[error("hyper error for {uri}")]
+    Hyper {
+        /// URI Resource that resulted in the error.
+        uri: String,
+
+        /// The error.
+        #[source]
+        err: hyper::Error,
+    },
 
     /// Unexpected HTTP response status.
     #[error("error getting {uri}: request failed with status code {code}")]
     BadHttpStatus {
-        /// HTTP status code.
-        code: http::StatusCode,
-
         /// URI Resource that resulted in the error.
         uri: String,
+
+        /// HTTP status code.
+        code: http::StatusCode,
     },
 
     /// An IO error occurred.
-    #[error("IO: {0}")]
+    #[error(transparent)]
     Io(#[from] io::Error),
 
+    /// An IO error occurred for a path.
+    #[error("IO error on path {path}")]
+    IoPath {
+        /// Path where the error occurred.
+        path: std::path::PathBuf,
+
+        /// The IO error.
+        #[source]
+        err: io::Error,
+    },
+
     /// A json serialization error occurred.
-    #[error("json: {0}")]
+    #[error(transparent)]
     Json(#[from] serde_json::error::Error),
-
-    /// Errors that can occur parsing HTTP streams.
-    #[cfg(feature = "hyper")]
-    #[error("hyper: {0}")]
-    Hyper(#[from] hyper::Error),
-
-    /// A tempfile persist error occurred.
-    #[error("tempfile: {0}")]
-    TempfilePersist(#[from] tempfile::PersistError),
-
-    /// A tempfile path persist error occurred.
-    #[error("tempfile: {0}")]
-    TempfilePathPersist(#[from] tempfile::PathPersistError),
-
-    /// A derp error occurred.
-    #[error("derp: {0}")]
-    Derp(#[from] derp::Error),
-
-    /// A data encoding error occurred.
-    #[error("data encoding: {0}")]
-    DataEncoding(#[from] DecodeError),
-
-    /// The metadata was missing, so an operation could not be completed.
-    #[error("missing {0} metadata")]
-    MissingMetadata(MetadataPath),
 
     /// There were no available hash algorithms.
     #[error("no supported hash algorithm")]
@@ -124,7 +128,7 @@ pub enum Error {
 
     /// Attempted to update metadata with an older version.
     #[error("attempted to roll back metadata {0} from version {trusted_version} to {new_version}")]
-    MetadataAttemptedRollBack {
+    AttemptedMetadataRollBack {
         /// The metadata.
         role: MetadataPath,
         /// The trusted metadata's version.
@@ -136,7 +140,7 @@ pub enum Error {
     /// The parent metadata expected the child metadata to be at one version, but was found to be at
     /// another version.
     #[error("metadata {parent_role} expected metadata {child_role} version {expected_version}, but found {new_version}")]
-    MetadataUnexpectedVersion {
+    WrongMetadataVersion {
         /// The parent metadata that contains the child metadata's version.
         parent_role: MetadataPath,
         /// The child metadata that has an unexpected version.
@@ -164,4 +168,8 @@ pub enum Error {
         /// That child metadata that was not delegated to by the parent.
         child_role: MetadataPath,
     },
+}
+
+pub(crate) fn derp_error_to_error(err: derp::Error) -> Error {
+    Error::Encoding(format!("DER: {:?}", err))
 }

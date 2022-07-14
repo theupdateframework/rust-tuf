@@ -2570,7 +2570,11 @@ mod test {
         let raw_root = decoded.to_raw().unwrap();
         assert_matches!(
             verify_signatures(&MetadataPath::root(), &raw_root, 2, &[root_key.public().clone()]),
-            Err(Error::MetadataMissingSignatures { role, number_of_valid_signatures: 1, threshold: 2 })
+            Err(Error::MetadataMissingSignatures {
+                role,
+                number_of_valid_signatures: 1,
+                threshold: 2,
+            })
             if role == MetadataPath::root()
         );
         assert_matches!(

@@ -209,12 +209,23 @@ where
     D: DataInterchange,
 {
     async fn get<'a>(&'a self, uri: &Uri) -> Result<Response<Body>> {
-        let req = Request::builder()
+        match Request::builder()
             .uri(uri)
             .header("User-Agent", &*self.user_agent)
-            .body(Body::default())?;
-
-        Ok(self.client.request(req).await?)
+            .body(Body::default())
+        {
+            Ok(req) => match self.client.request(req).await {
+                Ok(resp) => Ok(resp),
+                Err(err) => Err(Error::Hyper {
+                    uri: uri.to_string(),
+                    err,
+                }),
+            },
+            Err(err) => Err(Error::Http {
+                uri: uri.to_string(),
+                err,
+            }),
+        }
     }
 }
 
@@ -255,8 +266,8 @@ where
                 })
             } else {
                 Err(Error::BadHttpStatus {
-                    code: status,
                     uri: uri.to_string(),
+                    code: status,
                 })
             }
         }
@@ -291,8 +302,8 @@ where
                 Err(Error::TargetNotFound(target_path))
             } else {
                 Err(Error::BadHttpStatus {
-                    code: status,
                     uri: uri.to_string(),
+                    code: status,
                 })
             }
         }
