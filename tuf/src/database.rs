@@ -44,7 +44,7 @@ impl<D: DataInterchange> Database<D> {
             let new_root = verify::verify_signatures(raw_root, root_threshold, root_keys)?;
 
             // Make sure the root signed itself.
-            let verified_root = verify::verify_signatures(
+            verify::verify_signatures(
                 raw_root,
                 new_root.root().threshold(),
                 new_root.keys().iter().filter_map(|(k, v)| {
@@ -54,9 +54,7 @@ impl<D: DataInterchange> Database<D> {
                         None
                     }
                 }),
-            )?;
-
-            verified_root
+            )?
         };
 
         Ok(Database {
@@ -83,13 +81,11 @@ impl<D: DataInterchange> Database<D> {
             let unverified_root = raw_root.parse_untrusted()?.assume_valid()?;
 
             // Make sure the root signed itself.
-            let verified_root = verify::verify_signatures(
+            verify::verify_signatures(
                 raw_root,
                 unverified_root.root().threshold(),
                 unverified_root.root_keys(),
-            )?;
-
-            verified_root
+            )?
         };
 
         Ok(Database {

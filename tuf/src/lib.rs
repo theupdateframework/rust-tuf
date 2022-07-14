@@ -105,6 +105,7 @@
 #![allow(
     clippy::collapsible_if,
     clippy::implicit_hasher,
+    clippy::let_unit_value,
     clippy::new_ret_no_self,
     clippy::op_ref,
     clippy::too_many_arguments

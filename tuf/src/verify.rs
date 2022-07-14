@@ -11,7 +11,7 @@ use crate::metadata::{Metadata, RawSignedMetadata};
 use crate::Result;
 
 /// `Verified` is a wrapper type that signifies the inner type has had it's signature verified.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Verified<T> {
     value: T,
 }
