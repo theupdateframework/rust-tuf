@@ -1,7 +1,7 @@
 //! Cryptographic structures and functions.
 
 use {
-    data_encoding::{BASE64URL, HEXLOWER},
+    data_encoding::HEXLOWER,
     derp::{self, Der, Tag},
     futures_io::AsyncRead,
     futures_util::AsyncReadExt as _,
@@ -27,6 +27,7 @@ use {
 
 #[cfg(feature = "unstable_rsa")]
 use {
+    data_encoding::BASE64URL,
     ring::signature::{
         RsaKeyPair, RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA512, RSA_PSS_SHA256,
         RSA_PSS_SHA512,
@@ -198,17 +199,26 @@ fn shim_public_key(
     signature_scheme: &SignatureScheme,
     keyid_hash_algorithms: &Option<Vec<String>>,
     public_key: &[u8],
-) -> ::std::result::Result<shims::PublicKey, derp::Error> {
-    let key = match key_type {
-        KeyType::Ed25519 => HEXLOWER.encode(public_key),
+) -> Result<shims::PublicKey> {
+    let key = match (key_type, signature_scheme) {
+        (KeyType::Ed25519, SignatureScheme::Ed25519) => HEXLOWER.encode(public_key),
         #[cfg(feature = "unstable_rsa")]
-        KeyType::Rsa => {
+        (KeyType::Rsa, SignatureScheme::RsaSsaPssSha256)
+        | (KeyType::Rsa, SignatureScheme::RsaSsaPssSha512) => {
             let bytes = write_spki(public_key, key_type)?;
             BASE64URL.encode(&bytes)
         }
-        KeyType::Unknown(_) => {
-            let bytes = write_spki(public_key, key_type)?;
-            BASE64URL.encode(&bytes)
+        (_, _) => {
+            // We don't understand this key type and/or signature scheme, so we left it as a UTF-8 string.
+            std::str::from_utf8(public_key)
+                .map_err(|err| {
+                    Error::Encoding(format!(
+                        "error converting public key value {:?} with key \
+                        type {:?} and signature scheme {:?} to a string: {:?}",
+                        public_key, key_type, signature_scheme, err
+                    ))
+                })?
+                .to_string()
         }
     };
 
@@ -284,24 +294,69 @@ impl<'de> Deserialize<'de> for KeyId {
 
 /// Cryptographic signature schemes.
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SignatureScheme {
     /// [Ed25519](https://ed25519.cr.yp.to/)
-    #[serde(rename = "ed25519")]
     Ed25519,
 
     /// [RSASSA-PSS](https://tools.ietf.org/html/rfc5756) calculated over SHA256
     #[cfg(feature = "unstable_rsa")]
-    #[serde(rename = "rsassa-pss-sha256")]
     RsaSsaPssSha256,
 
     /// [RSASSA-PSS](https://tools.ietf.org/html/rfc5756) calculated over SHA512
     #[cfg(feature = "unstable_rsa")]
-    #[serde(rename = "rsassa-pss-sha512")]
     RsaSsaPssSha512,
 
     /// Placeholder for an unknown scheme.
     Unknown(String),
+}
+
+impl SignatureScheme {
+    /// Construct a signature scheme from a `&str`.
+    pub fn new(name: &str) -> Self {
+        match name {
+            "ed25519" => SignatureScheme::Ed25519,
+            #[cfg(feature = "unstable_rsa")]
+            "rsassa-pss-sha256" => SignatureScheme::RsaSsaPssSha256,
+            #[cfg(feature = "unstable_rsa")]
+            "rsassa-pss-sha512" => SignatureScheme::RsaSsaPssSha512,
+            scheme => SignatureScheme::Unknown(scheme.to_string()),
+        }
+    }
+
+    /// Return the signature scheme as a `&str`.
+    pub fn as_str(&self) -> &str {
+        match *self {
+            SignatureScheme::Ed25519 => "ed25519",
+            #[cfg(feature = "unstable_rsa")]
+            SignatureScheme::RsaSsaPssSha256 => "rsassa-pss-sha256",
+            #[cfg(feature = "unstable_rsa")]
+            SignatureScheme::RsaSsaPssSha512 => "rsassa-pss-sha512",
+            SignatureScheme::Unknown(ref s) => s,
+        }
+    }
+}
+
+impl Display for SignatureScheme {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for SignatureScheme {
+    fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ser.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for SignatureScheme {
+    fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
+        let string: String = Deserialize::deserialize(de)?;
+        Ok(Self::new(&string))
+    }
 }
 
 /// Wrapper type for the value of a cryptographic signature.
@@ -353,6 +408,26 @@ pub enum KeyType {
 }
 
 impl KeyType {
+    /// Construct a key type from a `&str`.
+    pub fn new(name: &str) -> Self {
+        match name {
+            "ed25519" => KeyType::Ed25519,
+            #[cfg(feature = "unstable_rsa")]
+            "rsa" => KeyType::Rsa,
+            keytype => KeyType::Unknown(keytype.to_string()),
+        }
+    }
+
+    /// Return the key type as a `&str`.
+    pub fn as_str(&self) -> &str {
+        match *self {
+            KeyType::Ed25519 => "ed25519",
+            #[cfg(feature = "unstable_rsa")]
+            KeyType::Rsa => "rsa",
+            KeyType::Unknown(ref s) => s,
+        }
+    }
+
     fn from_oid(oid: &[u8]) -> Result<Self> {
         match oid {
             #[cfg(feature = "unstable_rsa")]
@@ -375,27 +450,9 @@ impl KeyType {
     }
 }
 
-impl FromStr for KeyType {
-    type Err = Error;
-
-    fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
-        match s {
-            "ed25519" => Ok(KeyType::Ed25519),
-            #[cfg(feature = "unstable_rsa")]
-            "rsa" => Ok(KeyType::Rsa),
-            typ => Err(Error::Encoding(typ.into())),
-        }
-    }
-}
-
-impl ToString for KeyType {
-    fn to_string(&self) -> String {
-        match *self {
-            KeyType::Ed25519 => "ed25519".to_string(),
-            #[cfg(feature = "unstable_rsa")]
-            KeyType::Rsa => "rsa".to_string(),
-            KeyType::Unknown(ref s) => s.to_string(),
-        }
+impl Display for KeyType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -404,16 +461,14 @@ impl Serialize for KeyType {
     where
         S: Serializer,
     {
-        ser.serialize_str(&self.to_string())
+        ser.serialize_str(self.as_str())
     }
 }
 
 impl<'de> Deserialize<'de> for KeyType {
     fn deserialize<D: Deserializer<'de>>(de: D) -> ::std::result::Result<Self, D::Error> {
         let string: String = Deserialize::deserialize(de)?;
-        string
-            .parse()
-            .map_err(|e| DeserializeError::custom(format!("{:?}", e)))
+        Ok(Self::new(&string))
     }
 }
 
@@ -781,10 +836,7 @@ impl PublicKey {
             #[cfg(feature = "unstable_rsa")]
             SignatureScheme::RsaSsaPssSha512 => &RSA_PSS_2048_8192_SHA512,
             SignatureScheme::Unknown(ref s) => {
-                return Err(Error::IllegalArgument(format!(
-                    "Unknown signature scheme: {}",
-                    s
-                )));
+                return Err(Error::UnknownSignatureScheme(s.to_string()));
             }
         };
 
@@ -887,18 +939,14 @@ impl<'de> Deserialize<'de> for PublicKey {
                 })?
             }
             KeyType::Unknown(_) => {
-                let bytes = BASE64URL
-                    .decode(intermediate.public_key().as_bytes())
-                    .map_err(|e| DeserializeError::custom(format!("{:?}", e)))?;
-
-                PublicKey::from_spki_with_keyid_hash_algorithms(
-                    &bytes,
+                // We don't know this key type, so just leave it as a UTF-8 string.
+                PublicKey::new(
+                    intermediate.keytype().clone(),
                     intermediate.scheme().clone(),
                     intermediate.keyid_hash_algorithms().clone(),
+                    intermediate.public_key().as_bytes().to_vec(),
                 )
-                .map_err(|e| {
-                    DeserializeError::custom(format!("Couldn't parse key as SPKI: {:?}", e))
-                })?
+                .map_err(|e| DeserializeError::custom(format!("Couldn't parse key: {:?}", e)))?
             }
         };
 
@@ -1304,13 +1352,63 @@ mod test {
     }
 
     #[test]
+    fn unknown_keytype_cannot_verify() {
+        let pub_key = PublicKey::new(
+            KeyType::Unknown("unknown-keytype".into()),
+            SignatureScheme::Unknown("unknown-scheme".into()),
+            None,
+            b"unknown-key".to_vec(),
+        )
+        .unwrap();
+        let msg = b"test";
+        let sig = Signature {
+            key_id: KeyId("key-id".into()),
+            value: SignatureValue(b"sig-value".to_vec()),
+        };
+
+        assert_matches!(
+            pub_key.verify(msg, &sig),
+            Err(Error::UnknownSignatureScheme(s))
+            if s == "unknown-scheme"
+        );
+    }
+
+    #[test]
     fn serde_key_id() {
         let s = "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db";
         let jsn = json!(s);
-        let parsed: KeyId = serde_json::from_str(&format!("\"{}\"", s)).unwrap();
+        let parsed: KeyId = serde_json::from_value(jsn.clone()).unwrap();
         assert_eq!(parsed, KeyId::from_str(s).unwrap());
         let encoded = serde_json::to_value(&parsed).unwrap();
         assert_eq!(encoded, jsn);
+    }
+
+    #[test]
+    fn serde_key_type() {
+        let jsn = json!("ed25519");
+        let parsed: KeyType = serde_json::from_value(jsn.clone()).unwrap();
+        assert_eq!(parsed, KeyType::Ed25519);
+
+        let encoded = serde_json::to_value(&parsed).unwrap();
+        assert_eq!(encoded, jsn);
+
+        let jsn = json!("unknown");
+        let parsed: KeyType = serde_json::from_value(jsn).unwrap();
+        assert_eq!(parsed, KeyType::Unknown("unknown".into()));
+    }
+
+    #[test]
+    fn serde_signature_scheme() {
+        let jsn = json!("ed25519");
+        let parsed: SignatureScheme = serde_json::from_value(jsn.clone()).unwrap();
+        assert_eq!(parsed, SignatureScheme::Ed25519);
+
+        let encoded = serde_json::to_value(&parsed).unwrap();
+        assert_eq!(encoded, jsn);
+
+        let jsn = json!("unknown");
+        let parsed: SignatureScheme = serde_json::from_value(jsn).unwrap();
+        assert_eq!(parsed, SignatureScheme::Unknown("unknown".into()));
     }
 
     #[test]
@@ -1321,6 +1419,28 @@ mod test {
         assert_eq!(parsed, SignatureValue::from_hex(s).unwrap());
         let encoded = serde_json::to_value(&parsed).unwrap();
         assert_eq!(encoded, jsn);
+    }
+
+    #[test]
+    fn serde_unknown_keytype_and_signature_scheme_public_key() {
+        let pub_key = PublicKey::new(
+            KeyType::Unknown("unknown-keytype".into()),
+            SignatureScheme::Unknown("unknown-scheme".into()),
+            None,
+            b"unknown-key".to_vec(),
+        )
+        .unwrap();
+        let encoded = serde_json::to_value(&pub_key).unwrap();
+        let jsn = json!({
+            "keytype": "unknown-keytype",
+            "scheme": "unknown-scheme",
+            "keyval": {
+                "public": "unknown-key",
+            }
+        });
+        assert_eq!(encoded, jsn);
+        let decoded: PublicKey = serde_json::from_value(jsn).unwrap();
+        assert_eq!(decoded, pub_key);
     }
 
     #[cfg(feature = "unstable_rsa")]

@@ -76,6 +76,10 @@ pub enum Error {
     #[error("unknown key type: {0}")]
     UnknownKeyType(String),
 
+    /// There is no known or available signature scheme.
+    #[error("unknown signature scheme: {0}")]
+    UnknownSignatureScheme(String),
+
     /// The metadata or target failed to verify.
     #[error("verification failure: {0}")]
     VerificationFailure(String),
