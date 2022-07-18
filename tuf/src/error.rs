@@ -107,6 +107,10 @@ pub enum Error {
     #[error("unknown key type: {0}")]
     UnknownKeyType(String),
 
+    /// There is no known or available signature scheme.
+    #[error("unknown signature scheme: {0}")]
+    UnknownSignatureScheme(String),
+
     /// The metadata threshold cannot equal 0.
     #[error("metadata {0} threshold must be greater than zero")]
     MetadataThresholdMustBeGreaterThanZero(MetadataPath),

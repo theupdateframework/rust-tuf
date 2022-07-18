@@ -205,7 +205,7 @@ fn shim_public_key(
         #[cfg(feature = "unstable_rsa")]
         (KeyType::Rsa, SignatureScheme::RsaSsaPssSha256)
         | (KeyType::Rsa, SignatureScheme::RsaSsaPssSha512) => {
-            let bytes = write_spki(public_key, key_type)?;
+            let bytes = write_spki(public_key, key_type).map_err(derp_error_to_error)?;
             BASE64URL.encode(&bytes)
         }
         (_, _) => {
@@ -243,8 +243,7 @@ fn calculate_key_id(
         signature_scheme,
         keyid_hash_algorithms,
         public_key,
-    )
-    .map_err(derp_error_to_error)?;
+    )?;
     let public_key = Json::canonicalize(&Json::serialize(&public_key)?)?;
     let mut context = digest::Context::new(&SHA256);
     context.update(&public_key);
@@ -1371,6 +1370,7 @@ mod test {
             b"unknown-key".to_vec(),
         )
         .unwrap();
+        let role = MetadataPath::root();
         let msg = b"test";
         let sig = Signature {
             key_id: KeyId("key-id".into()),
@@ -1378,7 +1378,7 @@ mod test {
         };
 
         assert_matches!(
-            pub_key.verify(msg, &sig),
+            pub_key.verify(&role, msg, &sig),
             Err(Error::UnknownSignatureScheme(s))
             if s == "unknown-scheme"
         );
