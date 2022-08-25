@@ -15,7 +15,7 @@ use {
         },
         repository::RepositoryStorage,
     },
-    chrono::{Duration, Utc},
+    chrono::{DateTime, Duration, Utc},
     futures_io::{AsyncRead, AsyncSeek},
     futures_util::AsyncSeekExt as _,
     std::{collections::HashMap, io::SeekFrom, marker::PhantomData},
@@ -198,6 +198,7 @@ where
 {
     repo: R,
     db: Option<&'a Database<D>>,
+    current_time: DateTime<Utc>,
     signing_root_keys: Vec<&'a dyn PrivateKey>,
     signing_targets_keys: Vec<&'a dyn PrivateKey>,
     signing_snapshot_keys: Vec<&'a dyn PrivateKey>,
@@ -276,6 +277,7 @@ where
             ctx: RepoContext {
                 repo,
                 db: None,
+                current_time: Utc::now(),
                 signing_root_keys: vec![],
                 signing_targets_keys: vec![],
                 signing_snapshot_keys: vec![],
@@ -359,6 +361,7 @@ where
             ctx: RepoContext {
                 repo,
                 db: Some(db),
+                current_time: Utc::now(),
                 signing_root_keys: vec![],
                 signing_targets_keys: vec![],
                 signing_snapshot_keys: vec![],
@@ -371,6 +374,15 @@ where
             },
             state: Root { builder },
         }
+    }
+
+    /// Change the time the builder will use to see if metadata is expired, and the base time to use
+    /// to compute the next expiration.
+    ///
+    /// Default is the current wall clock time in UTC.
+    pub fn current_time(mut self, current_time: DateTime<Utc>) -> Self {
+        self.ctx.current_time = current_time;
+        self
     }
 
     /// Sign the root metadata with `keys`, but do not include the keys as trusted root keys in the
@@ -535,7 +547,7 @@ where
             .state
             .builder
             .version(next_version)
-            .expires(Utc::now() + Duration::days(365));
+            .expires(self.ctx.current_time + Duration::days(365));
         let root = f(root_builder).build()?;
 
         let raw_root = sign(
@@ -593,7 +605,8 @@ where
             return true;
         };
 
-        if root.expires() <= &Utc::now() {
+        // We need a new root if the metadata expired.
+        if root.expires() <= &self.ctx.current_time {
             return true;
         }
 
@@ -914,7 +927,7 @@ where
 
         let mut snapshot_builder = SnapshotMetadataBuilder::new()
             .version(next_version)
-            .expires(Utc::now() + Duration::days(7));
+            .expires(self.ctx.current_time + Duration::days(7));
 
         // Insert all the metadata from the trusted snapshot.
         if self.state.inherit_targets {
@@ -1087,7 +1100,7 @@ where
 
         let timestamp_builder = TimestampMetadataBuilder::from_metadata_description(description)
             .version(next_version)
-            .expires(Utc::now() + Duration::days(1));
+            .expires(self.ctx.current_time + Duration::days(1));
 
         let timestamp = f(timestamp_builder).build()?;
         let raw_timestamp = sign(
@@ -1219,18 +1232,16 @@ where
             });
         };
 
-        let now = Utc::now();
-
         if let Some(ref timestamp) = self.state.staged_timestamp {
-            db.update_timestamp(&now, &timestamp.raw)?;
+            db.update_timestamp(&self.ctx.current_time, &timestamp.raw)?;
         }
 
         if let Some(ref snapshot) = self.state.staged_snapshot {
-            db.update_snapshot(&now, &snapshot.raw)?;
+            db.update_snapshot(&self.ctx.current_time, &snapshot.raw)?;
         }
 
         if let Some(ref targets) = self.state.staged_targets {
-            db.update_targets(&now, &targets.raw)?;
+            db.update_targets(&self.ctx.current_time, &targets.raw)?;
         }
 
         Ok(())
