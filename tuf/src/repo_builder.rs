@@ -686,7 +686,7 @@ where
     /// new snapshot.
     ///
     /// Default is `[HashAlgorithm::Sha256]`.
-    pub fn file_hash_algorithms(mut self, algorithms: &[HashAlgorithm]) -> Self {
+    pub fn target_hash_algorithms(mut self, algorithms: &[HashAlgorithm]) -> Self {
         self.state.file_hash_algorithms = algorithms.to_vec();
         self
     }
@@ -2116,7 +2116,7 @@ mod tests {
                 .add_target(target_path1.clone(), Cursor::new(target_file1))
                 .await
                 .unwrap()
-                .file_hash_algorithms(hash_algs)
+                .target_hash_algorithms(hash_algs)
                 .add_target(target_path2.clone(), Cursor::new(target_file2))
                 .await
                 .unwrap()
@@ -2204,7 +2204,7 @@ mod tests {
                 .trusted_timestamp_keys(&[&KEYS[0]])
                 .stage_root_with_builder(|builder| builder.consistent_snapshot(true))
                 .unwrap()
-                .file_hash_algorithms(hash_algs)
+                .target_hash_algorithms(hash_algs)
                 .add_target(target_path1.clone(), Cursor::new(target_file1))
                 .await
                 .unwrap()
@@ -2493,7 +2493,7 @@ mod tests {
                 .trusted_timestamp_keys(&[&KEYS[0]])
                 .stage_root()
                 .unwrap()
-                .file_hash_algorithms(hash_algs)
+                .target_hash_algorithms(hash_algs)
                 .add_target(target_path1.clone(), Cursor::new(target_file1))
                 .await
                 .unwrap()
@@ -2513,7 +2513,7 @@ mod tests {
                 .trusted_timestamp_keys(&[&KEYS[0]])
                 .stage_root()
                 .unwrap()
-                .file_hash_algorithms(hash_algs)
+                .target_hash_algorithms(hash_algs)
                 .add_target(target_path2.clone(), Cursor::new(target_file2))
                 .await
                 .unwrap()
