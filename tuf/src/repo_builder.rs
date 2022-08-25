@@ -1080,7 +1080,7 @@ where
                 .and_then(|db| db.trusted_timestamp())
                 .map(|timestamp| timestamp.snapshot().clone())
                 .ok_or_else(|| Error::MetadataNotFound {
-                    path: MetadataPath::timestamp(),
+                    path: MetadataPath::snapshot(),
                     version: MetadataVersion::None,
                 })?
         };
