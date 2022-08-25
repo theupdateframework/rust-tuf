@@ -2,16 +2,16 @@
 
 use {
     crate::{
-        crypto::{self, HashAlgorithm, PrivateKey},
+        crypto::{self, HashAlgorithm, PrivateKey, PublicKey},
         database::Database,
         error::{Error, Result},
         interchange::DataInterchange,
         metadata::{
-            Delegations, Metadata, MetadataDescription, MetadataPath, MetadataVersion,
-            RawSignedMetadata, RawSignedMetadataSet, RawSignedMetadataSetBuilder, RootMetadata,
-            RootMetadataBuilder, SignedMetadataBuilder, SnapshotMetadata, SnapshotMetadataBuilder,
-            TargetDescription, TargetPath, TargetsMetadata, TargetsMetadataBuilder,
-            TimestampMetadata, TimestampMetadataBuilder,
+            Delegation, DelegationsBuilder, Metadata, MetadataDescription, MetadataPath,
+            MetadataVersion, RawSignedMetadata, RawSignedMetadataSet, RawSignedMetadataSetBuilder,
+            RootMetadata, RootMetadataBuilder, SignedMetadataBuilder, SnapshotMetadata,
+            SnapshotMetadataBuilder, TargetDescription, TargetPath, TargetsMetadata,
+            TargetsMetadataBuilder, TimestampMetadata, TimestampMetadataBuilder,
         },
         repository::RepositoryStorage,
         verify::Verified,
@@ -58,7 +58,8 @@ impl State for Root {}
 pub struct Targets<D: DataInterchange> {
     staged_root: Option<Staged<D, RootMetadata>>,
     targets: HashMap<TargetPath, TargetDescription>,
-    delegations: Option<Delegations>,
+    delegation_keys: Vec<PublicKey>,
+    delegation_roles: Vec<Delegation>,
     file_hash_algorithms: Vec<HashAlgorithm>,
     inherit_from_trusted_targets: bool,
 }
@@ -68,7 +69,8 @@ impl<D: DataInterchange> Targets<D> {
         Self {
             staged_root,
             targets: HashMap::new(),
-            delegations: None,
+            delegation_keys: vec![],
+            delegation_roles: vec![],
             file_hash_algorithms: vec![HashAlgorithm::Sha256],
             inherit_from_trusted_targets: true,
         }
@@ -799,6 +801,18 @@ where
         Ok(self)
     }
 
+    /// Add a target delegation key.
+    pub fn add_delegation_key(mut self, key: PublicKey) -> Self {
+        self.state.delegation_keys.push(key);
+        self
+    }
+
+    /// Add a target delegation role.
+    pub fn add_delegation_role(mut self, delegation: Delegation) -> Self {
+        self.state.delegation_roles.push(delegation);
+        self
+    }
+
     /// Initialize a [TargetsMetadataBuilder] and pass it to the closure for further configuration.
     /// This builder will then be used to generate and stage a new [TargetsMetadata] for eventual
     /// commitment to the repository.
@@ -812,6 +826,7 @@ where
         F: FnOnce(TargetsMetadataBuilder) -> TargetsMetadataBuilder,
     {
         let mut targets_builder = TargetsMetadataBuilder::new();
+        let mut delegations_builder = DelegationsBuilder::new();
 
         if let Some(trusted_targets) = self.ctx.db.and_then(|db| db.trusted_targets()) {
             let next_version = trusted_targets.version().checked_add(1).ok_or_else(|| {
@@ -827,8 +842,12 @@ where
                         .insert_target_description(target_path.clone(), target_description.clone());
                 }
 
-                if let Some(delegations) = trusted_targets.delegations() {
-                    targets_builder = targets_builder.delegations(delegations.clone());
+                for key in trusted_targets.delegations().keys().values() {
+                    delegations_builder = delegations_builder.key(key.clone());
+                }
+
+                for role in trusted_targets.delegations().roles() {
+                    delegations_builder = delegations_builder.role(role.clone());
                 }
             }
         }
@@ -839,10 +858,17 @@ where
                 .insert_target_description(target_path.clone(), target_description.clone());
         }
 
-        // Overwrite the old delegations.
-        if let Some(delegations) = self.state.delegations {
-            targets_builder = targets_builder.delegations(delegations);
+        // Overwrite the old delegation keys.
+        for key in self.state.delegation_keys {
+            delegations_builder = delegations_builder.key(key);
         }
+
+        // Overwrite the old delegation roles.
+        for role in self.state.delegation_roles {
+            delegations_builder = delegations_builder.role(role);
+        }
+
+        targets_builder = targets_builder.delegations(delegations_builder.build()?);
 
         let targets = f(targets_builder).build()?;
 
@@ -2476,15 +2502,37 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_copies_targets_and_delegations_from_old_version() {
+    fn test_builder_inherits_from_trusted_targets() {
         block_on(async move {
             let mut repo = EphemeralRepository::<Json>::new();
 
             let expires = Utc.ymd(2038, 1, 4).and_hms(0, 0, 0);
             let hash_algs = &[HashAlgorithm::Sha256, HashAlgorithm::Sha512];
+            let delegation_key = &KEYS[0];
+            let delegation_path = MetadataPath::new("delegations").unwrap();
 
-            let target_path1 = TargetPath::new("foo").unwrap();
-            let target_file1: &[u8] = b"foo file";
+            let target_path1 = TargetPath::new("target1").unwrap();
+            let target_file1: &[u8] = b"target1 file";
+
+            let delegated_target_path1 = TargetPath::new("delegations/delegation1").unwrap();
+            let delegated_target_file1: &[u8] = b"delegation1 file";
+
+            let delegation1 = Delegation::builder(delegation_path.clone())
+                .key(delegation_key.public())
+                .delegate_path(TargetPath::new("delegations/").unwrap())
+                .build()
+                .unwrap();
+
+            let delegated_targets1 = TargetsMetadataBuilder::new()
+                .insert_target_from_slice(
+                    delegated_target_path1,
+                    delegated_target_file1,
+                    &[HashAlgorithm::Sha256],
+                )
+                .unwrap()
+                .signed::<Json>(delegation_key)
+                .unwrap();
+            let raw_delegated_targets = delegated_targets1.to_raw().unwrap();
 
             let metadata1 = RepoBuilder::create(&mut repo)
                 .trusted_root_keys(&[&KEYS[0]])
@@ -2497,16 +2545,54 @@ mod tests {
                 .add_target(target_path1.clone(), Cursor::new(target_file1))
                 .await
                 .unwrap()
+                .add_delegation_key(delegation_key.public().clone())
+                .add_delegation_role(delegation1.clone())
+                .stage_targets()
+                .unwrap()
+                .stage_snapshot_with_builder(|builder| {
+                    builder.insert_metadata_description(
+                        delegation_path.clone(),
+                        MetadataDescription::from_slice(
+                            raw_delegated_targets.as_bytes(),
+                            1,
+                            &[HashAlgorithm::Sha256],
+                        )
+                        .unwrap(),
+                    )
+                })
+                .unwrap()
                 .commit()
                 .await
                 .unwrap();
 
+            // Next, create a new commit where we add a new target and delegation. This should copy
+            // over the old targets and delegations.
+            let mut database = Database::from_trusted_metadata(&metadata1).unwrap();
+
             let target_path2 = TargetPath::new("bar").unwrap();
             let target_file2: &[u8] = b"bar file";
 
-            let mut database = Database::from_trusted_metadata(&metadata1).unwrap();
+            let delegated_target_path2 = TargetPath::new("delegations/delegation2").unwrap();
+            let delegated_target_file2: &[u8] = b"delegation2 file";
 
-            let bld = RepoBuilder::from_database(&mut repo, &database)
+            let delegation2 = Delegation::builder(delegation_path.clone())
+                .key(delegation_key.public())
+                .delegate_path(TargetPath::new("delegations/").unwrap())
+                .build()
+                .unwrap();
+
+            let delegated_targets2 = TargetsMetadataBuilder::new()
+                .insert_target_from_slice(
+                    delegated_target_path2,
+                    delegated_target_file2,
+                    &[HashAlgorithm::Sha256],
+                )
+                .unwrap()
+                .signed::<Json>(delegation_key)
+                .unwrap();
+            let raw_delegated_targets = delegated_targets2.to_raw().unwrap();
+
+            let metadata2 = RepoBuilder::from_database(&mut repo, &database)
                 .trusted_root_keys(&[&KEYS[0]])
                 .trusted_targets_keys(&[&KEYS[0]])
                 .trusted_snapshot_keys(&[&KEYS[0]])
@@ -2517,10 +2603,24 @@ mod tests {
                 .add_target(target_path2.clone(), Cursor::new(target_file2))
                 .await
                 .unwrap()
+                .add_delegation_role(delegation2.clone())
                 .stage_targets_with_builder(|b| b.expires(expires))
+                .unwrap()
+                .stage_snapshot_with_builder(|builder| {
+                    builder.insert_metadata_description(
+                        delegation_path.clone(),
+                        MetadataDescription::from_slice(
+                            raw_delegated_targets.as_bytes(),
+                            1,
+                            &[HashAlgorithm::Sha256],
+                        )
+                        .unwrap(),
+                    )
+                })
+                .unwrap()
+                .commit()
+                .await
                 .unwrap();
-
-            let metadata2 = bld.commit().await.unwrap();
 
             database.update_metadata(&metadata2).unwrap();
 
@@ -2533,6 +2633,14 @@ mod tests {
                     .unwrap()
                     .insert_target_from_slice(target_path2.clone(), target_file2, hash_algs)
                     .unwrap()
+                    .delegations(
+                        DelegationsBuilder::new()
+                            .key(delegation_key.public().clone())
+                            .role(delegation1)
+                            .role(delegation2)
+                            .build()
+                            .unwrap()
+                    )
                     .build()
                     .unwrap()
             )

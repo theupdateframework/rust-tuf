@@ -995,17 +995,7 @@ where
             return (default_terminate, Ok(t.clone()));
         }
 
-        let delegations = match targets.delegations() {
-            Some(d) => d,
-            None => {
-                return (
-                    default_terminate,
-                    Err(Error::TargetNotFound(target.clone())),
-                )
-            }
-        };
-
-        for delegation in delegations.roles().iter() {
+        for delegation in targets.delegations().roles() {
             if !delegation.paths().iter().any(|p| target.is_child(p)) {
                 if delegation.terminating() {
                     return (true, Err(Error::TargetNotFound(target.clone())));
