@@ -2043,7 +2043,7 @@ impl Delegations {
         if roles.len()
             != roles
                 .iter()
-                .map(|r| &r.role)
+                .map(|r| &r.name)
                 .collect::<HashSet<&MetadataPath>>()
                 .len()
         {
@@ -2087,7 +2087,7 @@ impl<'de> Deserialize<'de> for Delegations {
 /// A delegated targets role.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Delegation {
-    role: MetadataPath,
+    name: MetadataPath,
     terminating: bool,
     threshold: u32,
     key_ids: HashSet<KeyId>,
@@ -2097,7 +2097,7 @@ pub struct Delegation {
 impl Delegation {
     /// Create a new delegation.
     pub fn new(
-        role: MetadataPath,
+        name: MetadataPath,
         terminating: bool,
         threshold: u32,
         key_ids: HashSet<KeyId>,
@@ -2122,7 +2122,7 @@ impl Delegation {
         }
 
         Ok(Delegation {
-            role,
+            name,
             terminating,
             threshold,
             key_ids,
@@ -2131,8 +2131,8 @@ impl Delegation {
     }
 
     /// An immutable reference to the delegations's metadata path (role).
-    pub fn role(&self) -> &MetadataPath {
-        &self.role
+    pub fn name(&self) -> &MetadataPath {
+        &self.name
     }
 
     /// Whether or not this delegation is terminating.
@@ -3002,7 +3002,7 @@ mod test {
                 },
                 "roles": [
                     {
-                        "role": "foo/bar",
+                        "name": "foo/bar",
                         "terminating": false,
                         "threshold": 1,
                         "keyids": ["a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a"],
