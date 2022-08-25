@@ -5,7 +5,7 @@ authors = [ "heartsucker <heartsucker@autistici.org>", "Erick Tryzelaar <etryzel
 description = "TUF library interoperation tests"
 homepage = "https://github.com/theupdateframework/rust-tuf"
 repository = "https://github.com/theupdateframework/rust-tuf"
-edition = "2018"
+edition = "2021"
 readme = "README.md"
 license = "MIT/Apache-2.0"
 publish = false
@@ -17,7 +17,7 @@ futures-executor = "0.3.1"
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
-tuf = { version = "0.3.0-beta5", path = "../tuf" }
+tuf = { version = "0.3.0-beta10", path = "../tuf" }
 walkdir = "2.3.2"
 
 [dev-dependencies]
