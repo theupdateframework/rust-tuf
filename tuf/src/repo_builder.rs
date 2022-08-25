@@ -7,11 +7,11 @@ use {
         error::{Error, Result},
         interchange::DataInterchange,
         metadata::{
-            Metadata, MetadataDescription, MetadataPath, MetadataVersion, RawSignedMetadata,
-            RawSignedMetadataSet, RawSignedMetadataSetBuilder, RootMetadata, RootMetadataBuilder,
-            SignedMetadataBuilder, SnapshotMetadata, SnapshotMetadataBuilder, TargetDescription,
-            TargetPath, TargetsMetadata, TargetsMetadataBuilder, TimestampMetadata,
-            TimestampMetadataBuilder,
+            Delegations, Metadata, MetadataDescription, MetadataPath, MetadataVersion,
+            RawSignedMetadata, RawSignedMetadataSet, RawSignedMetadataSetBuilder, RootMetadata,
+            RootMetadataBuilder, SignedMetadataBuilder, SnapshotMetadata, SnapshotMetadataBuilder,
+            TargetDescription, TargetPath, TargetsMetadata, TargetsMetadataBuilder,
+            TimestampMetadata, TimestampMetadataBuilder,
         },
         repository::RepositoryStorage,
         verify::Verified,
@@ -58,7 +58,9 @@ impl State for Root {}
 pub struct Targets<D: DataInterchange> {
     staged_root: Option<Staged<D, RootMetadata>>,
     targets: HashMap<TargetPath, TargetDescription>,
+    delegations: Option<Delegations>,
     file_hash_algorithms: Vec<HashAlgorithm>,
+    inherit_from_trusted_targets: bool,
 }
 
 impl<D: DataInterchange> Targets<D> {
@@ -66,7 +68,9 @@ impl<D: DataInterchange> Targets<D> {
         Self {
             staged_root,
             targets: HashMap::new(),
+            delegations: None,
             file_hash_algorithms: vec![HashAlgorithm::Sha256],
+            inherit_from_trusted_targets: true,
         }
     }
 }
@@ -80,7 +84,7 @@ pub struct Snapshot<D: DataInterchange> {
     staged_targets: Option<Staged<D, TargetsMetadata>>,
     include_targets_length: bool,
     targets_hash_algorithms: Vec<HashAlgorithm>,
-    inherit_targets: bool,
+    inherit_from_trusted_snapshot: bool,
 }
 
 impl<D: DataInterchange> State for Snapshot<D> {}
@@ -95,7 +99,7 @@ impl<D: DataInterchange> Snapshot<D> {
             staged_targets,
             include_targets_length: false,
             targets_hash_algorithms: vec![],
-            inherit_targets: true,
+            inherit_from_trusted_snapshot: true,
         }
     }
 
@@ -687,6 +691,15 @@ where
         self
     }
 
+    /// Whether or not the new targets metadata inherits targets and delegations from the trusted
+    /// targets metadata.
+    ///
+    /// Default is `true`.
+    pub fn inherit_from_trusted_targets(mut self, inherit: bool) -> Self {
+        self.state.inherit_from_trusted_targets = inherit;
+        self
+    }
+
     /// Stage a targets metadata using the default settings.
     pub fn stage_targets(self) -> Result<RepoBuilder<'a, D, R, Snapshot<D>>> {
         self.stage_targets_with_builder(|builder| builder)
@@ -806,12 +819,29 @@ where
             })?;
 
             targets_builder = targets_builder.version(next_version);
+
+            // Insert all the metadata from the trusted snapshot.
+            if self.state.inherit_from_trusted_targets {
+                for (target_path, target_description) in trusted_targets.targets() {
+                    targets_builder = targets_builder
+                        .insert_target_description(target_path.clone(), target_description.clone());
+                }
+
+                if let Some(delegations) = trusted_targets.delegations() {
+                    targets_builder = targets_builder.delegations(delegations.clone());
+                }
+            }
         }
 
         // Overwrite any of the old targets with the new ones.
         for (target_path, target_description) in self.state.targets {
             targets_builder = targets_builder
                 .insert_target_description(target_path.clone(), target_description.clone());
+        }
+
+        // Overwrite the old delegations.
+        if let Some(delegations) = self.state.delegations {
+            targets_builder = targets_builder.delegations(delegations);
         }
 
         let targets = f(targets_builder).build()?;
@@ -915,12 +945,11 @@ where
         self
     }
 
-    /// Whether or not to inherit targets, and delegated targets, from the trusted snapshot in the
-    /// new snapshot.
+    /// Whether or not the new snapshot to inherit metafiles from the trusted snapshot.
     ///
     /// Default is `true`.
-    pub fn inherit_targets(mut self, inherit_targets: bool) -> Self {
-        self.state.inherit_targets = inherit_targets;
+    pub fn inherit_from_trusted_snapshot(mut self, inherit: bool) -> Self {
+        self.state.inherit_from_trusted_snapshot = inherit;
         self
     }
 
@@ -961,30 +990,21 @@ where
     where
         F: FnOnce(SnapshotMetadataBuilder) -> SnapshotMetadataBuilder,
     {
-        let next_version = if let Some(db) = self.ctx.db {
-            if let Some(trusted_snapshot) = db.trusted_snapshot() {
-                trusted_snapshot.version().checked_add(1).ok_or_else(|| {
-                    Error::MetadataVersionMustBeSmallerThanMaxU32(MetadataPath::snapshot())
-                })?
-            } else {
-                1
-            }
-        } else {
-            1
-        };
+        let mut snapshot_builder =
+            SnapshotMetadataBuilder::new().expires(self.ctx.current_time + Duration::days(7));
 
-        let mut snapshot_builder = SnapshotMetadataBuilder::new()
-            .version(next_version)
-            .expires(self.ctx.current_time + Duration::days(7));
+        if let Some(trusted_snapshot) = self.ctx.db.and_then(|db| db.trusted_snapshot()) {
+            let next_version = trusted_snapshot.version().checked_add(1).ok_or_else(|| {
+                Error::MetadataVersionMustBeSmallerThanMaxU32(MetadataPath::snapshot())
+            })?;
 
-        // Insert all the metadata from the trusted snapshot.
-        if self.state.inherit_targets {
-            if let Some(db) = self.ctx.db {
-                if let Some(snapshot) = db.trusted_snapshot() {
-                    for (path, description) in snapshot.meta() {
-                        snapshot_builder = snapshot_builder
-                            .insert_metadata_description(path.clone(), description.clone());
-                    }
+            snapshot_builder = snapshot_builder.version(next_version);
+
+            // Insert all the metadata from the trusted snapshot.
+            if self.state.inherit_from_trusted_snapshot {
+                for (path, description) in trusted_snapshot.meta() {
+                    snapshot_builder = snapshot_builder
+                        .insert_metadata_description(path.clone(), description.clone());
                 }
             }
         }
@@ -2452,6 +2472,70 @@ mod tests {
             );
 
             assert_repo(&remote, &expected_metadata);
+        })
+    }
+
+    #[test]
+    fn test_builder_copies_targets_and_delegations_from_old_version() {
+        block_on(async move {
+            let mut repo = EphemeralRepository::<Json>::new();
+
+            let expires = Utc.ymd(2038, 1, 4).and_hms(0, 0, 0);
+            let hash_algs = &[HashAlgorithm::Sha256, HashAlgorithm::Sha512];
+
+            let target_path1 = TargetPath::new("foo").unwrap();
+            let target_file1: &[u8] = b"foo file";
+
+            let metadata1 = RepoBuilder::create(&mut repo)
+                .trusted_root_keys(&[&KEYS[0]])
+                .trusted_targets_keys(&[&KEYS[0]])
+                .trusted_snapshot_keys(&[&KEYS[0]])
+                .trusted_timestamp_keys(&[&KEYS[0]])
+                .stage_root()
+                .unwrap()
+                .file_hash_algorithms(hash_algs)
+                .add_target(target_path1.clone(), Cursor::new(target_file1))
+                .await
+                .unwrap()
+                .commit()
+                .await
+                .unwrap();
+
+            let target_path2 = TargetPath::new("bar").unwrap();
+            let target_file2: &[u8] = b"bar file";
+
+            let mut database = Database::from_trusted_metadata(&metadata1).unwrap();
+
+            let bld = RepoBuilder::from_database(&mut repo, &database)
+                .trusted_root_keys(&[&KEYS[0]])
+                .trusted_targets_keys(&[&KEYS[0]])
+                .trusted_snapshot_keys(&[&KEYS[0]])
+                .trusted_timestamp_keys(&[&KEYS[0]])
+                .stage_root()
+                .unwrap()
+                .file_hash_algorithms(hash_algs)
+                .add_target(target_path2.clone(), Cursor::new(target_file2))
+                .await
+                .unwrap()
+                .stage_targets_with_builder(|b| b.expires(expires))
+                .unwrap();
+
+            let metadata2 = bld.commit().await.unwrap();
+
+            database.update_metadata(&metadata2).unwrap();
+
+            assert_eq!(
+                &**database.trusted_targets().unwrap(),
+                &TargetsMetadataBuilder::new()
+                    .version(2)
+                    .expires(expires)
+                    .insert_target_from_slice(target_path1.clone(), target_file1, hash_algs)
+                    .unwrap()
+                    .insert_target_from_slice(target_path2.clone(), target_file2, hash_algs)
+                    .unwrap()
+                    .build()
+                    .unwrap()
+            )
         })
     }
 
