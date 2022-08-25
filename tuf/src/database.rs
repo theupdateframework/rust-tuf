@@ -850,7 +850,7 @@ impl<D: DataInterchange> Database<D> {
         };
 
         for trusted_delegation in trusted_delegations.roles() {
-            if trusted_delegation.role() != role {
+            if trusted_delegation.name() != role {
                 continue;
             }
 
@@ -898,21 +898,21 @@ impl<D: DataInterchange> Database<D> {
             return Ok(d.clone());
         }
 
-        fn lookup<D: DataInterchange>(
+        fn lookup<'a, D: DataInterchange>(
             start_time: &DateTime<Utc>,
-            tuf: &Database<D>,
+            tuf: &'a Database<D>,
             default_terminate: bool,
             current_depth: u32,
             target_path: &TargetPath,
-            delegations: &Delegations,
+            delegations: &'a Delegations,
             parents: &[HashSet<TargetPath>],
-            visited: &mut HashSet<MetadataPath>,
+            visited: &mut HashSet<&'a MetadataPath>,
         ) -> (bool, Option<TargetDescription>) {
             for delegation in delegations.roles() {
-                if visited.contains(delegation.role()) {
+                if visited.contains(delegation.name()) {
                     return (delegation.terminating(), None);
                 }
-                let _ = visited.insert(delegation.role().clone());
+                let _ = visited.insert(delegation.name());
 
                 let mut new_parents = parents.to_owned();
                 new_parents.push(delegation.paths().clone());
@@ -921,7 +921,7 @@ impl<D: DataInterchange> Database<D> {
                     return (delegation.terminating(), None);
                 }
 
-                let trusted_delegation = match tuf.trusted_delegations.get(delegation.role()) {
+                let trusted_delegation = match tuf.trusted_delegations.get(delegation.name()) {
                     Some(trusted_delegation) => trusted_delegation,
                     None => return (delegation.terminating(), None),
                 };
