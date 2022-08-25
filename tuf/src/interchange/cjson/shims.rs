@@ -276,8 +276,8 @@ pub struct TargetsMetadata {
     version: u32,
     expires: String,
     targets: BTreeMap<metadata::TargetPath, metadata::TargetDescription>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    delegations: Option<metadata::Delegations>,
+    #[serde(default, skip_serializing_if = "metadata::Delegations::is_empty")]
+    delegations: metadata::Delegations,
 }
 
 impl TargetsMetadata {
@@ -292,7 +292,7 @@ impl TargetsMetadata {
                 .iter()
                 .map(|(p, d)| (p.clone(), d.clone()))
                 .collect(),
-            delegations: metadata.delegations().cloned(),
+            delegations: metadata.delegations().clone(),
         })
     }
 

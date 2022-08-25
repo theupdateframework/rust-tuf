@@ -680,7 +680,7 @@ impl<D: DataInterchange> Database<D> {
             let _ = self.trusted_snapshot_unexpired(start_time)?;
             let trusted_targets = self.trusted_targets_unexpired(start_time)?;
 
-            if trusted_targets.delegations().is_none() {
+            if trusted_targets.delegations().is_empty() {
                 return Err(Error::UnauthorizedDelegation {
                     parent_role: parent_role.clone(),
                     child_role: role.clone(),
@@ -844,10 +844,7 @@ impl<D: DataInterchange> Database<D> {
         };
 
         // Only consider targets metadata that define delegations.
-        let trusted_delegations = match trusted_parent.delegations() {
-            Some(d) => d,
-            None => return Ok(None),
-        };
+        let trusted_delegations = trusted_parent.delegations();
 
         for trusted_delegation in trusted_delegations.roles() {
             if trusted_delegation.name() != role {
@@ -934,7 +931,10 @@ impl<D: DataInterchange> Database<D> {
                     return (delegation.terminating(), Some(target.clone()));
                 }
 
-                if let Some(trusted_child_delegation) = trusted_delegation.delegations() {
+                let trusted_child_delegations = trusted_delegation.delegations();
+
+                // We only need to check the child delegations if it delegates to any child roles.
+                if !trusted_child_delegations.roles().is_empty() {
                     let mut new_parents = parents.to_vec();
                     new_parents.push(delegation.paths().clone());
                     let (term, res) = lookup(
@@ -943,7 +943,7 @@ impl<D: DataInterchange> Database<D> {
                         delegation.terminating(),
                         current_depth + 1,
                         target_path,
-                        trusted_child_delegation,
+                        trusted_child_delegations,
                         &new_parents,
                         visited,
                     );
@@ -957,23 +957,23 @@ impl<D: DataInterchange> Database<D> {
             (default_terminate, None)
         }
 
-        match targets.delegations() {
-            Some(d) => {
-                let mut visited = HashSet::new();
-                lookup(
-                    start_time,
-                    self,
-                    false,
-                    0,
-                    target_path,
-                    d,
-                    &[],
-                    &mut visited,
-                )
-                .1
-                .ok_or_else(|| Error::TargetNotFound(target_path.clone()))
-            }
-            None => Err(Error::TargetNotFound(target_path.clone())),
+        let delegations = targets.delegations();
+        if delegations.roles().is_empty() {
+            Err(Error::TargetNotFound(target_path.clone()))
+        } else {
+            let mut visited = HashSet::new();
+            lookup(
+                start_time,
+                self,
+                false,
+                0,
+                target_path,
+                delegations,
+                &[],
+                &mut visited,
+            )
+            .1
+            .ok_or_else(|| Error::TargetNotFound(target_path.clone()))
         }
     }
 
