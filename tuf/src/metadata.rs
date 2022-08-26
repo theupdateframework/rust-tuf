@@ -904,7 +904,7 @@ pub struct RoleDefinition {
 }
 
 impl RoleDefinition {
-    /// Create a new [RoleDefinition] with a given threshold and set of authorized [KeyID]s.
+    /// Create a new [RoleDefinition] with a given threshold and set of authorized [KeyId]s.
     pub fn new(threshold: u32, key_ids: HashSet<KeyId>) -> Result<Self> {
         if threshold < 1 {
             return Err(Error::IllegalArgument(format!("Threshold: {}", threshold)));
