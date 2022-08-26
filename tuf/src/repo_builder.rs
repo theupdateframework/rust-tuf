@@ -669,14 +669,14 @@ where
 
     /// Check if we need a new root database.
     fn need_new_root(&self) -> bool {
-        // If we don't have a database yet, we need to stage the first root metadata.
+        // We need a new root metadata if we don't have a database yet.
         let trusted_root = if let Some(db) = self.ctx.db {
             db.trusted_root()
         } else {
             return true;
         };
 
-        // We need a new root if the metadata expired.
+        // We need a new root metadata if the metadata expired.
         if trusted_root.expires() <= &self.ctx.current_time {
             return true;
         }
@@ -929,31 +929,31 @@ where
     }
 
     fn need_new_targets(&self) -> bool {
-        // We need a new targets if we added and targets.
+        // We need a new targets metadata if we added any targets.
         if !self.state.targets.is_empty() {
             return true;
         }
 
-        // We need a new targets if we staged a new root.
+        // We need a new targets metadata if we staged a new root.
         if self.state.staged_root.is_some() {
             return true;
         }
 
-        // We need a new targets if we don't have a database yet.
+        // We need a new targets metadata if we don't have a database yet.
         let db = if let Some(ref db) = self.ctx.db {
             db
         } else {
             return true;
         };
 
-        // We need a new targets if the database doesn't have a targets.
+        // We need a new targets metadata if the database doesn't have a targets.
         let trusted_targets = if let Some(trusted_targets) = db.trusted_targets() {
             trusted_targets
         } else {
             return true;
         };
 
-        // We need a new targets if the metadata expired.
+        // We need a new targets metadata if the metadata expired.
         if trusted_targets.expires() <= &self.ctx.current_time {
             return true;
         }
@@ -1098,31 +1098,31 @@ where
     }
 
     fn need_new_snapshot(&self) -> bool {
-        // We need a new snapshot if we staged a new root.
+        // We need a new snapshot metadata if we staged a new root.
         if self.state.staged_root.is_some() {
             return true;
         }
 
-        // We need a new timestamp if we staged a new targets.
+        // We need a new snapshot metadata if we staged a new targets.
         if self.state.staged_targets.is_some() {
             return true;
         }
 
-        // We need a new timestamp if we don't have a database yet.
+        // We need a new snapshot metadata if we don't have a database yet.
         let db = if let Some(ref db) = self.ctx.db {
             db
         } else {
             return true;
         };
 
-        // We need a new snapshot if the database doesn't have a snapshot.
+        // We need a new snapshot metadata if the database doesn't have a snapshot.
         let trusted_snapshot = if let Some(trusted_snapshot) = db.trusted_snapshot() {
             trusted_snapshot
         } else {
             return true;
         };
 
-        // We need a new snapshot if the metadata expired.
+        // We need a new snapshot metadata if the metadata expired.
         if trusted_snapshot.expires() <= &self.ctx.current_time {
             return true;
         }
@@ -1267,31 +1267,31 @@ where
     }
 
     fn need_new_timestamp(&self) -> bool {
-        // We need a new timestamp if we staged a new root.
+        // We need a new timestamp metadata if we staged a new root.
         if self.state.staged_root.is_some() {
             return true;
         }
 
-        // We need a new timestamp if we staged a new snapshot.
+        // We need a new timestamp metadata if we staged a new snapshot.
         if self.state.staged_snapshot.is_some() {
             return true;
         }
 
-        // We need a new timestamp if we don't have a database yet.
+        // We need a new timestamp metadata if we don't have a database yet.
         let db = if let Some(ref db) = self.ctx.db {
             db
         } else {
             return true;
         };
 
-        // We need a new timestamp if the database doesn't have a timestamp.
+        // We need a new timestamp metadata if the database doesn't have a timestamp.
         let trusted_timestamp = if let Some(trusted_timestamp) = db.trusted_timestamp() {
             trusted_timestamp
         } else {
             return true;
         };
 
-        // We need a new timestamp if the metadata expired.
+        // We need a new timestamp metadata if the metadata expired.
         if trusted_timestamp.expires() <= &self.ctx.current_time {
             return true;
         }
