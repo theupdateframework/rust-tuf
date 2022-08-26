@@ -744,7 +744,7 @@ where
 
     /// Add a target that's loaded in from the reader. This will store the target in the repository.
     ///
-    /// This will hash the file with the hash specified in [RepoBuilder::file_hash_algorithms]. If
+    /// This will hash the file with the hash specified in [RepoBuilder::target_hash_algorithms]. If
     /// none was specified, the file will be hashed with [HashAlgorithm::Sha256].
     pub async fn add_target<Rd>(
         self,
@@ -760,7 +760,7 @@ where
 
     /// Add a target that's loaded in from the reader. This will store the target in the repository.
     ///
-    /// This will hash the file with the hash specified in [RepoBuilder::file_hash_algorithms]. If
+    /// This will hash the file with the hash specified in [RepoBuilder::target_hash_algorithms]. If
     /// none was specified, the file will be hashed with [HashAlgorithm::Sha256].
     pub async fn add_target_with_custom<Rd>(
         mut self,
