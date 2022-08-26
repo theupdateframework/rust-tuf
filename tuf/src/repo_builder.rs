@@ -228,8 +228,8 @@ where
             return true;
         }
 
-        for &key in &self.trusted_root_keys {
-            if !root.root_keys().any(|x| x == key.public()) {
+        for key in &self.trusted_root_keys {
+            if root.root().key_ids().get(key.public().key_id()).is_none() {
                 return true;
             }
         }
@@ -238,7 +238,12 @@ where
     }
     fn targets_keys_changed(&self, root: &Verified<RootMetadata>) -> bool {
         for key in &self.trusted_targets_keys {
-            if !root.targets_keys().any(|x| x == key.public()) {
+            if root
+                .targets()
+                .key_ids()
+                .get(key.public().key_id())
+                .is_none()
+            {
                 return true;
             }
         }
@@ -248,7 +253,12 @@ where
 
     fn snapshot_keys_changed(&self, root: &Verified<RootMetadata>) -> bool {
         for key in &self.trusted_snapshot_keys {
-            if !root.snapshot_keys().any(|x| x == key.public()) {
+            if root
+                .snapshot()
+                .key_ids()
+                .get(key.public().key_id())
+                .is_none()
+            {
                 return true;
             }
         }
@@ -258,7 +268,12 @@ where
 
     fn timestamp_keys_changed(&self, root: &Verified<RootMetadata>) -> bool {
         for key in &self.trusted_timestamp_keys {
-            if !root.timestamp_keys().any(|x| x == key.public()) {
+            if root
+                .timestamp()
+                .key_ids()
+                .get(key.public().key_id())
+                .is_none()
+            {
                 return true;
             }
         }

@@ -601,13 +601,13 @@ pub struct RootMetadataBuilder {
     consistent_snapshot: bool,
     keys: HashMap<KeyId, PublicKey>,
     root_threshold: u32,
-    root_key_ids: Vec<KeyId>,
+    root_key_ids: HashSet<KeyId>,
     snapshot_threshold: u32,
-    snapshot_key_ids: Vec<KeyId>,
+    snapshot_key_ids: HashSet<KeyId>,
     targets_threshold: u32,
-    targets_key_ids: Vec<KeyId>,
+    targets_key_ids: HashSet<KeyId>,
     timestamp_threshold: u32,
-    timestamp_key_ids: Vec<KeyId>,
+    timestamp_key_ids: HashSet<KeyId>,
 }
 
 impl RootMetadataBuilder {
@@ -624,13 +624,13 @@ impl RootMetadataBuilder {
             consistent_snapshot: true,
             keys: HashMap::new(),
             root_threshold: 1,
-            root_key_ids: Vec::new(),
+            root_key_ids: HashSet::new(),
             snapshot_threshold: 1,
-            snapshot_key_ids: Vec::new(),
+            snapshot_key_ids: HashSet::new(),
             targets_threshold: 1,
-            targets_key_ids: Vec::new(),
+            targets_key_ids: HashSet::new(),
             timestamp_threshold: 1,
-            timestamp_key_ids: Vec::new(),
+            timestamp_key_ids: HashSet::new(),
         }
     }
 
@@ -662,7 +662,7 @@ impl RootMetadataBuilder {
     pub fn root_key(mut self, public_key: PublicKey) -> Self {
         let key_id = public_key.key_id().clone();
         self.keys.insert(key_id.clone(), public_key);
-        self.root_key_ids.push(key_id);
+        self.root_key_ids.insert(key_id);
         self
     }
 
@@ -676,7 +676,7 @@ impl RootMetadataBuilder {
     pub fn snapshot_key(mut self, public_key: PublicKey) -> Self {
         let key_id = public_key.key_id().clone();
         self.keys.insert(key_id.clone(), public_key);
-        self.snapshot_key_ids.push(key_id);
+        self.snapshot_key_ids.insert(key_id);
         self
     }
 
@@ -690,7 +690,7 @@ impl RootMetadataBuilder {
     pub fn targets_key(mut self, public_key: PublicKey) -> Self {
         let key_id = public_key.key_id().clone();
         self.keys.insert(key_id.clone(), public_key);
-        self.targets_key_ids.push(key_id);
+        self.targets_key_ids.insert(key_id);
         self
     }
 
@@ -704,7 +704,7 @@ impl RootMetadataBuilder {
     pub fn timestamp_key(mut self, public_key: PublicKey) -> Self {
         let key_id = public_key.key_id().clone();
         self.keys.insert(key_id.clone(), public_key);
-        self.timestamp_key_ids.push(key_id);
+        self.timestamp_key_ids.insert(key_id);
         self
     }
 
@@ -813,46 +813,34 @@ impl RootMetadata {
 
     /// An iterator over all the trusted root public keys.
     pub fn root_keys(&self) -> impl Iterator<Item = &PublicKey> {
-        self.keys().iter().filter_map(move |(k, v)| {
-            if self.root.key_ids().contains(k) {
-                Some(v)
-            } else {
-                None
-            }
-        })
-    }
-
-    /// An iterator over all the trusted snapshot public keys.
-    pub fn snapshot_keys(&self) -> impl Iterator<Item = &PublicKey> {
-        self.keys().iter().filter_map(move |(k, v)| {
-            if self.snapshot.key_ids().contains(k) {
-                Some(v)
-            } else {
-                None
-            }
-        })
+        self.root
+            .key_ids()
+            .iter()
+            .filter_map(|key_id| self.keys.get(key_id))
     }
 
     /// An iterator over all the trusted targets public keys.
     pub fn targets_keys(&self) -> impl Iterator<Item = &PublicKey> {
-        self.keys().iter().filter_map(move |(k, v)| {
-            if self.targets.key_ids().contains(k) {
-                Some(v)
-            } else {
-                None
-            }
-        })
+        self.targets
+            .key_ids()
+            .iter()
+            .filter_map(|key_id| self.keys.get(key_id))
+    }
+
+    /// An iterator over all the trusted snapshot public keys.
+    pub fn snapshot_keys(&self) -> impl Iterator<Item = &PublicKey> {
+        self.snapshot
+            .key_ids()
+            .iter()
+            .filter_map(|key_id| self.keys.get(key_id))
     }
 
     /// An iterator over all the trusted timestamp public keys.
     pub fn timestamp_keys(&self) -> impl Iterator<Item = &PublicKey> {
-        self.keys().iter().filter_map(move |(k, v)| {
-            if self.timestamp.key_ids().contains(k) {
-                Some(v)
-            } else {
-                None
-            }
-        })
+        self.timestamp
+            .key_ids()
+            .iter()
+            .filter_map(|key_id| self.keys.get(key_id))
     }
 
     /// An immutable reference to the root role's definition.
@@ -912,12 +900,12 @@ impl<'de> Deserialize<'de> for RootMetadata {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoleDefinition {
     threshold: u32,
-    key_ids: Vec<KeyId>,
+    key_ids: HashSet<KeyId>,
 }
 
 impl RoleDefinition {
-    /// Create a new `RoleDefinition` with a given threshold and set of authorized `KeyID`s.
-    pub fn new(threshold: u32, key_ids: Vec<KeyId>) -> Result<Self> {
+    /// Create a new [RoleDefinition] with a given threshold and set of authorized [KeyID]s.
+    pub fn new(threshold: u32, key_ids: HashSet<KeyId>) -> Result<Self> {
         if threshold < 1 {
             return Err(Error::IllegalArgument(format!("Threshold: {}", threshold)));
         }
@@ -945,7 +933,7 @@ impl RoleDefinition {
     }
 
     /// An immutable reference to the set of `KeyID`s that are authorized to sign the role.
-    pub fn key_ids(&self) -> &[KeyId] {
+    pub fn key_ids(&self) -> &HashSet<KeyId> {
         &self.key_ids
     }
 }
@@ -2412,7 +2400,7 @@ mod test {
     #[test]
     fn serde_role_definition() {
         // keyid ordering must be preserved.
-        let keyids = vec![
+        let keyids = hashset![
             KeyId::from_str("40e35e8f6003ab90d104710cf88901edab931597401f91c19eeb366060ab3d53")
                 .unwrap(),
             KeyId::from_str("01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4")
@@ -2424,8 +2412,8 @@ mod test {
         let jsn = json!({
             "threshold": 3,
             "keyids": [
-                "40e35e8f6003ab90d104710cf88901edab931597401f91c19eeb366060ab3d53",
                 "01892c662c8cd79fab20edec21de1dcb8b75d9353103face7fe086ff5c0098e4",
+                "40e35e8f6003ab90d104710cf88901edab931597401f91c19eeb366060ab3d53",
                 "4750eaf6878740780d6f97b12dbad079fb012bec88c78de2c380add56d3f51db",
             ],
         });
@@ -3389,7 +3377,7 @@ mod test {
     fn deserialize_json_role_definition_illegal_threshold() {
         let role_def = RoleDefinition::new(
             1,
-            vec![Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
+            hashset![Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
                 .unwrap()
                 .public()
                 .key_id()
@@ -3407,7 +3395,7 @@ mod test {
 
         let role_def = RoleDefinition::new(
             2,
-            vec![
+            hashset![
                 Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
                     .unwrap()
                     .public()
@@ -3457,7 +3445,7 @@ mod test {
             .public()
             .key_id()
             .clone();
-        let role_def = RoleDefinition::new(1, vec![key_id.clone()]).unwrap();
+        let role_def = RoleDefinition::new(1, hashset![key_id.clone()]).unwrap();
         let mut jsn = serde_json::to_value(&role_def).unwrap();
 
         match jsn.as_object_mut() {

@@ -116,7 +116,8 @@ pub struct RoleDefinition {
 
 impl RoleDefinition {
     pub fn from(role: &metadata::RoleDefinition) -> Result<Self> {
-        let key_ids = role.key_ids().to_vec();
+        let mut key_ids = role.key_ids().iter().cloned().collect::<Vec<_>>();
+        key_ids.sort();
 
         Ok(RoleDefinition {
             threshold: role.threshold(),
@@ -125,29 +126,23 @@ impl RoleDefinition {
     }
 
     pub fn try_into(self) -> Result<metadata::RoleDefinition> {
-        let vec_len = self.key_ids.len();
-        if vec_len < 1 {
+        let key_ids_len = self.key_ids.len();
+        if key_ids_len < 1 {
             return Err(Error::Encoding(
                 "Role defined with no assoiciated key IDs.".into(),
             ));
         }
 
-        let mut seen = HashSet::new();
-        let mut dupes = 0;
-        for key_id in self.key_ids.iter() {
-            if !seen.insert(key_id) {
-                dupes += 1;
-            }
-        }
+        let key_ids = self.key_ids.into_iter().collect::<HashSet<_>>();
 
-        if dupes != 0 {
+        if key_ids.len() != key_ids_len {
             return Err(Error::Encoding(format!(
                 "Found {} duplicate key IDs.",
-                dupes
+                key_ids_len - key_ids.len()
             )));
         }
 
-        metadata::RoleDefinition::new(self.threshold, self.key_ids)
+        metadata::RoleDefinition::new(self.threshold, key_ids)
     }
 }
 
