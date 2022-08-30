@@ -25,7 +25,15 @@ fn parse_datetime(ts: &str) -> Result<DateTime<Utc>> {
 }
 
 fn format_datetime(ts: &DateTime<Utc>) -> String {
-    ts.to_rfc3339()
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        ts.year(),
+        ts.month(),
+        ts.day(),
+        ts.hour(),
+        ts.minute(),
+        ts.second()
+    )
 }
 
 #[derive(Debug, Serialize, Deserialize)]
