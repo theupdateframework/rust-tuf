@@ -66,7 +66,6 @@ static PATH_ILLEGAL_STRINGS: &[&str] = &[
     "\"",
     "|",
     "?",
-    "*",
     // control characters, all illegal in FAT
     "\u{000}",
     "\u{001}",
