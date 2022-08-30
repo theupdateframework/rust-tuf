@@ -10,7 +10,7 @@ use std::fmt::Debug;
 use crate::Result;
 
 /// The format used for data interchange, serialization, and deserialization.
-pub trait DataInterchange: Debug + PartialEq + Clone {
+pub trait DataInterchange: Debug + PartialEq + Clone + Send {
     /// The type of data that is contained in the `signed` portion of metadata.
     type RawData: Serialize + DeserializeOwned + Clone + PartialEq;
 
