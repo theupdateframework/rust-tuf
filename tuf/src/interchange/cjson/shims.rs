@@ -19,20 +19,13 @@ fn valid_spec_version(other: &str) -> bool {
 }
 
 fn parse_datetime(ts: &str) -> Result<DateTime<Utc>> {
-    Utc.datetime_from_str(ts, "%FT%TZ")
+    DateTime::parse_from_rfc3339(ts)
+        .map(|ts| ts.with_timezone(&Utc))
         .map_err(|e| Error::Encoding(format!("Can't parse DateTime: {:?}", e)))
 }
 
 fn format_datetime(ts: &DateTime<Utc>) -> String {
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        ts.year(),
-        ts.month(),
-        ts.day(),
-        ts.hour(),
-        ts.minute(),
-        ts.second()
-    )
+    ts.to_rfc3339()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
