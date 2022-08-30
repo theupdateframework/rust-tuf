@@ -37,6 +37,11 @@ mod private {
     impl<D: DataInterchange> Sealed for Done<D> {}
 }
 
+const DEFAULT_ROOT_EXPIRATION_DAYS: i64 = 365;
+const DEFAULT_TARGETS_EXPIRATION_DAYS: i64 = 90;
+const DEFAULT_SNAPSHOT_EXPIRATION_DAYS: i64 = 7;
+const DEFAULT_TIMESTAMP_EXPIRATION_DAYS: i64 = 1;
+
 /// Trait to track each of the [RepoBuilder] building states.
 ///
 /// This trait is [sealed] to make
@@ -214,6 +219,10 @@ where
     trusted_targets_keys: Vec<&'a dyn PrivateKey>,
     trusted_snapshot_keys: Vec<&'a dyn PrivateKey>,
     trusted_timestamp_keys: Vec<&'a dyn PrivateKey>,
+    root_expiration_duration: Duration,
+    targets_expiration_duration: Duration,
+    snapshot_expiration_duration: Duration,
+    timestamp_expiration_duration: Duration,
     _interchange: PhantomData<D>,
 }
 
@@ -358,6 +367,10 @@ where
                 trusted_targets_keys: vec![],
                 trusted_snapshot_keys: vec![],
                 trusted_timestamp_keys: vec![],
+                root_expiration_duration: Duration::days(DEFAULT_ROOT_EXPIRATION_DAYS),
+                targets_expiration_duration: Duration::days(DEFAULT_TARGETS_EXPIRATION_DAYS),
+                snapshot_expiration_duration: Duration::days(DEFAULT_SNAPSHOT_EXPIRATION_DAYS),
+                timestamp_expiration_duration: Duration::days(DEFAULT_TIMESTAMP_EXPIRATION_DAYS),
                 _interchange: PhantomData,
             },
             state: Root {
@@ -442,6 +455,10 @@ where
                 trusted_targets_keys: vec![],
                 trusted_snapshot_keys: vec![],
                 trusted_timestamp_keys: vec![],
+                root_expiration_duration: Duration::days(DEFAULT_ROOT_EXPIRATION_DAYS),
+                targets_expiration_duration: Duration::days(DEFAULT_TARGETS_EXPIRATION_DAYS),
+                snapshot_expiration_duration: Duration::days(DEFAULT_SNAPSHOT_EXPIRATION_DAYS),
+                timestamp_expiration_duration: Duration::days(DEFAULT_TIMESTAMP_EXPIRATION_DAYS),
                 _interchange: PhantomData,
             },
             state: Root { builder },
@@ -454,6 +471,55 @@ where
     /// Default is the current wall clock time in UTC.
     pub fn current_time(mut self, current_time: DateTime<Utc>) -> Self {
         self.ctx.current_time = current_time;
+        self
+    }
+
+    /// Sets that the root metadata will expire after after this duration past the current time.
+    ///
+    /// Defaults to 365 days.
+    ///
+    /// Note: calling this function will only change what is the metadata expiration we'll use if we
+    /// create a new root metadata if we call [RepoBuilder::stage_root], or we decide a new one is
+    /// needed when we call [RepoBuilder::stage_root_if_necessary].
+    pub fn root_expiration_duration(mut self, duration: Duration) -> Self {
+        self.ctx.root_expiration_duration = duration;
+        self
+    }
+
+    /// Sets that the targets metadata will expire after after this duration past the current time.
+    ///
+    /// Defaults to 90 days.
+    ///
+    /// Note: calling this function will only change what is the metadata expiration we'll use if we
+    /// create a new targets metadata if we call [RepoBuilder::stage_targets], or we decide a new
+    /// one is needed when we call [RepoBuilder::stage_targets_if_necessary].
+    pub fn targets_expiration_duration(mut self, duration: Duration) -> Self {
+        self.ctx.targets_expiration_duration = duration;
+        self
+    }
+
+    /// Sets that the snapshot metadata will expire after after this duration past the current time.
+    ///
+    /// Defaults to 7 days.
+    ///
+    /// Note: calling this function will only change what is the metadata expiration we'll use if we
+    /// create a new snapshot metadata if we call [RepoBuilder::stage_snapshot], or we decide a new
+    /// one is needed when we call [RepoBuilder::stage_snapshot_if_necessary].
+    pub fn snapshot_expiration_duration(mut self, duration: Duration) -> Self {
+        self.ctx.snapshot_expiration_duration = duration;
+        self
+    }
+
+    /// Sets that the timestamp metadata will expire after after this duration past the current
+    /// time.
+    ///
+    /// Defaults to 1 day.
+    ///
+    /// Note: calling this function will only change what is the metadata expiration we'll use if we
+    /// create a new timestamp metadata if we call [RepoBuilder::stage_timestamp], or we decide a
+    /// new one is needed when we call [RepoBuilder::stage_timestamp_if_necessary].
+    pub fn timestamp_expiration_duration(mut self, duration: Duration) -> Self {
+        self.ctx.timestamp_expiration_duration = duration;
         self
     }
 
@@ -619,7 +685,7 @@ where
             .state
             .builder
             .version(next_version)
-            .expires(self.ctx.current_time + Duration::days(365));
+            .expires(self.ctx.current_time + self.ctx.root_expiration_duration);
         let root = f(root_builder).build()?;
 
         let raw_root = sign(
@@ -840,7 +906,9 @@ where
     where
         F: FnOnce(TargetsMetadataBuilder) -> TargetsMetadataBuilder,
     {
-        let mut targets_builder = TargetsMetadataBuilder::new();
+        let mut targets_builder = TargetsMetadataBuilder::new()
+            .expires(self.ctx.current_time + self.ctx.targets_expiration_duration);
+
         let mut delegations_builder = DelegationsBuilder::new();
 
         if let Some(trusted_targets) = self.ctx.db.and_then(|db| db.trusted_targets()) {
@@ -1020,8 +1088,8 @@ where
     where
         F: FnOnce(SnapshotMetadataBuilder) -> SnapshotMetadataBuilder,
     {
-        let mut snapshot_builder =
-            SnapshotMetadataBuilder::new().expires(self.ctx.current_time + Duration::days(7));
+        let mut snapshot_builder = SnapshotMetadataBuilder::new()
+            .expires(self.ctx.current_time + self.ctx.snapshot_expiration_duration);
 
         if let Some(trusted_snapshot) = self.ctx.db.and_then(|db| db.trusted_snapshot()) {
             let next_version = trusted_snapshot.version().checked_add(1).ok_or_else(|| {
@@ -1203,7 +1271,7 @@ where
 
         let timestamp_builder = TimestampMetadataBuilder::from_metadata_description(description)
             .version(next_version)
-            .expires(self.ctx.current_time + Duration::days(1));
+            .expires(self.ctx.current_time + self.ctx.timestamp_expiration_duration);
 
         let timestamp = f(timestamp_builder).build()?;
         let raw_timestamp = sign(
@@ -1424,10 +1492,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use chrono::NaiveDateTime;
-
-    use crate::repository::RepositoryProvider;
-
     use {
         super::*,
         crate::{
@@ -1435,7 +1499,7 @@ mod tests {
             crypto::Ed25519PrivateKey,
             interchange::Json,
             metadata::SignedMetadata,
-            repository::EphemeralRepository,
+            repository::{EphemeralRepository, RepositoryProvider},
         },
         assert_matches::assert_matches,
         chrono::{
@@ -2732,11 +2796,11 @@ mod tests {
         block_on(async move {
             let mut repo = EphemeralRepository::<Json>::new();
 
-            let epoch = DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc);
-            let root_expires = epoch + Duration::seconds(40);
-            let targets_expires = epoch + Duration::seconds(30);
-            let snapshot_expires = epoch + Duration::seconds(20);
-            let timestamp_expires = epoch + Duration::seconds(10);
+            let epoch = Utc.timestamp(0, 0);
+            let root_expires = Duration::seconds(40);
+            let targets_expires = Duration::seconds(30);
+            let snapshot_expires = Duration::seconds(20);
+            let timestamp_expires = Duration::seconds(10);
 
             let current_time = epoch;
             let metadata1 = RepoBuilder::create(&mut repo)
@@ -2745,14 +2809,10 @@ mod tests {
                 .trusted_targets_keys(&[&KEYS[0]])
                 .trusted_snapshot_keys(&[&KEYS[0]])
                 .trusted_timestamp_keys(&[&KEYS[0]])
-                .stage_root_with_builder(|builder| builder.expires(root_expires))
-                .unwrap()
-                .stage_targets_with_builder(|builder| builder.expires(targets_expires))
-                .unwrap()
-                .stage_snapshot_with_builder(|builder| builder.expires(snapshot_expires))
-                .unwrap()
-                .stage_timestamp_with_builder(|builder| builder.expires(timestamp_expires))
-                .unwrap()
+                .root_expiration_duration(root_expires)
+                .targets_expiration_duration(targets_expires)
+                .snapshot_expiration_duration(snapshot_expires)
+                .timestamp_expiration_duration(timestamp_expires)
                 .commit()
                 .await
                 .unwrap();
@@ -2761,7 +2821,7 @@ mod tests {
                 Database::from_trusted_metadata_with_start_time(&metadata1, &current_time).unwrap();
 
             // Advance time to past the timestamp expiration.
-            let current_time = timestamp_expires + Duration::seconds(1);
+            let current_time = epoch + timestamp_expires + Duration::seconds(1);
             let metadata2 = RepoBuilder::from_database(&mut repo, &db)
                 .current_time(current_time)
                 .trusted_root_keys(&[&KEYS[0]])
@@ -2786,7 +2846,7 @@ mod tests {
             assert_eq!(db.trusted_timestamp().unwrap().version(), 2);
 
             // Advance time to past the snapshot expiration.
-            let current_time = snapshot_expires + Duration::seconds(1);
+            let current_time = epoch + snapshot_expires + Duration::seconds(1);
             let metadata3 = RepoBuilder::from_database(&mut repo, &db)
                 .current_time(current_time)
                 .trusted_root_keys(&[&KEYS[0]])
@@ -2811,7 +2871,7 @@ mod tests {
             assert_eq!(db.trusted_timestamp().unwrap().version(), 3);
 
             // Advance time to past the targets expiration.
-            let current_time = targets_expires + Duration::seconds(1);
+            let current_time = epoch + targets_expires + Duration::seconds(1);
             let metadata4 = RepoBuilder::from_database(&mut repo, &db)
                 .current_time(current_time)
                 .trusted_root_keys(&[&KEYS[0]])
@@ -2841,7 +2901,7 @@ mod tests {
             // snapshot.
             //
             // [update-root]: https://theupdateframework.github.io/specification/v1.0.30/#update-root
-            let current_time = root_expires + Duration::seconds(1);
+            let current_time = epoch + root_expires + Duration::seconds(1);
             let metadata5 = RepoBuilder::from_database(&mut repo, &db)
                 .current_time(current_time)
                 .trusted_root_keys(&[&KEYS[0]])
