@@ -2314,6 +2314,24 @@ mod test {
     }
 
     #[test]
+    fn allow_asterisk_in_target_path() {
+        let good_paths = &[
+            "*",
+            "*/some/path",
+            "*/some/path/",
+            "some/*/path",
+            "some/*/path/*",
+        ];
+
+        for path in good_paths.iter() {
+            assert!(safe_path(path).is_ok());
+            assert!(TargetPath::new(path.to_string()).is_ok());
+            assert!(MetadataPath::new(path.to_string()).is_ok());
+            assert!(TargetPath::new(path.to_string()).is_ok());
+        }
+    }
+
+    #[test]
     fn path_matches_chain() {
         let test_cases: &[(bool, &str, &[&[&str]])] = &[
             // simplest case
