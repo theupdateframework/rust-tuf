@@ -917,17 +917,6 @@ where
         self.stage_targets_if_necessary()?.commit().await
     }
 
-    /// Commit the metadata for this repository without validating it.
-    ///
-    /// Warning: This can write invalid metadata to a repository without
-    /// validating that it is correct.
-    #[cfg(test)]
-    pub async fn commit_skip_validation(self) -> Result<RawSignedMetadataSet<D>> {
-        self.stage_targets_if_necessary()?
-            .commit_skip_validation()
-            .await
-    }
-
     fn need_new_targets(&self) -> bool {
         // We need a new targets metadata if we added any targets.
         if !self.state.targets.is_empty() {
@@ -1084,17 +1073,6 @@ where
     /// See [RepoBuilder::commit](#method.commit-4) for more details.
     pub async fn commit(self) -> Result<RawSignedMetadataSet<D>> {
         self.stage_snapshot_if_necessary()?.commit().await
-    }
-
-    /// Commit the metadata for this repository without validating it.
-    ///
-    /// Warning: This can write invalid metadata to a repository without
-    /// validating that it is correct.
-    #[cfg(test)]
-    pub async fn commit_skip_validation(self) -> Result<RawSignedMetadataSet<D>> {
-        self.stage_snapshot_if_necessary()?
-            .commit_skip_validation()
-            .await
     }
 
     fn need_new_snapshot(&self) -> bool {
@@ -1255,17 +1233,6 @@ where
         self.stage_timestamp_if_necessary()?.commit().await
     }
 
-    /// Commit the metadata for this repository without validating it.
-    ///
-    /// Warning: This can write invalid metadata to a repository without
-    /// validating that it is correct.
-    #[cfg(test)]
-    pub async fn commit_skip_validation(self) -> Result<RawSignedMetadataSet<D>> {
-        self.stage_timestamp_if_necessary()?
-            .commit_skip_validation()
-            .await
-    }
-
     fn need_new_timestamp(&self) -> bool {
         // We need a new timestamp metadata if we staged a new root.
         if self.state.staged_root.is_some() {
@@ -1312,23 +1279,7 @@ where
     pub async fn commit(mut self) -> Result<RawSignedMetadataSet<D>> {
         self.validate_built_metadata()?;
         self.write_repo().await?;
-        Ok(self.build_skip_validation())
-    }
 
-    /// Commit the metadata for this repository without validating it.
-    ///
-    /// Warning: This can write invalid metadata to a repository without validating that it is
-    /// correct.
-    #[cfg(test)]
-    pub async fn commit_skip_validation(mut self) -> Result<RawSignedMetadataSet<D>> {
-        self.write_repo().await?;
-        Ok(self.build_skip_validation())
-    }
-
-    /// Build the metadata without validating it for correctness.
-    ///
-    /// Warning: This can produce invalid metadata.
-    fn build_skip_validation(self) -> RawSignedMetadataSet<D> {
         let mut builder = RawSignedMetadataSetBuilder::new();
 
         if let Some(root) = self.state.staged_root {
@@ -1347,7 +1298,7 @@ where
             builder = builder.timestamp(timestamp.raw);
         }
 
-        builder.build()
+        Ok(builder.build())
     }
 
     /// Before we commit any metadata, make sure that we can update from our

@@ -1434,16 +1434,14 @@ mod test {
         // Store an expired root in the local store.
         let mut local = EphemeralRepository::<Json>::new();
         let metadata1 = RepoBuilder::create(&mut local)
+            .current_time(Utc.timestamp(0, 0))
             .trusted_root_keys(&[&KEYS[0]])
             .trusted_targets_keys(&[&KEYS[0]])
             .trusted_snapshot_keys(&[&KEYS[0]])
             .trusted_timestamp_keys(&[&KEYS[0]])
-            .stage_root_with_builder(|bld| {
-                bld.consistent_snapshot(true)
-                    .expires(Utc.ymd(1970, 1, 1).and_hms(0, 0, 0))
-            })
+            .stage_root_with_builder(|bld| bld.consistent_snapshot(true))
             .unwrap()
-            .commit_skip_validation()
+            .commit()
             .await
             .unwrap();
 
@@ -1709,30 +1707,24 @@ mod test {
 
             // Store an expired root in the local store.
             let metadata1 = RepoBuilder::create(&mut local)
+                .current_time(Utc.timestamp(0, 0))
                 .trusted_root_keys(&[&KEYS[0]])
                 .trusted_targets_keys(&[&KEYS[0]])
                 .trusted_snapshot_keys(&[&KEYS[0]])
                 .trusted_timestamp_keys(&[&KEYS[0]])
-                .stage_root_with_builder(|bld| {
-                    bld.version(1)
-                        .consistent_snapshot(true)
-                        .expires(Utc.ymd(1970, 1, 1).and_hms(0, 0, 0))
-                })
+                .stage_root_with_builder(|bld| bld.version(1).consistent_snapshot(true))
                 .unwrap()
-                .commit_skip_validation()
+                .commit()
                 .await
                 .unwrap();
 
             let metadata2 = RepoBuilder::create(&mut local)
+                .current_time(Utc.timestamp(0, 0))
                 .trusted_root_keys(&[&KEYS[0]])
                 .trusted_targets_keys(&[&KEYS[0]])
                 .trusted_snapshot_keys(&[&KEYS[0]])
                 .trusted_timestamp_keys(&[&KEYS[0]])
-                .stage_root_with_builder(|bld| {
-                    bld.version(2)
-                        .consistent_snapshot(true)
-                        .expires(Utc.ymd(1970, 1, 1).and_hms(0, 0, 0))
-                })
+                .stage_root_with_builder(|bld| bld.version(2).consistent_snapshot(true))
                 .unwrap()
                 .stage_targets_with_builder(|bld| bld.version(2))
                 .unwrap()
@@ -1740,7 +1732,7 @@ mod test {
                 .unwrap()
                 .stage_timestamp_with_builder(|bld| bld.version(2))
                 .unwrap()
-                .commit_skip_validation()
+                .commit()
                 .await
                 .unwrap();
 
