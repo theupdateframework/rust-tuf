@@ -282,6 +282,8 @@ pub struct TargetsMetadata {
     targets: BTreeMap<metadata::TargetPath, metadata::TargetDescription>,
     #[serde(default, skip_serializing_if = "metadata::Delegations::is_empty")]
     delegations: metadata::Delegations,
+    #[serde(flatten)]
+    additional_fields: BTreeMap<String, serde_json::Value>,
 }
 
 impl TargetsMetadata {
@@ -297,6 +299,11 @@ impl TargetsMetadata {
                 .map(|(p, d)| (p.clone(), d.clone()))
                 .collect(),
             delegations: metadata.delegations().clone(),
+            additional_fields: metadata
+                .additional_fields()
+                .iter()
+                .map(|(p, d)| (p.clone(), d.clone()))
+                .collect(),
         })
     }
 
@@ -320,6 +327,7 @@ impl TargetsMetadata {
             parse_datetime(&self.expires)?,
             self.targets.into_iter().collect(),
             self.delegations,
+            self.additional_fields.into_iter().collect(),
         )
     }
 }
