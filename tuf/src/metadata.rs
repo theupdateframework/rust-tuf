@@ -718,6 +718,7 @@ impl RootMetadataBuilder {
             RoleDefinition::new(self.snapshot_threshold, self.snapshot_key_ids)?,
             RoleDefinition::new(self.targets_threshold, self.targets_key_ids)?,
             RoleDefinition::new(self.timestamp_threshold, self.timestamp_key_ids)?,
+            Default::default(),
         )
     }
 
@@ -766,6 +767,7 @@ pub struct RootMetadata {
     snapshot: RoleDefinition<SnapshotMetadata>,
     targets: RoleDefinition<TargetsMetadata>,
     timestamp: RoleDefinition<TimestampMetadata>,
+    additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl RootMetadata {
@@ -779,6 +781,7 @@ impl RootMetadata {
         snapshot: RoleDefinition<SnapshotMetadata>,
         targets: RoleDefinition<TargetsMetadata>,
         timestamp: RoleDefinition<TimestampMetadata>,
+        additional_fields: HashMap<String, serde_json::Value>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::MetadataVersionMustBeGreaterThanZero(
@@ -795,6 +798,7 @@ impl RootMetadata {
             snapshot,
             targets,
             timestamp,
+            additional_fields,
         })
     }
 
@@ -859,6 +863,11 @@ impl RootMetadata {
     /// An immutable reference to the timestamp role's definition.
     pub fn timestamp(&self) -> &RoleDefinition<TimestampMetadata> {
         &self.timestamp
+    }
+
+    /// An immutable reference to any additional fields on the metadata.
+    pub fn additional_fields(&self) -> &HashMap<String, serde_json::Value> {
+        &self.additional_fields
     }
 }
 
@@ -1125,7 +1134,12 @@ impl TimestampMetadataBuilder {
 
     /// Construct a new `TimestampMetadata`.
     pub fn build(self) -> Result<TimestampMetadata> {
-        TimestampMetadata::new(self.version, self.expires, self.snapshot)
+        TimestampMetadata::new(
+            self.version,
+            self.expires,
+            self.snapshot,
+            Default::default(),
+        )
     }
 
     /// Construct a new `SignedMetadata<D, TimestampMetadata>`.
@@ -1146,6 +1160,7 @@ pub struct TimestampMetadata {
     version: u32,
     expires: DateTime<Utc>,
     snapshot: MetadataDescription<SnapshotMetadata>,
+    additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl TimestampMetadata {
@@ -1154,6 +1169,7 @@ impl TimestampMetadata {
         version: u32,
         expires: DateTime<Utc>,
         snapshot: MetadataDescription<SnapshotMetadata>,
+        additional_fields: HashMap<String, serde_json::Value>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::MetadataVersionMustBeGreaterThanZero(
@@ -1165,12 +1181,18 @@ impl TimestampMetadata {
             version,
             expires,
             snapshot,
+            additional_fields,
         })
     }
 
     /// An immutable reference to the snapshot description.
     pub fn snapshot(&self) -> &MetadataDescription<SnapshotMetadata> {
         &self.snapshot
+    }
+
+    /// An immutable reference to any additional fields on the metadata.
+    pub fn additional_fields(&self) -> &HashMap<String, serde_json::Value> {
+        &self.additional_fields
     }
 }
 
@@ -1383,7 +1405,7 @@ impl SnapshotMetadataBuilder {
 
     /// Construct a new `SnapshotMetadata`.
     pub fn build(self) -> Result<SnapshotMetadata> {
-        SnapshotMetadata::new(self.version, self.expires, self.meta)
+        SnapshotMetadata::new(self.version, self.expires, self.meta, Default::default())
     }
 
     /// Construct a new `SignedMetadata<D, SnapshotMetadata>`.
@@ -1420,6 +1442,7 @@ pub struct SnapshotMetadata {
     version: u32,
     expires: DateTime<Utc>,
     meta: HashMap<MetadataPath, MetadataDescription<TargetsMetadata>>,
+    additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl SnapshotMetadata {
@@ -1428,6 +1451,7 @@ impl SnapshotMetadata {
         version: u32,
         expires: DateTime<Utc>,
         meta: HashMap<MetadataPath, MetadataDescription<TargetsMetadata>>,
+        additional_fields: HashMap<String, serde_json::Value>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::MetadataVersionMustBeGreaterThanZero(
@@ -1439,12 +1463,18 @@ impl SnapshotMetadata {
             version,
             expires,
             meta,
+            additional_fields,
         })
     }
 
     /// An immutable reference to the metadata paths and descriptions.
     pub fn meta(&self) -> &HashMap<MetadataPath, MetadataDescription<TargetsMetadata>> {
         &self.meta
+    }
+
+    /// An immutable reference to any additional fields on the metadata.
+    pub fn additional_fields(&self) -> &HashMap<String, serde_json::Value> {
+        &self.additional_fields
     }
 }
 
