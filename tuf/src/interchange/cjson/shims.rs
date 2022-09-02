@@ -47,6 +47,8 @@ pub struct RootMetadata {
     #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
     keys: BTreeMap<crypto::KeyId, crypto::PublicKey>,
     roles: RoleDefinitions,
+    #[serde(flatten)]
+    additional_fields: BTreeMap<String, serde_json::Value>,
 }
 
 impl RootMetadata {
@@ -68,6 +70,7 @@ impl RootMetadata {
                 targets: meta.targets().clone(),
                 timestamp: meta.timestamp().clone(),
             },
+            additional_fields: meta.additional_fields().clone().into_iter().collect(),
         })
     }
 
@@ -104,6 +107,7 @@ impl RootMetadata {
             self.roles.snapshot,
             self.roles.targets,
             self.roles.timestamp,
+            self.additional_fields.into_iter().collect(),
         )
     }
 }
@@ -163,6 +167,8 @@ pub struct TimestampMetadata {
     version: u32,
     expires: String,
     meta: TimestampMeta,
+    #[serde(flatten)]
+    additional_fields: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -182,6 +188,7 @@ impl TimestampMetadata {
             meta: TimestampMeta {
                 snapshot: metadata.snapshot().clone(),
             },
+            additional_fields: metadata.additional_fields().clone().into_iter().collect(),
         })
     }
 
@@ -204,6 +211,7 @@ impl TimestampMetadata {
             self.version,
             parse_datetime(&self.expires)?,
             self.meta.snapshot,
+            self.additional_fields.into_iter().collect(),
         )
     }
 }
@@ -217,6 +225,8 @@ pub struct SnapshotMetadata {
     expires: String,
     #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
     meta: BTreeMap<String, metadata::MetadataDescription>,
+    #[serde(flatten)]
+    additional_fields: BTreeMap<String, serde_json::Value>,
 }
 
 impl SnapshotMetadata {
@@ -231,6 +241,7 @@ impl SnapshotMetadata {
                 .iter()
                 .map(|(p, d)| (format!("{}.json", p), d.clone()))
                 .collect(),
+            additional_fields: metadata.additional_fields().clone().into_iter().collect(),
         })
     }
 
@@ -268,6 +279,7 @@ impl SnapshotMetadata {
                     Ok((p, d))
                 })
                 .collect::<Result<_>>()?,
+            self.additional_fields.into_iter().collect(),
         )
     }
 }
