@@ -474,7 +474,7 @@ where
         self
     }
 
-    /// Sets that the root metadata will expire after after this duration past the current time.
+    /// Sets that the root metadata will expire after this duration past the current time.
     ///
     /// Defaults to 365 days.
     ///
