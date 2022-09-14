@@ -117,18 +117,18 @@ where
     ///
     /// [extension]: crate::interchange::DataInterchange::extension
     fn store_metadata<'a>(
-        &'a mut self,
+        &'a self,
         meta_path: &MetadataPath,
         version: MetadataVersion,
-        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>>;
 
     /// Store the provided `target` in a location identified by `target_path`, overwriting any
     /// existing target at that location.
     fn store_target<'a>(
-        &'a mut self,
+        &'a self,
         target_path: &TargetPath,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        target: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>>;
 }
 
@@ -195,18 +195,18 @@ where
     D: DataInterchange + Sync,
 {
     fn store_metadata<'a>(
-        &'a mut self,
+        &'a self,
         meta_path: &MetadataPath,
         version: MetadataVersion,
-        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         (**self).store_metadata(meta_path, version, metadata)
     }
 
     fn store_target<'a>(
-        &'a mut self,
+        &'a self,
         target_path: &TargetPath,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        target: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         (**self).store_target(target_path, target)
     }
@@ -218,16 +218,16 @@ where
     D: DataInterchange + Sync,
 {
     fn store_metadata<'a>(
-        &'a mut self,
+        &'a self,
         meta_path: &MetadataPath,
         version: MetadataVersion,
-        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         (**self).store_metadata(meta_path, version, metadata)
     }
 
     fn store_target<'a>(
-        &'a mut self,
+        &'a self,
         target_path: &TargetPath,
         target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
@@ -322,18 +322,18 @@ where
     D: DataInterchange + Sync,
 {
     fn store_metadata<'a>(
-        &'a mut self,
+        &'a self,
         meta_path: &MetadataPath,
         version: MetadataVersion,
-        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         (**self).store_metadata(meta_path, version, metadata)
     }
 
     fn store_target<'a>(
-        &'a mut self,
+        &'a self,
         target_path: &TargetPath,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        target: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         (**self).store_target(target_path, target)
     }
@@ -486,7 +486,7 @@ where
     /// [extension]: crate::interchange::DataInterchange::extension
     pub async fn store_metadata<'a, M>(
         &'a mut self,
-        path: &'a MetadataPath,
+        path: &MetadataPath,
         version: MetadataVersion,
         metadata: &'a RawSignedMetadata<D, M>,
     ) -> Result<()>
@@ -503,7 +503,7 @@ where
     /// Store the provided `target` in a location identified by `target_path`.
     pub async fn store_target<'a>(
         &'a mut self,
-        target_path: &'a TargetPath,
+        target_path: &TargetPath,
         target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> Result<()> {
         self.repository.store_target(target_path, target).await
@@ -580,7 +580,7 @@ mod test {
             let _metadata = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
             let data_hash = crypto::calculate_hash(data, &HashAlgorithm::Sha256);
 
-            let mut repo = EphemeralRepository::new();
+            let repo = EphemeralRepository::new();
             repo.store_metadata(&path, version, &mut &*data)
                 .await
                 .unwrap();
@@ -608,7 +608,7 @@ mod test {
             let version = MetadataVersion::None;
             let data: &[u8] = b"corrupt metadata";
 
-            let mut repo = EphemeralRepository::new();
+            let repo = EphemeralRepository::new();
             repo.store_metadata(&path, version, &mut &*data)
                 .await
                 .unwrap();
@@ -637,7 +637,7 @@ mod test {
             let data: &[u8] = b"reasonably sized metadata";
             let _metadata = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
 
-            let mut repo = EphemeralRepository::new();
+            let repo = EphemeralRepository::new();
             repo.store_metadata(&path, version, &mut &*data)
                 .await
                 .unwrap();
@@ -660,7 +660,7 @@ mod test {
             let version = MetadataVersion::None;
             let data: &[u8] = b"very big metadata";
 
-            let mut repo = EphemeralRepository::new();
+            let repo = EphemeralRepository::new();
             repo.store_metadata(&path, version, &mut &*data)
                 .await
                 .unwrap();

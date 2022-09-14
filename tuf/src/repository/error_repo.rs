@@ -59,10 +59,10 @@ where
     D: DataInterchange + Sync,
 {
     fn store_metadata<'a>(
-        &'a mut self,
+        &'a self,
         meta_path: &MetadataPath,
         version: MetadataVersion,
-        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         if self.fail_metadata_stores.load(Ordering::SeqCst) {
             async { Err(Error::Encoding("failed".into())) }.boxed()
@@ -72,9 +72,9 @@ where
     }
 
     fn store_target<'a>(
-        &'a mut self,
+        &'a self,
         target_path: &TargetPath,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        target: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         self.repo.store_target(target_path, target)
     }
