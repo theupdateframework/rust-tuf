@@ -10,7 +10,7 @@ use {
         future::{BoxFuture, FutureExt},
         io::{AsyncReadExt, Cursor},
     },
-    std::sync::{Arc, Mutex},
+    std::sync::Mutex,
 };
 
 #[derive(Debug, PartialEq)]
@@ -81,14 +81,14 @@ impl Track {
 /// Helper Repository wrapper that tracks all the metadata fetches and stores for testing purposes.
 pub(crate) struct TrackRepository<R> {
     repo: R,
-    tracks: Arc<Mutex<Vec<Track>>>,
+    tracks: Mutex<Vec<Track>>,
 }
 
 impl<R> TrackRepository<R> {
     pub(crate) fn new(repo: R) -> Self {
         Self {
             repo,
-            tracks: Arc::new(Mutex::new(vec![])),
+            tracks: Mutex::new(vec![]),
         }
     }
 
@@ -107,10 +107,10 @@ where
     D: DataInterchange + Sync,
 {
     fn store_metadata<'a>(
-        &'a mut self,
+        &'a self,
         meta_path: &MetadataPath,
         version: MetadataVersion,
-        metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         let meta_path = meta_path.clone();
         async move {
@@ -133,9 +133,9 @@ where
     }
 
     fn store_target<'a>(
-        &'a mut self,
+        &'a self,
         target_path: &TargetPath,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
+        target: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         self.repo.store_target(target_path, target)
     }

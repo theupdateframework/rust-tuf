@@ -1441,7 +1441,11 @@ where
             let path = MetadataPath::targets();
             self.ctx
                 .repo
-                .store_metadata(&path, MetadataVersion::None, &mut targets.raw.as_bytes())
+                .store_metadata(
+                    &path.clone(),
+                    MetadataVersion::None,
+                    &mut targets.raw.as_bytes(),
+                )
                 .await?;
 
             if consistent_snapshot {

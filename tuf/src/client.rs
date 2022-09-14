@@ -1797,7 +1797,7 @@ mod test {
     fn constructor_succeeds_with_malformed_metadata() {
         block_on(async {
             // Store a malformed timestamp in the local repository.
-            let mut local = EphemeralRepository::<Json>::new();
+            let local = EphemeralRepository::<Json>::new();
             let junk_timestamp = "junk timestamp";
 
             local
@@ -2339,7 +2339,7 @@ mod test {
     #[test]
     fn client_can_update_with_unknown_len_and_hashes() {
         block_on(async {
-            let mut repo = EphemeralRepository::<Json>::new();
+            let repo = EphemeralRepository::<Json>::new();
 
             let root = RootMetadataBuilder::new()
                 .consistent_snapshot(true)
