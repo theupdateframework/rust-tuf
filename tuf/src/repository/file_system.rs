@@ -59,26 +59,24 @@ where
     }
 
     /// Build a `FileSystemRepository`.
-    pub fn build(self) -> Result<FileSystemRepository<D>> {
+    pub fn build(self) -> FileSystemRepository<D> {
         let metadata_path = if let Some(metadata_prefix) = self.metadata_prefix {
             self.local_path.join(metadata_prefix)
         } else {
             self.local_path.clone()
         };
-        DirBuilder::new().recursive(true).create(&metadata_path)?;
 
         let targets_path = if let Some(targets_prefix) = self.targets_prefix {
             self.local_path.join(targets_prefix)
         } else {
             self.local_path.clone()
         };
-        DirBuilder::new().recursive(true).create(&targets_path)?;
 
-        Ok(FileSystemRepository {
+        FileSystemRepository {
             metadata_path,
             targets_path,
             _interchange: PhantomData,
-        })
+        }
     }
 }
 
@@ -103,7 +101,7 @@ where
     }
 
     /// Create a new repository on the local file system.
-    pub fn new<P: Into<PathBuf>>(local_path: P) -> Result<Self> {
+    pub fn new<P: Into<PathBuf>>(local_path: P) -> Self {
         FileSystemRepositoryBuilder::new(local_path)
             .metadata_prefix("metadata")
             .targets_prefix("targets")
@@ -437,9 +435,7 @@ mod test {
                 .prefix("rust-tuf")
                 .tempdir()
                 .unwrap();
-            let repo = FileSystemRepositoryBuilder::new(temp_dir.path())
-                .build()
-                .unwrap();
+            let repo = FileSystemRepositoryBuilder::new(temp_dir.path()).build();
 
             assert_matches!(
                 Repository::<_, Json>::new(repo)
@@ -469,12 +465,11 @@ mod test {
             let mut repo = FileSystemRepositoryBuilder::<Json>::new(temp_dir.path().to_path_buf())
                 .metadata_prefix("meta")
                 .targets_prefix("targs")
-                .build()
-                .unwrap();
+                .build();
 
             // test that init worked
-            assert!(temp_dir.path().join("meta").exists());
-            assert!(temp_dir.path().join("targs").exists());
+            //assert!(temp_dir.path().join("meta").exists());
+            //assert!(temp_dir.path().join("targs").exists());
 
             let data: &[u8] = b"like tears in the rain";
             let path = TargetPath::new("foo/bar/baz").unwrap();
@@ -518,8 +513,7 @@ mod test {
             let mut repo = FileSystemRepositoryBuilder::<Json>::new(temp_dir.path().to_path_buf())
                 .metadata_prefix("meta")
                 .targets_prefix("targs")
-                .build()
-                .unwrap();
+                .build();
 
             let meta_path = MetadataPath::new("meta").unwrap();
             let meta_version = MetadataVersion::None;

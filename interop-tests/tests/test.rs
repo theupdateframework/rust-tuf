@@ -47,7 +47,6 @@ use tuf::metadata::{MetadataPath, MetadataVersion, RawSignedMetadata, RootMetada
 use tuf::repository::{
     EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, RepositoryProvider,
 };
-use tuf::Result;
 
 #[test]
 fn fuchsia_go_tuf_consistent_snapshot_false() {
@@ -171,7 +170,7 @@ where
     }
 
     async fn run_test_step(&mut self, public_keys: &[PublicKey], dir: PathBuf) {
-        let remote = init_remote(&dir).unwrap();
+        let remote = init_remote(&dir);
 
         // Connect to the client with our initial keys.
         let mut client = Client::with_trusted_root_keys(
@@ -210,7 +209,7 @@ async fn extract_keys<D>(dir: &Path) -> Vec<PublicKey>
 where
     D: DataInterchange + Sync,
 {
-    let remote = init_remote::<D>(dir).unwrap();
+    let remote = init_remote::<D>(dir);
 
     let root_path = MetadataPath::root();
 
@@ -229,7 +228,7 @@ where
     metadata.root_keys().cloned().collect()
 }
 
-fn init_remote<D>(dir: &Path) -> Result<FileSystemRepository<D>>
+fn init_remote<D>(dir: &Path) -> FileSystemRepository<D>
 where
     D: DataInterchange + Sync,
 {
