@@ -122,6 +122,7 @@ where
 }
 
 /// A repository accessible over HTTP.
+#[derive(Debug)]
 pub struct HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
