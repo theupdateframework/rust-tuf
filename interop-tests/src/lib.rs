@@ -256,7 +256,7 @@ pub async fn generate_repos(
     let mut repo = FileSystemRepositoryBuilder::new(dir0)
         .metadata_prefix(Path::new("repository"))
         .targets_prefix(Path::new("repository").join("targets"))
-        .build()?;
+        .build();
 
     update_root(&mut repo, &keys, None, 1, consistent_snapshot).await;
     add_target(&mut repo, &keys, 0, consistent_snapshot).await;
@@ -276,8 +276,7 @@ pub async fn generate_repos(
         let mut repo = FileSystemRepositoryBuilder::new(dir_i)
             .metadata_prefix(Path::new("repository"))
             .targets_prefix(Path::new("repository").join("targets"))
-            .build()
-            .unwrap();
+            .build();
         copy_repo(dir, i);
 
         let root_signer = match r {

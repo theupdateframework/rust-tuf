@@ -23,7 +23,7 @@
 //! # fn main() -> Result<()> {
 //! # block_on(async {
 //! let root_public_keys = load_root_public_keys();
-//! let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"))?;
+//! let local = FileSystemRepository::<Json>::new(PathBuf::from("~/.rustup"));
 //!
 //! let remote = HttpRepositoryBuilder::new_with_uri(
 //!     "https://static.rust-lang.org/".parse::<http::Uri>().unwrap(),
