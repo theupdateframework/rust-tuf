@@ -467,10 +467,6 @@ mod test {
                 .targets_prefix("targs")
                 .build();
 
-            // test that init worked
-            //assert!(temp_dir.path().join("meta").exists());
-            //assert!(temp_dir.path().join("targs").exists());
-
             let data: &[u8] = b"like tears in the rain";
             let path = TargetPath::new("foo/bar/baz").unwrap();
             repo.store_target(&path, &mut &*data).await.unwrap();
