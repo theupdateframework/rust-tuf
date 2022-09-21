@@ -524,6 +524,29 @@ mod test {
                 .unwrap();
 
             assert_matches!(batch.commit().await, Err(CommitError::Conflict));
+
+            // multiple batches should conflict.
+            let batch1 = repo.batch_update();
+            let batch2 = repo.batch_update();
+
+            batch1
+                .store_target(
+                    &TargetPath::new("target4").unwrap(),
+                    &mut "target4".as_bytes(),
+                )
+                .await
+                .unwrap();
+
+            batch2
+                .store_target(
+                    &TargetPath::new("target5").unwrap(),
+                    &mut "target5".as_bytes(),
+                )
+                .await
+                .unwrap();
+
+            assert_matches!(batch1.commit().await, Ok(()));
+            assert_matches!(batch2.commit().await, Err(CommitError::Conflict));
         })
     }
 }

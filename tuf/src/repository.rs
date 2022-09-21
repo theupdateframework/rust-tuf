@@ -189,6 +189,29 @@ where
     }
 }
 
+impl<T, D> RepositoryStorage<D> for &T
+where
+    T: RepositoryStorage<D>,
+    D: DataInterchange + Sync,
+{
+    fn store_metadata<'a>(
+        &'a self,
+        meta_path: &MetadataPath,
+        version: MetadataVersion,
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
+    ) -> BoxFuture<'a, Result<()>> {
+        (**self).store_metadata(meta_path, version, metadata)
+    }
+
+    fn store_target<'a>(
+        &'a self,
+        target_path: &TargetPath,
+        target: &'a mut (dyn AsyncRead + Send + Unpin),
+    ) -> BoxFuture<'a, Result<()>> {
+        (**self).store_target(target_path, target)
+    }
+}
+
 impl<T, D> RepositoryStorage<D> for &mut T
 where
     T: RepositoryStorage<D>,
@@ -314,6 +337,28 @@ where
         target_path: &TargetPath,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         (**self).fetch_target(target_path)
+    }
+}
+
+impl<D> RepositoryStorage<D> for &dyn RepositoryStorage<D>
+where
+    D: DataInterchange + Sync,
+{
+    fn store_metadata<'a>(
+        &'a self,
+        meta_path: &MetadataPath,
+        version: MetadataVersion,
+        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
+    ) -> BoxFuture<'a, Result<()>> {
+        (**self).store_metadata(meta_path, version, metadata)
+    }
+
+    fn store_target<'a>(
+        &'a self,
+        target_path: &TargetPath,
+        target: &'a mut (dyn AsyncRead + Send + Unpin),
+    ) -> BoxFuture<'a, Result<()>> {
+        (**self).store_target(target_path, target)
     }
 }
 
