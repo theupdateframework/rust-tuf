@@ -8,10 +8,19 @@ use crate::error::Error;
 use crate::metadata::{self, Metadata};
 use crate::Result;
 
-const SPEC_VERSION: &str = "1.0";
+const SPEC_VERSION: &str = "1.0.0";
+
+// Ensure the given spec version matches our spec version.
+//
+// We also need to handle the literal "1.0" here, despite that fact that it is not a valid version
+// according to the SemVer spec, because it is already baked into some of the old roots.
+fn valid_spec_version(other: &str) -> bool {
+    other == SPEC_VERSION || other == "1.0"
+}
 
 fn parse_datetime(ts: &str) -> Result<DateTime<Utc>> {
-    Utc.datetime_from_str(ts, "%FT%TZ")
+    DateTime::parse_from_rfc3339(ts)
+        .map(|ts| ts.with_timezone(&Utc))
         .map_err(|e| Error::Encoding(format!("Can't parse DateTime: {:?}", e)))
 }
 
@@ -38,6 +47,8 @@ pub struct RootMetadata {
     #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
     keys: BTreeMap<crypto::KeyId, crypto::PublicKey>,
     roles: RoleDefinitions,
+    #[serde(flatten)]
+    additional_fields: BTreeMap<String, serde_json::Value>,
 }
 
 impl RootMetadata {
@@ -59,6 +70,7 @@ impl RootMetadata {
                 targets: meta.targets().clone(),
                 timestamp: meta.timestamp().clone(),
             },
+            additional_fields: meta.additional_fields().clone().into_iter().collect(),
         })
     }
 
@@ -70,7 +82,7 @@ impl RootMetadata {
             )));
         }
 
-        if self.spec_version != SPEC_VERSION {
+        if !valid_spec_version(&self.spec_version) {
             return Err(Error::Encoding(format!(
                 "Unknown spec version {}",
                 self.spec_version
@@ -95,6 +107,7 @@ impl RootMetadata {
             self.roles.snapshot,
             self.roles.targets,
             self.roles.timestamp,
+            self.additional_fields.into_iter().collect(),
         )
     }
 }
@@ -154,6 +167,8 @@ pub struct TimestampMetadata {
     version: u32,
     expires: String,
     meta: TimestampMeta,
+    #[serde(flatten)]
+    additional_fields: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -173,6 +188,7 @@ impl TimestampMetadata {
             meta: TimestampMeta {
                 snapshot: metadata.snapshot().clone(),
             },
+            additional_fields: metadata.additional_fields().clone().into_iter().collect(),
         })
     }
 
@@ -184,7 +200,7 @@ impl TimestampMetadata {
             )));
         }
 
-        if self.spec_version != SPEC_VERSION {
+        if !valid_spec_version(&self.spec_version) {
             return Err(Error::Encoding(format!(
                 "Unknown spec version {}",
                 self.spec_version
@@ -195,6 +211,7 @@ impl TimestampMetadata {
             self.version,
             parse_datetime(&self.expires)?,
             self.meta.snapshot,
+            self.additional_fields.into_iter().collect(),
         )
     }
 }
@@ -208,6 +225,8 @@ pub struct SnapshotMetadata {
     expires: String,
     #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
     meta: BTreeMap<String, metadata::MetadataDescription>,
+    #[serde(flatten)]
+    additional_fields: BTreeMap<String, serde_json::Value>,
 }
 
 impl SnapshotMetadata {
@@ -222,6 +241,7 @@ impl SnapshotMetadata {
                 .iter()
                 .map(|(p, d)| (format!("{}.json", p), d.clone()))
                 .collect(),
+            additional_fields: metadata.additional_fields().clone().into_iter().collect(),
         })
     }
 
@@ -233,7 +253,7 @@ impl SnapshotMetadata {
             )));
         }
 
-        if self.spec_version != SPEC_VERSION {
+        if !valid_spec_version(&self.spec_version) {
             return Err(Error::Encoding(format!(
                 "Unknown spec version {}",
                 self.spec_version
@@ -259,6 +279,7 @@ impl SnapshotMetadata {
                     Ok((p, d))
                 })
                 .collect::<Result<_>>()?,
+            self.additional_fields.into_iter().collect(),
         )
     }
 }
@@ -273,6 +294,8 @@ pub struct TargetsMetadata {
     targets: BTreeMap<metadata::TargetPath, metadata::TargetDescription>,
     #[serde(default, skip_serializing_if = "metadata::Delegations::is_empty")]
     delegations: metadata::Delegations,
+    #[serde(flatten)]
+    additional_fields: BTreeMap<String, serde_json::Value>,
 }
 
 impl TargetsMetadata {
@@ -288,6 +311,11 @@ impl TargetsMetadata {
                 .map(|(p, d)| (p.clone(), d.clone()))
                 .collect(),
             delegations: metadata.delegations().clone(),
+            additional_fields: metadata
+                .additional_fields()
+                .iter()
+                .map(|(p, d)| (p.clone(), d.clone()))
+                .collect(),
         })
     }
 
@@ -299,7 +327,7 @@ impl TargetsMetadata {
             )));
         }
 
-        if self.spec_version != SPEC_VERSION {
+        if !valid_spec_version(&self.spec_version) {
             return Err(Error::Encoding(format!(
                 "Unknown spec version {}",
                 self.spec_version
@@ -311,6 +339,7 @@ impl TargetsMetadata {
             parse_datetime(&self.expires)?,
             self.targets.into_iter().collect(),
             self.delegations,
+            self.additional_fields.into_iter().collect(),
         )
     }
 }
@@ -568,5 +597,53 @@ mod deserialize_reject_duplicates {
         deserializer.deserialize_map(BTreeVisitor {
             marker: PhantomData,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{parse_datetime, valid_spec_version};
+
+    #[test]
+    fn spec_version_validation() {
+        let valid_spec_versions = ["1.0.0", "1.0"];
+
+        for version in valid_spec_versions {
+            assert!(valid_spec_version(version), "{:?} should be valid", version);
+        }
+
+        let invalid_spec_versions = ["1.0.1", "1.1.0", "2.0.0", "3.0"];
+
+        for version in invalid_spec_versions {
+            assert!(
+                !valid_spec_version(version),
+                "{:?} should be invalid",
+                version
+            );
+        }
+    }
+
+    #[test]
+    fn datetime_formats() {
+        // The TUF spec says datetimes should be in ISO8601 format, specifically
+        // "YYYY-MM-DDTHH:MM:SSZ". Since not all TUF clients adhere strictly to that, we choose to
+        // be more lenient here. The following represent the intersection of valid ISO8601
+        // and RFC3339 datetime formats (source: https://ijmacd.github.io/rfc3339-iso8601/).
+        let valid_formats = [
+            "2022-08-30T19:53:55Z",
+            "2022-08-30T19:53:55.7Z",
+            "2022-08-30T19:53:55.77Z",
+            "2022-08-30T19:53:55.775Z",
+            "2022-08-30T19:53:55+00:00",
+            "2022-08-30T19:53:55.7+00:00",
+            "2022-08-30T14:53:55-05:00",
+            "2022-08-30T14:53:55.7-05:00",
+            "2022-08-30T14:53:55.77-05:00",
+            "2022-08-30T14:53:55.775-05:00",
+        ];
+
+        for format in valid_formats {
+            assert!(parse_datetime(format).is_ok(), "should parse {:?}", format);
+        }
     }
 }

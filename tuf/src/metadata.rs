@@ -66,7 +66,6 @@ static PATH_ILLEGAL_STRINGS: &[&str] = &[
     "\"",
     "|",
     "?",
-    "*",
     // control characters, all illegal in FAT
     "\u{000}",
     "\u{001}",
@@ -719,6 +718,7 @@ impl RootMetadataBuilder {
             RoleDefinition::new(self.snapshot_threshold, self.snapshot_key_ids)?,
             RoleDefinition::new(self.targets_threshold, self.targets_key_ids)?,
             RoleDefinition::new(self.timestamp_threshold, self.timestamp_key_ids)?,
+            Default::default(),
         )
     }
 
@@ -767,6 +767,7 @@ pub struct RootMetadata {
     snapshot: RoleDefinition,
     targets: RoleDefinition,
     timestamp: RoleDefinition,
+    additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl RootMetadata {
@@ -780,6 +781,7 @@ impl RootMetadata {
         snapshot: RoleDefinition,
         targets: RoleDefinition,
         timestamp: RoleDefinition,
+        additional_fields: HashMap<String, serde_json::Value>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
@@ -797,6 +799,7 @@ impl RootMetadata {
             snapshot,
             targets,
             timestamp,
+            additional_fields,
         })
     }
 
@@ -861,6 +864,11 @@ impl RootMetadata {
     /// An immutable reference to the timestamp role's definition.
     pub fn timestamp(&self) -> &RoleDefinition {
         &self.timestamp
+    }
+
+    /// An immutable reference to any additional fields on the metadata.
+    pub fn additional_fields(&self) -> &HashMap<String, serde_json::Value> {
+        &self.additional_fields
     }
 }
 
@@ -1128,7 +1136,12 @@ impl TimestampMetadataBuilder {
 
     /// Construct a new `TimestampMetadata`.
     pub fn build(self) -> Result<TimestampMetadata> {
-        TimestampMetadata::new(self.version, self.expires, self.snapshot)
+        TimestampMetadata::new(
+            self.version,
+            self.expires,
+            self.snapshot,
+            Default::default(),
+        )
     }
 
     /// Construct a new `SignedMetadata<D, TimestampMetadata>`.
@@ -1149,6 +1162,7 @@ pub struct TimestampMetadata {
     version: u32,
     expires: DateTime<Utc>,
     snapshot: MetadataDescription,
+    additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl TimestampMetadata {
@@ -1157,6 +1171,7 @@ impl TimestampMetadata {
         version: u32,
         expires: DateTime<Utc>,
         snapshot: MetadataDescription,
+        additional_fields: HashMap<String, serde_json::Value>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
@@ -1169,12 +1184,18 @@ impl TimestampMetadata {
             version,
             expires,
             snapshot,
+            additional_fields,
         })
     }
 
     /// An immutable reference to the snapshot description.
     pub fn snapshot(&self) -> &MetadataDescription {
         &self.snapshot
+    }
+
+    /// An immutable reference to any additional fields on the metadata.
+    pub fn additional_fields(&self) -> &HashMap<String, serde_json::Value> {
+        &self.additional_fields
     }
 }
 
@@ -1380,7 +1401,7 @@ impl SnapshotMetadataBuilder {
 
     /// Construct a new `SnapshotMetadata`.
     pub fn build(self) -> Result<SnapshotMetadata> {
-        SnapshotMetadata::new(self.version, self.expires, self.meta)
+        SnapshotMetadata::new(self.version, self.expires, self.meta, Default::default())
     }
 
     /// Construct a new `SignedMetadata<D, SnapshotMetadata>`.
@@ -1417,6 +1438,7 @@ pub struct SnapshotMetadata {
     version: u32,
     expires: DateTime<Utc>,
     meta: HashMap<MetadataPath, MetadataDescription>,
+    additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl SnapshotMetadata {
@@ -1425,6 +1447,7 @@ impl SnapshotMetadata {
         version: u32,
         expires: DateTime<Utc>,
         meta: HashMap<MetadataPath, MetadataDescription>,
+        additional_fields: HashMap<String, serde_json::Value>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
@@ -1437,12 +1460,18 @@ impl SnapshotMetadata {
             version,
             expires,
             meta,
+            additional_fields,
         })
     }
 
     /// An immutable reference to the metadata paths and descriptions.
     pub fn meta(&self) -> &HashMap<MetadataPath, MetadataDescription> {
         &self.meta
+    }
+
+    /// An immutable reference to any additional fields on the metadata.
+    pub fn additional_fields(&self) -> &HashMap<String, serde_json::Value> {
+        &self.additional_fields
     }
 }
 
@@ -1842,6 +1871,7 @@ pub struct TargetsMetadata {
     expires: DateTime<Utc>,
     targets: HashMap<TargetPath, TargetDescription>,
     delegations: Delegations,
+    additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl TargetsMetadata {
@@ -1851,6 +1881,7 @@ impl TargetsMetadata {
         expires: DateTime<Utc>,
         targets: HashMap<TargetPath, TargetDescription>,
         delegations: Delegations,
+        additional_fields: HashMap<String, serde_json::Value>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::IllegalArgument(format!(
@@ -1864,6 +1895,7 @@ impl TargetsMetadata {
             expires,
             targets,
             delegations,
+            additional_fields,
         })
     }
 
@@ -1875,6 +1907,11 @@ impl TargetsMetadata {
     /// An immutable reference to the optional delegations.
     pub fn delegations(&self) -> &Delegations {
         &self.delegations
+    }
+
+    /// An immutable reference to any additional fields on the metadata.
+    pub fn additional_fields(&self) -> &HashMap<String, serde_json::Value> {
+        &self.additional_fields
     }
 }
 
@@ -1992,6 +2029,7 @@ impl TargetsMetadataBuilder {
             self.expires,
             self.targets,
             self.delegations.unwrap_or_default(),
+            Default::default(),
         )
     }
 
@@ -2315,6 +2353,24 @@ mod test {
     }
 
     #[test]
+    fn allow_asterisk_in_target_path() {
+        let good_paths = &[
+            "*",
+            "*/some/path",
+            "*/some/path/",
+            "some/*/path",
+            "some/*/path/*",
+        ];
+
+        for path in good_paths.iter() {
+            assert!(safe_path(path).is_ok());
+            assert!(TargetPath::new(path.to_string()).is_ok());
+            assert!(MetadataPath::new(path.to_string()).is_ok());
+            assert!(TargetPath::new(path.to_string()).is_ok());
+        }
+    }
+
+    #[test]
     fn path_matches_chain() {
         let test_cases: &[(bool, &str, &[&[&str]])] = &[
             // simplest case
@@ -2462,7 +2518,7 @@ mod test {
 
         let jsn = json!({
             "_type": "root",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": true,
@@ -2529,7 +2585,7 @@ mod test {
     fn jsn_root_metadata_without_keyid_hash_algos() -> serde_json::Value {
         json!({
             "_type": "root",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
@@ -2634,7 +2690,7 @@ mod test {
         let jsn = json!({
             "signatures": [{
                 "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
-                "sig": "c4ba838e0d3f783716393a4d691f568f840733ff488bb79ac68287e97e0b31d63fcef392dbc978e878c2103ba231905af634cc651d6f0e63a35782d051ac6e00"
+                "sig": "1f944e022d0b30c5a9ddc9c210026f396e18a17cc9a4ee92c339a8ee63357608dba8121847a825c3a5c84c1081435436bd784c8086c3103cdd1489e79cff2802"
             }],
             "signed": jsn_root_metadata_without_keyid_hash_algos()
         });
@@ -2659,11 +2715,11 @@ mod test {
         let jsn = json!({
             "signatures": [{
                 "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
-                "sig": "c4ba838e0d3f783716393a4d691f568f840733ff488bb79ac68287e97e0b31d63fcef392dbc978e878c2103ba231905af634cc651d6f0e63a35782d051ac6e00"
+                "sig": "1f944e022d0b30c5a9ddc9c210026f396e18a17cc9a4ee92c339a8ee63357608dba8121847a825c3a5c84c1081435436bd784c8086c3103cdd1489e79cff2802"
             },
             {
                 "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
-                "sig": "c4ba838e0d3f783716393a4d691f568f840733ff488bb79ac68287e97e0b31d63fcef392dbc978e878c2103ba231905af634cc651d6f0e63a35782d051ac6e00"
+                "sig": "1f944e022d0b30c5a9ddc9c210026f396e18a17cc9a4ee92c339a8ee63357608dba8121847a825c3a5c84c1081435436bd784c8086c3103cdd1489e79cff2802"
             }],
             "signed": jsn_root_metadata_without_keyid_hash_algos()
         });
@@ -2671,6 +2727,7 @@ mod test {
         let decoded: SignedMetadata<crate::interchange::cjson::Json, RootMetadata> =
             serde_json::from_value(jsn).unwrap();
         let raw_root = decoded.to_raw().unwrap();
+
         assert_matches!(
             verify_signatures(&MetadataPath::root(), &raw_root, 2, &[root_key.public().clone()]),
             Err(Error::MetadataMissingSignatures {
@@ -2808,7 +2865,7 @@ mod test {
 
         let jsn = json!({
             "_type": "timestamp",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -2840,7 +2897,7 @@ mod test {
 
         let jsn = json!({
             "_type": "timestamp",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -2860,7 +2917,7 @@ mod test {
     fn serde_timestamp_metadata_missing_snapshot() {
         let jsn = json!({
             "_type": "timestamp",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {}
@@ -2876,7 +2933,7 @@ mod test {
     fn serde_timestamp_metadata_extra_metadata() {
         let jsn = json!({
             "_type": "timestamp",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -2922,7 +2979,7 @@ mod test {
 
         let jsn = json!({
             "_type": "snapshot",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -2956,7 +3013,7 @@ mod test {
 
         let jsn = json!({
             "_type": "snapshot",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -3017,7 +3074,7 @@ mod test {
 
             let jsn = json!({
                 "_type": "targets",
-                "spec_version": "1.0",
+                "spec_version": "1.0.0",
                 "version": 1,
                 "expires": "2017-01-01T00:00:00Z",
                 "targets": {
@@ -3087,7 +3144,7 @@ mod test {
 
         let jsn = json!({
             "_type": "targets",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "targets": {},
@@ -3145,14 +3202,14 @@ mod test {
             "signatures": [
                 {
                     "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
-                    "sig": "ea48ddc7b3ea614b394e508eb8722100f94ff1a4e3aac3af09d\
-                        a0dada4f878431e8ac26160833405ec239924dfe62edf605fee8294\
-                        c49b4acade55c76e817602",
+                    "sig": "a9b97b2439cd41e9a8c62e4d2f8f73b25a06095e0a994e8631a0\
+                        88977271909af2cc829c68637af98b07ebffeea308cc1a1c83d18fa2\
+                        9ec401493973b3dfa90e",
                 }
             ],
             "signed": {
                 "_type": "snapshot",
-                "spec_version": "1.0",
+                "spec_version": "1.0.0",
                 "version": 1,
                 "expires": "2017-01-01T00:00:00Z",
                 "meta": {
@@ -3242,6 +3299,7 @@ mod test {
             Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
             hashmap!(),
             Delegations::default(),
+            Default::default(),
         )
         .unwrap();
 
@@ -3312,7 +3370,7 @@ mod test {
     fn deserialize_json_root_duplicate_keys() {
         let root_json = r#"{
             "_type": "root",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
@@ -3498,7 +3556,7 @@ mod test {
     fn deserialize_json_snapshot_duplicate_metadata() {
         let snapshot_json = r#"{
             "_type": "snapshot",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -3563,7 +3621,7 @@ mod test {
     fn deserialize_json_timestamp_duplicate_metadata() {
         let timestamp_json = r#"{
             "_type": "timestamp",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {

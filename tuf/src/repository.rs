@@ -108,7 +108,7 @@ where
 
 /// A writable TUF repository. Most implementors of this trait should also implement
 /// `RepositoryProvider`.
-pub trait RepositoryStorage<D>
+pub trait RepositoryStorage<D>: Send
 where
     D: DataInterchange + Sync,
 {
