@@ -10,6 +10,14 @@ use crate::Result;
 
 const SPEC_VERSION: &str = "1.0";
 
+// Ensure the given spec version matches our spec version.
+//
+// We also need to handle the literal "1.0" here, despite that fact that it is not a valid version
+// according to the SemVer spec, because it is already baked into some of the old roots.
+fn valid_spec_version(other: &str) -> bool {
+    matches!(other, "1.0" | "1.0.0")
+}
+
 fn parse_datetime(ts: &str) -> Result<DateTime<Utc>> {
     Utc.datetime_from_str(ts, "%FT%TZ")
         .map_err(|e| Error::Encoding(format!("Can't parse DateTime: {:?}", e)))
@@ -70,7 +78,7 @@ impl RootMetadata {
             )));
         }
 
-        if self.spec_version != SPEC_VERSION {
+        if !valid_spec_version(&self.spec_version) {
             return Err(Error::Encoding(format!(
                 "Unknown spec version {}",
                 self.spec_version
@@ -184,7 +192,7 @@ impl TimestampMetadata {
             )));
         }
 
-        if self.spec_version != SPEC_VERSION {
+        if !valid_spec_version(&self.spec_version) {
             return Err(Error::Encoding(format!(
                 "Unknown spec version {}",
                 self.spec_version
@@ -233,7 +241,7 @@ impl SnapshotMetadata {
             )));
         }
 
-        if self.spec_version != SPEC_VERSION {
+        if !valid_spec_version(&self.spec_version) {
             return Err(Error::Encoding(format!(
                 "Unknown spec version {}",
                 self.spec_version
@@ -299,7 +307,7 @@ impl TargetsMetadata {
             )));
         }
 
-        if self.spec_version != SPEC_VERSION {
+        if !valid_spec_version(&self.spec_version) {
             return Err(Error::Encoding(format!(
                 "Unknown spec version {}",
                 self.spec_version
@@ -568,5 +576,29 @@ mod deserialize_reject_duplicates {
         deserializer.deserialize_map(BTreeVisitor {
             marker: PhantomData,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn spec_version_validation() {
+        let valid_spec_versions = ["1.0.0", "1.0"];
+
+        for version in valid_spec_versions {
+            assert!(valid_spec_version(version), "{:?} should be valid", version);
+        }
+
+        let invalid_spec_versions = ["1.0.1", "1.1.0", "2.0.0", "3.0"];
+
+        for version in invalid_spec_versions {
+            assert!(
+                !valid_spec_version(version),
+                "{:?} should be invalid",
+                version
+            );
+        }
     }
 }
