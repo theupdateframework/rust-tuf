@@ -202,7 +202,7 @@ where
 
 impl<D> RepositoryProvider<D> for FileSystemRepository<D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     fn fetch_metadata<'a>(
         &'a self,
@@ -224,7 +224,7 @@ where
 
 impl<D> RepositoryStorage<D> for FileSystemRepository<D>
 where
-    D: DataInterchange + Sync + Send,
+    D: DataInterchange,
 {
     fn store_metadata<'a>(
         &'a self,
@@ -336,7 +336,7 @@ pub enum CommitError {
 
 impl<'a, D> FileSystemBatchUpdate<'a, D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     /// Write all the metadata and targets the [FileSystemBatchUpdate] to the source
     /// [FileSystemRepository] in a single batch operation.
@@ -379,7 +379,7 @@ where
 
 impl<D> RepositoryProvider<D> for FileSystemBatchUpdate<'_, D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     fn fetch_metadata<'a>(
         &'a self,
@@ -412,7 +412,7 @@ where
 
 impl<D> RepositoryStorage<D> for FileSystemBatchUpdate<'_, D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     fn store_metadata<'a>(
         &'a self,

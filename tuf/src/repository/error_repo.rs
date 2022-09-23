@@ -35,7 +35,7 @@ impl<R> ErrorRepository<R> {
 impl<D, R> RepositoryProvider<D> for ErrorRepository<R>
 where
     R: RepositoryProvider<D> + Sync,
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     fn fetch_metadata<'a>(
         &'a self,
@@ -56,7 +56,7 @@ where
 impl<D, R> RepositoryStorage<D> for ErrorRepository<R>
 where
     R: RepositoryStorage<D> + Sync,
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     fn store_metadata<'a>(
         &'a self,

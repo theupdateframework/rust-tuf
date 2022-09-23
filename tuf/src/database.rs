@@ -17,11 +17,11 @@ use crate::verify::{self, Verified};
 use crate::Result;
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Database<D: DataInterchange> {
     trusted_root: Verified<RootMetadata>,
-    trusted_snapshot: Option<Verified<SnapshotMetadata>>,
     trusted_targets: Option<Verified<TargetsMetadata>>,
+    trusted_snapshot: Option<Verified<SnapshotMetadata>>,
     trusted_timestamp: Option<Verified<TimestampMetadata>>,
     trusted_delegations: HashMap<MetadataPath, Verified<TargetsMetadata>>,
     interchange: PhantomData<D>,
@@ -1037,6 +1037,19 @@ impl<D: DataInterchange> Database<D> {
                 path: MetadataPath::targets(),
                 version: MetadataVersion::None,
             }),
+        }
+    }
+}
+
+impl<D: DataInterchange> Clone for Database<D> {
+    fn clone(&self) -> Self {
+        Self {
+            trusted_root: self.trusted_root.clone(),
+            trusted_targets: self.trusted_targets.clone(),
+            trusted_snapshot: self.trusted_snapshot.clone(),
+            trusted_timestamp: self.trusted_timestamp.clone(),
+            trusted_delegations: self.trusted_delegations.clone(),
+            interchange: PhantomData,
         }
     }
 }

@@ -76,7 +76,7 @@ where
 
 impl<D> RepositoryProvider<D> for EphemeralRepository<D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     fn fetch_metadata<'a>(
         &'a self,
@@ -113,7 +113,7 @@ where
 
 impl<D> RepositoryStorage<D> for EphemeralRepository<D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     fn store_metadata<'a>(
         &'a self,
@@ -156,7 +156,7 @@ pub enum CommitError {
 
 impl<D> EphemeralBatchUpdate<'_, D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     /// Write all the metadata and targets in the [EphemeralBatchUpdate] to the source
     /// [EphemeralRepository] in a single batch operation.
@@ -182,7 +182,7 @@ where
 
 impl<D> RepositoryProvider<D> for EphemeralBatchUpdate<'_, D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     fn fetch_metadata<'a>(
         &'a self,
@@ -229,7 +229,7 @@ where
 
 impl<D> RepositoryStorage<D> for EphemeralBatchUpdate<'_, D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     fn store_metadata<'a>(
         &'a self,

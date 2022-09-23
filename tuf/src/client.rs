@@ -68,7 +68,7 @@ use crate::verify::Verified;
 #[derive(Debug)]
 pub struct Client<D, L, R>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     L: RepositoryProvider<D> + RepositoryStorage<D>,
     R: RepositoryProvider<D>,
 {
@@ -80,7 +80,7 @@ where
 
 impl<D, L, R> Client<D, L, R>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     L: RepositoryProvider<D> + RepositoryStorage<D>,
     R: RepositoryProvider<D>,
 {
@@ -1127,7 +1127,7 @@ where
 #[derive(Debug)]
 pub struct Parts<D, L, R>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     L: RepositoryProvider<D> + RepositoryStorage<D>,
     R: RepositoryProvider<D>,
 {
@@ -1156,7 +1156,7 @@ async fn fetch_metadata_from_local_or_else_remote<'a, D, L, R, M>(
     remote: &'a Repository<R, D>,
 ) -> Result<(bool, RawSignedMetadata<D, M>)>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     L: RepositoryProvider<D> + RepositoryStorage<D>,
     R: RepositoryProvider<D>,
     M: Metadata + 'static,
