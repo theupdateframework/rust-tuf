@@ -41,7 +41,7 @@ pub(crate) use self::track_repo::{Track, TrackRepository};
 /// A readable TUF repository.
 pub trait RepositoryProvider<D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     /// Fetch signed metadata identified by `meta_path`, `version`, and
     /// [`D::extension()`][extension].
@@ -81,7 +81,7 @@ pub(crate) async fn fetch_metadata_to_string<D, R>(
     version: MetadataVersion,
 ) -> Result<String>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     R: RepositoryProvider<D>,
 {
     let mut reader = repo.fetch_metadata(meta_path, version).await?;
@@ -97,7 +97,7 @@ pub(crate) async fn fetch_target_to_string<D, R>(
     target_path: &TargetPath,
 ) -> Result<String>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     R: RepositoryProvider<D>,
 {
     let mut reader = repo.fetch_target(target_path).await?;
@@ -110,7 +110,7 @@ where
 /// `RepositoryProvider`.
 pub trait RepositoryStorage<D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     /// Store the provided `metadata` in a location identified by `meta_path`, `version`, and
     /// [`D::extension()`][extension], overwriting any existing metadata at that location.
@@ -136,253 +136,74 @@ where
 /// trait objects that implement both traits.
 pub trait RepositoryStorageProvider<D>: RepositoryStorage<D> + RepositoryProvider<D>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
 }
 
 impl<D, T> RepositoryStorageProvider<D> for T
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     T: RepositoryStorage<D> + RepositoryProvider<D>,
 {
 }
 
-impl<T, D> RepositoryProvider<D> for &T
-where
-    T: RepositoryProvider<D>,
-    D: DataInterchange + Sync,
-{
-    fn fetch_metadata<'a>(
-        &'a self,
-        meta_path: &MetadataPath,
-        version: MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        (**self).fetch_metadata(meta_path, version)
-    }
+macro_rules! impl_provider {
+    (
+        <$($desc:tt)+
+    ) => {
+        impl<$($desc)+ {
+            fn fetch_metadata<'a>(
+                &'a self,
+                meta_path: &MetadataPath,
+                version: MetadataVersion,
+            ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+                (**self).fetch_metadata(meta_path, version)
+            }
 
-    fn fetch_target<'a>(
-        &'a self,
-        target_path: &TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        (**self).fetch_target(target_path)
-    }
+            fn fetch_target<'a>(
+                &'a self,
+                target_path: &TargetPath,
+            ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
+                (**self).fetch_target(target_path)
+            }
+        }
+    };
 }
 
-impl<T, D> RepositoryProvider<D> for &mut T
-where
-    T: RepositoryProvider<D>,
-    D: DataInterchange + Sync,
-{
-    fn fetch_metadata<'a>(
-        &'a self,
-        meta_path: &MetadataPath,
-        version: MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        (**self).fetch_metadata(meta_path, version)
-    }
+impl_provider!(<D: DataInterchange, T: RepositoryProvider<D> + ?Sized> RepositoryProvider<D> for &T);
+impl_provider!(<D: DataInterchange, T: RepositoryProvider<D> + ?Sized> RepositoryProvider<D> for &mut T);
+impl_provider!(<D: DataInterchange, T: RepositoryProvider<D> + ?Sized> RepositoryProvider<D> for Box<T>);
+impl_provider!(<D: DataInterchange, T: RepositoryProvider<D> + ?Sized> RepositoryProvider<D> for Arc<T>);
 
-    fn fetch_target<'a>(
-        &'a self,
-        target_path: &TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        (**self).fetch_target(target_path)
-    }
+macro_rules! impl_storage {
+    (
+        <$($desc:tt)+
+    ) => {
+        impl<$($desc)+ {
+            fn store_metadata<'a>(
+                &'a self,
+                meta_path: &MetadataPath,
+                version: MetadataVersion,
+                metadata: &'a mut (dyn AsyncRead + Send + Unpin),
+            ) -> BoxFuture<'a, Result<()>> {
+                (**self).store_metadata(meta_path, version, metadata)
+            }
+
+            fn store_target<'a>(
+                &'a self,
+                target_path: &TargetPath,
+                target: &'a mut (dyn AsyncRead + Send + Unpin),
+            ) -> BoxFuture<'a, Result<()>> {
+                (**self).store_target(target_path, target)
+            }
+        }
+    };
 }
 
-impl<T, D> RepositoryStorage<D> for &T
-where
-    T: RepositoryStorage<D>,
-    D: DataInterchange + Sync,
-{
-    fn store_metadata<'a>(
-        &'a self,
-        meta_path: &MetadataPath,
-        version: MetadataVersion,
-        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
-    ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_metadata(meta_path, version, metadata)
-    }
-
-    fn store_target<'a>(
-        &'a self,
-        target_path: &TargetPath,
-        target: &'a mut (dyn AsyncRead + Send + Unpin),
-    ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_target(target_path, target)
-    }
-}
-
-impl<T, D> RepositoryStorage<D> for &mut T
-where
-    T: RepositoryStorage<D>,
-    D: DataInterchange + Sync,
-{
-    fn store_metadata<'a>(
-        &'a self,
-        meta_path: &MetadataPath,
-        version: MetadataVersion,
-        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
-    ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_metadata(meta_path, version, metadata)
-    }
-
-    fn store_target<'a>(
-        &'a self,
-        target_path: &TargetPath,
-        target: &'a mut (dyn AsyncRead + Send + Unpin),
-    ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_target(target_path, target)
-    }
-}
-
-impl<T, D> RepositoryStorage<D> for Box<T>
-where
-    T: RepositoryStorage<D> + ?Sized,
-    D: DataInterchange + Sync,
-{
-    fn store_metadata<'a>(
-        &'a self,
-        meta_path: &MetadataPath,
-        version: MetadataVersion,
-        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
-    ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_metadata(meta_path, version, metadata)
-    }
-
-    fn store_target<'a>(
-        &'a self,
-        target_path: &TargetPath,
-        target: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
-    ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_target(target_path, target)
-    }
-}
-
-impl<T, D> RepositoryProvider<D> for Box<T>
-where
-    T: RepositoryProvider<D> + ?Sized,
-    D: DataInterchange + Sync,
-{
-    fn fetch_metadata<'a>(
-        &'a self,
-        meta_path: &MetadataPath,
-        version: MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        (**self).fetch_metadata(meta_path, version)
-    }
-
-    fn fetch_target<'a>(
-        &'a self,
-        target_path: &TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        (**self).fetch_target(target_path)
-    }
-}
-
-impl<D, T> RepositoryProvider<D> for Arc<T>
-where
-    D: DataInterchange + Sync,
-    T: RepositoryProvider<D> + ?Sized,
-{
-    fn fetch_metadata<'a>(
-        &'a self,
-        meta_path: &MetadataPath,
-        version: MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        (**self).fetch_metadata(meta_path, version)
-    }
-
-    fn fetch_target<'a>(
-        &'a self,
-        target_path: &TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        (**self).fetch_target(target_path)
-    }
-}
-
-impl<D> RepositoryProvider<D> for &dyn RepositoryProvider<D>
-where
-    D: DataInterchange + Sync,
-{
-    fn fetch_metadata<'a>(
-        &'a self,
-        meta_path: &MetadataPath,
-        version: MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        (**self).fetch_metadata(meta_path, version)
-    }
-
-    fn fetch_target<'a>(
-        &'a self,
-        target_path: &TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        (**self).fetch_target(target_path)
-    }
-}
-
-impl<D> RepositoryProvider<D> for &mut dyn RepositoryProvider<D>
-where
-    D: DataInterchange + Sync,
-{
-    fn fetch_metadata<'a>(
-        &'a self,
-        meta_path: &MetadataPath,
-        version: MetadataVersion,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        (**self).fetch_metadata(meta_path, version)
-    }
-
-    fn fetch_target<'a>(
-        &'a self,
-        target_path: &TargetPath,
-    ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        (**self).fetch_target(target_path)
-    }
-}
-
-impl<D> RepositoryStorage<D> for &dyn RepositoryStorage<D>
-where
-    D: DataInterchange + Sync,
-{
-    fn store_metadata<'a>(
-        &'a self,
-        meta_path: &MetadataPath,
-        version: MetadataVersion,
-        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
-    ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_metadata(meta_path, version, metadata)
-    }
-
-    fn store_target<'a>(
-        &'a self,
-        target_path: &TargetPath,
-        target: &'a mut (dyn AsyncRead + Send + Unpin),
-    ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_target(target_path, target)
-    }
-}
-
-impl<D> RepositoryStorage<D> for &mut dyn RepositoryStorage<D>
-where
-    D: DataInterchange + Sync,
-{
-    fn store_metadata<'a>(
-        &'a self,
-        meta_path: &MetadataPath,
-        version: MetadataVersion,
-        metadata: &'a mut (dyn AsyncRead + Send + Unpin),
-    ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_metadata(meta_path, version, metadata)
-    }
-
-    fn store_target<'a>(
-        &'a self,
-        target_path: &TargetPath,
-        target: &'a mut (dyn AsyncRead + Send + Unpin),
-    ) -> BoxFuture<'a, Result<()>> {
-        (**self).store_target(target_path, target)
-    }
-}
+impl_storage!(<D: DataInterchange, T: RepositoryStorage<D> + ?Sized> RepositoryStorage<D> for &T);
+impl_storage!(<D: DataInterchange, T: RepositoryStorage<D> + ?Sized> RepositoryStorage<D> for &mut T);
+impl_storage!(<D: DataInterchange, T: RepositoryStorage<D> + ?Sized> RepositoryStorage<D> for Box<T>);
+impl_storage!(<D: DataInterchange, T: RepositoryStorage<D> + ?Sized> RepositoryStorage<D> for Arc<T>);
 
 /// A wrapper around an implementation of [`RepositoryProvider`] and/or [`RepositoryStorage`] tied
 /// to a specific [`DataInterchange`](crate::interchange::DataInterchange) that will enforce
@@ -434,7 +255,7 @@ impl<R, D> Repository<R, D> {
 impl<R, D> Repository<R, D>
 where
     R: RepositoryProvider<D>,
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     /// Fetch metadata identified by `meta_path`, `version`, and [`D::extension()`][extension].
     ///
@@ -523,7 +344,7 @@ where
 impl<R, D> Repository<R, D>
 where
     R: RepositoryStorage<D>,
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     /// Store the provided `metadata` in a location identified by `meta_path`, `version`, and
     /// [`D::extension()`][extension], overwriting any existing metadata at that location.

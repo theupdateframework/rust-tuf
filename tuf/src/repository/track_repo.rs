@@ -104,7 +104,7 @@ impl<R> TrackRepository<R> {
 impl<D, R> RepositoryStorage<D> for TrackRepository<R>
 where
     R: RepositoryStorage<D> + Sync + Send,
-    D: DataInterchange + Sync,
+    D: DataInterchange,
 {
     fn store_metadata<'a>(
         &'a self,
@@ -143,7 +143,7 @@ where
 
 impl<D, R> RepositoryProvider<D> for TrackRepository<R>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     R: RepositoryProvider<D> + Sync,
 {
     fn fetch_metadata<'a>(

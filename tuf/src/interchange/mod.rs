@@ -5,14 +5,13 @@ pub use cjson::{Json, JsonPretty};
 
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use std::fmt::Debug;
 
 use crate::Result;
 
 /// The format used for data interchange, serialization, and deserialization.
-pub trait DataInterchange: Debug + PartialEq + Clone {
+pub trait DataInterchange: Sync {
     /// The type of data that is contained in the `signed` portion of metadata.
-    type RawData: Serialize + DeserializeOwned + Clone + PartialEq;
+    type RawData: Serialize + DeserializeOwned + PartialEq;
 
     /// The data interchange's extension.
     fn extension() -> &'static str;

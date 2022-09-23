@@ -205,7 +205,7 @@ struct Staged<D: DataInterchange, M: Metadata> {
 
 struct RepoContext<'a, D, R>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     R: RepositoryStorage<D>,
 {
     repo: R,
@@ -228,7 +228,7 @@ where
 
 impl<'a, D, R> RepoContext<'a, D, R>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     R: RepositoryStorage<D>,
 {
     fn root_keys_changed(&self, root: &Verified<RootMetadata>) -> bool {
@@ -309,7 +309,7 @@ where
 /// This helper builder simplifies the process of creating new metadata.
 pub struct RepoBuilder<'a, D, R, S = Root>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     R: RepositoryStorage<D>,
     S: State,
 {
@@ -319,7 +319,7 @@ where
 
 impl<'a, D, R> RepoBuilder<'a, D, R, Root>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     R: RepositoryStorage<D>,
 {
     /// Create a [RepoBuilder] for creating metadata for a new repository.
@@ -762,7 +762,7 @@ where
 
 impl<'a, D, R> RepoBuilder<'a, D, R, Targets<D>>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     R: RepositoryStorage<D>,
 {
     /// Whether or not to include the length of the targets, and any delegated targets, in the
@@ -1022,7 +1022,7 @@ where
 
 impl<'a, D, R> RepoBuilder<'a, D, R, Snapshot<D>>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     R: RepositoryStorage<D>,
 {
     /// Whether or not to include the length of the targets, and any delegated targets, in the
@@ -1180,7 +1180,7 @@ where
 
 impl<'a, D, R> RepoBuilder<'a, D, R, Timestamp<D>>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     R: RepositoryStorage<D>,
 {
     /// Whether or not to include the length of the snapshot, and any delegated snapshot, in the
@@ -1338,7 +1338,7 @@ where
 
 impl<'a, D, R> RepoBuilder<'a, D, R, Done<D>>
 where
-    D: DataInterchange + Sync,
+    D: DataInterchange,
     R: RepositoryStorage<D>,
 {
     /// Commit the metadata for this repository, then write all metadata to the repository. Before

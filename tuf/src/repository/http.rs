@@ -1,7 +1,7 @@
 //! Read-only Repository implementation backed by a web server.
 
 use futures_io::AsyncRead;
-use futures_util::future::{BoxFuture, FutureExt};
+use futures_util::future::{BoxFuture, FutureExt as _, TryFutureExt as _};
 use futures_util::stream::TryStreamExt;
 use http::{Response, StatusCode, Uri};
 use hyper::body::Body;
@@ -9,6 +9,7 @@ use hyper::client::connect::Connect;
 use hyper::Client;
 use hyper::Request;
 use percent_encoding::utf8_percent_encode;
+use std::future::Future;
 use std::io;
 use std::marker::PhantomData;
 use url::Url;
@@ -209,31 +210,27 @@ where
     C: Connect + Clone + Send + Sync + 'static,
     D: DataInterchange,
 {
-    async fn get<'a>(&'a self, uri: &Uri) -> Result<Response<Body>> {
-        match Request::builder()
+    fn get<'a>(&self, uri: &'a Uri) -> Result<impl Future<Output = Result<Response<Body>>> + 'a> {
+        let req = Request::builder()
             .uri(uri)
             .header("User-Agent", &*self.user_agent)
             .body(Body::default())
-        {
-            Ok(req) => match self.client.request(req).await {
-                Ok(resp) => Ok(resp),
-                Err(err) => Err(Error::Hyper {
-                    uri: uri.to_string(),
-                    err,
-                }),
-            },
-            Err(err) => Err(Error::Http {
+            .map_err(|err| Error::Http {
                 uri: uri.to_string(),
                 err,
-            }),
-        }
+            })?;
+
+        Ok(self.client.request(req).map_err(|err| Error::Hyper {
+            uri: uri.to_string(),
+            err,
+        }))
     }
 }
 
 impl<C, D> RepositoryProvider<D> for HttpRepository<C, D>
 where
     C: Connect + Clone + Send + Sync + 'static,
-    D: DataInterchange + Send + Sync,
+    D: DataInterchange,
 {
     fn fetch_metadata<'a>(
         &'a self,
@@ -248,7 +245,7 @@ where
             // TODO(#278) check content length if known and fail early if the payload is too large.
 
             let uri = uri?;
-            let resp = self.get(&uri).await?;
+            let resp = self.get(&uri)?.await?;
 
             let status = resp.status();
             if status == StatusCode::OK {
@@ -287,7 +284,7 @@ where
             // TODO(#278) check content length if known and fail early if the payload is too large.
 
             let uri = uri?;
-            let resp = self.get(&uri).await?;
+            let resp = self.get(&uri)?.await?;
 
             let status = resp.status();
             if status == StatusCode::OK {
