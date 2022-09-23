@@ -14,8 +14,8 @@ use std::str;
 
 use crate::crypto::{self, HashAlgorithm, HashValue, KeyId, PrivateKey, PublicKey, Signature};
 use crate::error::Error;
-use crate::interchange::cjson::shims;
-use crate::interchange::DataInterchange;
+use crate::pouf::cjson::shims;
+use crate::pouf::Pouf;
 use crate::Result;
 
 #[rustfmt::skip]
@@ -256,7 +256,7 @@ pub struct RawSignedMetadata<D, M> {
 
 impl<D, M> RawSignedMetadata<D, M>
 where
-    D: DataInterchange,
+    D: Pouf,
     M: Metadata,
 {
     /// Create a new [`RawSignedMetadata`] using the provided `bytes`.
@@ -317,14 +317,14 @@ impl<D> RawSignedMetadataSet<D> {
 #[derive(Default)]
 pub struct RawSignedMetadataSetBuilder<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     metadata: RawSignedMetadataSet<D>,
 }
 
 impl<D> RawSignedMetadataSetBuilder<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     /// Create a new [RawSignedMetadataSetBuilder].
     pub fn new() -> Self {
@@ -372,7 +372,7 @@ where
 #[derive(Debug, Clone)]
 pub struct SignedMetadataBuilder<D, M>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     signatures: HashMap<KeyId, Signature>,
     metadata: D::RawData,
@@ -382,7 +382,7 @@ where
 
 impl<D, M> SignedMetadataBuilder<D, M>
 where
-    D: DataInterchange,
+    D: Pouf,
     M: Metadata,
 {
     /// Create a new `SignedMetadataBuilder` from a given `Metadata`.
@@ -439,7 +439,7 @@ where
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SignedMetadata<D, M>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     signatures: Vec<Signature>,
     #[serde(rename = "signed")]
@@ -450,7 +450,7 @@ where
 
 impl<D, M> SignedMetadata<D, M>
 where
-    D: DataInterchange,
+    D: Pouf,
     M: Metadata,
 {
     /// Create a new `SignedMetadata`. The supplied private key is used to sign the canonicalized
@@ -459,7 +459,7 @@ where
     /// ```
     /// # use chrono::prelude::*;
     /// # use tuf::crypto::{Ed25519PrivateKey, PrivateKey, SignatureScheme, HashAlgorithm};
-    /// # use tuf::interchange::Json;
+    /// # use tuf::pouf::Json;
     /// # use tuf::metadata::{SignedMetadata, SnapshotMetadataBuilder};
     /// #
     /// # let key: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
@@ -488,8 +488,8 @@ where
     /// file, as:
     /// * Parsing metadata removes unknown fields, which would not be included in the returned
     /// bytes,
-    /// * DataInterchange implementations only guarantee the bytes are canonical for the purpose of
-    /// a signature. Metadata obtained from a remote source may have included different whitespace
+    /// * [Pouf] implementations only guarantee the bytes are canonical for the purpose of a
+    /// signature. Metadata obtained from a remote source may have included different whitespace
     /// or ordered fields in a way that is not preserved when parsing that metadata.
     pub fn to_raw(&self) -> Result<RawSignedMetadata<D, M>> {
         let bytes = D::canonicalize(&D::serialize(self)?)?;
@@ -507,7 +507,7 @@ where
     /// ```
     /// # use chrono::prelude::*;
     /// # use tuf::crypto::{Ed25519PrivateKey, PrivateKey, SignatureScheme, HashAlgorithm};
-    /// # use tuf::interchange::Json;
+    /// # use tuf::pouf::Json;
     /// # use tuf::metadata::{SignedMetadata, SnapshotMetadataBuilder};
     /// #
     /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
@@ -724,7 +724,7 @@ impl RootMetadataBuilder {
     /// Construct a new `SignedMetadata<D, RootMetadata>`.
     pub fn signed<D>(self, private_key: &dyn PrivateKey) -> Result<SignedMetadata<D, RootMetadata>>
     where
-        D: DataInterchange,
+        D: Pouf,
     {
         SignedMetadata::new(&self.build()?, private_key)
     }
@@ -958,7 +958,7 @@ impl<'de, M: Metadata> Deserialize<'de> for RoleDefinition<M> {
 /// Wrapper for a path to metadata.
 ///
 /// Note: This should **not** contain the file extension. This is automatically added by the
-/// library depending on what type of data interchange format is being used.
+/// library depending on what type of data pouf format is being used.
 ///
 /// ```
 /// use tuf::metadata::MetadataPath;
@@ -1025,7 +1025,7 @@ impl MetadataPath {
     ///
     /// ```
     /// # use tuf::crypto::HashValue;
-    /// # use tuf::interchange::Json;
+    /// # use tuf::pouf::Json;
     /// # use tuf::metadata::{MetadataPath, MetadataVersion};
     /// #
     /// let path = MetadataPath::new("foo/bar").unwrap();
@@ -1036,7 +1036,7 @@ impl MetadataPath {
     /// ```
     pub fn components<D>(&self, version: MetadataVersion) -> Vec<String>
     where
-        D: DataInterchange,
+        D: Pouf,
     {
         let mut buf: Vec<String> = self.0.split('/').map(|s| s.to_string()).collect();
         let len = buf.len();
@@ -1086,7 +1086,7 @@ impl TimestampMetadataBuilder {
         hash_algs: &[HashAlgorithm],
     ) -> Result<Self>
     where
-        D: DataInterchange,
+        D: Pouf,
     {
         let raw_snapshot = snapshot.to_raw()?;
         let description = MetadataDescription::from_slice(
@@ -1134,7 +1134,7 @@ impl TimestampMetadataBuilder {
         private_key: &dyn PrivateKey,
     ) -> Result<SignedMetadata<D, TimestampMetadata>>
     where
-        D: DataInterchange,
+        D: Pouf,
     {
         SignedMetadata::new(&self.build()?, private_key)
     }
@@ -1319,7 +1319,7 @@ impl SnapshotMetadataBuilder {
         hash_algs: &[HashAlgorithm],
     ) -> Result<Self>
     where
-        D: DataInterchange,
+        D: Pouf,
     {
         SnapshotMetadataBuilder::new().insert_metadata(targets, hash_algs)
     }
@@ -1344,7 +1344,7 @@ impl SnapshotMetadataBuilder {
     ) -> Result<Self>
     where
         M: Metadata,
-        D: DataInterchange,
+        D: Pouf,
     {
         self.insert_metadata_with_path(M::ROLE.name(), metadata, hash_algs)
     }
@@ -1359,7 +1359,7 @@ impl SnapshotMetadataBuilder {
     where
         P: Into<Cow<'static, str>>,
         M: Metadata,
-        D: DataInterchange,
+        D: Pouf,
     {
         let raw_metadata = metadata.to_raw()?;
         let description = MetadataDescription::from_slice(
@@ -1392,7 +1392,7 @@ impl SnapshotMetadataBuilder {
         private_key: &dyn PrivateKey,
     ) -> Result<SignedMetadata<D, SnapshotMetadata>>
     where
-        D: DataInterchange,
+        D: Pouf,
     {
         SignedMetadata::new(&self.build()?, private_key)
     }
@@ -2002,7 +2002,7 @@ impl TargetsMetadataBuilder {
         private_key: &dyn PrivateKey,
     ) -> Result<SignedMetadata<D, TargetsMetadata>>
     where
-        D: DataInterchange,
+        D: Pouf,
     {
         SignedMetadata::new(&self.build()?, private_key)
     }
@@ -2282,7 +2282,7 @@ impl DelegationBuilder {
 mod test {
     use super::*;
     use crate::crypto::Ed25519PrivateKey;
-    use crate::interchange::Json;
+    use crate::pouf::Json;
     use crate::verify::verify_signatures;
     use assert_matches::assert_matches;
     use chrono::prelude::*;
@@ -2632,7 +2632,7 @@ mod test {
         let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let decoded: RootMetadata = serde_json::from_value(jsn).unwrap();
 
-        let signed: SignedMetadata<crate::interchange::cjson::Json, _> =
+        let signed: SignedMetadata<crate::pouf::cjson::Json, _> =
             SignedMetadata::new(&decoded, &root_key).unwrap();
         let raw_root = signed.to_raw().unwrap();
 
@@ -2657,7 +2657,7 @@ mod test {
             "signed": jsn_root_metadata_without_keyid_hash_algos()
         });
         let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
-        let decoded: SignedMetadata<crate::interchange::cjson::Json, RootMetadata> =
+        let decoded: SignedMetadata<crate::pouf::cjson::Json, RootMetadata> =
             serde_json::from_value(jsn).unwrap();
         let raw_root = decoded.to_raw().unwrap();
 
@@ -2686,7 +2686,7 @@ mod test {
             "signed": jsn_root_metadata_without_keyid_hash_algos()
         });
         let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
-        let decoded: SignedMetadata<crate::interchange::cjson::Json, RootMetadata> =
+        let decoded: SignedMetadata<crate::pouf::cjson::Json, RootMetadata> =
             serde_json::from_value(jsn).unwrap();
         let raw_root = decoded.to_raw().unwrap();
         assert_matches!(

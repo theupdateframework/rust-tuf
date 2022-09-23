@@ -1,10 +1,10 @@
 //! Interfaces for interacting with different types of TUF repositories.
 
 use crate::crypto::{self, HashAlgorithm, HashValue};
-use crate::interchange::DataInterchange;
 use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, TargetDescription, TargetPath,
 };
+use crate::pouf::Pouf;
 use crate::util::SafeAsyncRead;
 use crate::{Error, Result};
 
@@ -41,7 +41,7 @@ pub(crate) use self::track_repo::{Track, TrackRepository};
 /// A readable TUF repository.
 pub trait RepositoryProvider<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     /// Fetch signed metadata identified by `meta_path`, `version`, and
     /// [`D::extension()`][extension].
@@ -51,7 +51,7 @@ where
     /// invalid metadata and fail the fetch operation before streaming all of the bytes of the
     /// metadata.
     ///
-    /// [extension]: crate::interchange::DataInterchange::extension
+    /// [extension]: crate::pouf::Pouf::extension
     /// [Client]: crate::client::Client
     fn fetch_metadata<'a>(
         &'a self,
@@ -81,7 +81,7 @@ pub(crate) async fn fetch_metadata_to_string<D, R>(
     version: MetadataVersion,
 ) -> Result<String>
 where
-    D: DataInterchange,
+    D: Pouf,
     R: RepositoryProvider<D>,
 {
     let mut reader = repo.fetch_metadata(meta_path, version).await?;
@@ -97,7 +97,7 @@ pub(crate) async fn fetch_target_to_string<D, R>(
     target_path: &TargetPath,
 ) -> Result<String>
 where
-    D: DataInterchange,
+    D: Pouf,
     R: RepositoryProvider<D>,
 {
     let mut reader = repo.fetch_target(target_path).await?;
@@ -110,12 +110,12 @@ where
 /// `RepositoryProvider`.
 pub trait RepositoryStorage<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     /// Store the provided `metadata` in a location identified by `meta_path`, `version`, and
     /// [`D::extension()`][extension], overwriting any existing metadata at that location.
     ///
-    /// [extension]: crate::interchange::DataInterchange::extension
+    /// [extension]: crate::pouf::Pouf::extension
     fn store_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
@@ -136,13 +136,13 @@ where
 /// trait objects that implement both traits.
 pub trait RepositoryStorageProvider<D>: RepositoryStorage<D> + RepositoryProvider<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
 }
 
 impl<D, T> RepositoryStorageProvider<D> for T
 where
-    D: DataInterchange,
+    D: Pouf,
     T: RepositoryStorage<D> + RepositoryProvider<D>,
 {
 }
@@ -170,10 +170,10 @@ macro_rules! impl_provider {
     };
 }
 
-impl_provider!(<D: DataInterchange, T: RepositoryProvider<D> + ?Sized> RepositoryProvider<D> for &T);
-impl_provider!(<D: DataInterchange, T: RepositoryProvider<D> + ?Sized> RepositoryProvider<D> for &mut T);
-impl_provider!(<D: DataInterchange, T: RepositoryProvider<D> + ?Sized> RepositoryProvider<D> for Box<T>);
-impl_provider!(<D: DataInterchange, T: RepositoryProvider<D> + ?Sized> RepositoryProvider<D> for Arc<T>);
+impl_provider!(<D: Pouf, T: RepositoryProvider<D> + ?Sized> RepositoryProvider<D> for &T);
+impl_provider!(<D: Pouf, T: RepositoryProvider<D> + ?Sized> RepositoryProvider<D> for &mut T);
+impl_provider!(<D: Pouf, T: RepositoryProvider<D> + ?Sized> RepositoryProvider<D> for Box<T>);
+impl_provider!(<D: Pouf, T: RepositoryProvider<D> + ?Sized> RepositoryProvider<D> for Arc<T>);
 
 macro_rules! impl_storage {
     (
@@ -200,18 +200,17 @@ macro_rules! impl_storage {
     };
 }
 
-impl_storage!(<D: DataInterchange, T: RepositoryStorage<D> + ?Sized> RepositoryStorage<D> for &T);
-impl_storage!(<D: DataInterchange, T: RepositoryStorage<D> + ?Sized> RepositoryStorage<D> for &mut T);
-impl_storage!(<D: DataInterchange, T: RepositoryStorage<D> + ?Sized> RepositoryStorage<D> for Box<T>);
-impl_storage!(<D: DataInterchange, T: RepositoryStorage<D> + ?Sized> RepositoryStorage<D> for Arc<T>);
+impl_storage!(<D: Pouf, T: RepositoryStorage<D> + ?Sized> RepositoryStorage<D> for &T);
+impl_storage!(<D: Pouf, T: RepositoryStorage<D> + ?Sized> RepositoryStorage<D> for &mut T);
+impl_storage!(<D: Pouf, T: RepositoryStorage<D> + ?Sized> RepositoryStorage<D> for Box<T>);
+impl_storage!(<D: Pouf, T: RepositoryStorage<D> + ?Sized> RepositoryStorage<D> for Arc<T>);
 
 /// A wrapper around an implementation of [`RepositoryProvider`] and/or [`RepositoryStorage`] tied
-/// to a specific [`DataInterchange`](crate::interchange::DataInterchange) that will enforce
-/// provided length limits and hash checks.
+/// to a specific [Pouf] that will enforce provided length limits and hash checks.
 #[derive(Debug, Clone)]
 pub(crate) struct Repository<R, D> {
     repository: R,
-    _interchange: PhantomData<D>,
+    _pouf: PhantomData<D>,
 }
 
 impl<R, D> Repository<R, D> {
@@ -219,7 +218,7 @@ impl<R, D> Repository<R, D> {
     pub(crate) fn new(repository: R) -> Self {
         Self {
             repository,
-            _interchange: PhantomData,
+            _pouf: PhantomData,
         }
     }
 
@@ -255,7 +254,7 @@ impl<R, D> Repository<R, D> {
 impl<R, D> Repository<R, D>
 where
     R: RepositoryProvider<D>,
-    D: DataInterchange,
+    D: Pouf,
 {
     /// Fetch metadata identified by `meta_path`, `version`, and [`D::extension()`][extension].
     ///
@@ -263,7 +262,7 @@ where
     /// `max_length` bytes. If `hash_data` is provided, this method will return and error if the
     /// hashed bytes of the metadata do not match `hash_data`.
     ///
-    /// [extension]: crate::interchange::DataInterchange::extension
+    /// [extension]: crate::pouf::Pouf::extension
     pub(crate) async fn fetch_metadata<'a, M>(
         &'a self,
         meta_path: &'a MetadataPath,
@@ -344,12 +343,12 @@ where
 impl<R, D> Repository<R, D>
 where
     R: RepositoryStorage<D>,
-    D: DataInterchange,
+    D: Pouf,
 {
     /// Store the provided `metadata` in a location identified by `meta_path`, `version`, and
     /// [`D::extension()`][extension], overwriting any existing metadata at that location.
     ///
-    /// [extension]: crate::interchange::DataInterchange::extension
+    /// [extension]: crate::pouf::Pouf::extension
     pub async fn store_metadata<'a, M>(
         &'a mut self,
         path: &MetadataPath,
@@ -379,8 +378,8 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::interchange::Json;
     use crate::metadata::{MetadataPath, MetadataVersion, RootMetadata, SnapshotMetadata};
+    use crate::pouf::Json;
     use crate::repository::EphemeralRepository;
     use assert_matches::assert_matches;
     use futures_executor::block_on;

@@ -5,7 +5,6 @@ use {
         crypto::{self, HashAlgorithm, PrivateKey, PublicKey},
         database::Database,
         error::{Error, Result},
-        interchange::DataInterchange,
         metadata::{
             Delegation, DelegationsBuilder, Metadata, MetadataDescription, MetadataPath,
             MetadataVersion, RawSignedMetadata, RawSignedMetadataSet, RawSignedMetadataSetBuilder,
@@ -13,6 +12,7 @@ use {
             SnapshotMetadataBuilder, TargetDescription, TargetPath, TargetsMetadata,
             TargetsMetadataBuilder, TimestampMetadata, TimestampMetadataBuilder,
         },
+        pouf::Pouf,
         repository::RepositoryStorage,
         verify::Verified,
     },
@@ -31,10 +31,10 @@ mod private {
     pub trait Sealed {}
 
     impl Sealed for Root {}
-    impl<D: DataInterchange> Sealed for Targets<D> {}
-    impl<D: DataInterchange> Sealed for Snapshot<D> {}
-    impl<D: DataInterchange> Sealed for Timestamp<D> {}
-    impl<D: DataInterchange> Sealed for Done<D> {}
+    impl<D: Pouf> Sealed for Targets<D> {}
+    impl<D: Pouf> Sealed for Snapshot<D> {}
+    impl<D: Pouf> Sealed for Timestamp<D> {}
+    impl<D: Pouf> Sealed for Done<D> {}
 }
 
 const DEFAULT_ROOT_EXPIRATION_DAYS: i64 = 365;
@@ -60,7 +60,7 @@ impl State for Root {}
 
 /// State to stage a targets metadata.
 #[doc(hidden)]
-pub struct Targets<D: DataInterchange> {
+pub struct Targets<D: Pouf> {
     staged_root: Option<Staged<D, RootMetadata>>,
     targets: HashMap<TargetPath, TargetDescription>,
     delegation_keys: Vec<PublicKey>,
@@ -69,7 +69,7 @@ pub struct Targets<D: DataInterchange> {
     inherit_from_trusted_targets: bool,
 }
 
-impl<D: DataInterchange> Targets<D> {
+impl<D: Pouf> Targets<D> {
     fn new(staged_root: Option<Staged<D, RootMetadata>>) -> Self {
         Self {
             staged_root,
@@ -82,11 +82,11 @@ impl<D: DataInterchange> Targets<D> {
     }
 }
 
-impl<D: DataInterchange> State for Targets<D> {}
+impl<D: Pouf> State for Targets<D> {}
 
 /// State to stage a snapshot metadata.
 #[doc(hidden)]
-pub struct Snapshot<D: DataInterchange> {
+pub struct Snapshot<D: Pouf> {
     staged_root: Option<Staged<D, RootMetadata>>,
     staged_targets: Option<Staged<D, TargetsMetadata>>,
     include_targets_length: bool,
@@ -94,9 +94,9 @@ pub struct Snapshot<D: DataInterchange> {
     inherit_from_trusted_snapshot: bool,
 }
 
-impl<D: DataInterchange> State for Snapshot<D> {}
+impl<D: Pouf> State for Snapshot<D> {}
 
-impl<D: DataInterchange> Snapshot<D> {
+impl<D: Pouf> Snapshot<D> {
     fn new(
         staged_root: Option<Staged<D, RootMetadata>>,
         staged_targets: Option<Staged<D, TargetsMetadata>>,
@@ -139,7 +139,7 @@ impl<D: DataInterchange> Snapshot<D> {
 }
 
 /// State to stage a timestamp metadata.
-pub struct Timestamp<D: DataInterchange> {
+pub struct Timestamp<D: Pouf> {
     staged_root: Option<Staged<D, RootMetadata>>,
     staged_targets: Option<Staged<D, TargetsMetadata>>,
     staged_snapshot: Option<Staged<D, SnapshotMetadata>>,
@@ -147,7 +147,7 @@ pub struct Timestamp<D: DataInterchange> {
     snapshot_hash_algorithms: Vec<HashAlgorithm>,
 }
 
-impl<D: DataInterchange> Timestamp<D> {
+impl<D: Pouf> Timestamp<D> {
     fn new(state: Snapshot<D>, staged_snapshot: Option<Staged<D, SnapshotMetadata>>) -> Self {
         Self {
             staged_root: state.staged_root,
@@ -186,26 +186,26 @@ impl<D: DataInterchange> Timestamp<D> {
     }
 }
 
-impl<D: DataInterchange> State for Timestamp<D> {}
+impl<D: Pouf> State for Timestamp<D> {}
 
 /// The final state for building repository metadata.
-pub struct Done<D: DataInterchange> {
+pub struct Done<D: Pouf> {
     staged_root: Option<Staged<D, RootMetadata>>,
     staged_targets: Option<Staged<D, TargetsMetadata>>,
     staged_snapshot: Option<Staged<D, SnapshotMetadata>>,
     staged_timestamp: Option<Staged<D, TimestampMetadata>>,
 }
 
-impl<D: DataInterchange> State for Done<D> {}
+impl<D: Pouf> State for Done<D> {}
 
-struct Staged<D: DataInterchange, M: Metadata> {
+struct Staged<D: Pouf, M: Metadata> {
     metadata: M,
     raw: RawSignedMetadata<D, M>,
 }
 
 struct RepoContext<'a, D, R>
 where
-    D: DataInterchange,
+    D: Pouf,
     R: RepositoryStorage<D>,
 {
     repo: R,
@@ -224,12 +224,12 @@ where
     targets_expiration_duration: Duration,
     snapshot_expiration_duration: Duration,
     timestamp_expiration_duration: Duration,
-    _interchange: PhantomData<D>,
+    _pouf: PhantomData<D>,
 }
 
 impl<'a, D, R> RepoContext<'a, D, R>
 where
-    D: DataInterchange,
+    D: Pouf,
     R: RepositoryStorage<D>,
 {
     fn root_keys_changed(&self, root: &Verified<RootMetadata>) -> bool {
@@ -336,7 +336,7 @@ where
 
 fn sign<'a, D, I, M>(meta: &M, keys: I) -> Result<RawSignedMetadata<D, M>>
 where
-    D: DataInterchange,
+    D: Pouf,
     M: Metadata,
     I: IntoIterator<Item = &'a &'a dyn PrivateKey>,
 {
@@ -361,7 +361,7 @@ where
 /// This helper builder simplifies the process of creating new metadata.
 pub struct RepoBuilder<'a, D, R, S = Root>
 where
-    D: DataInterchange,
+    D: Pouf,
     R: RepositoryStorage<D>,
     S: State,
 {
@@ -371,7 +371,7 @@ where
 
 impl<'a, D, R> RepoBuilder<'a, D, R, Root>
 where
-    D: DataInterchange,
+    D: Pouf,
     R: RepositoryStorage<D>,
 {
     /// Create a [RepoBuilder] for creating metadata for a new repository.
@@ -382,7 +382,7 @@ where
     /// # use {
     /// #     futures_executor::block_on,
     /// #     tuf::{
-    /// #         interchange::Json,
+    /// #         pouf::Json,
     /// #         crypto::Ed25519PrivateKey,
     /// #         repo_builder::RepoBuilder,
     /// #         repository::EphemeralRepository,
@@ -424,7 +424,7 @@ where
                 targets_expiration_duration: Duration::days(DEFAULT_TARGETS_EXPIRATION_DAYS),
                 snapshot_expiration_duration: Duration::days(DEFAULT_SNAPSHOT_EXPIRATION_DAYS),
                 timestamp_expiration_duration: Duration::days(DEFAULT_TIMESTAMP_EXPIRATION_DAYS),
-                _interchange: PhantomData,
+                _pouf: PhantomData,
             },
             state: Root {
                 builder: RootMetadataBuilder::new()
@@ -448,7 +448,7 @@ where
     /// #     tuf::{
     /// #         database::Database,
     /// #         crypto::Ed25519PrivateKey,
-    /// #         interchange::Json,
+    /// #         pouf::Json,
     /// #         repo_builder::RepoBuilder,
     /// #         repository::EphemeralRepository,
     /// #     },
@@ -513,7 +513,7 @@ where
                 targets_expiration_duration: Duration::days(DEFAULT_TARGETS_EXPIRATION_DAYS),
                 snapshot_expiration_duration: Duration::days(DEFAULT_SNAPSHOT_EXPIRATION_DAYS),
                 timestamp_expiration_duration: Duration::days(DEFAULT_TIMESTAMP_EXPIRATION_DAYS),
-                _interchange: PhantomData,
+                _pouf: PhantomData,
             },
             state: Root { builder },
         }
@@ -833,7 +833,7 @@ where
 
 impl<'a, D, R> RepoBuilder<'a, D, R, Targets<D>>
 where
-    D: DataInterchange,
+    D: Pouf,
     R: RepositoryStorage<D>,
 {
     /// Whether or not to include the length of the targets, and any delegated targets, in the
@@ -1095,7 +1095,7 @@ where
 
 impl<'a, D, R> RepoBuilder<'a, D, R, Snapshot<D>>
 where
-    D: DataInterchange,
+    D: Pouf,
     R: RepositoryStorage<D>,
 {
     /// Whether or not to include the length of the targets, and any delegated targets, in the
@@ -1255,7 +1255,7 @@ where
 
 impl<'a, D, R> RepoBuilder<'a, D, R, Timestamp<D>>
 where
-    D: DataInterchange,
+    D: Pouf,
     R: RepositoryStorage<D>,
 {
     /// Whether or not to include the length of the snapshot, and any delegated snapshot, in the
@@ -1412,7 +1412,7 @@ where
 
 impl<'a, D, R> RepoBuilder<'a, D, R, Done<D>>
 where
-    D: DataInterchange,
+    D: Pouf,
     R: RepositoryStorage<D>,
 {
     /// Commit the metadata for this repository, then write all metadata to the repository. Before
@@ -1575,8 +1575,8 @@ mod tests {
         crate::{
             client::{Client, Config},
             crypto::Ed25519PrivateKey,
-            interchange::Json,
             metadata::SignedMetadata,
+            pouf::Json,
             repository::{EphemeralRepository, RepositoryProvider},
         },
         assert_matches::assert_matches,

@@ -42,8 +42,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tuf::client::{Client, Config};
 use tuf::crypto::PublicKey;
-use tuf::interchange::{DataInterchange, Json, JsonPretty};
 use tuf::metadata::{MetadataPath, MetadataVersion, RawSignedMetadata, RootMetadata, TargetPath};
+use tuf::pouf::{Json, JsonPretty, Pouf};
 use tuf::repository::{
     EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, RepositoryProvider,
 };
@@ -105,7 +105,7 @@ fn rust_tuf_identity_consistent_snapshot_true() {
 
 fn test_key_rotation<D>(dir: PathBuf)
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     block_on(async {
         let mut suite = TestKeyRotation::<D>::new(dir);
@@ -116,7 +116,7 @@ where
 /// TestKeyRotation is the main driver for running the key rotation tests.
 struct TestKeyRotation<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     /// The paths to each test step directory.
     test_steps: Vec<PathBuf>,
@@ -131,7 +131,7 @@ where
 
 impl<D> TestKeyRotation<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     fn new(test_dir: PathBuf) -> Self {
         let mut test_steps = Vec::new();
@@ -207,7 +207,7 @@ where
 /// Extract the initial key ids from the first step.
 async fn extract_keys<D>(dir: &Path) -> Vec<PublicKey>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     let remote = init_remote::<D>(dir);
 
@@ -230,7 +230,7 @@ where
 
 fn init_remote<D>(dir: &Path) -> FileSystemRepository<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     FileSystemRepositoryBuilder::new(dir)
         .metadata_prefix(Path::new("repository"))

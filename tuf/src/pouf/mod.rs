@@ -1,4 +1,4 @@
-//! Structures and functions to aid in various TUF data interchange formats.
+//! Structures and functions to aid in various TUF data pouf formats.
 
 pub(crate) mod cjson;
 pub use cjson::{Json, JsonPretty};
@@ -9,11 +9,11 @@ use serde::ser::Serialize;
 use crate::Result;
 
 /// The format used for data interchange, serialization, and deserialization.
-pub trait DataInterchange: Sync {
+pub trait Pouf: Sync {
     /// The type of data that is contained in the `signed` portion of metadata.
     type RawData: Serialize + DeserializeOwned + PartialEq;
 
-    /// The data interchange's extension.
+    /// The data pouf's extension.
     fn extension() -> &'static str;
 
     /// A function that canonicalizes data to allow for deterministic signatures.

@@ -1,7 +1,7 @@
 use {
     crate::{
-        interchange::DataInterchange,
         metadata::{Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, TargetPath},
+        pouf::Pouf,
         repository::{RepositoryProvider, RepositoryStorage},
         Result,
     },
@@ -46,7 +46,7 @@ impl Track {
     ) -> Self
     where
         M: Metadata,
-        D: DataInterchange,
+        D: Pouf,
     {
         Self::store(&M::ROLE.into(), version, metadata.as_bytes())
     }
@@ -72,7 +72,7 @@ impl Track {
     ) -> Self
     where
         M: Metadata,
-        D: DataInterchange,
+        D: Pouf,
     {
         Track::fetch_found(&M::ROLE.into(), version, metadata.as_bytes())
     }
@@ -104,7 +104,7 @@ impl<R> TrackRepository<R> {
 impl<D, R> RepositoryStorage<D> for TrackRepository<R>
 where
     R: RepositoryStorage<D> + Sync + Send,
-    D: DataInterchange,
+    D: Pouf,
 {
     fn store_metadata<'a>(
         &'a self,
@@ -143,7 +143,7 @@ where
 
 impl<D, R> RepositoryProvider<D> for TrackRepository<R>
 where
-    D: DataInterchange,
+    D: Pouf,
     R: RepositoryProvider<D> + Sync,
 {
     fn fetch_metadata<'a>(

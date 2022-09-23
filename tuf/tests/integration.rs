@@ -2,10 +2,10 @@ use assert_matches::assert_matches;
 use chrono::offset::Utc;
 use futures_executor::block_on;
 use tuf::crypto::{Ed25519PrivateKey, HashAlgorithm, PrivateKey};
-use tuf::interchange::Json;
 use tuf::metadata::{
     Delegation, Delegations, MetadataDescription, MetadataPath, TargetPath, TargetsMetadataBuilder,
 };
+use tuf::pouf::Json;
 use tuf::repo_builder::RepoBuilder;
 use tuf::repository::EphemeralRepository;
 use tuf::Database;

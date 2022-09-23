@@ -2,10 +2,10 @@ use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 
 use super::Json;
-use crate::interchange::DataInterchange;
+use crate::pouf::Pouf;
 use crate::Result;
 
-/// Pretty JSON data interchange.
+/// Pretty JSON data pouf.
 ///
 /// This is identical to [Json] in all manners except for the `canonicalize` method. Instead of
 /// writing the metadata in the canonical format, it first canonicalizes it, then pretty prints
@@ -13,11 +13,11 @@ use crate::Result;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JsonPretty;
 
-impl DataInterchange for JsonPretty {
+impl Pouf for JsonPretty {
     type RawData = serde_json::Value;
 
     /// ```
-    /// # use tuf::interchange::{DataInterchange, JsonPretty};
+    /// # use tuf::pouf::{Pouf, JsonPretty};
     /// assert_eq!(JsonPretty::extension(), "json");
     /// ```
     fn extension() -> &'static str {
@@ -26,7 +26,7 @@ impl DataInterchange for JsonPretty {
 
     /// ```
     /// # use serde_json::json;
-    /// # use tuf::interchange::{DataInterchange, JsonPretty};
+    /// # use tuf::pouf::{Pouf, JsonPretty};
     /// #
     /// let json = json!({
     ///     "o": {
@@ -67,7 +67,7 @@ impl DataInterchange for JsonPretty {
     /// # use serde_derive::Deserialize;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
-    /// # use tuf::interchange::{DataInterchange, JsonPretty};
+    /// # use tuf::pouf::{Pouf, JsonPretty};
     /// #
     /// #[derive(Deserialize, Debug, PartialEq)]
     /// struct Thing {
@@ -91,7 +91,7 @@ impl DataInterchange for JsonPretty {
     /// # use serde_derive::Serialize;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
-    /// # use tuf::interchange::{DataInterchange, JsonPretty};
+    /// # use tuf::pouf::{Pouf, JsonPretty};
     /// #
     /// #[derive(Serialize)]
     /// struct Thing {
@@ -112,7 +112,7 @@ impl DataInterchange for JsonPretty {
     }
 
     /// ```
-    /// # use tuf::interchange::{DataInterchange, JsonPretty};
+    /// # use tuf::pouf::{Pouf, JsonPretty};
     /// # use std::collections::HashMap;
     /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
     /// let _: HashMap<String, String> = JsonPretty::from_slice(&jsn).unwrap();

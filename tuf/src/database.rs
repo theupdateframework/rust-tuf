@@ -7,27 +7,27 @@ use std::marker::PhantomData;
 
 use crate::crypto::PublicKey;
 use crate::error::Error;
-use crate::interchange::DataInterchange;
 use crate::metadata::{
     Delegations, Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, RawSignedMetadataSet,
     RootMetadata, SnapshotMetadata, TargetDescription, TargetPath, TargetsMetadata,
     TimestampMetadata,
 };
+use crate::pouf::Pouf;
 use crate::verify::{self, Verified};
 use crate::Result;
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]
-pub struct Database<D: DataInterchange> {
+pub struct Database<D: Pouf> {
     trusted_root: Verified<RootMetadata>,
     trusted_targets: Option<Verified<TargetsMetadata>>,
     trusted_snapshot: Option<Verified<SnapshotMetadata>>,
     trusted_timestamp: Option<Verified<TimestampMetadata>>,
     trusted_delegations: HashMap<MetadataPath, Verified<TargetsMetadata>>,
-    interchange: PhantomData<D>,
+    pouf: PhantomData<D>,
 }
 
-impl<D: DataInterchange> Database<D> {
+impl<D: Pouf> Database<D> {
     /// Create a new [`Database`] struct from a set of trusted root keys that are used to verify
     /// the signed metadata. The signed root metadata must be signed with at least a
     /// `root_threshold` of the provided root_keys. It is not necessary for the root metadata to
@@ -70,7 +70,7 @@ impl<D: DataInterchange> Database<D> {
             trusted_targets: None,
             trusted_timestamp: None,
             trusted_delegations: HashMap::new(),
-            interchange: PhantomData,
+            pouf: PhantomData,
         })
     }
 
@@ -102,7 +102,7 @@ impl<D: DataInterchange> Database<D> {
             trusted_targets: None,
             trusted_timestamp: None,
             trusted_delegations: HashMap::new(),
-            interchange: PhantomData,
+            pouf: PhantomData,
         })
     }
 
@@ -895,7 +895,7 @@ impl<D: DataInterchange> Database<D> {
             return Ok(d.clone());
         }
 
-        fn lookup<'a, D: DataInterchange>(
+        fn lookup<'a, D: Pouf>(
             start_time: &DateTime<Utc>,
             tuf: &'a Database<D>,
             default_terminate: bool,
@@ -1041,7 +1041,7 @@ impl<D: DataInterchange> Database<D> {
     }
 }
 
-impl<D: DataInterchange> Clone for Database<D> {
+impl<D: Pouf> Clone for Database<D> {
     fn clone(&self) -> Self {
         Self {
             trusted_root: self.trusted_root.clone(),
@@ -1049,7 +1049,7 @@ impl<D: DataInterchange> Clone for Database<D> {
             trusted_snapshot: self.trusted_snapshot.clone(),
             trusted_timestamp: self.trusted_timestamp.clone(),
             trusted_delegations: self.trusted_delegations.clone(),
-            interchange: PhantomData,
+            pouf: PhantomData,
         }
     }
 }
@@ -1058,11 +1058,11 @@ impl<D: DataInterchange> Clone for Database<D> {
 mod test {
     use super::*;
     use crate::crypto::{Ed25519PrivateKey, HashAlgorithm, PrivateKey};
-    use crate::interchange::Json;
     use crate::metadata::{
         RawSignedMetadataSetBuilder, RootMetadataBuilder, SnapshotMetadataBuilder,
         TargetsMetadataBuilder, TimestampMetadataBuilder,
     };
+    use crate::pouf::Json;
     use assert_matches::assert_matches;
     use lazy_static::lazy_static;
     use std::iter::once;

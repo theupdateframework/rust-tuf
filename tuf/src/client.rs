@@ -11,7 +11,7 @@
 //! # use tuf::crypto::PublicKey;
 //! # use tuf::client::{Client, Config};
 //! # use tuf::metadata::{RootMetadata, Role, MetadataPath, MetadataVersion};
-//! # use tuf::interchange::Json;
+//! # use tuf::pouf::Json;
 //! # use tuf::repository::{FileSystemRepository, HttpRepositoryBuilder};
 //! #
 //! # const PUBLIC_KEY: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pub");
@@ -56,11 +56,11 @@ use std::pin::Pin;
 use crate::crypto::{self, HashAlgorithm, HashValue, PublicKey};
 use crate::database::Database;
 use crate::error::{Error, Result};
-use crate::interchange::DataInterchange;
 use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, RootMetadata, SnapshotMetadata,
     TargetDescription, TargetPath, TargetsMetadata,
 };
+use crate::pouf::Pouf;
 use crate::repository::{Repository, RepositoryProvider, RepositoryStorage};
 use crate::verify::Verified;
 
@@ -68,7 +68,7 @@ use crate::verify::Verified;
 #[derive(Debug)]
 pub struct Client<D, L, R>
 where
-    D: DataInterchange,
+    D: Pouf,
     L: RepositoryProvider<D> + RepositoryStorage<D>,
     R: RepositoryProvider<D>,
 {
@@ -80,7 +80,7 @@ where
 
 impl<D, L, R> Client<D, L, R>
 where
-    D: DataInterchange,
+    D: Pouf,
     L: RepositoryProvider<D> + RepositoryStorage<D>,
     R: RepositoryProvider<D>,
 {
@@ -98,7 +98,7 @@ where
     /// # use futures_executor::block_on;
     /// # use tuf::{
     /// #     Error,
-    /// #     interchange::Json,
+    /// #     pouf::Json,
     /// #     client::{Client, Config},
     /// #     crypto::{Ed25519PrivateKey, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
@@ -166,7 +166,7 @@ where
     /// # use futures_executor::block_on;
     /// # use tuf::{
     /// #     Error,
-    /// #     interchange::Json,
+    /// #     pouf::Json,
     /// #     client::{Client, Config},
     /// #     crypto::{Ed25519PrivateKey, KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
@@ -229,7 +229,7 @@ where
     /// # use std::iter::once;
     /// # use tuf::{
     /// #     Error,
-    /// #     interchange::Json,
+    /// #     pouf::Json,
     /// #     client::{Client, Config},
     /// #     crypto::{Ed25519PrivateKey, KeyType, PrivateKey, SignatureScheme},
     /// #     metadata::{MetadataPath, MetadataVersion, Role, RootMetadataBuilder},
@@ -1127,7 +1127,7 @@ where
 #[derive(Debug)]
 pub struct Parts<D, L, R>
 where
-    D: DataInterchange,
+    D: Pouf,
     L: RepositoryProvider<D> + RepositoryStorage<D>,
     R: RepositoryProvider<D>,
 {
@@ -1156,7 +1156,7 @@ async fn fetch_metadata_from_local_or_else_remote<'a, D, L, R, M>(
     remote: &'a Repository<R, D>,
 ) -> Result<(bool, RawSignedMetadata<D, M>)>
 where
-    D: DataInterchange,
+    D: Pouf,
     L: RepositoryProvider<D> + RepositoryStorage<D>,
     R: RepositoryProvider<D>,
     M: Metadata + 'static,
@@ -1293,11 +1293,11 @@ impl ConfigBuilder {
 mod test {
     use super::*;
     use crate::crypto::{Ed25519PrivateKey, HashAlgorithm, PrivateKey};
-    use crate::interchange::Json;
     use crate::metadata::{
         MetadataDescription, MetadataPath, MetadataVersion, RootMetadataBuilder,
         SnapshotMetadataBuilder, TargetsMetadataBuilder, TimestampMetadataBuilder,
     };
+    use crate::pouf::Json;
     use crate::repo_builder::RepoBuilder;
     use crate::repository::{
         fetch_metadata_to_string, EphemeralRepository, ErrorRepository, Track, TrackRepository,
