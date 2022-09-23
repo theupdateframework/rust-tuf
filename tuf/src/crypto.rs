@@ -276,6 +276,12 @@ impl FromStr for KeyId {
     }
 }
 
+impl fmt::Display for KeyId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 impl Serialize for KeyId {
     fn serialize<S>(&self, ser: S) -> ::std::result::Result<S::Ok, S::Error>
     where

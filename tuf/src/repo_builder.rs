@@ -110,7 +110,7 @@ impl<D: DataInterchange> Snapshot<D> {
         }
     }
 
-    fn targets_description(&self) -> Result<Option<MetadataDescription>> {
+    fn targets_description(&self) -> Result<Option<MetadataDescription<TargetsMetadata>>> {
         if let Some(ref targets) = self.staged_targets {
             let length = if self.include_targets_length {
                 Some(targets.raw.as_bytes().len())
@@ -158,7 +158,7 @@ impl<D: DataInterchange> Timestamp<D> {
         }
     }
 
-    fn snapshot_description(&self) -> Result<Option<MetadataDescription>> {
+    fn snapshot_description(&self) -> Result<Option<MetadataDescription<SnapshotMetadata>>> {
         if let Some(ref snapshot) = self.staged_snapshot {
             let length = if self.include_snapshot_length {
                 Some(snapshot.raw.as_bytes().len())
@@ -342,8 +342,17 @@ where
 {
     // Sign the root.
     let mut signed_builder = SignedMetadataBuilder::<D, _>::from_metadata(meta)?;
+    let mut has_key = false;
     for key in keys {
+        has_key = true;
         signed_builder = signed_builder.sign(*key)?;
+    }
+
+    // We need at least one private key to sign the metadata.
+    if !has_key {
+        return Err(Error::MissingPrivateKey {
+            role: M::ROLE.into(),
+        });
     }
 
     signed_builder.build().to_raw()
@@ -3168,6 +3177,76 @@ mod tests {
             assert_eq!(db.trusted_targets().map(|m| m.version()), Some(2));
             assert_eq!(db.trusted_snapshot().map(|m| m.version()), Some(2));
             assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(2));
+        })
+    }
+
+    #[test]
+    fn test_builder_errs_if_no_keys() {
+        block_on(async move {
+            let repo = EphemeralRepository::<Json>::new();
+
+            let metadata = RepoBuilder::create(&repo)
+                .trusted_root_keys(&[&KEYS[0]])
+                .trusted_targets_keys(&[&KEYS[0]])
+                .trusted_snapshot_keys(&[&KEYS[0]])
+                .trusted_timestamp_keys(&[&KEYS[0]])
+                .commit()
+                .await
+                .unwrap();
+
+            let db = Database::from_trusted_metadata(&metadata).unwrap();
+
+            match RepoBuilder::from_database(&repo, &db).stage_root() {
+                Err(Error::MetadataRoleDoesNotHaveEnoughKeyIds {
+                    role,
+                    key_ids: 0,
+                    threshold: 1,
+                }) if role == MetadataPath::root() => {}
+                Err(err) => panic!("unexpected error: {}", err),
+                Ok(_) => panic!("unexpected success"),
+            }
+
+            match RepoBuilder::from_database(&repo, &db)
+                .trusted_root_keys(&[&KEYS[0]])
+                .stage_root_if_necessary()
+                .unwrap()
+                .stage_targets()
+            {
+                Err(Error::MissingPrivateKey { role }) if role == MetadataPath::targets() => {}
+                Err(err) => panic!("unexpected error: {}", err),
+                Ok(_) => panic!("unexpected success"),
+            }
+
+            match RepoBuilder::from_database(&repo, &db)
+                .trusted_root_keys(&[&KEYS[0]])
+                .trusted_targets_keys(&[&KEYS[0]])
+                .stage_root_if_necessary()
+                .unwrap()
+                .stage_targets_if_necessary()
+                .unwrap()
+                .stage_snapshot()
+            {
+                Err(Error::MissingPrivateKey { role }) if role == MetadataPath::snapshot() => {}
+                Err(err) => panic!("unexpected error: {}", err),
+                Ok(_) => panic!("unexpected success"),
+            }
+
+            match RepoBuilder::from_database(&repo, &db)
+                .trusted_root_keys(&[&KEYS[0]])
+                .trusted_targets_keys(&[&KEYS[0]])
+                .trusted_snapshot_keys(&[&KEYS[0]])
+                .stage_root_if_necessary()
+                .unwrap()
+                .stage_targets_if_necessary()
+                .unwrap()
+                .stage_snapshot_if_necessary()
+                .unwrap()
+                .stage_timestamp()
+            {
+                Err(Error::MissingPrivateKey { role }) if role == MetadataPath::timestamp() => {}
+                Err(err) => panic!("unexpected error: {}", err),
+                Ok(_) => panic!("unexpected success"),
+            }
         })
     }
 }

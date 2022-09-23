@@ -2386,10 +2386,10 @@ mod test {
 
             // Create a snapshot metadata description, and deliberately don't set the metadata length
             // or hashes.
-            let timestamp_description = MetadataDescription::new(1, None, HashMap::new()).unwrap();
+            let snapshot_description = MetadataDescription::new(1, None, HashMap::new()).unwrap();
 
             let timestamp =
-                TimestampMetadataBuilder::from_metadata_description(timestamp_description)
+                TimestampMetadataBuilder::from_metadata_description(snapshot_description)
                     .signed::<Json>(&KEYS[3])
                     .unwrap()
                     .to_raw()
