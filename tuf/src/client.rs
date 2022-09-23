@@ -332,14 +332,13 @@ where
     }
 
     /// Create a new TUF client. It will trust and update the TUF database.
-    pub async fn from_database(
-        config: Config,
-        tuf: Database<D>,
-        local: L,
-        remote: R,
-    ) -> Result<Self> {
-        let (local, remote) = (Repository::new(local), Repository::new(remote));
-        Self::new(config, tuf, local, remote).await
+    pub fn from_database(config: Config, tuf: Database<D>, local: L, remote: R) -> Self {
+        Self {
+            config,
+            tuf,
+            local: Repository::new(local),
+            remote: Repository::new(remote),
+        }
     }
 
     /// Construct a client with the given parts.
@@ -1499,9 +1498,7 @@ mod test {
                 Database::from_trusted_root(metadata1.root().unwrap()).unwrap(),
                 track_local,
                 track_remote,
-            )
-            .await
-            .unwrap(),
+            ),
         };
 
         assert_eq!(client.tuf.trusted_root().version(), 1);
@@ -1546,13 +1543,7 @@ mod test {
                 );
             }
             ConstructorMode::FromDatabase => {
-                assert_eq!(
-                    client.local_repo().take_tracks(),
-                    vec![Track::FetchErr(
-                        MetadataPath::root(),
-                        MetadataVersion::Number(2)
-                    )],
-                );
+                assert_eq!(client.local_repo().take_tracks(), vec![],);
             }
         };
 
