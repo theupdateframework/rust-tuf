@@ -1,12 +1,17 @@
-use chrono::offset::Utc;
-use chrono::prelude::*;
-use serde_derive::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
-
-use crate::crypto;
-use crate::error::Error;
-use crate::metadata::{self, Metadata};
-use crate::Result;
+use {
+    crate::{
+        crypto,
+        error::Error,
+        metadata::{self, Metadata},
+        Result,
+    },
+    chrono::{offset::Utc, prelude::*},
+    serde_derive::{Deserialize, Serialize},
+    std::{
+        collections::{BTreeMap, HashSet},
+        marker::PhantomData,
+    },
+};
 
 const SPEC_VERSION: &str = "1.0";
 
@@ -74,7 +79,7 @@ impl RootMetadata {
     pub fn try_into(self) -> Result<metadata::RootMetadata> {
         if self.typ != metadata::Role::Root {
             return Err(Error::Encoding(format!(
-                "Attempted to decode root metdata labeled as {:?}",
+                "Attempted to decode root metadata labeled as {:?}",
                 self.typ
             )));
         }
@@ -110,48 +115,52 @@ impl RootMetadata {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct RoleDefinitions {
-    root: metadata::RoleDefinition,
-    snapshot: metadata::RoleDefinition,
-    targets: metadata::RoleDefinition,
-    timestamp: metadata::RoleDefinition,
+    root: metadata::RoleDefinition<metadata::RootMetadata>,
+    snapshot: metadata::RoleDefinition<metadata::SnapshotMetadata>,
+    targets: metadata::RoleDefinition<metadata::TargetsMetadata>,
+    timestamp: metadata::RoleDefinition<metadata::TimestampMetadata>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct RoleDefinition {
+pub struct RoleDefinition<M: Metadata> {
     threshold: u32,
     #[serde(rename = "keyids")]
     key_ids: Vec<crypto::KeyId>,
+    #[serde(skip)]
+    _metadata: PhantomData<M>,
 }
 
-impl RoleDefinition {
-    pub fn from(role: &metadata::RoleDefinition) -> Result<Self> {
+impl<M: Metadata> From<&metadata::RoleDefinition<M>> for RoleDefinition<M> {
+    fn from(role: &metadata::RoleDefinition<M>) -> Self {
+        // Sort the key ids so they're in a stable order.
         let mut key_ids = role.key_ids().iter().cloned().collect::<Vec<_>>();
         key_ids.sort();
 
-        Ok(RoleDefinition {
+        RoleDefinition {
             threshold: role.threshold(),
             key_ids,
-        })
+            _metadata: PhantomData,
+        }
     }
+}
 
-    pub fn try_into(self) -> Result<metadata::RoleDefinition> {
-        let key_ids_len = self.key_ids.len();
-        if key_ids_len < 1 {
-            return Err(Error::Encoding(
-                "Role defined with no assoiciated key IDs.".into(),
-            ));
+impl<M: Metadata> TryFrom<RoleDefinition<M>> for metadata::RoleDefinition<M> {
+    type Error = Error;
+
+    fn try_from(definition: RoleDefinition<M>) -> Result<Self> {
+        let key_ids_len = definition.key_ids.len();
+        let mut key_ids = HashSet::with_capacity(key_ids_len);
+
+        for key_id in definition.key_ids {
+            if let Some(old_key_id) = key_ids.replace(key_id) {
+                return Err(Error::MetadataRoleHasDuplicateKeyId {
+                    role: M::ROLE.into(),
+                    key_id: old_key_id,
+                });
+            }
         }
 
-        let key_ids = self.key_ids.into_iter().collect::<HashSet<_>>();
-
-        if key_ids.len() != key_ids_len {
-            return Err(Error::Encoding(format!(
-                "Found {} duplicate key IDs.",
-                key_ids_len - key_ids.len()
-            )));
-        }
-
-        metadata::RoleDefinition::new(self.threshold, key_ids)
+        metadata::RoleDefinition::new(definition.threshold, key_ids)
     }
 }
 
@@ -169,7 +178,7 @@ pub struct TimestampMetadata {
 #[serde(deny_unknown_fields)]
 struct TimestampMeta {
     #[serde(rename = "snapshot.json")]
-    snapshot: metadata::MetadataDescription,
+    snapshot: metadata::MetadataDescription<metadata::SnapshotMetadata>,
 }
 
 impl TimestampMetadata {
@@ -188,7 +197,7 @@ impl TimestampMetadata {
     pub fn try_into(self) -> Result<metadata::TimestampMetadata> {
         if self.typ != metadata::Role::Timestamp {
             return Err(Error::Encoding(format!(
-                "Attempted to decode timestamp metdata labeled as {:?}",
+                "Attempted to decode timestamp metadata labeled as {:?}",
                 self.typ
             )));
         }
@@ -216,7 +225,7 @@ pub struct SnapshotMetadata {
     version: u32,
     expires: String,
     #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
-    meta: BTreeMap<String, metadata::MetadataDescription>,
+    meta: BTreeMap<String, metadata::MetadataDescription<metadata::TargetsMetadata>>,
 }
 
 impl SnapshotMetadata {
@@ -237,7 +246,7 @@ impl SnapshotMetadata {
     pub fn try_into(self) -> Result<metadata::SnapshotMetadata> {
         if self.typ != metadata::Role::Snapshot {
             return Err(Error::Encoding(format!(
-                "Attempted to decode snapshot metdata labeled as {:?}",
+                "Attempted to decode snapshot metadata labeled as {:?}",
                 self.typ
             )));
         }
@@ -303,7 +312,7 @@ impl TargetsMetadata {
     pub fn try_into(self) -> Result<metadata::TargetsMetadata> {
         if self.typ != metadata::Role::Targets {
             return Err(Error::Encoding(format!(
-                "Attempted to decode targets metdata labeled as {:?}",
+                "Attempted to decode targets metadata labeled as {:?}",
                 self.typ
             )));
         }
@@ -486,8 +495,8 @@ pub struct TargetDescription {
     custom: BTreeMap<String, serde_json::Value>,
 }
 
-impl TargetDescription {
-    pub fn from(description: &metadata::TargetDescription) -> TargetDescription {
+impl From<&metadata::TargetDescription> for TargetDescription {
+    fn from(description: &metadata::TargetDescription) -> TargetDescription {
         TargetDescription {
             length: description.length(),
             hashes: description
@@ -502,31 +511,54 @@ impl TargetDescription {
                 .collect(),
         }
     }
+}
 
-    pub fn try_into(self) -> Result<metadata::TargetDescription> {
+impl TryFrom<TargetDescription> for metadata::TargetDescription {
+    type Error = Error;
+
+    fn try_from(description: TargetDescription) -> Result<Self> {
         metadata::TargetDescription::new(
-            self.length,
-            self.hashes.into_iter().collect(),
-            self.custom.into_iter().collect(),
+            description.length,
+            description.hashes.into_iter().collect(),
+            description.custom.into_iter().collect(),
         )
     }
 }
 
-#[derive(Deserialize)]
-pub struct MetadataDescription {
+#[derive(Serialize, Deserialize)]
+pub struct MetadataDescription<M: Metadata> {
     version: u32,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     length: Option<usize>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     hashes: BTreeMap<crypto::HashAlgorithm, crypto::HashValue>,
+    #[serde(skip)]
+    _metadata: PhantomData<M>,
 }
 
-impl MetadataDescription {
-    pub fn try_into(self) -> Result<metadata::MetadataDescription> {
+impl<M: Metadata> From<&metadata::MetadataDescription<M>> for MetadataDescription<M> {
+    fn from(description: &metadata::MetadataDescription<M>) -> Self {
+        Self {
+            version: description.version(),
+            length: description.length(),
+            hashes: description
+                .hashes()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            _metadata: PhantomData,
+        }
+    }
+}
+
+impl<M: Metadata> TryFrom<MetadataDescription<M>> for metadata::MetadataDescription<M> {
+    type Error = Error;
+
+    fn try_from(description: MetadataDescription<M>) -> Result<Self> {
         metadata::MetadataDescription::new(
-            self.version,
-            self.length,
-            self.hashes.into_iter().collect(),
+            description.version,
+            description.length,
+            description.hashes.into_iter().collect(),
         )
     }
 }
