@@ -3,8 +3,8 @@
 use {
     crate::{
         error::Error,
-        interchange::DataInterchange,
         metadata::{MetadataPath, MetadataVersion, TargetPath},
+        pouf::Pouf,
         repository::{RepositoryProvider, RepositoryStorage},
         Result,
     },
@@ -24,7 +24,7 @@ use {
 #[derive(Debug, Default)]
 pub struct EphemeralRepository<D> {
     inner: RwLock<Inner>,
-    _interchange: PhantomData<D>,
+    _pouf: PhantomData<D>,
 }
 
 type MetadataMap = HashMap<(MetadataPath, MetadataVersion), Arc<[u8]>>;
@@ -39,7 +39,7 @@ struct Inner {
 
 impl<D> EphemeralRepository<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     /// Create a new ephemeral repository.
     pub fn new() -> Self {
@@ -49,7 +49,7 @@ where
                 metadata: MetadataMap::new(),
                 targets: TargetsMap::new(),
             }),
-            _interchange: PhantomData,
+            _pouf: PhantomData,
         }
     }
 
@@ -64,7 +64,7 @@ where
                 metadata: MetadataMap::new(),
                 targets: TargetsMap::new(),
             }),
-            _interchange: self._interchange,
+            _pouf: self._pouf,
         }
     }
 
@@ -76,7 +76,7 @@ where
 
 impl<D> RepositoryProvider<D> for EphemeralRepository<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     fn fetch_metadata<'a>(
         &'a self,
@@ -113,7 +113,7 @@ where
 
 impl<D> RepositoryStorage<D> for EphemeralRepository<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     fn store_metadata<'a>(
         &'a self,
@@ -143,7 +143,7 @@ pub struct EphemeralBatchUpdate<'a, D> {
     initial_parent_version: u64,
     parent_repo: &'a RwLock<Inner>,
     staging_repo: RwLock<Inner>,
-    _interchange: PhantomData<D>,
+    _pouf: PhantomData<D>,
 }
 
 /// Conflict occurred during commit.
@@ -156,7 +156,7 @@ pub enum CommitError {
 
 impl<D> EphemeralBatchUpdate<'_, D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     /// Write all the metadata and targets in the [EphemeralBatchUpdate] to the source
     /// [EphemeralRepository] in a single batch operation.
@@ -182,7 +182,7 @@ where
 
 impl<D> RepositoryProvider<D> for EphemeralBatchUpdate<'_, D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     fn fetch_metadata<'a>(
         &'a self,
@@ -229,7 +229,7 @@ where
 
 impl<D> RepositoryStorage<D> for EphemeralBatchUpdate<'_, D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     fn store_metadata<'a>(
         &'a self,
@@ -308,7 +308,7 @@ async fn bytes_to_reader<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::interchange::Json;
+    use crate::pouf::Json;
     use crate::repository::{fetch_metadata_to_string, fetch_target_to_string};
     use assert_matches::assert_matches;
     use futures_executor::block_on;

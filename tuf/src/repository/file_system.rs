@@ -3,8 +3,8 @@
 use {
     crate::{
         error::{Error, Result},
-        interchange::DataInterchange,
         metadata::{MetadataPath, MetadataVersion, TargetPath},
+        pouf::Pouf,
         repository::{RepositoryProvider, RepositoryStorage},
     },
     futures_io::AsyncRead,
@@ -27,12 +27,12 @@ pub struct FileSystemRepositoryBuilder<D> {
     local_path: PathBuf,
     metadata_prefix: Option<PathBuf>,
     targets_prefix: Option<PathBuf>,
-    _interchange: PhantomData<D>,
+    _pouf: PhantomData<D>,
 }
 
 impl<D> FileSystemRepositoryBuilder<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     /// Create a new repository with the given `local_path` prefix.
     pub fn new<P: Into<PathBuf>>(local_path: P) -> Self {
@@ -40,7 +40,7 @@ where
             local_path: local_path.into(),
             metadata_prefix: None,
             targets_prefix: None,
-            _interchange: PhantomData,
+            _pouf: PhantomData,
         }
     }
 
@@ -82,7 +82,7 @@ where
             version: RwLock::new(0),
             metadata_path,
             targets_path,
-            _interchange: PhantomData,
+            _pouf: PhantomData,
         }
     }
 }
@@ -91,17 +91,17 @@ where
 #[derive(Debug)]
 pub struct FileSystemRepository<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     version: RwLock<u64>,
     metadata_path: PathBuf,
     targets_path: PathBuf,
-    _interchange: PhantomData<D>,
+    _pouf: PhantomData<D>,
 }
 
 impl<D> FileSystemRepository<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     /// Create a [FileSystemRepositoryBuilder].
     pub fn builder<P: Into<PathBuf>>(local_path: P) -> FileSystemRepositoryBuilder<D> {
@@ -202,7 +202,7 @@ where
 
 impl<D> RepositoryProvider<D> for FileSystemRepository<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     fn fetch_metadata<'a>(
         &'a self,
@@ -224,7 +224,7 @@ where
 
 impl<D> RepositoryStorage<D> for FileSystemRepository<D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     fn store_metadata<'a>(
         &'a self,
@@ -306,7 +306,7 @@ where
 /// Note: `FileSystemBatchUpdate::commit()` must be called in order to write the metadata and
 /// targets to the [FileSystemRepository]. Otherwise any queued changes will be lost on drop.
 #[derive(Debug)]
-pub struct FileSystemBatchUpdate<'a, D: DataInterchange> {
+pub struct FileSystemBatchUpdate<'a, D: Pouf> {
     initial_parent_version: u64,
     parent_repo: &'a FileSystemRepository<D>,
     metadata: RwLock<HashMap<PathBuf, TempPath>>,
@@ -336,7 +336,7 @@ pub enum CommitError {
 
 impl<'a, D> FileSystemBatchUpdate<'a, D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     /// Write all the metadata and targets the [FileSystemBatchUpdate] to the source
     /// [FileSystemRepository] in a single batch operation.
@@ -379,7 +379,7 @@ where
 
 impl<D> RepositoryProvider<D> for FileSystemBatchUpdate<'_, D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     fn fetch_metadata<'a>(
         &'a self,
@@ -412,7 +412,7 @@ where
 
 impl<D> RepositoryStorage<D> for FileSystemBatchUpdate<'_, D>
 where
-    D: DataInterchange,
+    D: Pouf,
 {
     fn store_metadata<'a>(
         &'a self,
@@ -490,8 +490,8 @@ fn create_temp_file(path: &Path) -> Result<NamedTempFile> {
 mod test {
     use super::*;
     use crate::error::Error;
-    use crate::interchange::Json;
     use crate::metadata::RootMetadata;
+    use crate::pouf::Json;
     use crate::repository::{fetch_metadata_to_string, fetch_target_to_string, Repository};
     use assert_matches::assert_matches;
     use futures_executor::block_on;

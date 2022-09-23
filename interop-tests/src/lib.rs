@@ -5,11 +5,11 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use tuf::crypto::{Ed25519PrivateKey, HashAlgorithm, KeyType, PrivateKey, SignatureScheme};
-use tuf::interchange::JsonPretty;
 use tuf::metadata::{
     MetadataPath, MetadataVersion, Role, SnapshotMetadataBuilder, TargetPath,
     TargetsMetadataBuilder, TimestampMetadataBuilder,
 };
+use tuf::pouf::JsonPretty;
 use tuf::repo_builder::RepoBuilder;
 use tuf::repository::{FileSystemRepository, FileSystemRepositoryBuilder, RepositoryStorage};
 use walkdir::WalkDir;

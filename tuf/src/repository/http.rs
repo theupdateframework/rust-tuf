@@ -15,8 +15,8 @@ use std::marker::PhantomData;
 use url::Url;
 
 use crate::error::Error;
-use crate::interchange::DataInterchange;
 use crate::metadata::{MetadataPath, MetadataVersion, TargetPath};
+use crate::pouf::Pouf;
 use crate::repository::RepositoryProvider;
 use crate::util::SafeAsyncRead;
 use crate::Result;
@@ -25,7 +25,7 @@ use crate::Result;
 pub struct HttpRepositoryBuilder<C, D>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange,
+    D: Pouf,
 {
     uri: Uri,
     client: Client<C>,
@@ -33,13 +33,13 @@ where
     metadata_prefix: Option<Vec<String>>,
     targets_prefix: Option<Vec<String>>,
     min_bytes_per_second: u32,
-    _interchange: PhantomData<D>,
+    _pouf: PhantomData<D>,
 }
 
 impl<C, D> HttpRepositoryBuilder<C, D>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange,
+    D: Pouf,
 {
     /// Create a new repository with the given `Url` and `Client`.
     pub fn new(url: Url, client: Client<C>) -> Self {
@@ -50,7 +50,7 @@ where
             metadata_prefix: None,
             targets_prefix: None,
             min_bytes_per_second: 4096,
-            _interchange: PhantomData,
+            _pouf: PhantomData,
         }
     }
 
@@ -63,7 +63,7 @@ where
             metadata_prefix: None,
             targets_prefix: None,
             min_bytes_per_second: 4096,
-            _interchange: PhantomData,
+            _pouf: PhantomData,
         }
     }
 
@@ -117,7 +117,7 @@ where
             metadata_prefix: self.metadata_prefix,
             targets_prefix: self.targets_prefix,
             min_bytes_per_second: self.min_bytes_per_second,
-            _interchange: PhantomData,
+            _pouf: PhantomData,
         }
     }
 }
@@ -127,7 +127,7 @@ where
 pub struct HttpRepository<C, D>
 where
     C: Connect + Sync + 'static,
-    D: DataInterchange,
+    D: Pouf,
 {
     uri: Uri,
     client: Client<C>,
@@ -135,7 +135,7 @@ where
     metadata_prefix: Option<Vec<String>>,
     targets_prefix: Option<Vec<String>>,
     min_bytes_per_second: u32,
-    _interchange: PhantomData<D>,
+    _pouf: PhantomData<D>,
 }
 
 // Configuration for urlencoding URI path elements.
@@ -208,7 +208,7 @@ fn extend_uri(uri: &Uri, prefix: &Option<Vec<String>>, components: &[String]) ->
 impl<C, D> HttpRepository<C, D>
 where
     C: Connect + Clone + Send + Sync + 'static,
-    D: DataInterchange,
+    D: Pouf,
 {
     fn get<'a>(&self, uri: &'a Uri) -> Result<impl Future<Output = Result<Response<Body>>> + 'a> {
         let req = Request::builder()
@@ -230,7 +230,7 @@ where
 impl<C, D> RepositoryProvider<D> for HttpRepository<C, D>
 where
     C: Connect + Clone + Send + Sync + 'static,
-    D: DataInterchange,
+    D: Pouf,
 {
     fn fetch_metadata<'a>(
         &'a self,

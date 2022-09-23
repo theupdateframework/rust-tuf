@@ -40,8 +40,8 @@ use {
 };
 
 use crate::error::{derp_error_to_error, Error, Result};
-use crate::interchange::cjson::shims;
 use crate::metadata::MetadataPath;
+use crate::pouf::cjson::shims;
 
 const HASH_ALG_PREFS: &[HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
 
@@ -236,7 +236,7 @@ fn calculate_key_id(
     keyid_hash_algorithms: &Option<Vec<String>>,
     public_key: &[u8],
 ) -> Result<KeyId> {
-    use crate::interchange::{DataInterchange, Json};
+    use crate::pouf::{Json, Pouf};
 
     let public_key = shim_public_key(
         key_type,

@@ -3,7 +3,7 @@ use serde::ser::Serialize;
 use std::collections::BTreeMap;
 
 use crate::error::Error;
-use crate::interchange::DataInterchange;
+use crate::pouf::Pouf;
 use crate::Result;
 
 pub(crate) mod pretty;
@@ -11,7 +11,7 @@ pub(crate) mod shims;
 
 pub use pretty::JsonPretty;
 
-/// JSON data interchange.
+/// JSON data pouf.
 ///
 /// # Schema
 ///
@@ -184,11 +184,11 @@ pub use pretty::JsonPretty;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Json;
 
-impl DataInterchange for Json {
+impl Pouf for Json {
     type RawData = serde_json::Value;
 
     /// ```
-    /// # use tuf::interchange::{DataInterchange, Json};
+    /// # use tuf::pouf::{Pouf, Json};
     /// assert_eq!(Json::extension(), "json");
     /// ```
     fn extension() -> &'static str {
@@ -196,7 +196,7 @@ impl DataInterchange for Json {
     }
 
     /// ```
-    /// # use tuf::interchange::{DataInterchange, Json};
+    /// # use tuf::pouf::{Pouf, Json};
     /// # use std::collections::HashMap;
     /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
     /// let raw = Json::from_slice(jsn).unwrap();
@@ -211,7 +211,7 @@ impl DataInterchange for Json {
     /// # use serde_derive::Deserialize;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
-    /// # use tuf::interchange::{DataInterchange, Json};
+    /// # use tuf::pouf::{Pouf, Json};
     /// #
     /// #[derive(Deserialize, Debug, PartialEq)]
     /// struct Thing {
@@ -235,7 +235,7 @@ impl DataInterchange for Json {
     /// # use serde_derive::Serialize;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
-    /// # use tuf::interchange::{DataInterchange, Json};
+    /// # use tuf::pouf::{Pouf, Json};
     /// #
     /// #[derive(Serialize)]
     /// struct Thing {
@@ -256,7 +256,7 @@ impl DataInterchange for Json {
     }
 
     /// ```
-    /// # use tuf::interchange::{DataInterchange, Json};
+    /// # use tuf::pouf::{Pouf, Json};
     /// # use std::collections::HashMap;
     /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
     /// let _: HashMap<String, String> = Json::from_slice(&jsn).unwrap();
