@@ -219,6 +219,7 @@ where
     trusted_targets_keys: Vec<&'a dyn PrivateKey>,
     trusted_snapshot_keys: Vec<&'a dyn PrivateKey>,
     trusted_timestamp_keys: Vec<&'a dyn PrivateKey>,
+    time_version: Option<u32>,
     root_expiration_duration: Duration,
     targets_expiration_duration: Duration,
     snapshot_expiration_duration: Duration,
@@ -288,6 +289,48 @@ where
         }
 
         false
+    }
+
+    /// The initial version number for non-root metadata.
+    fn non_root_initial_version(&self) -> u32 {
+        if let Some(time_version) = self.time_version {
+            time_version
+        } else {
+            1
+        }
+    }
+
+    /// If time versioning is enabled, this updates the current time version to match the current
+    /// time. It will disable time versioning if the current timestamp is less than or equal to
+    /// zero, or it is greater than max u32.
+    fn update_time_version(&mut self) {
+        // We can use the time version if it is greater than zero and less than max u32. Otherwise
+        // fall back to default monontonic versioning.
+        let timestamp = self.current_time.timestamp();
+        if timestamp > 0 {
+            self.time_version = timestamp.try_into().ok();
+        } else {
+            self.time_version = None;
+        }
+    }
+
+    /// The next version number for non-root metadata.
+    fn non_root_next_version(
+        &self,
+        current_version: u32,
+        path: fn() -> MetadataPath,
+    ) -> Result<u32> {
+        if let Some(time_version) = self.time_version {
+            // We can only use the time version if it's larger than our current version. If not,
+            // then fall back to the next version.
+            if current_version < time_version {
+                return Ok(time_version);
+            }
+        }
+
+        current_version
+            .checked_add(1)
+            .ok_or_else(|| Error::MetadataVersionMustBeSmallerThanMaxU32(path()))
     }
 }
 
@@ -367,6 +410,7 @@ where
                 trusted_targets_keys: vec![],
                 trusted_snapshot_keys: vec![],
                 trusted_timestamp_keys: vec![],
+                time_version: None,
                 root_expiration_duration: Duration::days(DEFAULT_ROOT_EXPIRATION_DAYS),
                 targets_expiration_duration: Duration::days(DEFAULT_TARGETS_EXPIRATION_DAYS),
                 snapshot_expiration_duration: Duration::days(DEFAULT_SNAPSHOT_EXPIRATION_DAYS),
@@ -455,6 +499,7 @@ where
                 trusted_targets_keys: vec![],
                 trusted_snapshot_keys: vec![],
                 trusted_timestamp_keys: vec![],
+                time_version: None,
                 root_expiration_duration: Duration::days(DEFAULT_ROOT_EXPIRATION_DAYS),
                 targets_expiration_duration: Duration::days(DEFAULT_TARGETS_EXPIRATION_DAYS),
                 snapshot_expiration_duration: Duration::days(DEFAULT_SNAPSHOT_EXPIRATION_DAYS),
@@ -471,6 +516,23 @@ where
     /// Default is the current wall clock time in UTC.
     pub fn current_time(mut self, current_time: DateTime<Utc>) -> Self {
         self.ctx.current_time = current_time;
+
+        // Update our time version if enabled.
+        if self.ctx.time_version.is_some() {
+            self.ctx.update_time_version();
+        }
+
+        self
+    }
+
+    /// Create Non-root metadata based off the current UTC timestamp, instead of a monotonic
+    /// increment.
+    pub fn time_versioning(mut self, time_versioning: bool) -> Self {
+        if time_versioning {
+            self.ctx.update_time_version();
+        } else {
+            self.ctx.time_version = None;
+        }
         self
     }
 
@@ -912,9 +974,9 @@ where
         let mut delegations_builder = DelegationsBuilder::new();
 
         if let Some(trusted_targets) = self.ctx.db.and_then(|db| db.trusted_targets()) {
-            let next_version = trusted_targets.version().checked_add(1).ok_or_else(|| {
-                Error::MetadataVersionMustBeSmallerThanMaxU32(MetadataPath::targets())
-            })?;
+            let next_version = self
+                .ctx
+                .non_root_next_version(trusted_targets.version(), MetadataPath::targets)?;
 
             targets_builder = targets_builder.version(next_version);
 
@@ -933,6 +995,8 @@ where
                     delegations_builder = delegations_builder.role(role.clone());
                 }
             }
+        } else {
+            targets_builder = targets_builder.version(self.ctx.non_root_initial_version());
         }
 
         // Overwrite any of the old targets with the new ones.
@@ -1092,9 +1156,9 @@ where
             .expires(self.ctx.current_time + self.ctx.snapshot_expiration_duration);
 
         if let Some(trusted_snapshot) = self.ctx.db.and_then(|db| db.trusted_snapshot()) {
-            let next_version = trusted_snapshot.version().checked_add(1).ok_or_else(|| {
-                Error::MetadataVersionMustBeSmallerThanMaxU32(MetadataPath::snapshot())
-            })?;
+            let next_version = self
+                .ctx
+                .non_root_next_version(trusted_snapshot.version(), MetadataPath::snapshot)?;
 
             snapshot_builder = snapshot_builder.version(next_version);
 
@@ -1105,6 +1169,8 @@ where
                         .insert_metadata_description(path.clone(), description.clone());
                 }
             }
+        } else {
+            snapshot_builder = snapshot_builder.version(self.ctx.non_root_initial_version());
         }
 
         // Overwrite the targets entry if specified.
@@ -1246,14 +1312,13 @@ where
     {
         let next_version = if let Some(db) = self.ctx.db {
             if let Some(trusted_timestamp) = db.trusted_timestamp() {
-                trusted_timestamp.version().checked_add(1).ok_or_else(|| {
-                    Error::MetadataVersionMustBeSmallerThanMaxU32(MetadataPath::timestamp())
-                })?
+                self.ctx
+                    .non_root_next_version(trusted_timestamp.version(), MetadataPath::timestamp)?
             } else {
-                1
+                self.ctx.non_root_initial_version()
             }
         } else {
-            1
+            self.ctx.non_root_initial_version()
         };
 
         let description = if let Some(description) = self.state.snapshot_description()? {
@@ -2973,6 +3038,136 @@ mod tests {
             assert_eq!(db.trusted_targets().unwrap().version(), 2);
             assert_eq!(db.trusted_snapshot().unwrap().version(), 2);
             assert_eq!(db.trusted_timestamp().unwrap().version(), 2);
+        })
+    }
+
+    #[test]
+    fn test_time_versioning() {
+        block_on(async move {
+            let mut repo = EphemeralRepository::<Json>::new();
+
+            let current_time = Utc.timestamp(5, 0);
+            let metadata = RepoBuilder::create(&mut repo)
+                .current_time(current_time)
+                .time_versioning(true)
+                .trusted_root_keys(&[&KEYS[0]])
+                .trusted_targets_keys(&[&KEYS[0]])
+                .trusted_snapshot_keys(&[&KEYS[0]])
+                .trusted_timestamp_keys(&[&KEYS[0]])
+                .commit()
+                .await
+                .unwrap();
+
+            let mut db =
+                Database::from_trusted_metadata_with_start_time(&metadata, &current_time).unwrap();
+
+            // The initial version should be the current time.
+            assert_eq!(db.trusted_root().version(), 1);
+            assert_eq!(db.trusted_targets().map(|m| m.version()), Some(5));
+            assert_eq!(db.trusted_snapshot().map(|m| m.version()), Some(5));
+            assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(5));
+
+            // Generating metadata for the same timestamp should advance it by 1.
+            let metadata = RepoBuilder::from_database(&mut repo, &db)
+                .current_time(current_time)
+                .time_versioning(true)
+                .trusted_root_keys(&[&KEYS[0]])
+                .trusted_targets_keys(&[&KEYS[0]])
+                .trusted_snapshot_keys(&[&KEYS[0]])
+                .trusted_timestamp_keys(&[&KEYS[0]])
+                .stage_root()
+                .unwrap()
+                .stage_targets()
+                .unwrap()
+                .commit()
+                .await
+                .unwrap();
+
+            db.update_metadata_with_start_time(&metadata, &current_time)
+                .unwrap();
+
+            assert_eq!(db.trusted_root().version(), 2);
+            assert_eq!(db.trusted_targets().map(|m| m.version()), Some(6));
+            assert_eq!(db.trusted_snapshot().map(|m| m.version()), Some(6));
+            assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(6));
+
+            // Generating metadata for a new timestamp should advance the versions to that amount.
+            let current_time = Utc.timestamp(10, 0);
+            let metadata = RepoBuilder::from_database(&mut repo, &db)
+                .current_time(current_time)
+                .time_versioning(true)
+                .trusted_root_keys(&[&KEYS[0]])
+                .trusted_targets_keys(&[&KEYS[0]])
+                .trusted_snapshot_keys(&[&KEYS[0]])
+                .trusted_timestamp_keys(&[&KEYS[0]])
+                .stage_root()
+                .unwrap()
+                .stage_targets()
+                .unwrap()
+                .commit()
+                .await
+                .unwrap();
+
+            db.update_metadata_with_start_time(&metadata, &current_time)
+                .unwrap();
+
+            assert_eq!(db.trusted_root().version(), 3);
+            assert_eq!(db.trusted_targets().map(|m| m.version()), Some(10));
+            assert_eq!(db.trusted_snapshot().map(|m| m.version()), Some(10));
+            assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(10));
+        })
+    }
+
+    #[test]
+    fn test_time_versioning_falls_back_to_monotonic() {
+        block_on(async move {
+            let mut repo = EphemeralRepository::<Json>::new();
+
+            // zero timestamp should initialize to 1.
+            let current_time = Utc.timestamp(0, 0);
+            let metadata = RepoBuilder::create(&mut repo)
+                .current_time(current_time)
+                .time_versioning(true)
+                .trusted_root_keys(&[&KEYS[0]])
+                .trusted_targets_keys(&[&KEYS[0]])
+                .trusted_snapshot_keys(&[&KEYS[0]])
+                .trusted_timestamp_keys(&[&KEYS[0]])
+                .commit()
+                .await
+                .unwrap();
+
+            let mut db =
+                Database::from_trusted_metadata_with_start_time(&metadata, &current_time).unwrap();
+
+            assert_eq!(db.trusted_root().version(), 1);
+            assert_eq!(db.trusted_targets().map(|m| m.version()), Some(1));
+            assert_eq!(db.trusted_snapshot().map(|m| m.version()), Some(1));
+            assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(1));
+
+            // A sub-second timestamp should advance the version by 1.
+            let current_time = Utc.timestamp(0, 3);
+            let metadata = RepoBuilder::from_database(&mut repo, &db)
+                .current_time(current_time)
+                .time_versioning(true)
+                .trusted_root_keys(&[&KEYS[0]])
+                .trusted_targets_keys(&[&KEYS[0]])
+                .trusted_snapshot_keys(&[&KEYS[0]])
+                .trusted_timestamp_keys(&[&KEYS[0]])
+                .stage_root()
+                .unwrap()
+                .stage_targets()
+                .unwrap()
+                .commit()
+                .await
+                .unwrap();
+
+            db.update_metadata_with_start_time(&metadata, &current_time)
+                .unwrap();
+
+            assert_eq!(db.trusted_root().version(), 2);
+            assert_eq!(db.trusted_targets().map(|m| m.version()), Some(2));
+            assert_eq!(db.trusted_snapshot().map(|m| m.version()), Some(2));
+            assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(2));
         })
     }
 }
