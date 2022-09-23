@@ -19,7 +19,8 @@ fn valid_spec_version(other: &str) -> bool {
 }
 
 fn parse_datetime(ts: &str) -> Result<DateTime<Utc>> {
-    Utc.datetime_from_str(ts, "%FT%TZ")
+    DateTime::parse_from_rfc3339(ts)
+        .map(|ts| ts.with_timezone(&Utc))
         .map_err(|e| Error::Encoding(format!("Can't parse DateTime: {:?}", e)))
 }
 
@@ -599,6 +600,30 @@ mod test {
                 "{:?} should be invalid",
                 version
             );
+        }
+    }
+
+    #[test]
+    fn datetime_formats() {
+        // The TUF spec says datetimes should be in ISO8601 format, specifically
+        // "YYYY-MM-DDTHH:MM:SSZ". Since not all TUF clients adhere strictly to that, we choose to
+        // be more lenient here. The following represent the intersection of valid ISO8601 and
+        // RFC3339 datetime formats (source: https://ijmacd.github.io/rfc3339-iso8601/).
+        let valid_formats = [
+            "2022-08-30T19:53:55Z",
+            "2022-08-30T19:53:55.7Z",
+            "2022-08-30T19:53:55.77Z",
+            "2022-08-30T19:53:55.775Z",
+            "2022-08-30T19:53:55+00:00",
+            "2022-08-30T19:53:55.7+00:00",
+            "2022-08-30T14:53:55-05:00",
+            "2022-08-30T14:53:55.7-05:00",
+            "2022-08-30T14:53:55.77-05:00",
+            "2022-08-30T14:53:55.775-05:00",
+        ];
+
+        for format in valid_formats {
+            assert!(parse_datetime(format).is_ok(), "should parse {:?}", format);
         }
     }
 }
