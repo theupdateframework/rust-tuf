@@ -66,7 +66,6 @@ static PATH_ILLEGAL_STRINGS: &[&str] = &[
     "\"",
     "|",
     "?",
-    "*",
     // control characters, all illegal in FAT
     "\u{000}",
     "\u{001}",
@@ -2311,6 +2310,23 @@ mod test {
             assert!(TargetPath::new(path.to_string()).is_err());
             assert!(MetadataPath::new(path.to_string()).is_err());
             assert!(TargetPath::new(path.to_string()).is_err());
+        }
+    }
+
+    #[test]
+    fn allow_asterisk_in_target_path() {
+        let good_paths = &[
+            "*",
+            "*/some/path",
+            "*/some/path/",
+            "some/*/path",
+            "some/*/path/*",
+        ];
+
+        for path in good_paths.iter() {
+            assert!(safe_path(path).is_ok());
+            assert!(TargetPath::new(path.to_string()).is_ok());
+            assert!(MetadataPath::new(path.to_string()).is_ok());
         }
     }
 
