@@ -382,7 +382,7 @@ where
     /// # use {
     /// #     futures_executor::block_on,
     /// #     tuf::{
-    /// #         pouf::Json,
+    /// #         pouf::Pouf1,
     /// #         crypto::Ed25519PrivateKey,
     /// #         repo_builder::RepoBuilder,
     /// #         repository::EphemeralRepository,
@@ -394,7 +394,7 @@ where
     /// # ).unwrap();
     /// #
     /// # block_on(async {
-    /// let mut repo = EphemeralRepository::<Json>::new();
+    /// let mut repo = EphemeralRepository::<Pouf1>::new();
     /// let _metadata = RepoBuilder::create(&mut repo)
     ///     .trusted_root_keys(&[&key])
     ///     .trusted_targets_keys(&[&key])
@@ -448,7 +448,7 @@ where
     /// #     tuf::{
     /// #         database::Database,
     /// #         crypto::Ed25519PrivateKey,
-    /// #         pouf::Json,
+    /// #         pouf::Pouf1,
     /// #         repo_builder::RepoBuilder,
     /// #         repository::EphemeralRepository,
     /// #     },
@@ -459,7 +459,7 @@ where
     /// # ).unwrap();
     /// #
     /// # block_on(async {
-    ///  let mut repo = EphemeralRepository::<Json>::new();
+    ///  let mut repo = EphemeralRepository::<Pouf1>::new();
     ///  let metadata1 = RepoBuilder::create(&mut repo)
     ///     .trusted_root_keys(&[&key])
     ///     .trusted_targets_keys(&[&key])
@@ -1576,7 +1576,7 @@ mod tests {
             client::{Client, Config},
             crypto::Ed25519PrivateKey,
             metadata::SignedMetadata,
-            pouf::Json,
+            pouf::Pouf1,
             repository::{EphemeralRepository, RepositoryProvider},
         },
         assert_matches::assert_matches,
@@ -1612,7 +1612,7 @@ mod tests {
         version: u32,
         consistent_snapshot: bool,
         expires: DateTime<Utc>,
-    ) -> SignedMetadata<Json, RootMetadata> {
+    ) -> SignedMetadata<Pouf1, RootMetadata> {
         let root = RootMetadataBuilder::new()
             .version(version)
             .consistent_snapshot(consistent_snapshot)
@@ -1650,13 +1650,13 @@ mod tests {
     fn create_targets(
         version: u32,
         expires: DateTime<Utc>,
-    ) -> SignedMetadata<Json, TargetsMetadata> {
+    ) -> SignedMetadata<Pouf1, TargetsMetadata> {
         let targets = TargetsMetadataBuilder::new()
             .version(version)
             .expires(expires)
             .build()
             .unwrap();
-        SignedMetadataBuilder::<Json, _>::from_metadata(&targets)
+        SignedMetadataBuilder::<Pouf1, _>::from_metadata(&targets)
             .unwrap()
             .sign(&KEYS[1])
             .unwrap()
@@ -1670,9 +1670,9 @@ mod tests {
     fn create_snapshot(
         version: u32,
         expires: DateTime<Utc>,
-        targets: &SignedMetadata<Json, TargetsMetadata>,
+        targets: &SignedMetadata<Pouf1, TargetsMetadata>,
         include_length_and_hashes: bool,
-    ) -> SignedMetadata<Json, SnapshotMetadata> {
+    ) -> SignedMetadata<Pouf1, SnapshotMetadata> {
         let description = if include_length_and_hashes {
             let raw_targets = targets.to_raw().unwrap();
             let hashes = crypto::calculate_hashes_from_slice(
@@ -1692,7 +1692,7 @@ mod tests {
             .expires(expires)
             .build()
             .unwrap();
-        SignedMetadataBuilder::<Json, _>::from_metadata(&snapshot)
+        SignedMetadataBuilder::<Pouf1, _>::from_metadata(&snapshot)
             .unwrap()
             .sign(&KEYS[2])
             .unwrap()
@@ -1706,9 +1706,9 @@ mod tests {
     fn create_timestamp(
         version: u32,
         expires: DateTime<Utc>,
-        snapshot: &SignedMetadata<Json, SnapshotMetadata>,
+        snapshot: &SignedMetadata<Pouf1, SnapshotMetadata>,
         include_length_and_hashes: bool,
-    ) -> SignedMetadata<Json, TimestampMetadata> {
+    ) -> SignedMetadata<Pouf1, TimestampMetadata> {
         let description = if include_length_and_hashes {
             let raw_snapshot = snapshot.to_raw().unwrap();
             let hashes = crypto::calculate_hashes_from_slice(
@@ -1727,7 +1727,7 @@ mod tests {
             .expires(expires)
             .build()
             .unwrap();
-        SignedMetadataBuilder::<Json, _>::from_metadata(&timestamp)
+        SignedMetadataBuilder::<Pouf1, _>::from_metadata(&timestamp)
             .unwrap()
             .sign(&KEYS[3])
             .unwrap()
@@ -1739,11 +1739,11 @@ mod tests {
     }
 
     fn assert_metadata(
-        metadata: &RawSignedMetadataSet<Json>,
-        expected_root: Option<&RawSignedMetadata<Json, RootMetadata>>,
-        expected_targets: Option<&RawSignedMetadata<Json, TargetsMetadata>>,
-        expected_snapshot: Option<&RawSignedMetadata<Json, SnapshotMetadata>>,
-        expected_timestamp: Option<&RawSignedMetadata<Json, TimestampMetadata>>,
+        metadata: &RawSignedMetadataSet<Pouf1>,
+        expected_root: Option<&RawSignedMetadata<Pouf1, RootMetadata>>,
+        expected_targets: Option<&RawSignedMetadata<Pouf1, TargetsMetadata>>,
+        expected_snapshot: Option<&RawSignedMetadata<Pouf1, SnapshotMetadata>>,
+        expected_timestamp: Option<&RawSignedMetadata<Pouf1, TimestampMetadata>>,
     ) {
         assert_eq!(
             metadata.root().map(|m| m.parse_untrusted().unwrap()),
@@ -1764,7 +1764,7 @@ mod tests {
     }
 
     fn assert_repo(
-        repo: &EphemeralRepository<Json>,
+        repo: &EphemeralRepository<Pouf1>,
         expected_metadata: &BTreeMap<(MetadataPath, MetadataVersion), &[u8]>,
     ) {
         let actual_metadata = repo
@@ -1797,7 +1797,7 @@ mod tests {
 
     async fn check_stage_and_update_repo(consistent_snapshot: bool) {
         // We'll write all the metadata to this remote repository.
-        let mut remote = EphemeralRepository::<Json>::new();
+        let mut remote = EphemeralRepository::<Pouf1>::new();
 
         // First, create the metadata.
         let expires1 = Utc.ymd(2038, 1, 1).and_hms(0, 0, 0);
@@ -2028,7 +2028,7 @@ mod tests {
     }
 
     async fn commit_does_nothing_if_nothing_changed(consistent_snapshot: bool) {
-        let mut repo = EphemeralRepository::<Json>::new();
+        let mut repo = EphemeralRepository::<Pouf1>::new();
         let metadata1 = RepoBuilder::create(&mut repo)
             .trusted_root_keys(&[&KEYS[0]])
             .trusted_targets_keys(&[&KEYS[0]])
@@ -2082,7 +2082,7 @@ mod tests {
     }
 
     async fn check_root_chain_update(consistent_snapshot: bool) {
-        let mut repo = EphemeralRepository::<Json>::new();
+        let mut repo = EphemeralRepository::<Pouf1>::new();
 
         // First, create the initial metadata. We initially sign the root
         // metadata with key 1.
@@ -2189,7 +2189,7 @@ mod tests {
     #[test]
     fn test_from_database_root_must_be_one_after_the_last() {
         block_on(async {
-            let mut repo = EphemeralRepository::<Json>::new();
+            let mut repo = EphemeralRepository::<Pouf1>::new();
             let metadata = RepoBuilder::create(&mut repo)
                 .trusted_root_keys(&[&KEYS[0]])
                 .trusted_targets_keys(&[&KEYS[0]])
@@ -2224,7 +2224,7 @@ mod tests {
     #[test]
     fn test_add_target_not_consistent_snapshot() {
         block_on(async move {
-            let mut repo = EphemeralRepository::<Json>::new();
+            let mut repo = EphemeralRepository::<Pouf1>::new();
 
             let hash_algs = &[HashAlgorithm::Sha256, HashAlgorithm::Sha512];
 
@@ -2318,7 +2318,7 @@ mod tests {
     #[test]
     fn test_add_target_consistent_snapshot() {
         block_on(async move {
-            let mut repo = EphemeralRepository::<Json>::new();
+            let mut repo = EphemeralRepository::<Pouf1>::new();
 
             let hash_algs = &[HashAlgorithm::Sha256, HashAlgorithm::Sha512];
 
@@ -2415,7 +2415,7 @@ mod tests {
     #[test]
     fn test_do_not_require_all_keys_to_be_online() {
         block_on(async {
-            let mut remote = EphemeralRepository::<Json>::new();
+            let mut remote = EphemeralRepository::<Pouf1>::new();
 
             // First, write some metadata to the repo.
             let expires1 = Utc.ymd(2038, 1, 1).and_hms(0, 0, 0);
@@ -2612,7 +2612,7 @@ mod tests {
     #[test]
     fn test_builder_inherits_from_trusted_targets() {
         block_on(async move {
-            let mut repo = EphemeralRepository::<Json>::new();
+            let mut repo = EphemeralRepository::<Pouf1>::new();
 
             let expires = Utc.ymd(2038, 1, 4).and_hms(0, 0, 0);
             let hash_algs = &[HashAlgorithm::Sha256, HashAlgorithm::Sha512];
@@ -2638,7 +2638,7 @@ mod tests {
                     &[HashAlgorithm::Sha256],
                 )
                 .unwrap()
-                .signed::<Json>(delegation_key)
+                .signed::<Pouf1>(delegation_key)
                 .unwrap();
             let raw_delegated_targets = delegated_targets1.to_raw().unwrap();
 
@@ -2696,7 +2696,7 @@ mod tests {
                     &[HashAlgorithm::Sha256],
                 )
                 .unwrap()
-                .signed::<Json>(delegation_key)
+                .signed::<Pouf1>(delegation_key)
                 .unwrap();
             let raw_delegated_targets = delegated_targets2.to_raw().unwrap();
 
@@ -2758,7 +2758,7 @@ mod tests {
     #[test]
     fn test_builder_rotating_keys_refreshes_metadata() {
         block_on(async move {
-            let mut repo = EphemeralRepository::<Json>::new();
+            let mut repo = EphemeralRepository::<Pouf1>::new();
 
             let metadata1 = RepoBuilder::create(&mut repo)
                 .trusted_root_keys(&[&KEYS[0]])
@@ -2872,7 +2872,7 @@ mod tests {
     #[test]
     fn test_builder_expired_metadata_refreshes_metadata() {
         block_on(async move {
-            let mut repo = EphemeralRepository::<Json>::new();
+            let mut repo = EphemeralRepository::<Pouf1>::new();
 
             let epoch = Utc.timestamp(0, 0);
             let root_expires = Duration::seconds(40);
@@ -3008,7 +3008,7 @@ mod tests {
     #[test]
     fn test_adding_target_refreshes_metadata() {
         block_on(async move {
-            let mut repo = EphemeralRepository::<Json>::new();
+            let mut repo = EphemeralRepository::<Pouf1>::new();
 
             let metadata1 = RepoBuilder::create(&mut repo)
                 .trusted_root_keys(&[&KEYS[0]])
@@ -3053,7 +3053,7 @@ mod tests {
     #[test]
     fn test_time_versioning() {
         block_on(async move {
-            let mut repo = EphemeralRepository::<Json>::new();
+            let mut repo = EphemeralRepository::<Pouf1>::new();
 
             let current_time = Utc.timestamp(5, 0);
             let metadata = RepoBuilder::create(&mut repo)
@@ -3130,7 +3130,7 @@ mod tests {
     #[test]
     fn test_time_versioning_falls_back_to_monotonic() {
         block_on(async move {
-            let mut repo = EphemeralRepository::<Json>::new();
+            let mut repo = EphemeralRepository::<Pouf1>::new();
 
             // zero timestamp should initialize to 1.
             let current_time = Utc.timestamp(0, 0);
@@ -3183,7 +3183,7 @@ mod tests {
     #[test]
     fn test_builder_errs_if_no_keys() {
         block_on(async move {
-            let repo = EphemeralRepository::<Json>::new();
+            let repo = EphemeralRepository::<Pouf1>::new();
 
             let metadata = RepoBuilder::create(&repo)
                 .trusted_root_keys(&[&KEYS[0]])

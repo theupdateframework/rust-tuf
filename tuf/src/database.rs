@@ -1062,7 +1062,7 @@ mod test {
         RawSignedMetadataSetBuilder, RootMetadataBuilder, SnapshotMetadataBuilder,
         TargetsMetadataBuilder, TimestampMetadataBuilder,
     };
-    use crate::pouf::Json;
+    use crate::pouf::Pouf1;
     use assert_matches::assert_matches;
     use lazy_static::lazy_static;
     use std::iter::once;
@@ -1090,7 +1090,7 @@ mod test {
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap();
         let raw_root = root.to_raw().unwrap();
 
@@ -1107,7 +1107,7 @@ mod test {
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap();
         let raw_root = root.to_raw().unwrap();
 
@@ -1129,7 +1129,7 @@ mod test {
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1146,7 +1146,7 @@ mod test {
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1171,7 +1171,7 @@ mod test {
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1191,7 +1191,7 @@ mod test {
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1216,7 +1216,7 @@ mod test {
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1229,7 +1229,7 @@ mod test {
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[1].public().clone())
             .timestamp_key(KEYS[1].public().clone())
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap();
 
         // add the original key's signature to make it cross signed
@@ -1253,7 +1253,7 @@ mod test {
             .snapshot_key(KEYS[0].public().clone())
             .targets_key(KEYS[0].public().clone())
             .timestamp_key(KEYS[0].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1265,7 +1265,7 @@ mod test {
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[1].public().clone())
             .timestamp_key(KEYS[1].public().clone())
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1282,7 +1282,7 @@ mod test {
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[1].public().clone())
             .timestamp_key(KEYS[1].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1290,13 +1290,13 @@ mod test {
         let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap();
 
         let timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
-                .signed::<Json>(&KEYS[1])
+                .signed::<Pouf1>(&KEYS[1])
                 .unwrap();
         let raw_timestamp = timestamp.to_raw().unwrap();
 
@@ -1318,7 +1318,7 @@ mod test {
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[1].public().clone())
             .timestamp_key(KEYS[1].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1326,14 +1326,14 @@ mod test {
         let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap();
 
         let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 // sign it with the root key
-                .signed::<Json>(&KEYS[0])
+                .signed::<Pouf1>(&KEYS[0])
                 .unwrap()
                 .to_raw()
                 .unwrap();
@@ -1350,7 +1350,7 @@ mod test {
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[2].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1363,7 +1363,7 @@ mod test {
         let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
-                .signed::<Json>(&KEYS[2])
+                .signed::<Pouf1>(&KEYS[2])
                 .unwrap()
                 .to_raw()
                 .unwrap();
@@ -1385,7 +1385,7 @@ mod test {
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[2].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1393,7 +1393,7 @@ mod test {
         let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
-            .signed::<Json>(&KEYS[2])
+            .signed::<Pouf1>(&KEYS[2])
             .unwrap();
         let raw_snapshot = snapshot.to_raw().unwrap();
 
@@ -1401,7 +1401,7 @@ mod test {
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
                 // sign it with the targets key
-                .signed::<Json>(&KEYS[2])
+                .signed::<Pouf1>(&KEYS[2])
                 .unwrap()
                 .to_raw()
                 .unwrap();
@@ -1420,7 +1420,7 @@ mod test {
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[2].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1429,13 +1429,13 @@ mod test {
 
         let snapshot = SnapshotMetadataBuilder::new()
             .version(2)
-            .signed::<Json>(&KEYS[2])
+            .signed::<Pouf1>(&KEYS[2])
             .unwrap();
 
         let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
-                .signed::<Json>(&KEYS[2])
+                .signed::<Pouf1>(&KEYS[2])
                 .unwrap()
                 .to_raw()
                 .unwrap();
@@ -1444,7 +1444,7 @@ mod test {
 
         let raw_snapshot = SnapshotMetadataBuilder::new()
             .version(1)
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1461,7 +1461,7 @@ mod test {
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[3].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1469,21 +1469,21 @@ mod test {
         let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
 
         let signed_targets = TargetsMetadataBuilder::new()
-            .signed::<Json>(&KEYS[2])
+            .signed::<Pouf1>(&KEYS[2])
             .unwrap();
         let raw_targets = signed_targets.to_raw().unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .insert_metadata(&signed_targets, &[HashAlgorithm::Sha256])
             .unwrap()
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap();
         let raw_snapshot = snapshot.to_raw().unwrap();
 
         let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
-                .signed::<Json>(&KEYS[3])
+                .signed::<Pouf1>(&KEYS[3])
                 .unwrap()
                 .to_raw()
                 .unwrap();
@@ -1506,7 +1506,7 @@ mod test {
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[3].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1515,21 +1515,21 @@ mod test {
 
         let signed_targets = TargetsMetadataBuilder::new()
             // sign it with the timestamp key
-            .signed::<Json>(&KEYS[3])
+            .signed::<Pouf1>(&KEYS[3])
             .unwrap();
         let raw_targets = signed_targets.to_raw().unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .insert_metadata(&signed_targets, &[HashAlgorithm::Sha256])
             .unwrap()
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap();
         let raw_snapshot = snapshot.to_raw().unwrap();
 
         let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
-                .signed::<Json>(&KEYS[3])
+                .signed::<Pouf1>(&KEYS[3])
                 .unwrap()
                 .to_raw()
                 .unwrap();
@@ -1549,7 +1549,7 @@ mod test {
             .snapshot_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[3].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1558,20 +1558,20 @@ mod test {
 
         let signed_targets = TargetsMetadataBuilder::new()
             .version(2)
-            .signed::<Json>(&KEYS[2])
+            .signed::<Pouf1>(&KEYS[2])
             .unwrap();
 
         let snapshot = SnapshotMetadataBuilder::new()
             .insert_metadata(&signed_targets, &[HashAlgorithm::Sha256])
             .unwrap()
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap();
         let raw_snapshot = snapshot.to_raw().unwrap();
 
         let raw_timestamp =
             TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
                 .unwrap()
-                .signed::<Json>(&KEYS[3])
+                .signed::<Pouf1>(&KEYS[3])
                 .unwrap()
                 .to_raw()
                 .unwrap();
@@ -1581,7 +1581,7 @@ mod test {
 
         let raw_targets = TargetsMetadataBuilder::new()
             .version(1)
-            .signed::<Json>(&KEYS[2])
+            .signed::<Pouf1>(&KEYS[2])
             .unwrap()
             .to_raw()
             .unwrap();
@@ -1596,27 +1596,27 @@ mod test {
             .targets_key(KEYS[1].public().clone())
             .snapshot_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[3].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
 
         let signed_targets1 = TargetsMetadataBuilder::new()
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap();
         let raw_targets1 = signed_targets1.to_raw().unwrap();
 
         let snapshot1 = SnapshotMetadataBuilder::new()
             .insert_metadata(&signed_targets1, &[HashAlgorithm::Sha256])
             .unwrap()
-            .signed::<Json>(&KEYS[2])
+            .signed::<Pouf1>(&KEYS[2])
             .unwrap();
         let raw_snapshot1 = snapshot1.to_raw().unwrap();
 
         let raw_timestamp1 =
             TimestampMetadataBuilder::from_snapshot(&snapshot1, &[HashAlgorithm::Sha256])
                 .unwrap()
-                .signed::<Json>(&KEYS[3])
+                .signed::<Pouf1>(&KEYS[3])
                 .unwrap()
                 .to_raw()
                 .unwrap();
@@ -1636,14 +1636,14 @@ mod test {
             .targets_key(KEYS[1].public().clone())
             .snapshot_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[3].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
 
         let signed_targets2 = TargetsMetadataBuilder::new()
             .version(2)
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap();
         let raw_targets2 = signed_targets2.to_raw().unwrap();
 
@@ -1651,7 +1651,7 @@ mod test {
             .version(2)
             .insert_metadata(&signed_targets2, &[HashAlgorithm::Sha256])
             .unwrap()
-            .signed::<Json>(&KEYS[2])
+            .signed::<Pouf1>(&KEYS[2])
             .unwrap();
         let raw_snapshot2 = snapshot2.to_raw().unwrap();
 
@@ -1659,7 +1659,7 @@ mod test {
             TimestampMetadataBuilder::from_snapshot(&snapshot2, &[HashAlgorithm::Sha256])
                 .unwrap()
                 .version(2)
-                .signed::<Json>(&KEYS[3])
+                .signed::<Pouf1>(&KEYS[3])
                 .unwrap()
                 .to_raw()
                 .unwrap();
@@ -1681,27 +1681,27 @@ mod test {
             .targets_key(KEYS[1].public().clone())
             .snapshot_key(KEYS[2].public().clone())
             .timestamp_key(KEYS[3].public().clone())
-            .signed::<Json>(&KEYS[0])
+            .signed::<Pouf1>(&KEYS[0])
             .unwrap()
             .to_raw()
             .unwrap();
 
         let signed_targets1 = TargetsMetadataBuilder::new()
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap();
         let raw_targets1 = signed_targets1.to_raw().unwrap();
 
         let snapshot1 = SnapshotMetadataBuilder::new()
             .insert_metadata(&signed_targets1, &[HashAlgorithm::Sha256])
             .unwrap()
-            .signed::<Json>(&KEYS[2])
+            .signed::<Pouf1>(&KEYS[2])
             .unwrap();
         let raw_snapshot1 = snapshot1.to_raw().unwrap();
 
         let raw_timestamp1 =
             TimestampMetadataBuilder::from_snapshot(&snapshot1, &[HashAlgorithm::Sha256])
                 .unwrap()
-                .signed::<Json>(&KEYS[3])
+                .signed::<Pouf1>(&KEYS[3])
                 .unwrap()
                 .to_raw()
                 .unwrap();
@@ -1721,14 +1721,14 @@ mod test {
             .targets_key(KEYS[2].public().clone())
             .snapshot_key(KEYS[3].public().clone())
             .timestamp_key(KEYS[4].public().clone())
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap()
             .to_raw()
             .unwrap();
 
         let signed_targets2 = TargetsMetadataBuilder::new()
             .version(2)
-            .signed::<Json>(&KEYS[1])
+            .signed::<Pouf1>(&KEYS[1])
             .unwrap();
         let raw_targets2 = signed_targets2.to_raw().unwrap();
 
@@ -1736,7 +1736,7 @@ mod test {
             .version(2)
             .insert_metadata(&signed_targets2, &[HashAlgorithm::Sha256])
             .unwrap()
-            .signed::<Json>(&KEYS[2])
+            .signed::<Pouf1>(&KEYS[2])
             .unwrap();
         let raw_snapshot2 = snapshot2.to_raw().unwrap();
 
@@ -1744,7 +1744,7 @@ mod test {
             TimestampMetadataBuilder::from_snapshot(&snapshot2, &[HashAlgorithm::Sha256])
                 .unwrap()
                 .version(2)
-                .signed::<Json>(&KEYS[3])
+                .signed::<Pouf1>(&KEYS[3])
                 .unwrap()
                 .to_raw()
                 .unwrap();

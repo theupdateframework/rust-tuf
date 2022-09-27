@@ -1,7 +1,7 @@
 //! Structures and functions to aid in various TUF data pouf formats.
 
-pub(crate) mod cjson;
-pub use cjson::{Json, JsonPretty};
+pub(crate) mod pouf1;
+pub use pouf1::Pouf1;
 
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;

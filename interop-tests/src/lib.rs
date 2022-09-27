@@ -9,10 +9,12 @@ use tuf::metadata::{
     MetadataPath, MetadataVersion, Role, SnapshotMetadataBuilder, TargetPath,
     TargetsMetadataBuilder, TimestampMetadataBuilder,
 };
-use tuf::pouf::JsonPretty;
 use tuf::repo_builder::RepoBuilder;
 use tuf::repository::{FileSystemRepository, FileSystemRepositoryBuilder, RepositoryStorage};
 use walkdir::WalkDir;
+
+mod pretty;
+pub use pretty::JsonPretty;
 
 // These structs and functions are necessary to parse keys.json, which contains the keys
 // used by go-tuf to generate the equivalent metadata. We use the same keys to facilitate

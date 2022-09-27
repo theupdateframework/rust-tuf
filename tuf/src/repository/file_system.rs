@@ -491,7 +491,7 @@ mod test {
     use super::*;
     use crate::error::Error;
     use crate::metadata::RootMetadata;
-    use crate::pouf::Json;
+    use crate::pouf::Pouf1;
     use crate::repository::{fetch_metadata_to_string, fetch_target_to_string, Repository};
     use assert_matches::assert_matches;
     use futures_executor::block_on;
@@ -508,7 +508,7 @@ mod test {
             let repo = FileSystemRepositoryBuilder::new(temp_dir.path()).build();
 
             assert_matches!(
-                Repository::<_, Json>::new(repo)
+                Repository::<_, Pouf1>::new(repo)
                     .fetch_metadata::<RootMetadata>(
                         &MetadataPath::root(),
                         MetadataVersion::None,
@@ -532,7 +532,7 @@ mod test {
                 .prefix("rust-tuf")
                 .tempdir()
                 .unwrap();
-            let repo = FileSystemRepositoryBuilder::<Json>::new(temp_dir.path().to_path_buf())
+            let repo = FileSystemRepositoryBuilder::<Pouf1>::new(temp_dir.path().to_path_buf())
                 .metadata_prefix("meta")
                 .targets_prefix("targs")
                 .build();
@@ -577,7 +577,7 @@ mod test {
                 .tempdir()
                 .unwrap();
 
-            let repo = FileSystemRepositoryBuilder::<Json>::new(temp_dir.path().to_path_buf())
+            let repo = FileSystemRepositoryBuilder::<Pouf1>::new(temp_dir.path().to_path_buf())
                 .metadata_prefix("meta")
                 .targets_prefix("targs")
                 .build();
@@ -685,7 +685,7 @@ mod test {
                 .tempdir()
                 .unwrap();
 
-            let repo = FileSystemRepository::<Json>::new(temp_dir.path().to_path_buf());
+            let repo = FileSystemRepository::<Pouf1>::new(temp_dir.path().to_path_buf());
 
             // commit() fails if we did nothing to the batch, but the repo changed.
             let batch = repo.batch_update();
@@ -732,7 +732,7 @@ mod test {
                 .tempdir()
                 .unwrap();
 
-            let repo = FileSystemRepository::<Json>::new(temp_dir.path().to_path_buf());
+            let repo = FileSystemRepository::<Pouf1>::new(temp_dir.path().to_path_buf());
 
             // commit() fails if we did nothing to the batch, but the repo changed.
             let batch = repo.batch_update();

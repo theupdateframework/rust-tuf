@@ -41,7 +41,7 @@ use {
 
 use crate::error::{derp_error_to_error, Error, Result};
 use crate::metadata::MetadataPath;
-use crate::pouf::cjson::shims;
+use crate::pouf::pouf1::shims;
 
 const HASH_ALG_PREFS: &[HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
 
@@ -236,7 +236,7 @@ fn calculate_key_id(
     keyid_hash_algorithms: &Option<Vec<String>>,
     public_key: &[u8],
 ) -> Result<KeyId> {
-    use crate::pouf::{Json, Pouf};
+    use crate::pouf::{Pouf, Pouf1};
 
     let public_key = shim_public_key(
         key_type,
@@ -244,7 +244,7 @@ fn calculate_key_id(
         keyid_hash_algorithms,
         public_key,
     )?;
-    let public_key = Json::canonicalize(&Json::serialize(&public_key)?)?;
+    let public_key = Pouf1::canonicalize(&Pouf1::serialize(&public_key)?)?;
     let mut context = digest::Context::new(&SHA256);
     context.update(&public_key);
 

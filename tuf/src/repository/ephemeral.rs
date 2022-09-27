@@ -308,7 +308,7 @@ async fn bytes_to_reader<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::pouf::Json;
+    use crate::pouf::Pouf1;
     use crate::repository::{fetch_metadata_to_string, fetch_target_to_string};
     use assert_matches::assert_matches;
     use futures_executor::block_on;
@@ -316,7 +316,7 @@ mod test {
     #[test]
     fn ephemeral_repo_targets() {
         block_on(async {
-            let repo = EphemeralRepository::<Json>::new();
+            let repo = EphemeralRepository::<Pouf1>::new();
 
             let path = TargetPath::new("batty").unwrap();
             if let Err(err) = repo.fetch_target(&path).await {
@@ -348,7 +348,7 @@ mod test {
     #[test]
     fn ephemeral_repo_batch_update() {
         block_on(async {
-            let repo = EphemeralRepository::<Json>::new();
+            let repo = EphemeralRepository::<Pouf1>::new();
 
             let meta_path = MetadataPath::new("meta").unwrap();
             let meta_version = MetadataVersion::None;
@@ -449,7 +449,7 @@ mod test {
     #[test]
     fn ephemeral_repo_batch_commit_fails_with_metadata_conflicts() {
         block_on(async {
-            let repo = EphemeralRepository::<Json>::new();
+            let repo = EphemeralRepository::<Pouf1>::new();
 
             // commit() fails if we did nothing to the batch, but the repo changed.
             let batch = repo.batch_update();
@@ -491,7 +491,7 @@ mod test {
     #[test]
     fn ephemeral_repo_batch_commit_fails_with_target_conflicts() {
         block_on(async {
-            let repo = EphemeralRepository::<Json>::new();
+            let repo = EphemeralRepository::<Pouf1>::new();
 
             // commit() fails if we did nothing to the batch, but the repo changed.
             let batch = repo.batch_update();

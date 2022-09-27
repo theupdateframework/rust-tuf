@@ -1,15 +1,17 @@
-use serde::de::DeserializeOwned;
-use serde::ser::Serialize;
-
-use super::Json;
-use crate::pouf::Pouf;
-use crate::Result;
+use {
+    serde::de::DeserializeOwned,
+    serde::ser::Serialize,
+    tuf::{
+        pouf::{Pouf, Pouf1},
+        Result,
+    },
+};
 
 /// Pretty JSON data pouf.
 ///
-/// This is identical to [Json] in all manners except for the `canonicalize` method. Instead of
-/// writing the metadata in the canonical format, it first canonicalizes it, then pretty prints
-/// the metadata.
+/// This is identical to [tuf::pouf::Pouf1] in all manners except for the `canonicalize` method.
+/// Instead of writing the metadata in the canonical format, it first canonicalizes it, then pretty
+/// prints the metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JsonPretty;
 
@@ -17,16 +19,19 @@ impl Pouf for JsonPretty {
     type RawData = serde_json::Value;
 
     /// ```
-    /// # use tuf::pouf::{Pouf, JsonPretty};
+    /// # use interop_tests::JsonPretty;
+    /// # use tuf::pouf::Pouf;
+    /// #
     /// assert_eq!(JsonPretty::extension(), "json");
     /// ```
     fn extension() -> &'static str {
-        Json::extension()
+        Pouf1::extension()
     }
 
     /// ```
+    /// # use interop_tests::JsonPretty;
     /// # use serde_json::json;
-    /// # use tuf::pouf::{Pouf, JsonPretty};
+    /// # use tuf::pouf::Pouf;
     /// #
     /// let json = json!({
     ///     "o": {
@@ -57,17 +62,18 @@ impl Pouf for JsonPretty {
     /// }"#);
     /// ```
     fn canonicalize(raw_data: &Self::RawData) -> Result<Vec<u8>> {
-        let bytes = Json::canonicalize(raw_data)?;
+        let bytes = Pouf1::canonicalize(raw_data)?;
         Ok(serde_json::to_vec_pretty(&Self::from_slice::<
             Self::RawData,
         >(&bytes)?)?)
     }
 
     /// ```
+    /// # use interop_tests::JsonPretty;
     /// # use serde_derive::Deserialize;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
-    /// # use tuf::pouf::{Pouf, JsonPretty};
+    /// # use tuf::pouf::Pouf;
     /// #
     /// #[derive(Deserialize, Debug, PartialEq)]
     /// struct Thing {
@@ -84,14 +90,15 @@ impl Pouf for JsonPretty {
     where
         T: DeserializeOwned,
     {
-        Json::deserialize(raw_data)
+        Pouf1::deserialize(raw_data)
     }
 
     /// ```
+    /// # use interop_tests::JsonPretty;
     /// # use serde_derive::Serialize;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
-    /// # use tuf::pouf::{Pouf, JsonPretty};
+    /// # use tuf::pouf::Pouf;
     /// #
     /// #[derive(Serialize)]
     /// struct Thing {
@@ -108,12 +115,14 @@ impl Pouf for JsonPretty {
     where
         T: Serialize,
     {
-        Json::serialize(data)
+        Pouf1::serialize(data)
     }
 
     /// ```
-    /// # use tuf::pouf::{Pouf, JsonPretty};
+    /// # use interop_tests::JsonPretty;
     /// # use std::collections::HashMap;
+    /// # use tuf::pouf::Pouf;
+    /// #
     /// let jsn: &[u8] = br#"{"foo": "bar", "baz": "quux"}"#;
     /// let _: HashMap<String, String> = JsonPretty::from_slice(&jsn).unwrap();
     /// ```
@@ -121,6 +130,6 @@ impl Pouf for JsonPretty {
     where
         T: DeserializeOwned,
     {
-        Json::from_slice(slice)
+        Pouf1::from_slice(slice)
     }
 }
