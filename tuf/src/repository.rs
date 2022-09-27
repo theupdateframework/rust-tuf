@@ -379,7 +379,7 @@ where
 mod test {
     use super::*;
     use crate::metadata::{MetadataPath, MetadataVersion, RootMetadata, SnapshotMetadata};
-    use crate::pouf::Json;
+    use crate::pouf::Pouf1;
     use crate::repository::EphemeralRepository;
     use assert_matches::assert_matches;
     use futures_executor::block_on;
@@ -387,7 +387,7 @@ mod test {
     #[test]
     fn repository_forwards_not_found_error() {
         block_on(async {
-            let repo = Repository::<_, Json>::new(EphemeralRepository::new());
+            let repo = Repository::<_, Pouf1>::new(EphemeralRepository::new());
 
             assert_matches!(
                 repo.fetch_metadata::<RootMetadata>(
@@ -406,8 +406,8 @@ mod test {
     #[test]
     fn repository_rejects_mismatched_path() {
         block_on(async {
-            let mut repo = Repository::<_, Json>::new(EphemeralRepository::new());
-            let fake_metadata = RawSignedMetadata::<Json, RootMetadata>::new(vec![]);
+            let mut repo = Repository::<_, Pouf1>::new(EphemeralRepository::new());
+            let fake_metadata = RawSignedMetadata::<Pouf1, RootMetadata>::new(vec![]);
 
             repo.store_metadata(&MetadataPath::root(), MetadataVersion::None, &fake_metadata)
                 .await
@@ -442,7 +442,7 @@ mod test {
             let path = MetadataPath::root();
             let version = MetadataVersion::None;
             let data: &[u8] = b"valid metadata";
-            let _metadata = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
+            let _metadata = RawSignedMetadata::<Pouf1, RootMetadata>::new(data.to_vec());
             let data_hash = crypto::calculate_hash(data, &HashAlgorithm::Sha256);
 
             let repo = EphemeralRepository::new();
@@ -450,7 +450,7 @@ mod test {
                 .await
                 .unwrap();
 
-            let client = Repository::<_, Json>::new(repo);
+            let client = Repository::<_, Pouf1>::new(repo);
 
             assert_matches!(
                 client
@@ -478,7 +478,7 @@ mod test {
                 .await
                 .unwrap();
 
-            let client = Repository::<_, Json>::new(repo);
+            let client = Repository::<_, Pouf1>::new(repo);
 
             assert_matches!(
                 client
@@ -500,14 +500,14 @@ mod test {
             let path = MetadataPath::root();
             let version = MetadataVersion::None;
             let data: &[u8] = b"reasonably sized metadata";
-            let _metadata = RawSignedMetadata::<Json, RootMetadata>::new(data.to_vec());
+            let _metadata = RawSignedMetadata::<Pouf1, RootMetadata>::new(data.to_vec());
 
             let repo = EphemeralRepository::new();
             repo.store_metadata(&path, version, &mut &*data)
                 .await
                 .unwrap();
 
-            let client = Repository::<_, Json>::new(repo);
+            let client = Repository::<_, Pouf1>::new(repo);
 
             assert_matches!(
                 client
@@ -530,7 +530,7 @@ mod test {
                 .await
                 .unwrap();
 
-            let client = Repository::<_, Json>::new(repo);
+            let client = Repository::<_, Pouf1>::new(repo);
 
             assert_matches!(
                 client
@@ -545,7 +545,7 @@ mod test {
     fn repository_rejects_corrupt_targets() {
         block_on(async {
             let repo = EphemeralRepository::new();
-            let mut client = Repository::<_, Json>::new(repo);
+            let mut client = Repository::<_, Pouf1>::new(repo);
 
             let data: &[u8] = b"like tears in the rain";
             let target_description =
@@ -575,9 +575,9 @@ mod test {
     #[test]
     fn repository_takes_trait_objects() {
         block_on(async {
-            let repo: Box<dyn RepositoryStorageProvider<Json>> =
+            let repo: Box<dyn RepositoryStorageProvider<Pouf1>> =
                 Box::new(EphemeralRepository::new());
-            let mut client = Repository::<_, Json>::new(repo);
+            let mut client = Repository::<_, Pouf1>::new(repo);
 
             let data: &[u8] = b"like tears in the rain";
             let target_description =
@@ -599,11 +599,11 @@ mod test {
     fn repository_dyn_impls_repository_traits() {
         let mut repo = EphemeralRepository::new();
 
-        fn storage<T: RepositoryStorage<Json>>(_t: T) {}
-        fn provider<T: RepositoryProvider<Json>>(_t: T) {}
+        fn storage<T: RepositoryStorage<Pouf1>>(_t: T) {}
+        fn provider<T: RepositoryProvider<Pouf1>>(_t: T) {}
 
-        provider(&repo as &dyn RepositoryProvider<Json>);
-        provider(&mut repo as &mut dyn RepositoryProvider<Json>);
-        storage(&mut repo as &mut dyn RepositoryStorage<Json>);
+        provider(&repo as &dyn RepositoryProvider<Pouf1>);
+        provider(&mut repo as &mut dyn RepositoryProvider<Pouf1>);
+        storage(&mut repo as &mut dyn RepositoryStorage<Pouf1>);
     }
 }

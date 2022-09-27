@@ -14,7 +14,7 @@ use std::str;
 
 use crate::crypto::{self, HashAlgorithm, HashValue, KeyId, PrivateKey, PublicKey, Signature};
 use crate::error::Error;
-use crate::pouf::cjson::shims;
+use crate::pouf::pouf1::shims;
 use crate::pouf::Pouf;
 use crate::Result;
 
@@ -459,14 +459,14 @@ where
     /// ```
     /// # use chrono::prelude::*;
     /// # use tuf::crypto::{Ed25519PrivateKey, PrivateKey, SignatureScheme, HashAlgorithm};
-    /// # use tuf::pouf::Json;
+    /// # use tuf::pouf::Pouf1;
     /// # use tuf::metadata::{SignedMetadata, SnapshotMetadataBuilder};
     /// #
     /// # let key: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
     /// let key = Ed25519PrivateKey::from_pkcs8(&key).unwrap();
     ///
     /// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
-    /// SignedMetadata::<Json, _>::new(&snapshot, &key).unwrap();
+    /// SignedMetadata::<Pouf1, _>::new(&snapshot, &key).unwrap();
     /// ```
     pub fn new(metadata: &M, private_key: &dyn PrivateKey) -> Result<Self> {
         let raw = D::serialize(metadata)?;
@@ -507,7 +507,7 @@ where
     /// ```
     /// # use chrono::prelude::*;
     /// # use tuf::crypto::{Ed25519PrivateKey, PrivateKey, SignatureScheme, HashAlgorithm};
-    /// # use tuf::pouf::Json;
+    /// # use tuf::pouf::Pouf1;
     /// # use tuf::metadata::{SignedMetadata, SnapshotMetadataBuilder};
     /// #
     /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
@@ -519,7 +519,7 @@ where
     /// let key_2 = Ed25519PrivateKey::from_pkcs8(&key_2).unwrap();
     ///
     /// let snapshot = SnapshotMetadataBuilder::new().build().unwrap();
-    /// let mut snapshot = SignedMetadata::<Json, _>::new(&snapshot, &key_1).unwrap();
+    /// let mut snapshot = SignedMetadata::<Pouf1, _>::new(&snapshot, &key_1).unwrap();
     ///
     /// snapshot.add_signature(&key_2).unwrap();
     /// assert_eq!(snapshot.signatures().len(), 2);
@@ -1025,13 +1025,13 @@ impl MetadataPath {
     ///
     /// ```
     /// # use tuf::crypto::HashValue;
-    /// # use tuf::pouf::Json;
+    /// # use tuf::pouf::Pouf1;
     /// # use tuf::metadata::{MetadataPath, MetadataVersion};
     /// #
     /// let path = MetadataPath::new("foo/bar").unwrap();
-    /// assert_eq!(path.components::<Json>(MetadataVersion::None),
+    /// assert_eq!(path.components::<Pouf1>(MetadataVersion::None),
     ///            ["foo".to_string(), "bar.json".to_string()]);
-    /// assert_eq!(path.components::<Json>(MetadataVersion::Number(1)),
+    /// assert_eq!(path.components::<Pouf1>(MetadataVersion::Number(1)),
     ///            ["foo".to_string(), "1.bar.json".to_string()]);
     /// ```
     pub fn components<D>(&self, version: MetadataVersion) -> Vec<String>
@@ -2282,7 +2282,7 @@ impl DelegationBuilder {
 mod test {
     use super::*;
     use crate::crypto::Ed25519PrivateKey;
-    use crate::pouf::Json;
+    use crate::pouf::Pouf1;
     use crate::verify::verify_signatures;
     use assert_matches::assert_matches;
     use chrono::prelude::*;
@@ -2614,7 +2614,7 @@ mod test {
     #[test]
     fn de_ser_root_metadata_wrong_key_id() {
         let jsn = jsn_root_metadata_without_keyid_hash_algos();
-        let mut jsn_str = str::from_utf8(&Json::canonicalize(&jsn).unwrap())
+        let mut jsn_str = str::from_utf8(&Pouf1::canonicalize(&jsn).unwrap())
             .unwrap()
             .to_owned();
         // Replace the key id to something else.
@@ -2632,7 +2632,7 @@ mod test {
         let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let decoded: RootMetadata = serde_json::from_value(jsn).unwrap();
 
-        let signed: SignedMetadata<crate::pouf::cjson::Json, _> =
+        let signed: SignedMetadata<crate::pouf::pouf1::Pouf1, _> =
             SignedMetadata::new(&decoded, &root_key).unwrap();
         let raw_root = signed.to_raw().unwrap();
 
@@ -2657,7 +2657,7 @@ mod test {
             "signed": jsn_root_metadata_without_keyid_hash_algos()
         });
         let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
-        let decoded: SignedMetadata<crate::pouf::cjson::Json, RootMetadata> =
+        let decoded: SignedMetadata<crate::pouf::pouf1::Pouf1, RootMetadata> =
             serde_json::from_value(jsn).unwrap();
         let raw_root = decoded.to_raw().unwrap();
 
@@ -2686,7 +2686,7 @@ mod test {
             "signed": jsn_root_metadata_without_keyid_hash_algos()
         });
         let root_key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
-        let decoded: SignedMetadata<crate::pouf::cjson::Json, RootMetadata> =
+        let decoded: SignedMetadata<crate::pouf::pouf1::Pouf1, RootMetadata> =
             serde_json::from_value(jsn).unwrap();
         let raw_root = decoded.to_raw().unwrap();
         assert_matches!(
@@ -2716,7 +2716,7 @@ mod test {
         let key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let public_keys = vec![key.public().clone()];
 
-        let mut standard = SignedMetadataBuilder::<Json, M>::from_raw_metadata(metadata.clone())
+        let mut standard = SignedMetadataBuilder::<Pouf1, M>::from_raw_metadata(metadata.clone())
             .unwrap()
             .sign(&key)
             .unwrap()
@@ -2733,7 +2733,7 @@ mod test {
                 "this-too": 42,
             }),
         );
-        let mut custom = SignedMetadataBuilder::<Json, M>::from_raw_metadata(metadata)
+        let mut custom = SignedMetadataBuilder::<Pouf1, M>::from_raw_metadata(metadata)
             .unwrap()
             .sign(&key)
             .unwrap()
@@ -3157,7 +3157,7 @@ mod test {
 
         let key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
 
-        let signed = SignedMetadata::<Json, _>::new(&snapshot, &key).unwrap();
+        let signed = SignedMetadata::<Pouf1, _>::new(&snapshot, &key).unwrap();
 
         let jsn = json!({
             "signatures": [
@@ -3187,7 +3187,7 @@ mod test {
 
         let encoded = serde_json::to_value(&signed).unwrap();
         assert_eq!(encoded, jsn, "{:#?} != {:#?}", encoded, jsn);
-        let decoded: SignedMetadata<Json, SnapshotMetadata> =
+        let decoded: SignedMetadata<Pouf1, SnapshotMetadata> =
             serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, signed);
     }

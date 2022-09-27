@@ -37,20 +37,21 @@
 use assert_matches::assert_matches;
 use futures_executor::block_on;
 use futures_util::io::AsyncReadExt;
+use interop_tests::JsonPretty;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tuf::client::{Client, Config};
 use tuf::crypto::PublicKey;
 use tuf::metadata::{MetadataPath, MetadataVersion, RawSignedMetadata, RootMetadata, TargetPath};
-use tuf::pouf::{Json, JsonPretty, Pouf};
+use tuf::pouf::{Pouf, Pouf1};
 use tuf::repository::{
     EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, RepositoryProvider,
 };
 
 #[test]
 fn fuchsia_go_tuf_consistent_snapshot_false() {
-    test_key_rotation::<Json>(
+    test_key_rotation::<Pouf1>(
         Path::new("tests")
             .join("fuchsia-go-tuf-5527fe")
             .join("consistent-snapshot-false"),
@@ -59,7 +60,7 @@ fn fuchsia_go_tuf_consistent_snapshot_false() {
 
 #[test]
 fn fuchsia_go_tuf_consistent_snapshot_true() {
-    test_key_rotation::<Json>(
+    test_key_rotation::<Pouf1>(
         Path::new("tests")
             .join("fuchsia-go-tuf-5527fe")
             .join("consistent-snapshot-true"),
@@ -68,7 +69,7 @@ fn fuchsia_go_tuf_consistent_snapshot_true() {
 
 #[test]
 fn fuchsia_go_tuf_transition_m4_consistent_snapshot_false() {
-    test_key_rotation::<Json>(
+    test_key_rotation::<Pouf1>(
         Path::new("tests")
             .join("fuchsia-go-tuf-transition-M4")
             .join("consistent-snapshot-false"),
@@ -77,7 +78,7 @@ fn fuchsia_go_tuf_transition_m4_consistent_snapshot_false() {
 
 #[test]
 fn fuchsia_go_tuf_transition_m4_consistent_snapshot_true() {
-    test_key_rotation::<Json>(
+    test_key_rotation::<Pouf1>(
         Path::new("tests")
             .join("fuchsia-go-tuf-transition-M4")
             .join("consistent-snapshot-true"),
