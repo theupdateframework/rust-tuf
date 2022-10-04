@@ -1844,6 +1844,7 @@ pub struct TargetsMetadata {
     expires: DateTime<Utc>,
     targets: HashMap<TargetPath, TargetDescription>,
     delegations: Delegations,
+    additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl TargetsMetadata {
@@ -1853,6 +1854,7 @@ impl TargetsMetadata {
         expires: DateTime<Utc>,
         targets: HashMap<TargetPath, TargetDescription>,
         delegations: Delegations,
+        additional_fields: HashMap<String, serde_json::Value>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::MetadataVersionMustBeGreaterThanZero(
@@ -1865,6 +1867,7 @@ impl TargetsMetadata {
             expires,
             targets,
             delegations,
+            additional_fields,
         })
     }
 
@@ -1876,6 +1879,11 @@ impl TargetsMetadata {
     /// An immutable reference to the optional delegations.
     pub fn delegations(&self) -> &Delegations {
         &self.delegations
+    }
+
+    /// An immutable reference to any additional fields on the metadata.
+    pub fn additional_fields(&self) -> &HashMap<String, serde_json::Value> {
+        &self.additional_fields
     }
 }
 
@@ -1993,6 +2001,7 @@ impl TargetsMetadataBuilder {
             self.expires,
             self.targets,
             self.delegations.unwrap_or_default(),
+            Default::default(),
         )
     }
 
@@ -3260,6 +3269,7 @@ mod test {
             Utc.ymd(2038, 1, 1).and_hms(0, 0, 0),
             hashmap!(),
             Delegations::default(),
+            Default::default(),
         )
         .unwrap();
 
