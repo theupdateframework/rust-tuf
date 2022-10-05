@@ -2583,6 +2583,61 @@ mod test {
         assert_eq!(decoded, root);
     }
 
+    #[test]
+    fn serde_root_metadata_additional_fields() {
+        let jsn = json!({
+            "_type": "root",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "consistent_snapshot": true,
+            "keys": {
+                "09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1": {
+                    "keytype": "ed25519",
+                    "scheme": "ed25519",
+                    "keyid_hash_algorithms": ["sha256", "sha512"],
+                    "keyval": {
+                        "public": "1410ae3053aa70bbfa98428a879d64d3002a3578f7dfaaeb1cb0764e860f7e0b",
+                    },
+                },
+            },
+            "roles": {
+                "root": {
+                    "threshold": 1,
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"],
+                },
+                "snapshot": {
+                    "threshold": 1,
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"],
+                },
+                "targets": {
+                    "threshold": 1,
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"],
+                },
+                "timestamp": {
+                    "threshold": 1,
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"],
+                },
+            },
+            // additional_fields
+            "custom": {
+                "foo": 42,
+                "bar": "baz",
+            },
+            "quux": true,
+        });
+
+        let root: RootMetadata = serde_json::from_value(jsn.clone()).unwrap();
+        assert_eq!(
+            root.additional_fields()["custom"],
+            json!({"foo": 42, "bar": "baz"})
+        );
+        assert_eq!(root.additional_fields()["quux"], json!(true));
+
+        // make sure additional_fields are passed through serialization as well
+        assert_eq!(jsn, serde_json::to_value(&root).unwrap());
+    }
+
     fn jsn_root_metadata_without_keyid_hash_algos() -> serde_json::Value {
         json!({
             "_type": "root",
@@ -2885,6 +2940,41 @@ mod test {
         assert_eq!(decoded, timestamp);
     }
 
+    #[test]
+    fn serde_timestamp_metadata_additional_fields() {
+        let jsn = json!({
+            "_type": "timestamp",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "snapshot.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": "",
+                    },
+                },
+            },
+            // additional_fields
+            "custom": {
+                "foo": 42,
+                "bar": "baz",
+            },
+            "quux": true,
+        });
+
+        let timestamp: TimestampMetadata = serde_json::from_value(jsn.clone()).unwrap();
+        assert_eq!(
+            timestamp.additional_fields()["custom"],
+            json!({"foo": 42, "bar": "baz"})
+        );
+        assert_eq!(timestamp.additional_fields()["quux"], json!(true));
+
+        // make sure additional_fields are passed through serialization as well
+        assert_eq!(jsn, serde_json::to_value(&timestamp).unwrap());
+    }
+
     // Deserialize timestamp metadata with optional length and hashes
     #[test]
     fn serde_timestamp_metadata_without_length_and_hashes() {
@@ -2904,7 +2994,7 @@ mod test {
                 "snapshot.json": {
                     "version": 1
                 },
-            }
+            },
         });
 
         let encoded = serde_json::to_value(&timestamp).unwrap();
@@ -2997,6 +3087,41 @@ mod test {
         assert_eq!(encoded, jsn);
         let decoded: SnapshotMetadata = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn serde_snapshot_metadata_additional_fields() {
+        let jsn = json!({
+            "_type": "snapshot",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "targets.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": "",
+                    },
+                },
+            },
+            // additional_fields
+            "custom": {
+                "foo": 42,
+                "bar": "baz",
+            },
+            "quux": true,
+        });
+
+        let snapshot: SnapshotMetadata = serde_json::from_value(jsn.clone()).unwrap();
+        assert_eq!(
+            snapshot.additional_fields()["custom"],
+            json!({"foo": 42, "bar": "baz"})
+        );
+        assert_eq!(snapshot.additional_fields()["quux"], json!(true));
+
+        // make sure additional_fields are passed through serialization as well
+        assert_eq!(jsn, serde_json::to_value(&snapshot).unwrap());
     }
 
     // Deserialize snapshot metadata with optional length and hashes
@@ -3118,6 +3243,66 @@ mod test {
             let decoded: TargetsMetadata = serde_json::from_value(encoded).unwrap();
             assert_eq!(decoded, targets);
         })
+    }
+
+    #[test]
+    fn serde_targets_metadata_additional_fields() {
+        let jsn = json!({
+                "_type": "targets",
+                "spec_version": "1.0",
+                "version": 1,
+                "expires": "2017-01-01T00:00:00Z",
+                "targets": {
+                    "insert-target-from-slice": {
+                        "length": 3,
+                        "hashes": {
+                            "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                                bfa0f98a5e886266e7ae",
+                        },
+                    },
+                    "insert-target-description-from-slice-with-custom": {
+                        "length": 3,
+                        "hashes": {
+                            "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                                bfa0f98a5e886266e7ae",
+                        },
+                    },
+                    "insert-target-from-reader": {
+                        "length": 3,
+                        "hashes": {
+                            "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                                bfa0f98a5e886266e7ae",
+                        },
+                    },
+                    "insert-target-description-from-reader-with-custom": {
+                        "length": 3,
+                        "hashes": {
+                            "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                                bfa0f98a5e886266e7ae",
+                        },
+                        "custom": {
+                            "foo": 1,
+                            "bar": "baz",
+                        },
+                    },
+                },
+            // additional_fields
+            "custom": {
+                "foo": 42,
+                "bar": "baz",
+            },
+            "quux": true,
+        });
+
+        let targets: TargetsMetadata = serde_json::from_value(jsn.clone()).unwrap();
+        assert_eq!(
+            targets.additional_fields()["custom"],
+            json!({"foo": 42, "bar": "baz"})
+        );
+        assert_eq!(targets.additional_fields()["quux"], json!(true));
+
+        // make sure additional_fields are passed through serialization as well
+        assert_eq!(jsn, serde_json::to_value(&targets).unwrap());
     }
 
     #[test]
