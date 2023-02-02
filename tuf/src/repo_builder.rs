@@ -781,7 +781,7 @@ where
     ///
     /// This will hash the file with [HashAlgorithm::Sha256].
     ///
-    /// See [RepoBuilder<Targets>::add_target] for more details.
+    /// See `RepoBuilder<Targets>::add_target` for more details.
     pub async fn add_target<Rd>(
         self,
         target_path: TargetPath,
