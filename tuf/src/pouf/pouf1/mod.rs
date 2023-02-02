@@ -284,28 +284,24 @@ impl Value {
         match *self {
             Value::Null => {
                 buf.extend(b"null");
-                Ok(())
             }
             Value::Bool(true) => {
                 buf.extend(b"true");
-                Ok(())
             }
             Value::Bool(false) => {
                 buf.extend(b"false");
-                Ok(())
             }
-            Value::Number(Number::I64(n)) => itoa::write(buf, n)
-                .map(|_| ())
-                .map_err(|err| format!("Write error: {}", err)),
-            Value::Number(Number::U64(n)) => itoa::write(buf, n)
-                .map(|_| ())
-                .map_err(|err| format!("Write error: {}", err)),
+            Value::Number(Number::I64(n)) => {
+                buf.extend(itoa::Buffer::new().format(n).bytes());
+            }
+            Value::Number(Number::U64(n)) => {
+                buf.extend(itoa::Buffer::new().format(n).bytes());
+            }
             Value::String(ref s) => {
                 // this mess is abusing serde_json to get json escaping
                 let s = serde_json::Value::String(s.clone());
                 let s = serde_json::to_string(&s).map_err(|e| format!("{:?}", e))?;
                 buf.extend(s.as_bytes());
-                Ok(())
             }
             Value::Array(ref arr) => {
                 buf.push(b'[');
@@ -318,7 +314,6 @@ impl Value {
                     first = false;
                 }
                 buf.push(b']');
-                Ok(())
             }
             Value::Object(ref obj) => {
                 buf.push(b'{');
@@ -338,9 +333,9 @@ impl Value {
                     v.write(buf)?;
                 }
                 buf.push(b'}');
-                Ok(())
             }
         }
+        Ok(())
     }
 }
 
