@@ -2505,31 +2505,28 @@ mod tests {
             assert!(metadata2.snapshot().is_some());
             assert!(metadata2.timestamp().is_some());
 
-            expected_metadata.extend(
-                vec![
-                    (
-                        (MetadataPath::targets(), MetadataVersion::Number(2)),
-                        metadata2.targets().unwrap().as_bytes(),
-                    ),
-                    (
-                        (MetadataPath::targets(), MetadataVersion::None),
-                        metadata2.targets().unwrap().as_bytes(),
-                    ),
-                    (
-                        (MetadataPath::snapshot(), MetadataVersion::Number(2)),
-                        metadata2.snapshot().unwrap().as_bytes(),
-                    ),
-                    (
-                        (MetadataPath::snapshot(), MetadataVersion::None),
-                        metadata2.snapshot().unwrap().as_bytes(),
-                    ),
-                    (
-                        (MetadataPath::timestamp(), MetadataVersion::None),
-                        metadata2.timestamp().unwrap().as_bytes(),
-                    ),
-                ]
-                .into_iter(),
-            );
+            expected_metadata.extend(vec![
+                (
+                    (MetadataPath::targets(), MetadataVersion::Number(2)),
+                    metadata2.targets().unwrap().as_bytes(),
+                ),
+                (
+                    (MetadataPath::targets(), MetadataVersion::None),
+                    metadata2.targets().unwrap().as_bytes(),
+                ),
+                (
+                    (MetadataPath::snapshot(), MetadataVersion::Number(2)),
+                    metadata2.snapshot().unwrap().as_bytes(),
+                ),
+                (
+                    (MetadataPath::snapshot(), MetadataVersion::None),
+                    metadata2.snapshot().unwrap().as_bytes(),
+                ),
+                (
+                    (MetadataPath::timestamp(), MetadataVersion::None),
+                    metadata2.timestamp().unwrap().as_bytes(),
+                ),
+            ]);
 
             assert_repo(&remote, &expected_metadata);
 
@@ -2556,23 +2553,20 @@ mod tests {
             assert!(metadata3.snapshot().is_some());
             assert!(metadata3.timestamp().is_some());
 
-            expected_metadata.extend(
-                vec![
-                    (
-                        (MetadataPath::snapshot(), MetadataVersion::Number(3)),
-                        metadata3.snapshot().unwrap().as_bytes(),
-                    ),
-                    (
-                        (MetadataPath::snapshot(), MetadataVersion::None),
-                        metadata3.snapshot().unwrap().as_bytes(),
-                    ),
-                    (
-                        (MetadataPath::timestamp(), MetadataVersion::None),
-                        metadata3.timestamp().unwrap().as_bytes(),
-                    ),
-                ]
-                .into_iter(),
-            );
+            expected_metadata.extend(vec![
+                (
+                    (MetadataPath::snapshot(), MetadataVersion::Number(3)),
+                    metadata3.snapshot().unwrap().as_bytes(),
+                ),
+                (
+                    (MetadataPath::snapshot(), MetadataVersion::None),
+                    metadata3.snapshot().unwrap().as_bytes(),
+                ),
+                (
+                    (MetadataPath::timestamp(), MetadataVersion::None),
+                    metadata3.timestamp().unwrap().as_bytes(),
+                ),
+            ]);
 
             assert_repo(&remote, &expected_metadata);
 
@@ -2597,13 +2591,10 @@ mod tests {
             assert!(metadata4.snapshot().is_none());
             assert!(metadata4.timestamp().is_some());
 
-            expected_metadata.extend(
-                vec![(
-                    (MetadataPath::timestamp(), MetadataVersion::None),
-                    metadata4.timestamp().unwrap().as_bytes(),
-                )]
-                .into_iter(),
-            );
+            expected_metadata.extend(vec![(
+                (MetadataPath::timestamp(), MetadataVersion::None),
+                metadata4.timestamp().unwrap().as_bytes(),
+            )]);
 
             assert_repo(&remote, &expected_metadata);
         })
