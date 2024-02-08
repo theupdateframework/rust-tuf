@@ -3239,6 +3239,7 @@ mod test {
             .build()
             .unwrap();
 
+        #[allow(clippy::needless_borrows_for_generic_args)]
         serde_json::to_value(&snapshot).unwrap()
     }
 
@@ -3251,6 +3252,7 @@ mod test {
             .build()
             .unwrap();
 
+        #[allow(clippy::needless_borrows_for_generic_args)]
         serde_json::to_value(&timestamp).unwrap()
     }
 
