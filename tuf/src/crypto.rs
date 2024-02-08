@@ -104,8 +104,8 @@ fn python_tuf_compatibility_keyid_hash_algorithms() -> Option<Vec<String>> {
 ///     ],
 /// );
 /// ```
-pub fn retain_supported_hashes<'a>(
-    hashes: &'a HashMap<HashAlgorithm, HashValue>,
+pub fn retain_supported_hashes(
+    hashes: &HashMap<HashAlgorithm, HashValue>,
 ) -> Vec<(&'static HashAlgorithm, HashValue)> {
     let mut data = vec![];
     for alg in HASH_ALG_PREFS {
