@@ -93,7 +93,7 @@ pub fn read_dir_files(path: &Path) -> BTreeMap<PathBuf, String> {
             let f = fs::read_to_string(entry.path()).unwrap();
 
             // Strip off the path prefix.
-            let path = entry.into_path().strip_prefix(&path).unwrap().to_path_buf();
+            let path = entry.into_path().strip_prefix(path).unwrap().to_path_buf();
 
             entries.insert(path, f);
         }

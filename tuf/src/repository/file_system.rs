@@ -153,7 +153,7 @@ where
         version: MetadataVersion,
         path: &Path,
     ) -> BoxFuture<'_, Result<Box<dyn AsyncRead + Send + Unpin + '_>>> {
-        let reader = File::open(&path).map_err(|err| {
+        let reader = File::open(path).map_err(|err| {
             if err.kind() == io::ErrorKind::NotFound {
                 Error::MetadataNotFound {
                     path: meta_path.clone(),
@@ -180,7 +180,7 @@ where
         target_path: &TargetPath,
         path: &Path,
     ) -> BoxFuture<'_, Result<Box<dyn AsyncRead + Send + Unpin + '_>>> {
-        let reader = File::open(&path).map_err(|err| {
+        let reader = File::open(path).map_err(|err| {
             if err.kind() == io::ErrorKind::NotFound {
                 Error::TargetNotFound(target_path.clone())
             } else {
