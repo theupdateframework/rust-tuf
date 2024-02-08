@@ -1564,6 +1564,7 @@ mod test {
         });
 
         let encoded: PublicKey = serde_json::from_value(original.clone()).unwrap();
+        #[allow(clippy::needless_borrows_for_generic_args)]
         let decoded = serde_json::to_value(&encoded).unwrap();
 
         assert_eq!(original, decoded);
@@ -1587,6 +1588,7 @@ mod test {
         });
 
         let encoded: PublicKey = serde_json::from_value(original.clone()).unwrap();
+        #[allow(clippy::needless_borrows_for_generic_args)]
         let decoded = serde_json::to_value(&encoded).unwrap();
 
         assert_eq!(original, decoded);
