@@ -112,7 +112,7 @@ async fn update_root(
     consistent_snapshot: bool,
 ) {
     // Same expiration as go-tuf metadata generator.
-    let expiration = Utc.ymd(2100, 1, 1).and_hms(0, 0, 0);
+    let expiration = Utc.with_ymd_and_hms(2100, 1, 1, 0, 0, 0).unwrap();
 
     let mut repo_builder = RepoBuilder::create(repo)
         .trusted_root_keys(&[keys.get("root").unwrap()])
@@ -149,7 +149,7 @@ async fn add_target(
     consistent_snapshot: bool,
 ) {
     // Same expiration as go-tuf metadata generator.
-    let expiration = Utc.ymd(2100, 1, 1).and_hms(0, 0, 0);
+    let expiration = Utc.with_ymd_and_hms(2100, 1, 1, 0, 0, 0).unwrap();
     let version: u32 = (step + 1).into();
 
     let mut targets_builder = TargetsMetadataBuilder::new()

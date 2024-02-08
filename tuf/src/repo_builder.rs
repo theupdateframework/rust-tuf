@@ -1800,7 +1800,7 @@ mod tests {
         let mut remote = EphemeralRepository::<Pouf1>::new();
 
         // First, create the metadata.
-        let expires1 = Utc.ymd(2038, 1, 1).and_hms(0, 0, 0);
+        let expires1 = Utc.with_ymd_and_hms(2038, 1, 1, 0, 0, 0).unwrap();
         let metadata1 = RepoBuilder::create(&mut remote)
             .trusted_root_keys(&[&KEYS[0], &KEYS[1], &KEYS[2]])
             .trusted_targets_keys(&[&KEYS[1], &KEYS[2], &KEYS[3]])
@@ -1918,7 +1918,7 @@ mod tests {
 
         // Create a new metadata, derived from the tuf database we created
         // with the client.
-        let expires2 = Utc.ymd(2038, 1, 2).and_hms(0, 0, 0);
+        let expires2 = Utc.with_ymd_and_hms(2038, 1, 2, 0, 0, 0).unwrap();
         let mut parts = client.into_parts();
         let metadata2 = RepoBuilder::from_database(&mut parts.remote, &parts.database)
             .trusted_root_keys(&[&KEYS[0], &KEYS[1], &KEYS[2]])
@@ -2418,7 +2418,7 @@ mod tests {
             let mut remote = EphemeralRepository::<Pouf1>::new();
 
             // First, write some metadata to the repo.
-            let expires1 = Utc.ymd(2038, 1, 1).and_hms(0, 0, 0);
+            let expires1 = Utc.with_ymd_and_hms(2038, 1, 1, 0, 0, 0).unwrap();
             let metadata1 = RepoBuilder::create(&mut remote)
                 .trusted_root_keys(&[&KEYS[0]])
                 .trusted_targets_keys(&[&KEYS[1]])
@@ -2482,7 +2482,7 @@ mod tests {
             let mut db = Database::from_trusted_metadata(&metadata1).unwrap();
 
             // Next, write another batch, but only have the timestamp, snapshot, and targets keys.
-            let expires2 = Utc.ymd(2038, 1, 2).and_hms(0, 0, 0);
+            let expires2 = Utc.with_ymd_and_hms(2038, 1, 2, 0, 0, 0).unwrap();
             let metadata2 = RepoBuilder::from_database(&mut remote, &db)
                 .trusted_targets_keys(&[&KEYS[1]])
                 .trusted_snapshot_keys(&[&KEYS[2]])
@@ -2531,7 +2531,7 @@ mod tests {
             assert_repo(&remote, &expected_metadata);
 
             // Now, only have the timestamp and snapshot keys online.
-            let expires3 = Utc.ymd(2038, 1, 3).and_hms(0, 0, 0);
+            let expires3 = Utc.with_ymd_and_hms(2038, 1, 3, 0, 0, 0).unwrap();
             let metadata3 = RepoBuilder::from_database(&mut remote, &db)
                 .trusted_snapshot_keys(&[&KEYS[2]])
                 .trusted_timestamp_keys(&[&KEYS[3]])
@@ -2571,7 +2571,7 @@ mod tests {
             assert_repo(&remote, &expected_metadata);
 
             // Finally, only have the timestamp keys online.
-            let expires4 = Utc.ymd(2038, 1, 4).and_hms(0, 0, 0);
+            let expires4 = Utc.with_ymd_and_hms(2038, 1, 4, 0, 0, 0).unwrap();
             let metadata4 = RepoBuilder::from_database(&mut remote, &db)
                 .trusted_timestamp_keys(&[&KEYS[3]])
                 .skip_root()
@@ -2605,7 +2605,7 @@ mod tests {
         block_on(async move {
             let mut repo = EphemeralRepository::<Pouf1>::new();
 
-            let expires = Utc.ymd(2038, 1, 4).and_hms(0, 0, 0);
+            let expires = Utc.with_ymd_and_hms(2038, 1, 4, 0, 0, 0).unwrap();
             let hash_algs = &[HashAlgorithm::Sha256, HashAlgorithm::Sha512];
             let delegation_key = &KEYS[0];
             let delegation_path = MetadataPath::new("delegations").unwrap();
@@ -2865,7 +2865,7 @@ mod tests {
         block_on(async move {
             let mut repo = EphemeralRepository::<Pouf1>::new();
 
-            let epoch = Utc.timestamp(0, 0);
+            let epoch = Utc.timestamp_opt(0, 0).unwrap();
             let root_expires = Duration::seconds(40);
             let targets_expires = Duration::seconds(30);
             let snapshot_expires = Duration::seconds(20);
@@ -3046,7 +3046,7 @@ mod tests {
         block_on(async move {
             let mut repo = EphemeralRepository::<Pouf1>::new();
 
-            let current_time = Utc.timestamp(5, 0);
+            let current_time = Utc.timestamp_opt(5, 0).unwrap();
             let metadata = RepoBuilder::create(&mut repo)
                 .current_time(current_time)
                 .time_versioning(true)
@@ -3092,7 +3092,7 @@ mod tests {
             assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(6));
 
             // Generating metadata for a new timestamp should advance the versions to that amount.
-            let current_time = Utc.timestamp(10, 0);
+            let current_time = Utc.timestamp_opt(10, 0).unwrap();
             let metadata = RepoBuilder::from_database(&mut repo, &db)
                 .current_time(current_time)
                 .time_versioning(true)
@@ -3124,7 +3124,7 @@ mod tests {
             let mut repo = EphemeralRepository::<Pouf1>::new();
 
             // zero timestamp should initialize to 1.
-            let current_time = Utc.timestamp(0, 0);
+            let current_time = Utc.timestamp_opt(0, 0).unwrap();
             let metadata = RepoBuilder::create(&mut repo)
                 .current_time(current_time)
                 .time_versioning(true)
@@ -3145,7 +3145,7 @@ mod tests {
             assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(1));
 
             // A sub-second timestamp should advance the version by 1.
-            let current_time = Utc.timestamp(0, 3);
+            let current_time = Utc.timestamp_opt(0, 3).unwrap();
             let metadata = RepoBuilder::from_database(&mut repo, &db)
                 .current_time(current_time)
                 .time_versioning(true)
