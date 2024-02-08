@@ -116,7 +116,7 @@ where
     /// let root_version = 1;
     /// let root = RootMetadataBuilder::new()
     ///     .version(root_version)
-    ///     .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+    ///     .expires(Utc.with_ymd_and_hms(2038, 1, 1, 0, 0, 0).unwrap())
     ///     .root_key(public_key.clone())
     ///     .snapshot_key(public_key.clone())
     ///     .targets_key(public_key.clone())
@@ -185,7 +185,7 @@ where
     /// let root_threshold = 1;
     /// let raw_root = RootMetadataBuilder::new()
     ///     .version(root_version)
-    ///     .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+    ///     .expires(Utc.with_ymd_and_hms(2038, 1, 1, 0, 0, 0).unwrap())
     ///     .root_key(public_key.clone())
     ///     .root_threshold(root_threshold)
     ///     .snapshot_key(public_key.clone())
@@ -248,7 +248,7 @@ where
     /// let root_threshold = 1;
     /// let root = RootMetadataBuilder::new()
     ///     .version(root_version)
-    ///     .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+    ///     .expires(Utc.with_ymd_and_hms(2038, 1, 1, 0, 0, 0).unwrap())
     ///     .root_key(public_key.clone())
     ///     .root_threshold(root_threshold)
     ///     .snapshot_key(public_key.clone())
@@ -1433,7 +1433,7 @@ mod test {
         // Store an expired root in the local store.
         let mut local = EphemeralRepository::<Pouf1>::new();
         let metadata1 = RepoBuilder::create(&mut local)
-            .current_time(Utc.timestamp(0, 0))
+            .current_time(Utc.timestamp_opt(0, 0).unwrap())
             .trusted_root_keys(&[&KEYS[0]])
             .trusted_targets_keys(&[&KEYS[0]])
             .trusted_snapshot_keys(&[&KEYS[0]])
@@ -1698,7 +1698,7 @@ mod test {
 
             // Store an expired root in the local store.
             let metadata1 = RepoBuilder::create(&mut local)
-                .current_time(Utc.timestamp(0, 0))
+                .current_time(Utc.timestamp_opt(0, 0).unwrap())
                 .trusted_root_keys(&[&KEYS[0]])
                 .trusted_targets_keys(&[&KEYS[0]])
                 .trusted_snapshot_keys(&[&KEYS[0]])
@@ -1710,7 +1710,7 @@ mod test {
                 .unwrap();
 
             let metadata2 = RepoBuilder::create(&mut local)
-                .current_time(Utc.timestamp(0, 0))
+                .current_time(Utc.timestamp_opt(0, 0).unwrap())
                 .trusted_root_keys(&[&KEYS[0]])
                 .trusted_targets_keys(&[&KEYS[0]])
                 .trusted_snapshot_keys(&[&KEYS[0]])
@@ -1765,7 +1765,7 @@ mod test {
                 .stage_root_with_builder(|bld| {
                     bld.version(3)
                         .consistent_snapshot(true)
-                        .expires(Utc.ymd(2038, 1, 1).and_hms(0, 0, 0))
+                        .expires(Utc.with_ymd_and_hms(2038, 1, 1, 0, 0, 0).unwrap())
                 })
                 .unwrap()
                 .stage_targets_with_builder(|bld| bld.version(2))
