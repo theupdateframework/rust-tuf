@@ -32,9 +32,9 @@ pub(crate) mod shims;
 ///
 /// `PUBLIC` is a base64url encoded `SubjectPublicKeyInfo` DER public key.
 ///
-/// `KEY_TYPE` is a string (either `rsa` or `ed25519`).
+/// `KEY_TYPE` is a string (`ed25519` is the only one currently supported).
 ///
-/// `SCHEME` is a string (either `ed25519`, `rsassa-pss-sha256`, or `rsassa-pss-sha512`
+/// `SCHEME` is a string (`ed25519` is the only one currently supported).
 ///
 /// `HASH_VALUE` is a hex encoded hash value.
 ///

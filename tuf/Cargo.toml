@@ -45,8 +45,3 @@ pretty_assertions = "1"
 
 [features]
 default = ["hyper", "hyper/tcp"]
-
-# FIXME(https://github.com/theupdateframework/rust-tuf/issues/329) - RSA key
-# support does not yet conform to the TUF spec, so it is disabled by default.
-# As a warning it may experience breaking changes without a major version bump.
-unstable_rsa = []

@@ -41,12 +41,6 @@ jobs:
           command: test
           args: ${{ matrix.features }}
 
-      - name: Run Tests with RSA
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: "--manifest-path tuf/Cargo.toml --features unstable_rsa"
-
   rustfmt:
     name: rustfmt
     runs-on: ubuntu-latest
@@ -123,7 +117,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate code coverage
-        run: cargo llvm-cov --workspace --features unstable_rsa --lcov --output-path lcov.info
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
 
       - name: Upload coverage to coveralls
         uses: coverallsapp/github-action@master
