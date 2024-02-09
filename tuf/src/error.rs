@@ -212,7 +212,3 @@ pub enum Error {
         role: MetadataPath,
     },
 }
-
-pub(crate) fn derp_error_to_error(err: derp::Error) -> Error {
-    Error::Encoding(format!("DER: {:?}", err))
-}

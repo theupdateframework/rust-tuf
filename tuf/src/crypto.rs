@@ -2,7 +2,6 @@
 
 use {
     data_encoding::HEXLOWER,
-    derp::{self, Der, Tag},
     futures_io::AsyncRead,
     futures_util::AsyncReadExt as _,
     ring::{
@@ -25,14 +24,16 @@ use {
     untrusted::Input,
 };
 
-use crate::error::{derp_error_to_error, Error, Result};
+use crate::error::{Error, Result};
 use crate::metadata::MetadataPath;
 use crate::pouf::pouf1::shims;
 
 const HASH_ALG_PREFS: &[HashAlgorithm] = &[HashAlgorithm::Sha512, HashAlgorithm::Sha256];
 
 /// 1.3.101.112 curveEd25519(EdDSA 25519 signature algorithm)
-const ED25519_SPKI_OID: &[u8] = &[0x2b, 0x65, 0x70];
+const ED25519_SPKI_HEADER: &[u8] = &[
+    0x30, 0x2c, 0x30, 0x07, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x05, 0x00, 0x03, 0x21, 0x00,
+];
 
 /// The length of an ed25519 private key in bytes
 const ED25519_PRIVATE_KEY_LENGTH: usize = 32;
@@ -378,24 +379,6 @@ impl KeyType {
             KeyType::Unknown(ref s) => s,
         }
     }
-
-    #[allow(clippy::format_collect)]
-    fn from_oid(oid: &[u8]) -> Result<Self> {
-        match oid {
-            x if x == ED25519_SPKI_OID => Ok(KeyType::Ed25519),
-            x => Err(Error::Encoding(format!(
-                "Unknown OID: {}",
-                x.iter().map(|b| format!("{:x}", b)).collect::<String>()
-            ))),
-        }
-    }
-
-    fn as_oid(&self) -> Result<&'static [u8]> {
-        match *self {
-            KeyType::Ed25519 => Ok(ED25519_SPKI_OID),
-            KeyType::Unknown(ref s) => Err(Error::UnknownKeyType(s.clone())),
-        }
-    }
 }
 
 impl Display for KeyType {
@@ -585,26 +568,30 @@ impl PublicKey {
         scheme: SignatureScheme,
         keyid_hash_algorithms: Option<Vec<String>>,
     ) -> Result<Self> {
+        fn der_error(s: &str) -> Error {
+            Error::Encoding(s.into())
+        }
+
+        let (typ, expected_header) = match scheme {
+            SignatureScheme::Ed25519 => (KeyType::Ed25519, ED25519_SPKI_HEADER),
+            SignatureScheme::Unknown(s) => {
+                return Err(Error::UnknownSignatureScheme(s));
+            }
+        };
+
         let input = Input::from(der_bytes);
-
-        let (typ, value) = input
-            .read_all(derp::Error::Read, |input| {
-                derp::nested(input, Tag::Sequence, |input| {
-                    let typ = derp::nested(input, Tag::Sequence, |input| {
-                        let typ = derp::expect_tag_and_get_value(input, Tag::Oid)?;
-
-                        let typ = KeyType::from_oid(typ.as_slice_less_safe())
-                            .map_err(|_| derp::Error::WrongValue)?;
-
-                        // for RSA / ed25519 this is null, so don't both parsing it
-                        derp::read_null(input)?;
-                        Ok(typ)
-                    })?;
-                    let value = derp::bit_string_with_no_unused_bits(input)?;
-                    Ok((typ, value.as_slice_less_safe().to_vec()))
-                })
-            })
-            .map_err(derp_error_to_error)?;
+        let value = input.read_all(der_error("DER: unexpected trailing input"), |input| {
+            let actual_header = input
+                .read_bytes(expected_header.len())
+                .map_err(|_: untrusted::EndOfInput| der_error("DER: Invalid SPKI header"))?;
+            if actual_header.as_slice_less_safe() != expected_header {
+                return Err(Error::Encoding("DER: Unsupported SPKI header value".into()));
+            }
+            let value = input
+                .read_bytes(ED25519_PUBLIC_KEY_LENGTH)
+                .map_err(|_: untrusted::EndOfInput| der_error("DER: Invalid SPKI value"))?;
+            Ok(value.as_slice_less_safe().to_vec())
+        })?;
 
         Self::new(typ, scheme, keyid_hash_algorithms, value)
     }
@@ -638,7 +625,7 @@ impl PublicKey {
     ///
     /// See the documentation on `KeyValue` for more information on SPKI.
     pub fn as_spki(&self) -> Result<Vec<u8>> {
-        write_spki(&self.value.0, &self.typ).map_err(derp_error_to_error)
+        write_spki(&self.value.0, &self.typ)
     }
 
     /// An immutable reference to the key's type.
@@ -881,21 +868,17 @@ impl Display for HashValue {
     }
 }
 
-fn write_spki(public: &[u8], key_type: &KeyType) -> ::std::result::Result<Vec<u8>, derp::Error> {
-    let mut output = Vec::new();
-    {
-        let mut der = Der::new(&mut output);
-        der.sequence(|der| {
-            der.sequence(|der| match key_type.as_oid().ok() {
-                Some(tag) => {
-                    der.element(Tag::Oid, tag)?;
-                    der.null()
-                }
-                None => Err(derp::Error::WrongValue),
-            })?;
-            der.bit_string(0, public)
-        })?;
-    }
+fn write_spki(public: &[u8], key_type: &KeyType) -> Result<Vec<u8>> {
+    let header = match key_type {
+        KeyType::Ed25519 => ED25519_SPKI_HEADER,
+        KeyType::Unknown(s) => {
+            return Err(Error::UnknownKeyType(s.to_owned()));
+        }
+    };
+
+    let mut output = Vec::with_capacity(header.len() + public.len());
+    output.extend_from_slice(header);
+    output.extend_from_slice(public);
 
     Ok(output)
 }
