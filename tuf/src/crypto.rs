@@ -427,6 +427,7 @@ impl KeyType {
         }
     }
 
+    #[allow(clippy::format_collect)]
     fn from_oid(oid: &[u8]) -> Result<Self> {
         match oid {
             #[cfg(feature = "unstable_rsa")]
