@@ -19,7 +19,6 @@ path = "./src/lib.rs"
 [dependencies]
 chrono = { version = "0.4.23", features = [ "serde" ] }
 data-encoding = "2.0.0-rc.2"
-derp = "0.0.14"
 futures-io = "0.3.1"
 futures-util = { version = "0.3.1", features = [ "io" ] }
 http = "0.2.0"
