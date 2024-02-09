@@ -26,13 +26,13 @@ hyper = { version = "0.14.15", default-features = false, features = [ "stream", 
 itoa = "1.0"
 log = "0.4"
 percent-encoding = "2.1"
-ring = { version = "0.16" }
+ring = { version = "0.17" }
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
 tempfile = "3"
 thiserror = "1.0"
-untrusted = "0.7"
+untrusted = "0.9"
 url = "2"
 
 [dev-dependencies]
