@@ -999,7 +999,7 @@ impl Signature {
 
 impl PartialOrd for Signature {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        (&self.key_id, &self.value).partial_cmp(&(&other.key_id, &other.value))
+        Some(self.cmp(other))
     }
 }
 
