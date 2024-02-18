@@ -714,6 +714,7 @@ impl RootMetadataBuilder {
             RoleDefinition::new(self.snapshot_threshold, self.snapshot_key_ids)?,
             RoleDefinition::new(self.targets_threshold, self.targets_key_ids)?,
             RoleDefinition::new(self.timestamp_threshold, self.timestamp_key_ids)?,
+            Default::default(),
         )
     }
 
@@ -762,6 +763,7 @@ pub struct RootMetadata {
     snapshot: RoleDefinition<SnapshotMetadata>,
     targets: RoleDefinition<TargetsMetadata>,
     timestamp: RoleDefinition<TimestampMetadata>,
+    additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl RootMetadata {
@@ -775,6 +777,7 @@ impl RootMetadata {
         snapshot: RoleDefinition<SnapshotMetadata>,
         targets: RoleDefinition<TargetsMetadata>,
         timestamp: RoleDefinition<TimestampMetadata>,
+        additional_fields: HashMap<String, serde_json::Value>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::MetadataVersionMustBeGreaterThanZero(
@@ -791,6 +794,7 @@ impl RootMetadata {
             snapshot,
             targets,
             timestamp,
+            additional_fields,
         })
     }
 
@@ -855,6 +859,11 @@ impl RootMetadata {
     /// An immutable reference to the timestamp role's definition.
     pub fn timestamp(&self) -> &RoleDefinition<TimestampMetadata> {
         &self.timestamp
+    }
+
+    /// An immutable reference to any additional fields on the metadata.
+    pub fn additional_fields(&self) -> &HashMap<String, serde_json::Value> {
+        &self.additional_fields
     }
 }
 
@@ -1121,7 +1130,12 @@ impl TimestampMetadataBuilder {
 
     /// Construct a new `TimestampMetadata`.
     pub fn build(self) -> Result<TimestampMetadata> {
-        TimestampMetadata::new(self.version, self.expires, self.snapshot)
+        TimestampMetadata::new(
+            self.version,
+            self.expires,
+            self.snapshot,
+            Default::default(),
+        )
     }
 
     /// Construct a new `SignedMetadata<D, TimestampMetadata>`.
@@ -1142,6 +1156,7 @@ pub struct TimestampMetadata {
     version: u32,
     expires: DateTime<Utc>,
     snapshot: MetadataDescription<SnapshotMetadata>,
+    additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl TimestampMetadata {
@@ -1150,6 +1165,7 @@ impl TimestampMetadata {
         version: u32,
         expires: DateTime<Utc>,
         snapshot: MetadataDescription<SnapshotMetadata>,
+        additional_fields: HashMap<String, serde_json::Value>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::MetadataVersionMustBeGreaterThanZero(
@@ -1161,12 +1177,18 @@ impl TimestampMetadata {
             version,
             expires,
             snapshot,
+            additional_fields,
         })
     }
 
     /// An immutable reference to the snapshot description.
     pub fn snapshot(&self) -> &MetadataDescription<SnapshotMetadata> {
         &self.snapshot
+    }
+
+    /// An immutable reference to any additional fields on the metadata.
+    pub fn additional_fields(&self) -> &HashMap<String, serde_json::Value> {
+        &self.additional_fields
     }
 }
 
@@ -1379,7 +1401,7 @@ impl SnapshotMetadataBuilder {
 
     /// Construct a new `SnapshotMetadata`.
     pub fn build(self) -> Result<SnapshotMetadata> {
-        SnapshotMetadata::new(self.version, self.expires, self.meta)
+        SnapshotMetadata::new(self.version, self.expires, self.meta, Default::default())
     }
 
     /// Construct a new `SignedMetadata<D, SnapshotMetadata>`.
@@ -1416,6 +1438,7 @@ pub struct SnapshotMetadata {
     version: u32,
     expires: DateTime<Utc>,
     meta: HashMap<MetadataPath, MetadataDescription<TargetsMetadata>>,
+    additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl SnapshotMetadata {
@@ -1424,6 +1447,7 @@ impl SnapshotMetadata {
         version: u32,
         expires: DateTime<Utc>,
         meta: HashMap<MetadataPath, MetadataDescription<TargetsMetadata>>,
+        additional_fields: HashMap<String, serde_json::Value>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::MetadataVersionMustBeGreaterThanZero(
@@ -1435,12 +1459,18 @@ impl SnapshotMetadata {
             version,
             expires,
             meta,
+            additional_fields,
         })
     }
 
     /// An immutable reference to the metadata paths and descriptions.
     pub fn meta(&self) -> &HashMap<MetadataPath, MetadataDescription<TargetsMetadata>> {
         &self.meta
+    }
+
+    /// An immutable reference to any additional fields on the metadata.
+    pub fn additional_fields(&self) -> &HashMap<String, serde_json::Value> {
+        &self.additional_fields
     }
 }
 
@@ -1840,6 +1870,7 @@ pub struct TargetsMetadata {
     expires: DateTime<Utc>,
     targets: HashMap<TargetPath, TargetDescription>,
     delegations: Delegations,
+    additional_fields: HashMap<String, serde_json::Value>,
 }
 
 impl TargetsMetadata {
@@ -1849,6 +1880,7 @@ impl TargetsMetadata {
         expires: DateTime<Utc>,
         targets: HashMap<TargetPath, TargetDescription>,
         delegations: Delegations,
+        additional_fields: HashMap<String, serde_json::Value>,
     ) -> Result<Self> {
         if version < 1 {
             return Err(Error::MetadataVersionMustBeGreaterThanZero(
@@ -1861,6 +1893,7 @@ impl TargetsMetadata {
             expires,
             targets,
             delegations,
+            additional_fields,
         })
     }
 
@@ -1872,6 +1905,11 @@ impl TargetsMetadata {
     /// An immutable reference to the optional delegations.
     pub fn delegations(&self) -> &Delegations {
         &self.delegations
+    }
+
+    /// An immutable reference to any additional fields on the metadata.
+    pub fn additional_fields(&self) -> &HashMap<String, serde_json::Value> {
+        &self.additional_fields
     }
 }
 
@@ -1989,6 +2027,7 @@ impl TargetsMetadataBuilder {
             self.expires,
             self.targets,
             self.delegations.unwrap_or_default(),
+            Default::default(),
         )
     }
 
@@ -2540,6 +2579,61 @@ mod test {
         assert_eq!(decoded, root);
     }
 
+    #[test]
+    fn serde_root_metadata_additional_fields() {
+        let jsn = json!({
+            "_type": "root",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "consistent_snapshot": true,
+            "keys": {
+                "09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1": {
+                    "keytype": "ed25519",
+                    "scheme": "ed25519",
+                    "keyid_hash_algorithms": ["sha256", "sha512"],
+                    "keyval": {
+                        "public": "1410ae3053aa70bbfa98428a879d64d3002a3578f7dfaaeb1cb0764e860f7e0b",
+                    },
+                },
+            },
+            "roles": {
+                "root": {
+                    "threshold": 1,
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"],
+                },
+                "snapshot": {
+                    "threshold": 1,
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"],
+                },
+                "targets": {
+                    "threshold": 1,
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"],
+                },
+                "timestamp": {
+                    "threshold": 1,
+                    "keyids": ["09557ed63f91b5b95917d46f66c63ea79bdaef1b008ba823808bca849f1d18a1"],
+                },
+            },
+            // additional_fields
+            "custom": {
+                "foo": 42,
+                "bar": "baz",
+            },
+            "quux": true,
+        });
+
+        let root: RootMetadata = serde_json::from_value(jsn.clone()).unwrap();
+        assert_eq!(
+            root.additional_fields()["custom"],
+            json!({"foo": 42, "bar": "baz"})
+        );
+        assert_eq!(root.additional_fields()["quux"], json!(true));
+
+        // make sure additional_fields are passed through serialization as well
+        assert_eq!(jsn, serde_json::to_value(&root).unwrap());
+    }
+
     fn jsn_root_metadata_without_keyid_hash_algos() -> serde_json::Value {
         json!({
             "_type": "root",
@@ -2842,6 +2936,41 @@ mod test {
         assert_eq!(decoded, timestamp);
     }
 
+    #[test]
+    fn serde_timestamp_metadata_additional_fields() {
+        let jsn = json!({
+            "_type": "timestamp",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "snapshot.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": "",
+                    },
+                },
+            },
+            // additional_fields
+            "custom": {
+                "foo": 42,
+                "bar": "baz",
+            },
+            "quux": true,
+        });
+
+        let timestamp: TimestampMetadata = serde_json::from_value(jsn.clone()).unwrap();
+        assert_eq!(
+            timestamp.additional_fields()["custom"],
+            json!({"foo": 42, "bar": "baz"})
+        );
+        assert_eq!(timestamp.additional_fields()["quux"], json!(true));
+
+        // make sure additional_fields are passed through serialization as well
+        assert_eq!(jsn, serde_json::to_value(&timestamp).unwrap());
+    }
+
     // Deserialize timestamp metadata with optional length and hashes
     #[test]
     fn serde_timestamp_metadata_without_length_and_hashes() {
@@ -2861,7 +2990,7 @@ mod test {
                 "snapshot.json": {
                     "version": 1
                 },
-            }
+            },
         });
 
         let encoded = serde_json::to_value(&timestamp).unwrap();
@@ -2954,6 +3083,41 @@ mod test {
         assert_eq!(encoded, jsn);
         let decoded: SnapshotMetadata = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn serde_snapshot_metadata_additional_fields() {
+        let jsn = json!({
+            "_type": "snapshot",
+            "spec_version": "1.0",
+            "version": 1,
+            "expires": "2017-01-01T00:00:00Z",
+            "meta": {
+                "targets.json": {
+                    "version": 1,
+                    "length": 100,
+                    "hashes": {
+                        "sha256": "",
+                    },
+                },
+            },
+            // additional_fields
+            "custom": {
+                "foo": 42,
+                "bar": "baz",
+            },
+            "quux": true,
+        });
+
+        let snapshot: SnapshotMetadata = serde_json::from_value(jsn.clone()).unwrap();
+        assert_eq!(
+            snapshot.additional_fields()["custom"],
+            json!({"foo": 42, "bar": "baz"})
+        );
+        assert_eq!(snapshot.additional_fields()["quux"], json!(true));
+
+        // make sure additional_fields are passed through serialization as well
+        assert_eq!(jsn, serde_json::to_value(&snapshot).unwrap());
     }
 
     // Deserialize snapshot metadata with optional length and hashes
@@ -3075,6 +3239,66 @@ mod test {
             let decoded: TargetsMetadata = serde_json::from_value(encoded).unwrap();
             assert_eq!(decoded, targets);
         })
+    }
+
+    #[test]
+    fn serde_targets_metadata_additional_fields() {
+        let jsn = json!({
+                "_type": "targets",
+                "spec_version": "1.0",
+                "version": 1,
+                "expires": "2017-01-01T00:00:00Z",
+                "targets": {
+                    "insert-target-from-slice": {
+                        "length": 3,
+                        "hashes": {
+                            "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                                bfa0f98a5e886266e7ae",
+                        },
+                    },
+                    "insert-target-description-from-slice-with-custom": {
+                        "length": 3,
+                        "hashes": {
+                            "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                                bfa0f98a5e886266e7ae",
+                        },
+                    },
+                    "insert-target-from-reader": {
+                        "length": 3,
+                        "hashes": {
+                            "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                                bfa0f98a5e886266e7ae",
+                        },
+                    },
+                    "insert-target-description-from-reader-with-custom": {
+                        "length": 3,
+                        "hashes": {
+                            "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483\
+                                bfa0f98a5e886266e7ae",
+                        },
+                        "custom": {
+                            "foo": 1,
+                            "bar": "baz",
+                        },
+                    },
+                },
+            // additional_fields
+            "custom": {
+                "foo": 42,
+                "bar": "baz",
+            },
+            "quux": true,
+        });
+
+        let targets: TargetsMetadata = serde_json::from_value(jsn.clone()).unwrap();
+        assert_eq!(
+            targets.additional_fields()["custom"],
+            json!({"foo": 42, "bar": "baz"})
+        );
+        assert_eq!(targets.additional_fields()["quux"], json!(true));
+
+        // make sure additional_fields are passed through serialization as well
+        assert_eq!(jsn, serde_json::to_value(&targets).unwrap());
     }
 
     #[test]
@@ -3258,6 +3482,7 @@ mod test {
             Utc.with_ymd_and_hms(2038, 1, 1, 0, 0, 0).unwrap(),
             hashmap!(),
             Delegations::default(),
+            Default::default(),
         )
         .unwrap();
 
