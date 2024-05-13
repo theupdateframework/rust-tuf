@@ -5,6 +5,7 @@ use {
         crypto::KeyId,
         metadata::{MetadataPath, MetadataVersion, TargetPath},
     },
+    chrono::{offset::Utc, DateTime},
     std::io,
     thiserror::Error,
 };
@@ -25,8 +26,15 @@ pub enum Error {
     Encoding(String),
 
     /// Metadata was expired.
-    #[error("expired {0} metadata")]
-    ExpiredMetadata(MetadataPath),
+    #[error("metadata {path} expired at {expiration}, it is now {now}")]
+    ExpiredMetadata {
+        /// The metadata that expired.
+        path: MetadataPath,
+        /// When the metadata expired.
+        expiration: DateTime<Utc>,
+        /// The latest known time.
+        now: DateTime<Utc>,
+    },
 
     /// An illegal argument was passed into a function.
     #[error("illegal argument: {0}")]

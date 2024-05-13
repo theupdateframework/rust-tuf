@@ -446,7 +446,11 @@ impl<D: Pouf> Database<D> {
             //     report the potential freeze attack.
 
             if new_timestamp.expires() <= start_time {
-                return Err(Error::ExpiredMetadata(MetadataPath::timestamp()));
+                return Err(Error::ExpiredMetadata {
+                    path: MetadataPath::timestamp(),
+                    expiration: *new_timestamp.expires(),
+                    now: *start_time,
+                });
             }
 
             new_timestamp
@@ -811,7 +815,11 @@ impl<D: Pouf> Database<D> {
         //     potential freeze attack.
 
         if new_targets.expires() <= start_time {
-            return Err(Error::ExpiredMetadata(role.clone()));
+            return Err(Error::ExpiredMetadata {
+                path: role.clone(),
+                expiration: *new_targets.expires(),
+                now: *start_time,
+            });
         }
 
         Ok(Some(new_targets))
@@ -987,7 +995,11 @@ impl<D: Pouf> Database<D> {
     fn trusted_root_unexpired(&self, start_time: &DateTime<Utc>) -> Result<&RootMetadata> {
         let trusted_root = &self.trusted_root;
         if trusted_root.expires() <= start_time {
-            return Err(Error::ExpiredMetadata(MetadataPath::root()));
+            return Err(Error::ExpiredMetadata {
+                path: MetadataPath::root(),
+                expiration: *trusted_root.expires(),
+                now: *start_time,
+            });
         }
         Ok(trusted_root)
     }
@@ -999,7 +1011,11 @@ impl<D: Pouf> Database<D> {
         match self.trusted_timestamp {
             Some(ref trusted_timestamp) => {
                 if trusted_timestamp.expires() <= start_time {
-                    return Err(Error::ExpiredMetadata(MetadataPath::timestamp()));
+                    return Err(Error::ExpiredMetadata {
+                        path: MetadataPath::timestamp(),
+                        expiration: *trusted_timestamp.expires(),
+                        now: *start_time,
+                    });
                 }
                 Ok(trusted_timestamp)
             }
@@ -1014,7 +1030,11 @@ impl<D: Pouf> Database<D> {
         match self.trusted_snapshot {
             Some(ref trusted_snapshot) => {
                 if trusted_snapshot.expires() <= start_time {
-                    return Err(Error::ExpiredMetadata(MetadataPath::snapshot()));
+                    return Err(Error::ExpiredMetadata {
+                        path: MetadataPath::snapshot(),
+                        expiration: *trusted_snapshot.expires(),
+                        now: *start_time,
+                    });
                 }
                 Ok(trusted_snapshot)
             }
@@ -1029,7 +1049,11 @@ impl<D: Pouf> Database<D> {
         match self.trusted_targets {
             Some(ref trusted_targets) => {
                 if trusted_targets.expires() <= start_time {
-                    return Err(Error::ExpiredMetadata(MetadataPath::targets()));
+                    return Err(Error::ExpiredMetadata {
+                        path: MetadataPath::targets(),
+                        expiration: *trusted_targets.expires(),
+                        now: *start_time,
+                    });
                 }
                 Ok(trusted_targets)
             }

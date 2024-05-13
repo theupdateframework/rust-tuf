@@ -583,7 +583,11 @@ where
         // where we check timestamp/snapshot/targets/delegations for expiration.
         if tuf.trusted_root().expires() <= start_time {
             error!("Root metadata expired, potential freeze attack");
-            return Err(Error::ExpiredMetadata(MetadataPath::root()));
+            return Err(Error::ExpiredMetadata {
+                path: MetadataPath::root(),
+                expiration: *tuf.trusted_root().expires(),
+                now: *start_time,
+            });
         }
 
         /////////////////////////////////////////
