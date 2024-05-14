@@ -282,7 +282,7 @@ where
             .repository
             .fetch_metadata(meta_path, version)
             .await?
-            .check_length_and_hash(max_length.unwrap_or(::std::usize::MAX) as u64, hashes)?;
+            .check_length_and_hash(max_length.unwrap_or(usize::MAX) as u64, hashes)?;
 
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf).await?;

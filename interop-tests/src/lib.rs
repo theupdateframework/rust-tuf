@@ -265,7 +265,7 @@ pub async fn generate_repos(
 
     // Queue up a series of key rotations
     let mut i: u8 = 1;
-    let rotations = vec![
+    let rotations = [
         Some(Role::Root),
         Some(Role::Targets),
         Some(Role::Snapshot),

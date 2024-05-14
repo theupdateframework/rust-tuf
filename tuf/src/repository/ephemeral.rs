@@ -198,7 +198,7 @@ where
                 .unwrap()
                 .metadata
                 .get(&key)
-                .map(Arc::clone)
+                .cloned()
                 .ok_or_else(|| Error::MetadataNotFound {
                     path: meta_path.clone(),
                     version,
@@ -220,7 +220,7 @@ where
                 .unwrap()
                 .targets
                 .get(target_path)
-                .map(Arc::clone)
+                .cloned()
                 .ok_or_else(|| Error::TargetNotFound(target_path.clone()))
         };
         bytes_to_reader(bytes).boxed()
