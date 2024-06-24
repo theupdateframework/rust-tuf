@@ -17,7 +17,7 @@ name = "tuf"
 path = "./src/lib.rs"
 
 [dependencies]
-chrono = { version = "0.4.23", features = [ "serde" ] }
+chrono = { version = "0.4.34", features = [ "serde" ] }
 data-encoding = "2.0.0-rc.2"
 futures-io = "0.3.1"
 futures-util = { version = "0.3.1", features = [ "io" ] }
