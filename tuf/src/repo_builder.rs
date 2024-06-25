@@ -37,10 +37,10 @@ mod private {
     impl<D: Pouf> Sealed for Done<D> {}
 }
 
-const DEFAULT_ROOT_EXPIRATION_DAYS: Duration = Duration::days(365);
-const DEFAULT_TARGETS_EXPIRATION_DAYS: Duration = Duration::days(90);
-const DEFAULT_SNAPSHOT_EXPIRATION_DAYS: Duration = Duration::days(7);
-const DEFAULT_TIMESTAMP_EXPIRATION_DAYS: Duration = Duration::days(1);
+const DEFAULT_ROOT_EXPIRATION: Duration = Duration::days(365);
+const DEFAULT_TARGETS_EXPIRATION: Duration = Duration::days(90);
+const DEFAULT_SNAPSHOT_EXPIRATION: Duration = Duration::days(7);
+const DEFAULT_TIMESTAMP_EXPIRATION: Duration = Duration::days(1);
 
 /// Trait to track each of the [RepoBuilder] building states.
 ///
@@ -420,10 +420,10 @@ where
                 trusted_snapshot_keys: vec![],
                 trusted_timestamp_keys: vec![],
                 time_version: None,
-                root_expiration_duration: DEFAULT_ROOT_EXPIRATION_DAYS,
-                targets_expiration_duration: DEFAULT_TARGETS_EXPIRATION_DAYS,
-                snapshot_expiration_duration: DEFAULT_SNAPSHOT_EXPIRATION_DAYS,
-                timestamp_expiration_duration: DEFAULT_TIMESTAMP_EXPIRATION_DAYS,
+                root_expiration_duration: DEFAULT_ROOT_EXPIRATION,
+                targets_expiration_duration: DEFAULT_TARGETS_EXPIRATION,
+                snapshot_expiration_duration: DEFAULT_SNAPSHOT_EXPIRATION,
+                timestamp_expiration_duration: DEFAULT_TIMESTAMP_EXPIRATION,
                 _pouf: PhantomData,
             },
             state: Root {
@@ -509,10 +509,10 @@ where
                 trusted_snapshot_keys: vec![],
                 trusted_timestamp_keys: vec![],
                 time_version: None,
-                root_expiration_duration: DEFAULT_ROOT_EXPIRATION_DAYS,
-                targets_expiration_duration: DEFAULT_TARGETS_EXPIRATION_DAYS,
-                snapshot_expiration_duration: DEFAULT_SNAPSHOT_EXPIRATION_DAYS,
-                timestamp_expiration_duration: DEFAULT_TIMESTAMP_EXPIRATION_DAYS,
+                root_expiration_duration: DEFAULT_ROOT_EXPIRATION,
+                targets_expiration_duration: DEFAULT_TARGETS_EXPIRATION,
+                snapshot_expiration_duration: DEFAULT_SNAPSHOT_EXPIRATION,
+                timestamp_expiration_duration: DEFAULT_TIMESTAMP_EXPIRATION,
                 _pouf: PhantomData,
             },
             state: Root { builder },
