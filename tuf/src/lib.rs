@@ -11,9 +11,9 @@
 //! actually implement TUF for a community repository.
 //!
 //! - [The Diplomat paper
-//! (2016)](https://www.usenix.org/conference/nsdi16/technical-sessions/presentation/kuppusamy)
+//!   (2016)](https://www.usenix.org/conference/nsdi16/technical-sessions/presentation/kuppusamy)
 //! - [The Mercury paper
-//! (2017)](https://www.usenix.org/conference/atc17/technical-sessions/presentation/kuppusamy)
+//!   (2017)](https://www.usenix.org/conference/atc17/technical-sessions/presentation/kuppusamy)
 //!
 //! Failure to read the spec and the above papers will likely lead to an implementation that does
 //! not take advantage of all the security guarantees that TUF offers.
@@ -81,11 +81,11 @@
 //! 2. `rarely-updated-projects`
 //!   - Terminating
 //!   - Signs all packages for all projects that have been "abandoned" or left unupdated for a long
-//!   time AND have not yet registered keys with TUF
+//!     time AND have not yet registered keys with TUF
 //! 3. `new-projects`
 //!   - Non-terminating
 //!   - Signs all packages for all new projects as well as projects that were relegated to
-//!   `rarely-updated-projects`
+//!     `rarely-updated-projects`
 //!
 //! The top-level `targets` role as well as `claimed-projects` and `rarely-updated-projects`
 //! **MUST** all use offline keys.

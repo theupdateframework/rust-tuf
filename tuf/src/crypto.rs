@@ -1269,16 +1269,11 @@ mod test {
     }
 
     fn check_public_key_hash(key1: &PublicKey, key2: &PublicKey) {
-        use std::hash::{BuildHasher, Hash, Hasher};
+        use std::hash::BuildHasher;
 
         let state = std::collections::hash_map::RandomState::new();
-        let mut hasher1 = state.build_hasher();
-        key1.hash(&mut hasher1);
 
-        let mut hasher2 = state.build_hasher();
-        key2.hash(&mut hasher2);
-
-        assert_ne!(hasher1.finish(), hasher2.finish());
+        assert_ne!(state.hash_one(key1), state.hash_one(key2));
     }
 
     #[test]
