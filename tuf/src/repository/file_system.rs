@@ -334,7 +334,7 @@ pub enum CommitError {
     },
 }
 
-impl<'a, D> FileSystemBatchUpdate<'a, D>
+impl<D> FileSystemBatchUpdate<'_, D>
 where
     D: Pouf,
 {

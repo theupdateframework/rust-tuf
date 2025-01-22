@@ -227,7 +227,7 @@ where
     _pouf: PhantomData<D>,
 }
 
-impl<'a, D, R> RepoContext<'a, D, R>
+impl<D, R> RepoContext<'_, D, R>
 where
     D: Pouf,
     R: RepositoryStorage<D>,
@@ -293,11 +293,7 @@ where
 
     /// The initial version number for non-root metadata.
     fn non_root_initial_version(&self) -> u32 {
-        if let Some(time_version) = self.time_version {
-            time_version
-        } else {
-            1
-        }
+        self.time_version.unwrap_or(1)
     }
 
     /// If time versioning is enabled, this updates the current time version to match the current
@@ -1410,7 +1406,7 @@ where
     }
 }
 
-impl<'a, D, R> RepoBuilder<'a, D, R, Done<D>>
+impl<D, R> RepoBuilder<'_, D, R, Done<D>>
 where
     D: Pouf,
     R: RepositoryStorage<D>,

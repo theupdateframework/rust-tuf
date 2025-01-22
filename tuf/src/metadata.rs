@@ -483,10 +483,10 @@ where
     /// hash of the returned bytes will match a hash included in, for example, a snapshot metadata
     /// file, as:
     /// * Parsing metadata removes unknown fields, which would not be included in the returned
-    /// bytes,
+    ///   bytes,
     /// * [Pouf] implementations only guarantee the bytes are canonical for the purpose of a
-    /// signature. Metadata obtained from a remote source may have included different whitespace
-    /// or ordered fields in a way that is not preserved when parsing that metadata.
+    ///   signature. Metadata obtained from a remote source may have included different whitespace
+    ///   or ordered fields in a way that is not preserved when parsing that metadata.
     pub fn to_raw(&self) -> Result<RawSignedMetadata<D, M>> {
         let bytes = D::canonicalize(&D::serialize(self)?)?;
         Ok(RawSignedMetadata::new(bytes))
