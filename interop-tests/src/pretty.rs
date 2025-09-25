@@ -70,7 +70,7 @@ impl Pouf for JsonPretty {
 
     /// ```
     /// # use interop_tests::JsonPretty;
-    /// # use serde_derive::Deserialize;
+    /// # use serde::Deserialize;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
     /// # use tuf::pouf::Pouf;
@@ -95,7 +95,7 @@ impl Pouf for JsonPretty {
 
     /// ```
     /// # use interop_tests::JsonPretty;
-    /// # use serde_derive::Serialize;
+    /// # use serde::Serialize;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
     /// # use tuf::pouf::Pouf;

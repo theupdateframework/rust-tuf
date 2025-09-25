@@ -1,7 +1,7 @@
 //! The `verify` module performs signature verification.
 
 use log::{debug, warn};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::crypto::{KeyId, PublicKey, Signature};

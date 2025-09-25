@@ -3,9 +3,10 @@
 use chrono::offset::Utc;
 use chrono::{DateTime, Duration};
 use futures_io::AsyncRead;
-use serde::de::{Deserialize, DeserializeOwned, Deserializer, Error as DeserializeError};
-use serde::ser::{Error as SerializeError, Serialize, Serializer};
-use serde_derive::{Deserialize, Serialize};
+use serde::{
+    de::DeserializeOwned, de::Error as DeserializeError, ser::Error as SerializeError, Deserialize,
+    Deserializer, Serialize, Serializer,
+};
 use std::borrow::{Borrow, Cow};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display};

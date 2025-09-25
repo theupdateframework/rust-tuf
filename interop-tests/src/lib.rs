@@ -1,6 +1,6 @@
 use chrono::offset::{TimeZone, Utc};
 use data_encoding::HEXLOWER;
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};

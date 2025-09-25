@@ -10,10 +10,9 @@ use {
         signature::{Ed25519KeyPair, KeyPair, ED25519},
     },
     serde::{
-        de::{Deserialize, Deserializer, Error as DeserializeError},
-        ser::{Error as SerializeError, Serialize, Serializer},
+        de::Error as DeserializeError, ser::Error as SerializeError, Deserialize, Deserializer,
+        Serialize, Serializer,
     },
-    serde_derive::{Deserialize, Serialize},
     std::{
         cmp::Ordering,
         collections::HashMap,
