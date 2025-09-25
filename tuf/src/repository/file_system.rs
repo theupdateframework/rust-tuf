@@ -126,7 +126,7 @@ where
     ///
     /// Warning: The current implementation makes no effort to prevent manipulations of the
     /// underlying filesystem, either in-process, or by an external process.
-    pub fn batch_update(&self) -> FileSystemBatchUpdate<D> {
+    pub fn batch_update(&self) -> FileSystemBatchUpdate<'_, D> {
         FileSystemBatchUpdate {
             initial_parent_version: *self.version.read().unwrap(),
             parent_repo: self,

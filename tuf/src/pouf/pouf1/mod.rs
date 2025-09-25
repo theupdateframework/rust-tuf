@@ -202,7 +202,7 @@ impl Pouf for Pouf1 {
     }
 
     /// ```
-    /// # use serde_derive::Deserialize;
+    /// # use serde::Deserialize;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
     /// # use tuf::pouf::{Pouf, Pouf1};
@@ -226,7 +226,7 @@ impl Pouf for Pouf1 {
     }
 
     /// ```
-    /// # use serde_derive::Serialize;
+    /// # use serde::Serialize;
     /// # use serde_json::json;
     /// # use std::collections::HashMap;
     /// # use tuf::pouf::{Pouf, Pouf1};

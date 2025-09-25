@@ -6,7 +6,7 @@ use {
         Result,
     },
     chrono::{offset::Utc, prelude::*},
-    serde_derive::{Deserialize, Serialize},
+    serde::{Deserialize, Serialize},
     std::{
         collections::{BTreeMap, HashSet},
         marker::PhantomData,
