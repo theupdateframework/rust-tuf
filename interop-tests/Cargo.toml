@@ -1,6 +1,6 @@
 [package]
 name = "interop-tests"
-version = "0.1.0"
+version = "0.1.1"
 authors = [ "heartsucker <heartsucker@autistici.org>", "Erick Tryzelaar <etryzelaar@google.com>" ]
 description = "TUF library interoperation tests"
 homepage = "https://github.com/theupdateframework/rust-tuf"
@@ -11,18 +11,18 @@ license = "MIT/Apache-2.0"
 publish = false
 
 [dependencies]
-chrono = { version = "0.4.23", features = [ "serde" ] }
-data-encoding = "2.0.0-rc.2"
-futures-executor = "0.3.1"
+chrono = { version = "0.4.42", features = [ "serde" ] }
+data-encoding = "2.9.0"
+futures-executor = "0.3.31"
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
 tuf = { path = "../tuf" }
-walkdir = "2.3.2"
+walkdir = "2.5.0"
 
 [dev-dependencies]
 assert_matches = "1.5.0"
-futures-util = { version = "0.3.1", features = [ "io" ] }
+futures-util = { version = "0.3.31", features = [ "io" ] }
 pretty_assertions = "1"
 tempfile = "3"
 
