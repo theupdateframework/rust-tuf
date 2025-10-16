@@ -1309,28 +1309,26 @@ mod test {
     use assert_matches::assert_matches;
     use chrono::prelude::*;
     use futures_executor::block_on;
-    use lazy_static::lazy_static;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::collections::HashMap;
     use std::iter::once;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref KEYS: Vec<Ed25519PrivateKey> = {
-            let keys: &[&[u8]] = &[
-                include_bytes!("../tests/ed25519/ed25519-1.pk8.der"),
-                include_bytes!("../tests/ed25519/ed25519-2.pk8.der"),
-                include_bytes!("../tests/ed25519/ed25519-3.pk8.der"),
-                include_bytes!("../tests/ed25519/ed25519-4.pk8.der"),
-                include_bytes!("../tests/ed25519/ed25519-5.pk8.der"),
-                include_bytes!("../tests/ed25519/ed25519-6.pk8.der"),
-            ];
-            keys.iter()
-                .map(|b| Ed25519PrivateKey::from_pkcs8(b).unwrap())
-                .collect()
-        };
-    }
+    static KEYS: LazyLock<Vec<Ed25519PrivateKey>> = LazyLock::new(|| {
+        let keys: &[&[u8]] = &[
+            include_bytes!("../tests/ed25519/ed25519-1.pk8.der"),
+            include_bytes!("../tests/ed25519/ed25519-2.pk8.der"),
+            include_bytes!("../tests/ed25519/ed25519-3.pk8.der"),
+            include_bytes!("../tests/ed25519/ed25519-4.pk8.der"),
+            include_bytes!("../tests/ed25519/ed25519-5.pk8.der"),
+            include_bytes!("../tests/ed25519/ed25519-6.pk8.der"),
+        ];
+        keys.iter()
+            .map(|b| Ed25519PrivateKey::from_pkcs8(b).unwrap())
+            .collect()
+    });
 
     #[allow(clippy::enum_variant_names)]
     enum ConstructorMode {
