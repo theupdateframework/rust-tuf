@@ -2,8 +2,8 @@ use {
     serde::de::DeserializeOwned,
     serde::ser::Serialize,
     tuf::{
-        pouf::{Pouf, Pouf1},
         Result,
+        pouf::{Pouf, Pouf1},
     },
 };
 

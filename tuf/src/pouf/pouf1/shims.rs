@@ -1,9 +1,8 @@
 use {
     crate::{
-        crypto,
+        Result, crypto,
         error::Error,
         metadata::{self, Metadata},
-        Result,
     },
     chrono::{offset::Utc, prelude::*},
     serde::{Deserialize, Serialize},

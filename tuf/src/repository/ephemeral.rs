@@ -2,11 +2,11 @@
 
 use {
     crate::{
+        Result,
         error::Error,
         metadata::{MetadataPath, MetadataVersion, TargetPath},
         pouf::Pouf,
         repository::{RepositoryProvider, RepositoryStorage},
-        Result,
     },
     futures_io::AsyncRead,
     futures_util::{

@@ -76,10 +76,10 @@ fn copy_repo(dir: &Path, step: u8) {
 
     for (path, f) in read_dir_files(&src) {
         let path = dst.join(path);
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                fs::create_dir_all(parent).unwrap();
-            }
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            fs::create_dir_all(parent).unwrap();
         }
         fs::write(path, &f).unwrap();
     }

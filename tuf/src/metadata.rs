@@ -4,8 +4,8 @@ use chrono::offset::Utc;
 use chrono::{DateTime, Duration};
 use futures_io::AsyncRead;
 use serde::{
-    de::DeserializeOwned, de::Error as DeserializeError, ser::Error as SerializeError, Deserialize,
-    Deserializer, Serialize, Serializer,
+    Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned,
+    de::Error as DeserializeError, ser::Error as SerializeError,
 };
 use std::borrow::{Borrow, Cow};
 use std::collections::{HashMap, HashSet};
@@ -13,11 +13,11 @@ use std::fmt::{self, Debug, Display};
 use std::marker::PhantomData;
 use std::str;
 
+use crate::Result;
 use crate::crypto::{self, HashAlgorithm, HashValue, KeyId, PrivateKey, PublicKey, Signature};
 use crate::error::Error;
-use crate::pouf::pouf1::shims;
 use crate::pouf::Pouf;
-use crate::Result;
+use crate::pouf::pouf1::shims;
 
 #[rustfmt::skip]
 static PATH_ILLEGAL_COMPONENTS: &[&str] = &[
@@ -3307,14 +3307,16 @@ mod test {
         let key = Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8).unwrap();
         let delegations = Delegations::new(
             hashmap! { key.public().key_id().clone() => key.public().clone() },
-            vec![Delegation::new(
-                MetadataPath::new("foo/bar").unwrap(),
-                false,
-                1,
-                hashset!(key.public().key_id().clone()),
-                hashset!(TargetPath::new("baz/quux").unwrap()),
-            )
-            .unwrap()],
+            vec![
+                Delegation::new(
+                    MetadataPath::new("foo/bar").unwrap(),
+                    false,
+                    1,
+                    hashset!(key.public().key_id().clone()),
+                    hashset!(TargetPath::new("baz/quux").unwrap()),
+                )
+                .unwrap(),
+            ],
         )
         .unwrap();
 
@@ -3497,14 +3499,16 @@ mod test {
             .clone();
         let delegations = Delegations::new(
             hashmap! { key.key_id().clone() => key.clone() },
-            vec![Delegation::new(
-                MetadataPath::new("foo").unwrap(),
-                false,
-                1,
-                hashset!(key.key_id().clone()),
-                hashset!(TargetPath::new("bar").unwrap()),
-            )
-            .unwrap()],
+            vec![
+                Delegation::new(
+                    MetadataPath::new("foo").unwrap(),
+                    false,
+                    1,
+                    hashset!(key.key_id().clone()),
+                    hashset!(TargetPath::new("bar").unwrap()),
+                )
+                .unwrap(),
+            ],
         )
         .unwrap();
 
@@ -3619,11 +3623,13 @@ mod test {
     fn deserialize_json_role_definition_illegal_threshold() {
         let role_def = RoleDefinition::<RootMetadata>::new(
             1,
-            hashset![Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
-                .unwrap()
-                .public()
-                .key_id()
-                .clone()],
+            hashset![
+                Ed25519PrivateKey::from_pkcs8(ED25519_1_PK8)
+                    .unwrap()
+                    .public()
+                    .key_id()
+                    .clone()
+            ],
         )
         .unwrap();
 

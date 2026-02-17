@@ -1,6 +1,8 @@
 use assert_matches::assert_matches;
 use chrono::offset::Utc;
 use futures_executor::block_on;
+use tuf::Database;
+use tuf::Error;
 use tuf::crypto::{Ed25519PrivateKey, HashAlgorithm, PrivateKey};
 use tuf::metadata::{
     Delegation, Delegations, MetadataDescription, MetadataPath, TargetPath, TargetsMetadataBuilder,
@@ -8,8 +10,6 @@ use tuf::metadata::{
 use tuf::pouf::Pouf1;
 use tuf::repo_builder::RepoBuilder;
 use tuf::repository::EphemeralRepository;
-use tuf::Database;
-use tuf::Error;
 
 const ED25519_1_PK8: &[u8] = include_bytes!("./ed25519/ed25519-1.pk8.der");
 const ED25519_2_PK8: &[u8] = include_bytes!("./ed25519/ed25519-2.pk8.der");
@@ -82,9 +82,10 @@ fn simple_delegation() {
         )
         .unwrap();
 
-        assert!(tuf
-            .target_description(&TargetPath::new("foo").unwrap())
-            .is_ok());
+        assert!(
+            tuf.target_description(&TargetPath::new("foo").unwrap())
+                .is_ok()
+        );
     })
 }
 
@@ -189,9 +190,10 @@ fn nested_delegation() {
         )
         .unwrap();
 
-        assert!(tuf
-            .target_description(&TargetPath::new("foo").unwrap())
-            .is_ok());
+        assert!(
+            tuf.target_description(&TargetPath::new("foo").unwrap())
+                .is_ok()
+        );
     })
 }
 
@@ -472,9 +474,10 @@ fn diamond_delegation() {
         )
         .unwrap();
 
-        assert!(tuf
-            .target_description(&TargetPath::new("foo").unwrap())
-            .is_ok());
+        assert!(
+            tuf.target_description(&TargetPath::new("foo").unwrap())
+                .is_ok()
+        );
 
         let target_path = TargetPath::new("bar").unwrap();
         assert_matches!(

@@ -1,12 +1,12 @@
 use futures_executor::block_on;
 use futures_util::io::Cursor;
+use tuf::Result;
 use tuf::client::{Client, Config};
 use tuf::crypto::{Ed25519PrivateKey, PrivateKey, PublicKey};
 use tuf::metadata::{MetadataVersion, TargetPath};
 use tuf::pouf::Pouf1;
 use tuf::repo_builder::RepoBuilder;
 use tuf::repository::EphemeralRepository;
-use tuf::Result;
 
 // Ironically, this is far from simple, but it's as simple as it can be made.
 

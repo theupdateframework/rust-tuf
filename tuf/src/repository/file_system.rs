@@ -9,7 +9,7 @@ use {
     },
     futures_io::AsyncRead,
     futures_util::future::{BoxFuture, FutureExt},
-    futures_util::io::{copy, AllowStdIo},
+    futures_util::io::{AllowStdIo, copy},
     log::debug,
     std::{
         collections::HashMap,
@@ -492,7 +492,7 @@ mod test {
     use crate::error::Error;
     use crate::metadata::RootMetadata;
     use crate::pouf::Pouf1;
-    use crate::repository::{fetch_metadata_to_string, fetch_target_to_string, Repository};
+    use crate::repository::{Repository, fetch_metadata_to_string, fetch_target_to_string};
     use assert_matches::assert_matches;
     use futures_executor::block_on;
     use futures_util::io::AsyncReadExt;
@@ -540,13 +540,15 @@ mod test {
             let data: &[u8] = b"like tears in the rain";
             let path = TargetPath::new("foo/bar/baz").unwrap();
             repo.store_target(&path, &mut &*data).await.unwrap();
-            assert!(temp_dir
-                .path()
-                .join("targs")
-                .join("foo")
-                .join("bar")
-                .join("baz")
-                .exists());
+            assert!(
+                temp_dir
+                    .path()
+                    .join("targs")
+                    .join("foo")
+                    .join("bar")
+                    .join("baz")
+                    .exists()
+            );
 
             let mut buf = Vec::new();
 

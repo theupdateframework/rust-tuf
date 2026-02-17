@@ -4,22 +4,22 @@ use futures_io::AsyncRead;
 use futures_util::future::{BoxFuture, FutureExt as _, TryFutureExt as _};
 use futures_util::stream::TryStreamExt;
 use http::{Response, StatusCode, Uri};
-use hyper::body::Body;
-use hyper::client::connect::Connect;
 use hyper::Client;
 use hyper::Request;
+use hyper::body::Body;
+use hyper::client::connect::Connect;
 use percent_encoding::utf8_percent_encode;
 use std::future::Future;
 use std::io;
 use std::marker::PhantomData;
 use url::Url;
 
+use crate::Result;
 use crate::error::Error;
 use crate::metadata::{MetadataPath, MetadataVersion, TargetPath};
 use crate::pouf::Pouf;
 use crate::repository::RepositoryProvider;
 use crate::util::SafeAsyncRead;
-use crate::Result;
 
 /// A builder to create a repository accessible over HTTP.
 pub struct HttpRepositoryBuilder<C, D>
@@ -169,7 +169,7 @@ fn extend_uri(uri: &Uri, prefix: &Option<Vec<String>>, components: &[String]) ->
         .collect::<Vec<_>>();
     let mut new_path_elements: Vec<&str> = vec![];
 
-    if let Some(ref prefix) = prefix {
+    if let Some(prefix) = prefix {
         new_path_elements.extend(prefix.iter().map(String::as_str));
     }
     new_path_elements.extend(components.iter().map(String::as_str));
@@ -210,7 +210,10 @@ where
     C: Connect + Clone + Send + Sync + 'static,
     D: Pouf,
 {
-    fn get<'a>(&self, uri: &'a Uri) -> Result<impl Future<Output = Result<Response<Body>>> + 'a> {
+    fn get<'a>(
+        &self,
+        uri: &'a Uri,
+    ) -> Result<impl Future<Output = Result<Response<Body>>> + 'a + use<'a, C, D>> {
         let req = Request::builder()
             .uri(uri)
             .header("User-Agent", &*self.user_agent)
@@ -251,7 +254,7 @@ where
             if status == StatusCode::OK {
                 let reader = resp
                     .into_body()
-                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+                    .map_err(io::Error::other)
                     .into_async_read()
                     .enforce_minimum_bitrate(self.min_bytes_per_second);
 
@@ -290,7 +293,7 @@ where
             if status == StatusCode::OK {
                 let reader = resp
                     .into_body()
-                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+                    .map_err(io::Error::other)
                     .into_async_read()
                     .enforce_minimum_bitrate(self.min_bytes_per_second);
 
@@ -323,7 +326,7 @@ mod test {
         let mut url = base_url;
         {
             let mut segments = url.path_segments_mut().unwrap();
-            if let Some(ref prefix) = prefix {
+            if let Some(prefix) = prefix {
                 segments.extend(prefix);
             }
             segments.extend(components);

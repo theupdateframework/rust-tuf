@@ -7,11 +7,11 @@ use {
     ring::{
         digest::{self, SHA256, SHA512},
         rand::SystemRandom,
-        signature::{Ed25519KeyPair, KeyPair, ED25519},
+        signature::{ED25519, Ed25519KeyPair, KeyPair},
     },
     serde::{
-        de::Error as DeserializeError, ser::Error as SerializeError, Deserialize, Deserializer,
-        Serialize, Serializer,
+        Deserialize, Deserializer, Serialize, Serializer, de::Error as DeserializeError,
+        ser::Error as SerializeError,
     },
     std::{
         cmp::Ordering,
@@ -682,7 +682,7 @@ impl Ord for PublicKey {
 
 impl PartialOrd for PublicKey {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.key_id.cmp(&other.key_id))
+        Some(self.cmp(other))
     }
 }
 
@@ -829,7 +829,7 @@ impl HashAlgorithm {
         match self {
             HashAlgorithm::Sha256 => Ok(digest::Context::new(&SHA256)),
             HashAlgorithm::Sha512 => Ok(digest::Context::new(&SHA512)),
-            HashAlgorithm::Unknown(ref s) => Err(Error::IllegalArgument(format!(
+            HashAlgorithm::Unknown(s) => Err(Error::IllegalArgument(format!(
                 "Unknown hash algorithm: {}",
                 s
             ))),

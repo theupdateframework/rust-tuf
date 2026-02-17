@@ -2,9 +2,9 @@ use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
 use std::collections::BTreeMap;
 
+use crate::Result;
 use crate::error::Error;
 use crate::pouf::Pouf;
-use crate::Result;
 
 pub(crate) mod shims;
 
