@@ -47,7 +47,7 @@
 //! # }
 //! ```
 
-use chrono::{offset::Utc, DateTime};
+use chrono::{DateTime, offset::Utc};
 use futures_io::AsyncRead;
 use log::{error, warn};
 use std::future::Future;
@@ -845,7 +845,7 @@ where
     pub async fn fetch_target(
         &mut self,
         target: &TargetPath,
-    ) -> Result<impl AsyncRead + Send + Unpin + '_> {
+    ) -> Result<impl AsyncRead + Send + Unpin + '_ + use<'_, D, L, R>> {
         self.fetch_target_with_start_time(target, &Utc::now()).await
     }
 
@@ -858,7 +858,7 @@ where
         &mut self,
         target: &TargetPath,
         start_time: &DateTime<Utc>,
-    ) -> Result<impl AsyncRead + Send + Unpin + '_> {
+    ) -> Result<impl AsyncRead + Send + Unpin + '_ + use<'_, D, L, R>> {
         let target_description = self
             .fetch_target_description_with_start_time(target, start_time)
             .await?;
@@ -1304,7 +1304,7 @@ mod test {
     use crate::pouf::Pouf1;
     use crate::repo_builder::RepoBuilder;
     use crate::repository::{
-        fetch_metadata_to_string, EphemeralRepository, ErrorRepository, Track, TrackRepository,
+        EphemeralRepository, ErrorRepository, Track, TrackRepository, fetch_metadata_to_string,
     };
     use assert_matches::assert_matches;
     use chrono::prelude::*;

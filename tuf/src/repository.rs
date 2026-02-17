@@ -302,7 +302,7 @@ where
         consistent_snapshot: bool,
         target_path: &TargetPath,
         target_description: TargetDescription,
-    ) -> Result<impl AsyncRead + Send + Unpin + '_> {
+    ) -> Result<impl AsyncRead + Send + Unpin + '_ + use<'_, R, D>> {
         // https://theupdateframework.github.io/specification/v1.0.26/#fetch-target 5.7.3:
         //
         // [...] download the target (up to the number of bytes specified in the targets metadata),

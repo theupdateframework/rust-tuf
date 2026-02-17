@@ -5,7 +5,7 @@ use {
         crypto::KeyId,
         metadata::{MetadataPath, MetadataVersion, TargetPath},
     },
-    chrono::{offset::Utc, DateTime},
+    chrono::{DateTime, offset::Utc},
     std::io,
     thiserror::Error,
 };
@@ -183,7 +183,9 @@ pub enum Error {
 
     /// The parent metadata expected the child metadata to be at one version, but was found to be at
     /// another version.
-    #[error("metadata {parent_role} expected metadata {child_role} version {expected_version}, but found {new_version}")]
+    #[error(
+        "metadata {parent_role} expected metadata {child_role} version {expected_version}, but found {new_version}"
+    )]
     WrongMetadataVersion {
         /// The parent metadata that contains the child metadata's version.
         parent_role: MetadataPath,

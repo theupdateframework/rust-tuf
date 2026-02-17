@@ -1,10 +1,11 @@
 //! Components needed to verify TUF metadata and targets.
 
-use chrono::{offset::Utc, DateTime};
+use chrono::{DateTime, offset::Utc};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
+use crate::Result;
 use crate::crypto::PublicKey;
 use crate::error::Error;
 use crate::metadata::{
@@ -14,7 +15,6 @@ use crate::metadata::{
 };
 use crate::pouf::Pouf;
 use crate::verify::{self, Verified};
-use crate::Result;
 
 /// Contains trusted TUF metadata and can be used to verify other metadata and targets.
 #[derive(Debug)]

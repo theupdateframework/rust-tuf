@@ -1577,8 +1577,8 @@ mod tests {
         },
         assert_matches::assert_matches,
         chrono::{
-            offset::{TimeZone as _, Utc},
             DateTime,
+            offset::{TimeZone as _, Utc},
         },
         futures_executor::block_on,
         futures_util::io::{AsyncReadExt, Cursor},

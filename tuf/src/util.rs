@@ -7,8 +7,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use crate::crypto::{HashAlgorithm, HashValue};
 use crate::Result;
+use crate::crypto::{HashAlgorithm, HashValue};
 
 pub(crate) trait SafeAsyncRead: AsyncRead + Sized + Unpin {
     /// Creates an `AsyncRead` adapter which will fail transfers slower than
@@ -168,7 +168,7 @@ impl<R: AsyncRead + Unpin> AsyncRead for SafeReader<R> {
             }
         }
 
-        for (ref mut context, _) in &mut self.hashers {
+        for (context, _) in &mut self.hashers {
             context.update(&buf[..read_bytes]);
         }
 

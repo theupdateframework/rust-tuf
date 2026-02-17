@@ -1,9 +1,9 @@
 use {
     crate::{
+        Result,
         metadata::{Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, TargetPath},
         pouf::Pouf,
         repository::{RepositoryProvider, RepositoryStorage},
-        Result,
     },
     futures_io::AsyncRead,
     futures_util::{

@@ -1,15 +1,15 @@
 use {
     crate::{
+        Error, Result,
         metadata::{MetadataPath, MetadataVersion, TargetPath},
         pouf::Pouf,
         repository::{RepositoryProvider, RepositoryStorage},
-        Error, Result,
     },
     futures_io::AsyncRead,
     futures_util::future::{BoxFuture, FutureExt},
     std::sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
