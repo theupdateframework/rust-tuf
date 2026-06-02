@@ -5,6 +5,7 @@ use {
         metadata::{self, Metadata},
     },
     chrono::{offset::Utc, prelude::*},
+    semver::Version,
     serde::{Deserialize, Serialize},
     std::{
         collections::{BTreeMap, HashSet},
@@ -12,14 +13,27 @@ use {
     },
 };
 
-const SPEC_VERSION: &str = "1.0";
+const SPEC_VERSION: Version = Version::new(1, 0, 0);
 
-// Ensure the given spec version matches our spec version.
-//
-// We also need to handle the literal "1.0" here, despite that fact that it is not a valid version
-// according to the SemVer spec, because it is already baked into some of the old roots.
-fn valid_spec_version(other: &str) -> bool {
-    matches!(other, "1.0" | "1.0.0")
+// Ensure the given spec version stays within the supported TUF 1.0.x line.
+fn valid_spec_version(version_string: &str) -> bool {
+
+    /////////////////////////////////////////
+    // TUF-1.0.34 §4.3:
+    //
+    //    A string that contains the version number of the TUF specification. Its format follows
+    //    the Semantic Versioning 2.0.0 (semver) specification. Metadata is written according to
+    //    version "spec_version" of the specification, and clients MUST verify that "spec_version"
+    //    matches the expected version number. Adopters are free to determine what is considered
+    //    a match (e.g., the version number exactly, or perhaps only the major version number
+    //    (major.minor.fix).
+
+    let Ok(version) = Version::parse(version_string) else {
+        // Support parsing legacy roots that still encode the spec version as "1.0".
+        return version_string == "1.0";
+    };
+
+    version.major == SPEC_VERSION.major && version.minor == SPEC_VERSION.minor
 }
 
 fn parse_datetime(ts: &str) -> Result<DateTime<Utc>> {
@@ -637,13 +651,15 @@ mod test {
 
     #[test]
     fn spec_version_validation() {
-        let valid_spec_versions = ["1.0.0", "1.0"];
+        let valid_spec_versions = ["1.0.0", "1.0", "1.0.1", "1.0.34", "1.0.999"];
 
         for version in valid_spec_versions {
             assert!(valid_spec_version(version), "{:?} should be valid", version);
         }
 
-        let invalid_spec_versions = ["1.0.1", "1.1.0", "2.0.0", "3.0"];
+        let invalid_spec_versions = [
+            "1.1.0", "2.0.0", "3.0", "1", "1.1", "1.0.beta", "1.0.0.1", "1.0.00", "1.0.01",
+        ];
 
         for version in invalid_spec_versions {
             assert!(

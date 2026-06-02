@@ -2516,7 +2516,7 @@ mod test {
 
         let jsn = json!({
             "_type": "root",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": true,
@@ -2584,7 +2584,7 @@ mod test {
     fn serde_root_metadata_additional_fields() {
         let jsn = json!({
             "_type": "root",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": true,
@@ -2638,7 +2638,7 @@ mod test {
     fn jsn_root_metadata_without_keyid_hash_algos() -> serde_json::Value {
         json!({
             "_type": "root",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
@@ -2743,7 +2743,7 @@ mod test {
         let jsn = json!({
             "signatures": [{
                 "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
-                "sig": "c4ba838e0d3f783716393a4d691f568f840733ff488bb79ac68287e97e0b31d63fcef392dbc978e878c2103ba231905af634cc651d6f0e63a35782d051ac6e00"
+                "sig": "1f944e022d0b30c5a9ddc9c210026f396e18a17cc9a4ee92c339a8ee63357608dba8121847a825c3a5c84c1081435436bd784c8086c3103cdd1489e79cff2802"
             }],
             "signed": jsn_root_metadata_without_keyid_hash_algos()
         });
@@ -2768,11 +2768,11 @@ mod test {
         let jsn = json!({
             "signatures": [{
                 "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
-                "sig": "c4ba838e0d3f783716393a4d691f568f840733ff488bb79ac68287e97e0b31d63fcef392dbc978e878c2103ba231905af634cc651d6f0e63a35782d051ac6e00"
+                "sig": "1f944e022d0b30c5a9ddc9c210026f396e18a17cc9a4ee92c339a8ee63357608dba8121847a825c3a5c84c1081435436bd784c8086c3103cdd1489e79cff2802"
             },
             {
                 "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
-                "sig": "c4ba838e0d3f783716393a4d691f568f840733ff488bb79ac68287e97e0b31d63fcef392dbc978e878c2103ba231905af634cc651d6f0e63a35782d051ac6e00"
+                "sig": "1f944e022d0b30c5a9ddc9c210026f396e18a17cc9a4ee92c339a8ee63357608dba8121847a825c3a5c84c1081435436bd784c8086c3103cdd1489e79cff2802"
             }],
             "signed": jsn_root_metadata_without_keyid_hash_algos()
         });
@@ -2917,7 +2917,7 @@ mod test {
 
         let jsn = json!({
             "_type": "timestamp",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -2941,7 +2941,7 @@ mod test {
     fn serde_timestamp_metadata_additional_fields() {
         let jsn = json!({
             "_type": "timestamp",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -2984,7 +2984,7 @@ mod test {
 
         let jsn = json!({
             "_type": "timestamp",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -3004,7 +3004,7 @@ mod test {
     fn serde_timestamp_metadata_missing_snapshot() {
         let jsn = json!({
             "_type": "timestamp",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {}
@@ -3020,7 +3020,7 @@ mod test {
     fn serde_timestamp_metadata_extra_metadata() {
         let jsn = json!({
             "_type": "timestamp",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -3066,7 +3066,7 @@ mod test {
 
         let jsn = json!({
             "_type": "snapshot",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -3090,7 +3090,7 @@ mod test {
     fn serde_snapshot_metadata_additional_fields() {
         let jsn = json!({
             "_type": "snapshot",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -3135,7 +3135,7 @@ mod test {
 
         let jsn = json!({
             "_type": "snapshot",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -3196,7 +3196,7 @@ mod test {
 
             let jsn = json!({
                 "_type": "targets",
-                "spec_version": "1.0",
+                "spec_version": "1.0.0",
                 "version": 1,
                 "expires": "2017-01-01T00:00:00Z",
                 "targets": {
@@ -3246,7 +3246,7 @@ mod test {
     fn serde_targets_metadata_additional_fields() {
         let jsn = json!({
                 "_type": "targets",
-                "spec_version": "1.0",
+            "spec_version": "1.0.0",
                 "version": 1,
                 "expires": "2017-01-01T00:00:00Z",
                 "targets": {
@@ -3328,7 +3328,7 @@ mod test {
 
         let jsn = json!({
             "_type": "targets",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "targets": {},
@@ -3386,14 +3386,14 @@ mod test {
             "signatures": [
                 {
                     "keyid": "a9f3ebc9b138762563a9c27b6edd439959e559709babd123e8d449ba2c18c61a",
-                    "sig": "ea48ddc7b3ea614b394e508eb8722100f94ff1a4e3aac3af09d\
-                        a0dada4f878431e8ac26160833405ec239924dfe62edf605fee8294\
-                        c49b4acade55c76e817602",
+                    "sig": "a9b97b2439cd41e9a8c62e4d2f8f73b25a06095e0a994e8631a0\
+                        88977271909af2cc829c68637af98b07ebffeea308cc1a1c83d18\
+                        fa29ec401493973b3dfa90e",
                 }
             ],
             "signed": {
                 "_type": "snapshot",
-                "spec_version": "1.0",
+                "spec_version": "1.0.0",
                 "version": 1,
                 "expires": "2017-01-01T00:00:00Z",
                 "meta": {
@@ -3558,7 +3558,7 @@ mod test {
     fn deserialize_json_root_duplicate_keys() {
         let root_json = r#"{
             "_type": "root",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "consistent_snapshot": false,
@@ -3746,7 +3746,7 @@ mod test {
     fn deserialize_json_snapshot_duplicate_metadata() {
         let snapshot_json = r#"{
             "_type": "snapshot",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -3811,7 +3811,7 @@ mod test {
     fn deserialize_json_timestamp_duplicate_metadata() {
         let timestamp_json = r#"{
             "_type": "timestamp",
-            "spec_version": "1.0",
+            "spec_version": "1.0.0",
             "version": 1,
             "expires": "2017-01-01T00:00:00Z",
             "meta": {
@@ -3869,6 +3869,26 @@ mod test {
             .unwrap()
             .insert("spec_version".into(), json!("0"));
         assert!(serde_json::from_value::<TargetsMetadata>(targets).is_err());
+    }
+
+    #[test]
+    fn deserialize_json_root_accepts_1_0_x_spec_version() {
+        let mut root = make_root();
+        let _ = root
+            .as_object_mut()
+            .unwrap()
+            .insert("spec_version".into(), json!("1.0.31"));
+        assert!(serde_json::from_value::<RootMetadata>(root).is_ok());
+    }
+
+    #[test]
+    fn deserialize_json_root_accepts_legacy_1_0_spec_version() {
+        let mut root = make_root();
+        let _ = root
+            .as_object_mut()
+            .unwrap()
+            .insert("spec_version".into(), json!("1.0"));
+        assert!(serde_json::from_value::<RootMetadata>(root).is_ok());
     }
 
     // Refuse to deserialize delegations with duplicated roles
