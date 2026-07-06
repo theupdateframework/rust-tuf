@@ -424,7 +424,15 @@ impl<D: Pouf> Database<D> {
             //     new timestamp metadata file. If not, discard the new timestamp metadadata file,
             //     abort the update cycle, and report the failure.
 
-            // FIXME(#294): Implement this section.
+            if let Some(trusted_timestamp) = &self.trusted_timestamp {
+                if new_timestamp.snapshot().version() < trusted_timestamp.snapshot().version() {
+                    return Err(Error::AttemptedMetadataRollBack {
+                        role: MetadataPath::snapshot(),
+                        trusted_version: trusted_timestamp.snapshot().version(),
+                        new_version: new_timestamp.snapshot().version(),
+                    });
+                }
+            }
 
             /////////////////////////////////////////
             // TUF-1.0.5 §5.2.3:
@@ -1368,6 +1376,59 @@ mod test {
                 .unwrap();
 
         assert!(tuf.update_timestamp(&now, &raw_timestamp).is_err())
+    }
+
+    #[test]
+    fn bad_timestamp_update_rollback_snapshot() {
+        let now = Utc::now();
+
+        let raw_root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[1].public().clone())
+            .timestamp_key(KEYS[1].public().clone())
+            .signed::<Pouf1>(&KEYS[0])
+            .unwrap()
+            .to_raw()
+            .unwrap();
+
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
+
+        let snapshot_v2 = SnapshotMetadataBuilder::new()
+            .version(2)
+            .signed::<Pouf1>(&KEYS[1])
+            .unwrap();
+
+        let raw_timestamp_v1 =
+            TimestampMetadataBuilder::from_snapshot(&snapshot_v2, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .version(1)
+                .signed::<Pouf1>(&KEYS[1])
+                .unwrap()
+                .to_raw()
+                .unwrap();
+
+        tuf.update_timestamp(&now, &raw_timestamp_v1).unwrap();
+
+        let snapshot_v1 = SnapshotMetadataBuilder::new()
+            .version(1)
+            .signed::<Pouf1>(&KEYS[1])
+            .unwrap();
+
+        let raw_timestamp_v2 =
+            TimestampMetadataBuilder::from_snapshot(&snapshot_v1, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .version(2)
+                .signed::<Pouf1>(&KEYS[1])
+                .unwrap()
+                .to_raw()
+                .unwrap();
+
+        assert_matches!(
+            tuf.update_timestamp(&now, &raw_timestamp_v2),
+            Err(Error::AttemptedMetadataRollBack { role, trusted_version: 2, new_version: 1 })
+            if role == MetadataPath::snapshot()
+        );
     }
 
     #[test]
