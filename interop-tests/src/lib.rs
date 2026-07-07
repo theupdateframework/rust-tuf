@@ -264,7 +264,6 @@ pub async fn generate_repos(
     add_target(&mut repo, &keys, 0, consistent_snapshot).await;
 
     // Queue up a series of key rotations
-    let mut i: u8 = 1;
     let rotations = [
         Some(Role::Root),
         Some(Role::Targets),
@@ -272,7 +271,7 @@ pub async fn generate_repos(
         Some(Role::Timestamp),
         None,
     ];
-    for r in rotations.iter() {
+    for (i, r) in (1_u8..).zip(rotations.iter()) {
         // Initialize new repo and copy the files from the previous step.
         let dir_i = Path::new(dir).join(i.to_string());
         let mut repo = FileSystemRepositoryBuilder::new(dir_i)
@@ -306,7 +305,6 @@ pub async fn generate_repos(
         )
         .await;
         add_target(&mut repo, &keys, i, consistent_snapshot).await;
-        i += 1;
     }
     Ok(())
 }
