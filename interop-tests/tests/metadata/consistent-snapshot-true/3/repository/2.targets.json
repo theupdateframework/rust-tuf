@@ -2,13 +2,13 @@
   "signatures": [
     {
       "keyid": "6b5a479e0686e56b39bb1c4d6a24872e2b5472a60f081093c65c8257384dc146",
-      "sig": "fdb501702c5c189d872213dc2c41d82d31e480eef07930d2c36326b88517dad219fd8683586cc5d71580212dfb92654c51d23ba5fbafcd83e8874be98572ab0c"
+      "sig": "6acef299eaf810c09336f8d8da5ee79bcee54a236742d0f607870313e42318e47ae9e925aee6c65b21ff59c119ea329e43df411aa398cb5fd547758d25088601"
     }
   ],
   "signed": {
     "_type": "targets",
     "expires": "2100-01-01T00:00:00Z",
-    "spec_version": "1.0",
+    "spec_version": "1.0.0",
     "targets": {
       "0": {
         "hashes": {
