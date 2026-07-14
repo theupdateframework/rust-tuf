@@ -19,15 +19,14 @@ path = "./src/lib.rs"
 
 [dependencies]
 chrono = { version = "0.4.42", features = [ "serde" ] }
-data-encoding = "2.9.0"
+data-encoding = "2.10"
 futures-io = "0.3.31"
 futures-util = { version = "0.3.31", features = [ "io" ] }
-http = "0.2.4"
-hyper = { version = "0.14.19", default-features = false, features = [ "stream", "client", "http1" ], optional = true }
+http = "1"
 itoa = "1.0"
 log = "0.4"
 percent-encoding = "2.1"
-ring = { version = "0.17" }
+ring = "0.17"
 semver = "1.0.28"
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1"
@@ -39,8 +38,7 @@ url = "2"
 [dev-dependencies]
 assert_matches = "1.5.0"
 futures-executor = "0.3.31"
+http = "1"
 maplit = "1"
 pretty_assertions = "1"
 
-[features]
-default = ["hyper", "hyper/tcp"]
