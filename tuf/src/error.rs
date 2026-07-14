@@ -51,16 +51,15 @@ pub enum Error {
         err: http::Error,
     },
 
-    /// Errors that can occur parsing HTTP streams.
-    #[cfg(feature = "hyper")]
-    #[error("hyper error for {uri}")]
-    Hyper {
+    /// Error occurring in a repository backend (e.g., HTTP, custom transport).
+    #[error("repository backend error for {uri}")]
+    Repository {
         /// URI Resource that resulted in the error.
         uri: String,
 
         /// The error.
         #[source]
-        err: hyper::Error,
+        err: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
 
     /// Unexpected HTTP response status.
@@ -221,4 +220,48 @@ pub enum Error {
         /// The metadata to be signed.
         role: MetadataPath,
     },
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::error::Error as StdError;
+    use std::fmt;
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct CustomServiceError {
+        code: u32,
+    }
+
+    impl fmt::Display for CustomServiceError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "custom service error code {}", self.code)
+        }
+    }
+
+    impl StdError for CustomServiceError {}
+
+    #[test]
+    fn repository_error_source_and_downcast() {
+        let inner = CustomServiceError { code: 404 };
+        let err = Error::Repository {
+            uri: "https://example.com/repo".to_string(),
+            err: Box::new(inner),
+        };
+
+        assert_eq!(
+            err.to_string(),
+            "repository backend error for https://example.com/repo"
+        );
+
+        let source = err
+            .source()
+            .expect("Error::Backend should provide a source");
+        assert_eq!(source.to_string(), "custom service error code 404");
+
+        let downcasted = source
+            .downcast_ref::<CustomServiceError>()
+            .expect("should downcast cleanly to CustomServiceError");
+        assert_eq!(downcasted, &CustomServiceError { code: 404 });
+    }
 }
