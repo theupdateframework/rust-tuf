@@ -17,7 +17,6 @@ const SPEC_VERSION: Version = Version::new(1, 0, 0);
 
 // Ensure the given spec version stays within the supported TUF 1.0.x line.
 fn valid_spec_version(version_string: &str) -> bool {
-
     /////////////////////////////////////////
     // TUF-1.0.34 §4.3:
     //
