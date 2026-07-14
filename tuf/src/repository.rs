@@ -1,11 +1,11 @@
 //! Interfaces for interacting with different types of TUF repositories.
 
 use crate::crypto::{self, HashAlgorithm, HashValue};
+use crate::enforce_size_and_hash::EnforceSizeAndHash;
 use crate::metadata::{
     Metadata, MetadataPath, MetadataVersion, RawSignedMetadata, TargetDescription, TargetPath,
 };
 use crate::pouf::Pouf;
-use crate::util::SafeAsyncRead;
 use crate::{Error, Result};
 
 use futures_io::AsyncRead;
@@ -18,12 +18,6 @@ mod file_system;
 pub use self::file_system::{
     FileSystemBatchUpdate, FileSystemRepository, FileSystemRepositoryBuilder,
 };
-
-#[cfg(feature = "hyper")]
-mod http;
-
-#[cfg(feature = "hyper")]
-pub use self::http::{HttpRepository, HttpRepositoryBuilder};
 
 mod ephemeral;
 pub use self::ephemeral::{EphemeralBatchUpdate, EphemeralRepository};
@@ -278,11 +272,11 @@ where
         // Fetch the metadata, verifying max_length and hashes (if provided), as
         // the repository implementation should only be trusted to use those as
         // hints to fail early.
-        let mut reader = self
-            .repository
-            .fetch_metadata(meta_path, version)
-            .await?
-            .check_length_and_hash(max_length.unwrap_or(usize::MAX) as u64, hashes)?;
+        let mut reader = EnforceSizeAndHash::new(
+            self.repository.fetch_metadata(meta_path, version).await?,
+            max_length.unwrap_or(usize::MAX) as u64,
+            hashes,
+        )?;
 
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf).await?;
@@ -336,7 +330,7 @@ where
             self.repository.fetch_target(target_path).await?
         };
 
-        target.check_length_and_hash(length, hashes)
+        EnforceSizeAndHash::new(target, length, hashes)
     }
 }
 

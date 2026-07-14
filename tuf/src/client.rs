@@ -4,33 +4,24 @@
 //!
 //! ```no_run
 //! # use futures_executor::block_on;
-//! # use hyper::client::Client as HttpClient;
 //! # use std::path::PathBuf;
-//! # use std::str::FromStr;
-//! # use tuf::{Result, Database};
+//! # use tuf::Result;
 //! # use tuf::crypto::PublicKey;
 //! # use tuf::client::{Client, Config};
-//! # use tuf::metadata::{RootMetadata, Role, MetadataPath, MetadataVersion};
+//! # use tuf::metadata::MetadataVersion;
 //! # use tuf::pouf::Pouf1;
-//! # use tuf::repository::{FileSystemRepository, HttpRepositoryBuilder};
+//! # use tuf::repository::{EphemeralRepository, FileSystemRepository};
 //! #
 //! # const PUBLIC_KEY: &'static [u8] = include_bytes!("../tests/ed25519/ed25519-1.pub");
 //! #
 //! # fn load_root_public_keys() -> Vec<PublicKey> {
 //! #      vec![PublicKey::from_ed25519(PUBLIC_KEY).unwrap()]
 //! # }
-//! #
 //! # fn main() -> Result<()> {
 //! # block_on(async {
 //! let root_public_keys = load_root_public_keys();
 //! let local = FileSystemRepository::<Pouf1>::new(PathBuf::from("~/.rustup"));
-//!
-//! let remote = HttpRepositoryBuilder::new_with_uri(
-//!     "https://static.rust-lang.org/".parse::<http::Uri>().unwrap(),
-//!     HttpClient::new(),
-//! )
-//! .user_agent("rustup/1.4.0")
-//! .build();
+//! let remote = EphemeralRepository::<Pouf1>::new();
 //!
 //! let mut client = Client::with_trusted_root_keys(
 //!     Config::default(),
@@ -1088,12 +1079,20 @@ where
                         }
                     }
 
-                    let meta = self
-                        .tuf
-                        .trusted_delegations()
-                        .get(delegation.name())
-                        .unwrap()
-                        .clone();
+                    let meta = match self.tuf.trusted_delegations().get(delegation.name()) {
+                        Some(m) => m.clone(),
+                        None => {
+                            let err = Error::MetadataNotFound {
+                                path: delegation.name().clone(),
+                                version: MetadataVersion::None,
+                            };
+                            if delegation.terminating() {
+                                return (true, Err(err));
+                            } else {
+                                continue;
+                            }
+                        }
+                    };
                     let f: Pin<Box<dyn Future<Output = _>>> =
                         Box::pin(self.lookup_target_description(
                             start_time,

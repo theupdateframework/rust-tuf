@@ -121,8 +121,8 @@ pub mod repo_builder;
 pub mod repository;
 pub mod verify;
 
+mod enforce_size_and_hash;
 mod format_hex;
-mod util;
 
 pub use crate::database::*;
 pub use crate::error::*;

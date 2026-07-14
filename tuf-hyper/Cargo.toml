@@ -1,0 +1,39 @@
+[package]
+name = "tuf-hyper"
+version = "0.3.0-beta14"
+edition = "2024"
+rust-version = "1.88.0"
+authors = [ "Erick Tryzelaar <etryzelaar@google.com>" ]
+description = "HTTP repository support for TUF using Hyper"
+homepage = "https://github.com/theupdateframework/rust-tuf"
+repository = "https://github.com/theupdateframework/rust-tuf"
+license = "MIT/Apache-2.0"
+
+[dependencies]
+futures-io = "0.3.31"
+futures-util = { version = "0.3.31", features = ["io"] }
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", default-features = false, features = ["client", "http1"] }
+percent-encoding = "2.1"
+tower = { version = "0.4", default-features = false, features = ["util"] }
+tuf = { path = "../tuf", default-features = false }
+
+[dev-dependencies]
+assert_matches = "1.5.0"
+clap = { version = "4", features = ["derive", "env"] }
+futures-executor = "0.3.31"
+hyper = { version = "1", features = ["client", "server", "http1"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "client-pool", "http1", "tokio", "server", "server-auto", "service"] }
+pretty_assertions = "1"
+smol = "2"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net"] }
+
+[[example]]
+name = "server-tokio"
+
+[[example]]
+name = "client-tokio"
+
+[[example]]
+name = "client-smol"
