@@ -298,10 +298,7 @@ impl Value {
                 buf.extend(itoa::Buffer::new().format(n).bytes());
             }
             Value::String(ref s) => {
-                // this mess is abusing serde_json to get json escaping
-                let s = serde_json::Value::String(s.clone());
-                let s = serde_json::to_string(&s).map_err(|e| format!("{:?}", e))?;
-                buf.extend(s.as_bytes());
+                escape_canonical_string(s, buf);
             }
             Value::Array(ref arr) => {
                 buf.push(b'[');
@@ -324,11 +321,7 @@ impl Value {
                     }
                     first = false;
 
-                    // this mess is abusing serde_json to get json escaping
-                    let k = serde_json::Value::String(k.clone());
-                    let k = serde_json::to_string(&k).map_err(|e| format!("{:?}", e))?;
-                    buf.extend(k.as_bytes());
-
+                    escape_canonical_string(k, buf);
                     buf.push(b':');
                     v.write(buf)?;
                 }
@@ -337,6 +330,20 @@ impl Value {
         }
         Ok(())
     }
+}
+
+fn escape_canonical_string(s: &str, buf: &mut Vec<u8>) {
+    buf.reserve(s.len() + 2);
+    buf.push(b'"');
+    let mut bytes = s.as_bytes();
+    while let Some(i) = bytes.iter().position(|&b| matches!(b, b'\\' | b'"')) {
+        buf.extend_from_slice(&bytes[..i]);
+        buf.push(b'\\');
+        buf.push(bytes[i]);
+        bytes = &bytes[i + 1..];
+    }
+    buf.extend_from_slice(bytes);
+    buf.push(b'"');
 }
 
 enum Number {
@@ -407,6 +414,44 @@ mod test {
         let jsn = Value::Object(map);
         let mut out = Vec::new();
         jsn.write(&mut out).unwrap();
-        assert_eq!(&out, &b"{\"lol\":[\"haha\",\"new\\nline\"]}");
+        assert_eq!(&out, &b"{\"lol\":[\"haha\",\"new\nline\"]}");
+    }
+
+    #[test]
+    fn write_str_edge_cases() {
+        let cases = [
+            ("", b"\"\"".as_slice()),
+            ("wat", b"\"wat\"".as_slice()),
+            (
+                "hello 🦀 world",
+                b"\"hello \xF0\x9F\xA6\x80 world\"".as_slice(),
+            ),
+            (
+                "quote\"and\\backslash",
+                b"\"quote\\\"and\\\\backslash\"".as_slice(),
+            ),
+            ("\"\\\"\\", b"\"\\\"\\\\\\\"\\\\\"".as_slice()),
+            ("ctrl \x00 \t \r \n", b"\"ctrl \x00 \t \r \n\"".as_slice()),
+        ];
+
+        for (input, expected) in cases {
+            let mut out = Vec::new();
+            Value::String(input.to_string()).write(&mut out).unwrap();
+            assert_eq!(&out, &expected, "Failed on input: {:?}", input);
+        }
+    }
+
+    #[test]
+    fn write_obj_key_edge_cases() {
+        let mut map = BTreeMap::new();
+        map.insert(
+            String::from("key\"with\\slash"),
+            Value::Number(Number::I64(1)),
+        );
+        map.insert(String::from("ctrl\nkey"), Value::Number(Number::I64(2)));
+        let jsn = Value::Object(map);
+        let mut out = Vec::new();
+        jsn.write(&mut out).unwrap();
+        assert_eq!(&out, &b"{\"ctrl\nkey\":2,\"key\\\"with\\\\slash\":1}");
     }
 }
