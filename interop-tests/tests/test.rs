@@ -43,7 +43,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tuf::client::{Client, Config};
 use tuf::crypto::PublicKey;
-use tuf::metadata::{MetadataPath, MetadataVersion, RawSignedMetadata, RootMetadata, TargetPath};
+use tuf::metadata::{
+    MetadataPath, MetadataThreshold, MetadataVersion, RawSignedMetadata, RootMetadata, TargetPath,
+};
 use tuf::pouf::{Pouf, Pouf1};
 use tuf::repository::{
     EphemeralRepository, FileSystemRepository, FileSystemRepositoryBuilder, RepositoryProvider,
@@ -176,8 +178,8 @@ where
         // Connect to the client with our initial keys.
         let mut client = Client::with_trusted_root_keys(
             Config::default(),
-            MetadataVersion::Number(1),
-            1,
+            MetadataVersion::ONE,
+            MetadataThreshold::ONE,
             public_keys,
             &mut self.local,
             remote,
@@ -216,7 +218,7 @@ where
 
     let mut buf = Vec::new();
     let mut reader = remote
-        .fetch_metadata(&root_path, MetadataVersion::Number(1))
+        .fetch_metadata(&root_path, Some(MetadataVersion::ONE))
         .await
         .unwrap();
     reader.read_to_end(&mut buf).await.unwrap();

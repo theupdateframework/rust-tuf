@@ -7,10 +7,10 @@ use {
         error::{Error, Result},
         metadata::{
             Delegation, DelegationsBuilder, Metadata, MetadataDescription, MetadataPath,
-            MetadataVersion, RawSignedMetadata, RawSignedMetadataSet, RawSignedMetadataSetBuilder,
-            RootMetadata, RootMetadataBuilder, SignedMetadataBuilder, SnapshotMetadata,
-            SnapshotMetadataBuilder, TargetDescription, TargetPath, TargetsMetadata,
-            TargetsMetadataBuilder, TimestampMetadata, TimestampMetadataBuilder,
+            MetadataThreshold, MetadataVersion, RawSignedMetadata, RawSignedMetadataSet,
+            RawSignedMetadataSetBuilder, RootMetadata, RootMetadataBuilder, SignedMetadataBuilder,
+            SnapshotMetadata, SnapshotMetadataBuilder, TargetDescription, TargetPath,
+            TargetsMetadata, TargetsMetadataBuilder, TimestampMetadata, TimestampMetadataBuilder,
         },
         pouf::Pouf,
         repository::RepositoryStorage,
@@ -19,7 +19,7 @@ use {
     chrono::{DateTime, Duration, Utc},
     futures_io::{AsyncRead, AsyncSeek},
     futures_util::AsyncSeekExt as _,
-    std::{collections::HashMap, io::SeekFrom, marker::PhantomData},
+    std::{collections::HashMap, io::SeekFrom, marker::PhantomData, num::NonZeroU32},
 };
 
 mod private {
@@ -219,7 +219,7 @@ where
     trusted_targets_keys: Vec<&'a dyn PrivateKey>,
     trusted_snapshot_keys: Vec<&'a dyn PrivateKey>,
     trusted_timestamp_keys: Vec<&'a dyn PrivateKey>,
-    time_version: Option<u32>,
+    time_version: Option<MetadataVersion>,
     root_expiration_duration: Duration,
     targets_expiration_duration: Duration,
     snapshot_expiration_duration: Duration,
@@ -292,8 +292,8 @@ where
     }
 
     /// The initial version number for non-root metadata.
-    fn non_root_initial_version(&self) -> u32 {
-        self.time_version.unwrap_or(1)
+    fn non_root_initial_version(&self) -> MetadataVersion {
+        self.time_version.unwrap_or(MetadataVersion::ONE)
     }
 
     /// If time versioning is enabled, this updates the current time version to match the current
@@ -304,7 +304,10 @@ where
         // fall back to default monontonic versioning.
         let timestamp = self.current_time.timestamp();
         if timestamp > 0 {
-            self.time_version = timestamp.try_into().ok();
+            self.time_version = u32::try_from(timestamp)
+                .ok()
+                .and_then(NonZeroU32::new)
+                .map(MetadataVersion::new);
         } else {
             self.time_version = None;
         }
@@ -313,9 +316,9 @@ where
     /// The next version number for non-root metadata.
     fn non_root_next_version(
         &self,
-        current_version: u32,
+        current_version: MetadataVersion,
         path: fn() -> MetadataPath,
-    ) -> Result<u32> {
+    ) -> Result<MetadataVersion> {
         if let Some(time_version) = self.time_version {
             // We can only use the time version if it's larger than our current version. If not,
             // then fall back to the next version.
@@ -425,10 +428,10 @@ where
             state: Root {
                 builder: RootMetadataBuilder::new()
                     .consistent_snapshot(true)
-                    .root_threshold(1)
-                    .targets_threshold(1)
-                    .snapshot_threshold(1)
-                    .timestamp_threshold(1),
+                    .root_threshold(MetadataThreshold::ONE)
+                    .targets_threshold(MetadataThreshold::ONE)
+                    .snapshot_threshold(MetadataThreshold::ONE)
+                    .timestamp_threshold(MetadataThreshold::ONE),
             },
         }
     }
@@ -745,7 +748,7 @@ where
                 Error::MetadataVersionMustBeSmallerThanMaxU32(MetadataPath::root())
             })?
         } else {
-            1
+            MetadataVersion::ONE
         };
 
         let root_builder = self
@@ -911,7 +914,7 @@ where
         } else {
             return Err(Error::MetadataNotFound {
                 path: MetadataPath::root(),
-                version: MetadataVersion::None,
+                version: None,
             });
         };
 
@@ -1335,7 +1338,7 @@ where
                 .map(|timestamp| timestamp.snapshot().clone())
                 .ok_or_else(|| Error::MetadataNotFound {
                     path: MetadataPath::snapshot(),
-                    version: MetadataVersion::None,
+                    version: None,
                 })?
         };
 
@@ -1458,7 +1461,7 @@ where
         } else {
             return Err(Error::MetadataNotFound {
                 path: MetadataPath::root(),
-                version: MetadataVersion::None,
+                version: None,
             });
         };
 
@@ -1483,18 +1486,14 @@ where
                 .repo
                 .store_metadata(
                     &MetadataPath::root(),
-                    MetadataVersion::Number(root.metadata.version()),
+                    Some(root.metadata.version()),
                     &mut root.raw.as_bytes(),
                 )
                 .await?;
 
             self.ctx
                 .repo
-                .store_metadata(
-                    &MetadataPath::root(),
-                    MetadataVersion::None,
-                    &mut root.raw.as_bytes(),
-                )
+                .store_metadata(&MetadataPath::root(), None, &mut root.raw.as_bytes())
                 .await?;
 
             root.metadata.consistent_snapshot()
@@ -1503,7 +1502,7 @@ where
         } else {
             return Err(Error::MetadataNotFound {
                 path: MetadataPath::root(),
-                version: MetadataVersion::None,
+                version: None,
             });
         };
 
@@ -1511,11 +1510,7 @@ where
             let path = MetadataPath::targets();
             self.ctx
                 .repo
-                .store_metadata(
-                    &path.clone(),
-                    MetadataVersion::None,
-                    &mut targets.raw.as_bytes(),
-                )
+                .store_metadata(&path.clone(), None, &mut targets.raw.as_bytes())
                 .await?;
 
             if consistent_snapshot {
@@ -1523,7 +1518,7 @@ where
                     .repo
                     .store_metadata(
                         &path,
-                        MetadataVersion::Number(targets.metadata.version()),
+                        Some(targets.metadata.version()),
                         &mut targets.raw.as_bytes(),
                     )
                     .await?;
@@ -1534,7 +1529,7 @@ where
             let path = MetadataPath::snapshot();
             self.ctx
                 .repo
-                .store_metadata(&path, MetadataVersion::None, &mut snapshot.raw.as_bytes())
+                .store_metadata(&path, None, &mut snapshot.raw.as_bytes())
                 .await?;
 
             if consistent_snapshot {
@@ -1542,7 +1537,7 @@ where
                     .repo
                     .store_metadata(
                         &path,
-                        MetadataVersion::Number(snapshot.metadata.version()),
+                        Some(snapshot.metadata.version()),
                         &mut snapshot.raw.as_bytes(),
                     )
                     .await?;
@@ -1554,7 +1549,7 @@ where
                 .repo
                 .store_metadata(
                     &MetadataPath::timestamp(),
-                    MetadataVersion::None,
+                    None,
                     &mut timestamp.raw.as_bytes(),
                 )
                 .await?;
@@ -1571,7 +1566,7 @@ mod tests {
         crate::{
             client::{Client, Config},
             crypto::Ed25519PrivateKey,
-            metadata::SignedMetadata,
+            metadata::{MetadataThreshold, SignedMetadata},
             pouf::Pouf1,
             repository::{EphemeralRepository, RepositoryProvider},
         },
@@ -1588,6 +1583,11 @@ mod tests {
         std::sync::LazyLock,
     };
 
+    const TWO: NonZeroU32 = NonZeroU32::new(2).unwrap();
+    const THREE: NonZeroU32 = NonZeroU32::new(3).unwrap();
+    const FOUR: NonZeroU32 = NonZeroU32::new(4).unwrap();
+    const FIVE: NonZeroU32 = NonZeroU32::new(5).unwrap();
+
     static KEYS: LazyLock<Vec<Ed25519PrivateKey>> = LazyLock::new(|| {
         let keys: &[&[u8]] = &[
             include_bytes!("../tests/ed25519/ed25519-1.pk8.der"),
@@ -1603,7 +1603,7 @@ mod tests {
     });
 
     fn create_root(
-        version: u32,
+        version: MetadataVersion,
         consistent_snapshot: bool,
         expires: DateTime<Utc>,
     ) -> SignedMetadata<Pouf1, RootMetadata> {
@@ -1611,19 +1611,19 @@ mod tests {
             .version(version)
             .consistent_snapshot(consistent_snapshot)
             .expires(expires)
-            .root_threshold(2)
+            .root_threshold(TWO)
             .root_key(KEYS[0].public().clone())
             .root_key(KEYS[1].public().clone())
             .root_key(KEYS[2].public().clone())
-            .targets_threshold(2)
+            .targets_threshold(TWO)
             .targets_key(KEYS[1].public().clone())
             .targets_key(KEYS[2].public().clone())
             .targets_key(KEYS[3].public().clone())
-            .snapshot_threshold(2)
+            .snapshot_threshold(TWO)
             .snapshot_key(KEYS[2].public().clone())
             .snapshot_key(KEYS[3].public().clone())
             .snapshot_key(KEYS[4].public().clone())
-            .timestamp_threshold(2)
+            .timestamp_threshold(TWO)
             .timestamp_key(KEYS[3].public().clone())
             .timestamp_key(KEYS[4].public().clone())
             .timestamp_key(KEYS[5].public().clone())
@@ -1642,7 +1642,7 @@ mod tests {
     }
 
     fn create_targets(
-        version: u32,
+        version: MetadataVersion,
         expires: DateTime<Utc>,
     ) -> SignedMetadata<Pouf1, TargetsMetadata> {
         let targets = TargetsMetadataBuilder::new()
@@ -1662,7 +1662,7 @@ mod tests {
     }
 
     fn create_snapshot(
-        version: u32,
+        version: MetadataVersion,
         expires: DateTime<Utc>,
         targets: &SignedMetadata<Pouf1, TargetsMetadata>,
         include_length_and_hashes: bool,
@@ -1698,7 +1698,7 @@ mod tests {
     }
 
     fn create_timestamp(
-        version: u32,
+        version: MetadataVersion,
         expires: DateTime<Utc>,
         snapshot: &SignedMetadata<Pouf1, SnapshotMetadata>,
         include_length_and_hashes: bool,
@@ -1759,7 +1759,7 @@ mod tests {
 
     fn assert_repo(
         repo: &EphemeralRepository<Pouf1>,
-        expected_metadata: &BTreeMap<(MetadataPath, MetadataVersion), &[u8]>,
+        expected_metadata: &BTreeMap<(MetadataPath, Option<MetadataVersion>), &[u8]>,
     ) {
         let actual_metadata = repo
             .metadata()
@@ -1804,10 +1804,10 @@ mod tests {
                 builder
                     .expires(expires1)
                     .consistent_snapshot(consistent_snapshot)
-                    .root_threshold(2)
-                    .targets_threshold(2)
-                    .snapshot_threshold(2)
-                    .timestamp_threshold(2)
+                    .root_threshold(TWO)
+                    .targets_threshold(TWO)
+                    .snapshot_threshold(TWO)
+                    .timestamp_threshold(TWO)
             })
             .unwrap()
             .stage_targets_with_builder(|builder| builder.expires(expires1))
@@ -1826,10 +1826,12 @@ mod tests {
 
         // Generate the expected metadata by hand, and make sure we produced
         // what we expected.
-        let signed_root1 = create_root(1, consistent_snapshot, expires1);
-        let signed_targets1 = create_targets(1, expires1);
-        let signed_snapshot1 = create_snapshot(1, expires1, &signed_targets1, true);
-        let signed_timestamp1 = create_timestamp(1, expires1, &signed_snapshot1, true);
+        let signed_root1 = create_root(MetadataVersion::ONE, consistent_snapshot, expires1);
+        let signed_targets1 = create_targets(MetadataVersion::ONE, expires1);
+        let signed_snapshot1 =
+            create_snapshot(MetadataVersion::ONE, expires1, &signed_targets1, true);
+        let signed_timestamp1 =
+            create_timestamp(MetadataVersion::ONE, expires1, &signed_snapshot1, true);
 
         let raw_root1 = signed_root1.to_raw().unwrap();
         let raw_targets1 = signed_targets1.to_raw().unwrap();
@@ -1847,25 +1849,13 @@ mod tests {
         // Make sure we stored the metadata correctly.
         let mut expected_metadata: BTreeMap<_, _> = vec![
             (
-                (MetadataPath::root(), MetadataVersion::Number(1)),
+                (MetadataPath::root(), Some(MetadataVersion::ONE)),
                 raw_root1.as_bytes(),
             ),
-            (
-                (MetadataPath::root(), MetadataVersion::None),
-                raw_root1.as_bytes(),
-            ),
-            (
-                (MetadataPath::targets(), MetadataVersion::None),
-                raw_targets1.as_bytes(),
-            ),
-            (
-                (MetadataPath::snapshot(), MetadataVersion::None),
-                raw_snapshot1.as_bytes(),
-            ),
-            (
-                (MetadataPath::timestamp(), MetadataVersion::None),
-                raw_timestamp1.as_bytes(),
-            ),
+            ((MetadataPath::root(), None), raw_root1.as_bytes()),
+            ((MetadataPath::targets(), None), raw_targets1.as_bytes()),
+            ((MetadataPath::snapshot(), None), raw_snapshot1.as_bytes()),
+            ((MetadataPath::timestamp(), None), raw_timestamp1.as_bytes()),
         ]
         .into_iter()
         .collect();
@@ -1873,11 +1863,11 @@ mod tests {
         if consistent_snapshot {
             expected_metadata.extend(vec![
                 (
-                    (MetadataPath::targets(), MetadataVersion::Number(1)),
+                    (MetadataPath::targets(), Some(MetadataVersion::ONE)),
                     raw_targets1.as_bytes(),
                 ),
                 (
-                    (MetadataPath::snapshot(), MetadataVersion::Number(1)),
+                    (MetadataPath::snapshot(), Some(MetadataVersion::ONE)),
                     raw_snapshot1.as_bytes(),
                 ),
             ]);
@@ -1896,18 +1886,21 @@ mod tests {
         .await
         .unwrap();
         client.update().await.unwrap();
-        assert_eq!(client.database().trusted_root().version(), 1);
+        assert_eq!(
+            client.database().trusted_root().version(),
+            MetadataVersion::ONE
+        );
         assert_eq!(
             client.database().trusted_targets().map(|m| m.version()),
-            Some(1)
+            Some(MetadataVersion::ONE)
         );
         assert_eq!(
             client.database().trusted_snapshot().map(|m| m.version()),
-            Some(1)
+            Some(MetadataVersion::ONE)
         );
         assert_eq!(
             client.database().trusted_timestamp().map(|m| m.version()),
-            Some(1)
+            Some(MetadataVersion::ONE)
         );
 
         // Create a new metadata, derived from the tuf database we created
@@ -1936,10 +1929,10 @@ mod tests {
             .unwrap();
 
         // Make sure the new metadata was generated as expected.
-        let signed_root2 = create_root(2, consistent_snapshot, expires2);
-        let signed_targets2 = create_targets(2, expires2);
-        let signed_snapshot2 = create_snapshot(2, expires2, &signed_targets2, false);
-        let signed_timestamp2 = create_timestamp(2, expires2, &signed_snapshot2, false);
+        let signed_root2 = create_root(TWO.into(), consistent_snapshot, expires2);
+        let signed_targets2 = create_targets(TWO.into(), expires2);
+        let signed_snapshot2 = create_snapshot(TWO.into(), expires2, &signed_targets2, false);
+        let signed_timestamp2 = create_timestamp(TWO.into(), expires2, &signed_snapshot2, false);
 
         let raw_root2 = signed_root2.to_raw().unwrap();
         let raw_targets2 = signed_targets2.to_raw().unwrap();
@@ -1957,35 +1950,23 @@ mod tests {
         // Check that the new metadata was written.
         expected_metadata.extend(vec![
             (
-                (MetadataPath::root(), MetadataVersion::Number(2)),
+                (MetadataPath::root(), Some(TWO.into())),
                 raw_root2.as_bytes(),
             ),
-            (
-                (MetadataPath::root(), MetadataVersion::None),
-                raw_root2.as_bytes(),
-            ),
-            (
-                (MetadataPath::targets(), MetadataVersion::None),
-                raw_targets2.as_bytes(),
-            ),
-            (
-                (MetadataPath::snapshot(), MetadataVersion::None),
-                raw_snapshot2.as_bytes(),
-            ),
-            (
-                (MetadataPath::timestamp(), MetadataVersion::None),
-                raw_timestamp2.as_bytes(),
-            ),
+            ((MetadataPath::root(), None), raw_root2.as_bytes()),
+            ((MetadataPath::targets(), None), raw_targets2.as_bytes()),
+            ((MetadataPath::snapshot(), None), raw_snapshot2.as_bytes()),
+            ((MetadataPath::timestamp(), None), raw_timestamp2.as_bytes()),
         ]);
 
         if consistent_snapshot {
             expected_metadata.extend(vec![
                 (
-                    (MetadataPath::targets(), MetadataVersion::Number(2)),
+                    (MetadataPath::targets(), Some(TWO.into())),
                     raw_targets2.as_bytes(),
                 ),
                 (
-                    (MetadataPath::snapshot(), MetadataVersion::Number(2)),
+                    (MetadataPath::snapshot(), Some(TWO.into())),
                     raw_snapshot2.as_bytes(),
                 ),
             ]);
@@ -1996,18 +1977,18 @@ mod tests {
         // And make sure the client can update to the latest metadata.
         let mut client = Client::from_parts(parts);
         client.update().await.unwrap();
-        assert_eq!(client.database().trusted_root().version(), 2);
+        assert_eq!(client.database().trusted_root().version(), TWO.into());
         assert_eq!(
             client.database().trusted_targets().map(|m| m.version()),
-            Some(2)
+            Some(TWO.into())
         );
         assert_eq!(
             client.database().trusted_snapshot().map(|m| m.version()),
-            Some(2)
+            Some(TWO.into())
         );
         assert_eq!(
             client.database().trusted_timestamp().map(|m| m.version()),
-            Some(2)
+            Some(TWO.into())
         );
     }
 
@@ -2045,7 +2026,10 @@ mod tests {
         .unwrap();
 
         assert!(client.update().await.unwrap());
-        assert_eq!(client.database().trusted_root().version(), 1);
+        assert_eq!(
+            client.database().trusted_root().version(),
+            MetadataVersion::ONE
+        );
 
         // Make sure doing another commit makes no changes.
         let mut parts = client.into_parts();
@@ -2062,7 +2046,10 @@ mod tests {
 
         let mut client = Client::from_parts(parts);
         assert!(!client.update().await.unwrap());
-        assert_eq!(client.database().trusted_root().version(), 1);
+        assert_eq!(
+            client.database().trusted_root().version(),
+            MetadataVersion::ONE
+        );
     }
 
     #[test]
@@ -2102,7 +2089,10 @@ mod tests {
         .unwrap();
 
         assert!(client.update().await.unwrap());
-        assert_eq!(client.database().trusted_root().version(), 1);
+        assert_eq!(
+            client.database().trusted_root().version(),
+            MetadataVersion::ONE
+        );
         assert_eq!(
             client
                 .database()
@@ -2114,7 +2104,10 @@ mod tests {
 
         // Another update should not fetch anything.
         assert!(!client.update().await.unwrap());
-        assert_eq!(client.database().trusted_root().version(), 1);
+        assert_eq!(
+            client.database().trusted_root().version(),
+            MetadataVersion::ONE
+        );
 
         // Now bump the root to version 2. We sign the root metadata with both
         // key 1 and 2, but the builder should only trust key 2.
@@ -2131,7 +2124,7 @@ mod tests {
 
         let mut client = Client::from_parts(parts);
         assert!(client.update().await.unwrap());
-        assert_eq!(client.database().trusted_root().version(), 2);
+        assert_eq!(client.database().trusted_root().version(), TWO.into());
         assert_eq!(
             client.database().trusted_root().consistent_snapshot(),
             consistent_snapshot
@@ -2147,7 +2140,7 @@ mod tests {
 
         // Another update should not fetch anything.
         assert!(!client.update().await.unwrap());
-        assert_eq!(client.database().trusted_root().version(), 2);
+        assert_eq!(client.database().trusted_root().version(), TWO.into());
 
         // Now bump the root to version 3. The metadata will only be signed with
         // key 2, and trusted by key 2.
@@ -2165,7 +2158,7 @@ mod tests {
 
         let mut client = Client::from_parts(parts);
         assert!(client.update().await.unwrap());
-        assert_eq!(client.database().trusted_root().version(), 3);
+        assert_eq!(client.database().trusted_root().version(), THREE.into());
         assert_eq!(
             client
                 .database()
@@ -2177,7 +2170,7 @@ mod tests {
 
         // Another update should not fetch anything.
         assert!(!client.update().await.unwrap());
-        assert_eq!(client.database().trusted_root().version(), 3);
+        assert_eq!(client.database().trusted_root().version(), THREE.into());
     }
 
     #[test]
@@ -2201,16 +2194,18 @@ mod tests {
                     .trusted_targets_keys(&[&KEYS[0]])
                     .trusted_snapshot_keys(&[&KEYS[0]])
                     .trusted_timestamp_keys(&[&KEYS[0]])
-                    .stage_root_with_builder(|builder| builder.version(3))
+                    .stage_root_with_builder(|builder| builder.version(THREE))
                     .unwrap()
                     .commit()
                     .await,
                 Err(Error::AttemptedMetadataRollBack {
                     role,
-                    trusted_version: 1,
-                    new_version: 3,
+                    trusted_version,
+                    new_version,
                 })
                 if role == MetadataPath::root()
+                    && trusted_version == MetadataVersion::ONE
+                    && new_version == THREE.into()
             );
         })
     }
@@ -2440,31 +2435,31 @@ mod tests {
 
             let mut expected_metadata: BTreeMap<_, _> = vec![
                 (
-                    (MetadataPath::root(), MetadataVersion::Number(1)),
+                    (MetadataPath::root(), Some(MetadataVersion::ONE)),
                     metadata1.root().unwrap().as_bytes(),
                 ),
                 (
-                    (MetadataPath::root(), MetadataVersion::None),
+                    (MetadataPath::root(), None),
                     metadata1.root().unwrap().as_bytes(),
                 ),
                 (
-                    (MetadataPath::targets(), MetadataVersion::Number(1)),
+                    (MetadataPath::targets(), Some(MetadataVersion::ONE)),
                     metadata1.targets().unwrap().as_bytes(),
                 ),
                 (
-                    (MetadataPath::targets(), MetadataVersion::None),
+                    (MetadataPath::targets(), None),
                     metadata1.targets().unwrap().as_bytes(),
                 ),
                 (
-                    (MetadataPath::snapshot(), MetadataVersion::Number(1)),
+                    (MetadataPath::snapshot(), Some(MetadataVersion::ONE)),
                     metadata1.snapshot().unwrap().as_bytes(),
                 ),
                 (
-                    (MetadataPath::snapshot(), MetadataVersion::None),
+                    (MetadataPath::snapshot(), None),
                     metadata1.snapshot().unwrap().as_bytes(),
                 ),
                 (
-                    (MetadataPath::timestamp(), MetadataVersion::None),
+                    (MetadataPath::timestamp(), None),
                     metadata1.timestamp().unwrap().as_bytes(),
                 ),
             ]
@@ -2501,23 +2496,23 @@ mod tests {
 
             expected_metadata.extend(vec![
                 (
-                    (MetadataPath::targets(), MetadataVersion::Number(2)),
+                    (MetadataPath::targets(), Some(TWO.into())),
                     metadata2.targets().unwrap().as_bytes(),
                 ),
                 (
-                    (MetadataPath::targets(), MetadataVersion::None),
+                    (MetadataPath::targets(), None),
                     metadata2.targets().unwrap().as_bytes(),
                 ),
                 (
-                    (MetadataPath::snapshot(), MetadataVersion::Number(2)),
+                    (MetadataPath::snapshot(), Some(TWO.into())),
                     metadata2.snapshot().unwrap().as_bytes(),
                 ),
                 (
-                    (MetadataPath::snapshot(), MetadataVersion::None),
+                    (MetadataPath::snapshot(), None),
                     metadata2.snapshot().unwrap().as_bytes(),
                 ),
                 (
-                    (MetadataPath::timestamp(), MetadataVersion::None),
+                    (MetadataPath::timestamp(), None),
                     metadata2.timestamp().unwrap().as_bytes(),
                 ),
             ]);
@@ -2549,15 +2544,15 @@ mod tests {
 
             expected_metadata.extend(vec![
                 (
-                    (MetadataPath::snapshot(), MetadataVersion::Number(3)),
+                    (MetadataPath::snapshot(), Some(THREE.into())),
                     metadata3.snapshot().unwrap().as_bytes(),
                 ),
                 (
-                    (MetadataPath::snapshot(), MetadataVersion::None),
+                    (MetadataPath::snapshot(), None),
                     metadata3.snapshot().unwrap().as_bytes(),
                 ),
                 (
-                    (MetadataPath::timestamp(), MetadataVersion::None),
+                    (MetadataPath::timestamp(), None),
                     metadata3.timestamp().unwrap().as_bytes(),
                 ),
             ]);
@@ -2586,7 +2581,7 @@ mod tests {
             assert!(metadata4.timestamp().is_some());
 
             expected_metadata.extend(vec![(
-                (MetadataPath::timestamp(), MetadataVersion::None),
+                (MetadataPath::timestamp(), None),
                 metadata4.timestamp().unwrap().as_bytes(),
             )]);
 
@@ -2647,7 +2642,7 @@ mod tests {
                         delegation_path.clone(),
                         MetadataDescription::from_slice(
                             raw_delegated_targets.as_bytes(),
-                            1,
+                            MetadataVersion::ONE,
                             &[HashAlgorithm::Sha256],
                         )
                         .unwrap(),
@@ -2704,7 +2699,7 @@ mod tests {
                         delegation_path.clone(),
                         MetadataDescription::from_slice(
                             raw_delegated_targets.as_bytes(),
-                            1,
+                            MetadataVersion::ONE,
                             &[HashAlgorithm::Sha256],
                         )
                         .unwrap(),
@@ -2720,7 +2715,7 @@ mod tests {
             assert_eq!(
                 &**database.trusted_targets().unwrap(),
                 &TargetsMetadataBuilder::new()
-                    .version(2)
+                    .version(TWO)
                     .expires(expires)
                     .insert_target_from_slice(target_path1.clone(), target_file1, hash_algs)
                     .unwrap()
@@ -2778,10 +2773,10 @@ mod tests {
 
             db.update_metadata(&metadata2).unwrap();
 
-            assert_eq!(db.trusted_root().version(), 2);
-            assert_eq!(db.trusted_targets().unwrap().version(), 2);
-            assert_eq!(db.trusted_snapshot().unwrap().version(), 2);
-            assert_eq!(db.trusted_timestamp().unwrap().version(), 2);
+            assert_eq!(db.trusted_root().version(), TWO.into());
+            assert_eq!(db.trusted_targets().unwrap().version(), TWO.into());
+            assert_eq!(db.trusted_snapshot().unwrap().version(), TWO.into());
+            assert_eq!(db.trusted_timestamp().unwrap().version(), TWO.into());
 
             // Note that rotating the timestamp keys purges all the metadata, so add it back in.
 
@@ -2802,10 +2797,10 @@ mod tests {
 
             db.update_metadata(&metadata3).unwrap();
 
-            assert_eq!(db.trusted_root().version(), 3);
-            assert_eq!(db.trusted_targets().unwrap().version(), 3);
-            assert_eq!(db.trusted_snapshot().unwrap().version(), 3);
-            assert_eq!(db.trusted_timestamp().unwrap().version(), 3);
+            assert_eq!(db.trusted_root().version(), THREE.into());
+            assert_eq!(db.trusted_targets().unwrap().version(), THREE.into());
+            assert_eq!(db.trusted_snapshot().unwrap().version(), THREE.into());
+            assert_eq!(db.trusted_timestamp().unwrap().version(), THREE.into());
 
             // Rotating the targets key should make a new targets, snapshot, and timestamp.
             let metadata4 = RepoBuilder::from_database(&mut repo, &db)
@@ -2824,10 +2819,10 @@ mod tests {
 
             db.update_metadata(&metadata4).unwrap();
 
-            assert_eq!(db.trusted_root().version(), 4);
-            assert_eq!(db.trusted_targets().unwrap().version(), 4);
-            assert_eq!(db.trusted_snapshot().unwrap().version(), 4);
-            assert_eq!(db.trusted_timestamp().unwrap().version(), 4);
+            assert_eq!(db.trusted_root().version(), FOUR.into());
+            assert_eq!(db.trusted_targets().unwrap().version(), FOUR.into());
+            assert_eq!(db.trusted_snapshot().unwrap().version(), FOUR.into());
+            assert_eq!(db.trusted_timestamp().unwrap().version(), FOUR.into());
 
             // Rotating the root key should make a new targets, snapshot, and timestamp.
             let metadata5 = RepoBuilder::from_database(&mut repo, &db)
@@ -2847,10 +2842,10 @@ mod tests {
 
             db.update_metadata(&metadata5).unwrap();
 
-            assert_eq!(db.trusted_root().version(), 5);
-            assert_eq!(db.trusted_targets().unwrap().version(), 5);
-            assert_eq!(db.trusted_snapshot().unwrap().version(), 5);
-            assert_eq!(db.trusted_timestamp().unwrap().version(), 5);
+            assert_eq!(db.trusted_root().version(), FIVE.into());
+            assert_eq!(db.trusted_targets().unwrap().version(), FIVE.into());
+            assert_eq!(db.trusted_snapshot().unwrap().version(), FIVE.into());
+            assert_eq!(db.trusted_timestamp().unwrap().version(), FIVE.into());
         })
     }
 
@@ -2903,10 +2898,16 @@ mod tests {
             db.update_metadata_with_start_time(&metadata2, &current_time)
                 .unwrap();
 
-            assert_eq!(db.trusted_root().version(), 1);
-            assert_eq!(db.trusted_targets().unwrap().version(), 1);
-            assert_eq!(db.trusted_snapshot().unwrap().version(), 1);
-            assert_eq!(db.trusted_timestamp().unwrap().version(), 2);
+            assert_eq!(db.trusted_root().version(), MetadataVersion::ONE);
+            assert_eq!(
+                db.trusted_targets().unwrap().version(),
+                MetadataVersion::ONE
+            );
+            assert_eq!(
+                db.trusted_snapshot().unwrap().version(),
+                MetadataVersion::ONE
+            );
+            assert_eq!(db.trusted_timestamp().unwrap().version(), TWO.into());
 
             // Advance time to past the snapshot expiration.
             let current_time = epoch + snapshot_expires + Duration::seconds(1);
@@ -2928,10 +2929,13 @@ mod tests {
             db.update_metadata_with_start_time(&metadata3, &current_time)
                 .unwrap();
 
-            assert_eq!(db.trusted_root().version(), 1);
-            assert_eq!(db.trusted_targets().unwrap().version(), 1);
-            assert_eq!(db.trusted_snapshot().unwrap().version(), 2);
-            assert_eq!(db.trusted_timestamp().unwrap().version(), 3);
+            assert_eq!(db.trusted_root().version(), MetadataVersion::ONE);
+            assert_eq!(
+                db.trusted_targets().unwrap().version(),
+                MetadataVersion::ONE
+            );
+            assert_eq!(db.trusted_snapshot().unwrap().version(), TWO.into());
+            assert_eq!(db.trusted_timestamp().unwrap().version(), THREE.into());
 
             // Advance time to past the targets expiration.
             let current_time = epoch + targets_expires + Duration::seconds(1);
@@ -2953,10 +2957,10 @@ mod tests {
             db.update_metadata_with_start_time(&metadata4, &current_time)
                 .unwrap();
 
-            assert_eq!(db.trusted_root().version(), 1);
-            assert_eq!(db.trusted_targets().unwrap().version(), 2);
-            assert_eq!(db.trusted_snapshot().unwrap().version(), 3);
-            assert_eq!(db.trusted_timestamp().unwrap().version(), 4);
+            assert_eq!(db.trusted_root().version(), MetadataVersion::ONE);
+            assert_eq!(db.trusted_targets().unwrap().version(), TWO.into());
+            assert_eq!(db.trusted_snapshot().unwrap().version(), THREE.into());
+            assert_eq!(db.trusted_timestamp().unwrap().version(), FOUR.into());
 
             // Advance time to past the root expiration.
             //
@@ -2983,10 +2987,10 @@ mod tests {
             db.update_metadata_with_start_time(&metadata5, &current_time)
                 .unwrap();
 
-            assert_eq!(db.trusted_root().version(), 2);
-            assert_eq!(db.trusted_targets().unwrap().version(), 3);
-            assert_eq!(db.trusted_snapshot().unwrap().version(), 4);
-            assert_eq!(db.trusted_timestamp().unwrap().version(), 5);
+            assert_eq!(db.trusted_root().version(), TWO.into());
+            assert_eq!(db.trusted_targets().unwrap().version(), THREE.into());
+            assert_eq!(db.trusted_snapshot().unwrap().version(), FOUR.into());
+            assert_eq!(db.trusted_timestamp().unwrap().version(), FIVE.into());
         })
     }
 
@@ -3028,10 +3032,10 @@ mod tests {
 
             db.update_metadata(&metadata2).unwrap();
 
-            assert_eq!(db.trusted_root().version(), 1);
-            assert_eq!(db.trusted_targets().unwrap().version(), 2);
-            assert_eq!(db.trusted_snapshot().unwrap().version(), 2);
-            assert_eq!(db.trusted_timestamp().unwrap().version(), 2);
+            assert_eq!(db.trusted_root().version(), MetadataVersion::ONE);
+            assert_eq!(db.trusted_targets().unwrap().version(), TWO.into());
+            assert_eq!(db.trusted_snapshot().unwrap().version(), TWO.into());
+            assert_eq!(db.trusted_timestamp().unwrap().version(), TWO.into());
         })
     }
 
@@ -3056,10 +3060,10 @@ mod tests {
                 Database::from_trusted_metadata_with_start_time(&metadata, &current_time).unwrap();
 
             // The initial version should be the current time.
-            assert_eq!(db.trusted_root().version(), 1);
-            assert_eq!(db.trusted_targets().map(|m| m.version()), Some(5));
-            assert_eq!(db.trusted_snapshot().map(|m| m.version()), Some(5));
-            assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(5));
+            assert_eq!(db.trusted_root().version(), MetadataVersion::ONE);
+            assert_eq!(db.trusted_targets().map(|m| m.version().get()), Some(5));
+            assert_eq!(db.trusted_snapshot().map(|m| m.version().get()), Some(5));
+            assert_eq!(db.trusted_timestamp().map(|m| m.version().get()), Some(5));
 
             // Generating metadata for the same timestamp should advance it by 1.
             let metadata = RepoBuilder::from_database(&mut repo, &db)
@@ -3080,10 +3084,10 @@ mod tests {
             db.update_metadata_with_start_time(&metadata, &current_time)
                 .unwrap();
 
-            assert_eq!(db.trusted_root().version(), 2);
-            assert_eq!(db.trusted_targets().map(|m| m.version()), Some(6));
-            assert_eq!(db.trusted_snapshot().map(|m| m.version()), Some(6));
-            assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(6));
+            assert_eq!(db.trusted_root().version(), TWO.into());
+            assert_eq!(db.trusted_targets().map(|m| m.version().get()), Some(6));
+            assert_eq!(db.trusted_snapshot().map(|m| m.version().get()), Some(6));
+            assert_eq!(db.trusted_timestamp().map(|m| m.version().get()), Some(6));
 
             // Generating metadata for a new timestamp should advance the versions to that amount.
             let current_time = Utc.timestamp_opt(10, 0).unwrap();
@@ -3105,10 +3109,10 @@ mod tests {
             db.update_metadata_with_start_time(&metadata, &current_time)
                 .unwrap();
 
-            assert_eq!(db.trusted_root().version(), 3);
-            assert_eq!(db.trusted_targets().map(|m| m.version()), Some(10));
-            assert_eq!(db.trusted_snapshot().map(|m| m.version()), Some(10));
-            assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(10));
+            assert_eq!(db.trusted_root().version(), THREE.into());
+            assert_eq!(db.trusted_targets().map(|m| m.version().get()), Some(10));
+            assert_eq!(db.trusted_snapshot().map(|m| m.version().get()), Some(10));
+            assert_eq!(db.trusted_timestamp().map(|m| m.version().get()), Some(10));
         })
     }
 
@@ -3133,10 +3137,19 @@ mod tests {
             let mut db =
                 Database::from_trusted_metadata_with_start_time(&metadata, &current_time).unwrap();
 
-            assert_eq!(db.trusted_root().version(), 1);
-            assert_eq!(db.trusted_targets().map(|m| m.version()), Some(1));
-            assert_eq!(db.trusted_snapshot().map(|m| m.version()), Some(1));
-            assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(1));
+            assert_eq!(db.trusted_root().version(), MetadataVersion::ONE);
+            assert_eq!(
+                db.trusted_targets().map(|m| m.version()),
+                Some(MetadataVersion::ONE)
+            );
+            assert_eq!(
+                db.trusted_snapshot().map(|m| m.version()),
+                Some(MetadataVersion::ONE)
+            );
+            assert_eq!(
+                db.trusted_timestamp().map(|m| m.version()),
+                Some(MetadataVersion::ONE)
+            );
 
             // A sub-second timestamp should advance the version by 1.
             let current_time = Utc.timestamp_opt(0, 3).unwrap();
@@ -3158,10 +3171,13 @@ mod tests {
             db.update_metadata_with_start_time(&metadata, &current_time)
                 .unwrap();
 
-            assert_eq!(db.trusted_root().version(), 2);
-            assert_eq!(db.trusted_targets().map(|m| m.version()), Some(2));
-            assert_eq!(db.trusted_snapshot().map(|m| m.version()), Some(2));
-            assert_eq!(db.trusted_timestamp().map(|m| m.version()), Some(2));
+            assert_eq!(db.trusted_root().version(), TWO.into());
+            assert_eq!(db.trusted_targets().map(|m| m.version()), Some(TWO.into()));
+            assert_eq!(db.trusted_snapshot().map(|m| m.version()), Some(TWO.into()));
+            assert_eq!(
+                db.trusted_timestamp().map(|m| m.version()),
+                Some(TWO.into())
+            );
         })
     }
 
@@ -3185,7 +3201,7 @@ mod tests {
                 Err(Error::MetadataRoleDoesNotHaveEnoughKeyIds {
                     role,
                     key_ids: 0,
-                    threshold: 1,
+                    threshold: MetadataThreshold::ONE,
                 }) if role == MetadataPath::root() => {}
                 Err(err) => panic!("unexpected error: {}", err),
                 Ok(_) => panic!("unexpected success"),

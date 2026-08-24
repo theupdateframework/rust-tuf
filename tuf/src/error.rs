@@ -3,7 +3,7 @@
 use {
     crate::{
         crypto::KeyId,
-        metadata::{MetadataPath, MetadataVersion, TargetPath},
+        metadata::{MetadataPath, MetadataThreshold, MetadataVersion, TargetPath},
     },
     chrono::{DateTime, offset::Utc},
     std::io,
@@ -96,13 +96,13 @@ pub enum Error {
     NoSupportedHashAlgorithm,
 
     /// The metadata was not found.
-    #[error("metadata {path} at version {version} not found")]
+    #[error("metadata {path} at version {version:?} not found")]
     MetadataNotFound {
         /// The metadata path.
         path: MetadataPath,
 
         /// The metadata version.
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
     },
 
     /// The target was not found.
@@ -122,17 +122,9 @@ pub enum Error {
     #[error("unknown signature scheme: {0}")]
     UnknownSignatureScheme(String),
 
-    /// The metadata's version must be greater than 0.
-    #[error("metadata {0} version should be greater than zero")]
-    MetadataVersionMustBeGreaterThanZero(MetadataPath),
-
     /// The metadata's version must be less than `u32::MAX`.
     #[error("metadata {0} version should be less than max u32")]
     MetadataVersionMustBeSmallerThanMaxU32(MetadataPath),
-
-    /// The metadata threshold must be greater than 0.
-    #[error("metadata {0} threshold must be greater than zero")]
-    MetadataThresholdMustBeGreaterThanZero(MetadataPath),
 
     /// The metadata role has a duplicate keyid.
     #[error("metadata role {role} has duplicate key id {key_id}")]
@@ -151,7 +143,7 @@ pub enum Error {
         /// The number of keyids.
         key_ids: usize,
         /// The minimum threshold of keys.
-        threshold: u32,
+        threshold: MetadataThreshold,
     },
 
     /// The metadata was not signed with enough valid signatures.
@@ -164,7 +156,7 @@ pub enum Error {
         /// The number of signatures which are valid.
         number_of_valid_signatures: u32,
         /// The minimum number of valid signatures.
-        threshold: u32,
+        threshold: MetadataThreshold,
     },
 
     /// Attempted to update metadata with an older version.
@@ -175,9 +167,9 @@ pub enum Error {
         /// The metadata.
         role: MetadataPath,
         /// The trusted metadata's version.
-        trusted_version: u32,
+        trusted_version: MetadataVersion,
         /// The new metadata's version.
-        new_version: u32,
+        new_version: MetadataVersion,
     },
 
     /// The parent metadata expected the child metadata to be at one version, but was found to be at
@@ -191,9 +183,9 @@ pub enum Error {
         /// The child metadata that has an unexpected version.
         child_role: MetadataPath,
         /// The expected version of the child metadata.
-        expected_version: u32,
+        expected_version: MetadataVersion,
         /// The actual version of the child metadata.
-        new_version: u32,
+        new_version: MetadataVersion,
     },
 
     /// The parent metadata does not contain a description of the child metadata.

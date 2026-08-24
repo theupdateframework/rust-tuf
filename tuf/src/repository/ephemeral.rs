@@ -27,7 +27,7 @@ pub struct EphemeralRepository<D> {
     _pouf: PhantomData<D>,
 }
 
-type MetadataMap = HashMap<(MetadataPath, MetadataVersion), Arc<[u8]>>;
+type MetadataMap = HashMap<(MetadataPath, Option<MetadataVersion>), Arc<[u8]>>;
 type TargetsMap = HashMap<TargetPath, Arc<[u8]>>;
 
 #[derive(Debug, Default)]
@@ -81,7 +81,7 @@ where
     fn fetch_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         let bytes = match self
             .inner
@@ -118,7 +118,7 @@ where
     fn store_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin + 'a),
     ) -> BoxFuture<'a, Result<()>> {
         store_metadata(&self.inner, meta_path, version, metadata)
@@ -187,7 +187,7 @@ where
     fn fetch_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         let key = (meta_path.clone(), version);
         let bytes = if let Some(bytes) = self.staging_repo.read().unwrap().metadata.get(&key) {
@@ -234,7 +234,7 @@ where
     fn store_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         store_metadata(&self.staging_repo, meta_path, version, metadata)
@@ -252,7 +252,7 @@ where
 fn store_metadata<'a>(
     inner: &'a RwLock<Inner>,
     meta_path: &MetadataPath,
-    version: MetadataVersion,
+    version: Option<MetadataVersion>,
     metadata: &'a mut (dyn AsyncRead + Send + Unpin),
 ) -> BoxFuture<'a, Result<()>> {
     let meta_path = meta_path.clone();
@@ -351,7 +351,7 @@ mod test {
             let repo = EphemeralRepository::<Pouf1>::new();
 
             let meta_path = MetadataPath::new("meta").unwrap();
-            let meta_version = MetadataVersion::None;
+            let meta_version = None;
             let target_path = TargetPath::new("target").unwrap();
 
             // First, write some stuff to the repository.
@@ -456,7 +456,7 @@ mod test {
 
             repo.store_metadata(
                 &MetadataPath::new("meta1").unwrap(),
-                MetadataVersion::None,
+                None,
                 &mut "meta1".as_bytes(),
             )
             .await
@@ -469,7 +469,7 @@ mod test {
 
             repo.store_metadata(
                 &MetadataPath::new("meta2").unwrap(),
-                MetadataVersion::None,
+                None,
                 &mut "meta2".as_bytes(),
             )
             .await
@@ -478,7 +478,7 @@ mod test {
             batch
                 .store_metadata(
                     &MetadataPath::new("meta3").unwrap(),
-                    MetadataVersion::None,
+                    None,
                     &mut "meta3".as_bytes(),
                 )
                 .await

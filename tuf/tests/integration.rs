@@ -7,6 +7,7 @@ use tuf::crypto::{Ed25519PrivateKey, HashAlgorithm, PrivateKey};
 use tuf::metadata::{
     Delegation, Delegations, MetadataDescription, MetadataPath, TargetPath, TargetsMetadataBuilder,
 };
+use tuf::metadata::{MetadataThreshold, MetadataVersion};
 use tuf::pouf::Pouf1;
 use tuf::repo_builder::RepoBuilder;
 use tuf::repository::EphemeralRepository;
@@ -50,7 +51,12 @@ fn simple_delegation() {
             .stage_snapshot_with_builder(|builder| {
                 builder.insert_metadata_description(
                     MetadataPath::new("delegation").unwrap(),
-                    MetadataDescription::from_slice(&[0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+                    MetadataDescription::from_slice(
+                        &[0u8],
+                        MetadataVersion::ONE,
+                        &[HashAlgorithm::Sha256],
+                    )
+                    .unwrap(),
                 )
             })
             .unwrap()
@@ -123,13 +129,21 @@ fn nested_delegation() {
                 builder
                     .insert_metadata_description(
                         MetadataPath::new("delegation-a").unwrap(),
-                        MetadataDescription::from_slice(&[0u8], 1, &[HashAlgorithm::Sha256])
-                            .unwrap(),
+                        MetadataDescription::from_slice(
+                            &[0u8],
+                            MetadataVersion::ONE,
+                            &[HashAlgorithm::Sha256],
+                        )
+                        .unwrap(),
                     )
                     .insert_metadata_description(
                         MetadataPath::new("delegation-b").unwrap(),
-                        MetadataDescription::from_slice(&[0u8], 1, &[HashAlgorithm::Sha256])
-                            .unwrap(),
+                        MetadataDescription::from_slice(
+                            &[0u8],
+                            MetadataVersion::ONE,
+                            &[HashAlgorithm::Sha256],
+                        )
+                        .unwrap(),
                     )
             })
             .unwrap()
@@ -230,7 +244,12 @@ fn rejects_bad_delegation_signatures() {
             .stage_snapshot_with_builder(|builder| {
                 builder.insert_metadata_description(
                     MetadataPath::new("delegation").unwrap(),
-                    MetadataDescription::from_slice(&[0u8], 1, &[HashAlgorithm::Sha256]).unwrap(),
+                    MetadataDescription::from_slice(
+                        &[0u8],
+                        MetadataVersion::ONE,
+                        &[HashAlgorithm::Sha256],
+                    )
+                    .unwrap(),
                 )
             })
             .unwrap()
@@ -263,7 +282,7 @@ fn rejects_bad_delegation_signatures() {
             Err(Error::MetadataMissingSignatures {
                 role,
                 number_of_valid_signatures: 0,
-                threshold: 1,
+                threshold: MetadataThreshold::ONE,
             })
             if role == MetadataPath::new("delegation").unwrap()
         );
@@ -400,7 +419,7 @@ fn diamond_delegation() {
                         MetadataPath::new("delegation-a").unwrap(),
                         MetadataDescription::from_slice(
                             raw_delegation_a.as_bytes(),
-                            1,
+                            MetadataVersion::ONE,
                             &[HashAlgorithm::Sha256],
                         )
                         .unwrap(),
@@ -409,7 +428,7 @@ fn diamond_delegation() {
                         MetadataPath::new("delegation-b").unwrap(),
                         MetadataDescription::from_slice(
                             raw_delegation_b.as_bytes(),
-                            1,
+                            MetadataVersion::ONE,
                             &[HashAlgorithm::Sha256],
                         )
                         .unwrap(),
@@ -418,7 +437,7 @@ fn diamond_delegation() {
                         MetadataPath::new("delegation-c").unwrap(),
                         MetadataDescription::from_slice(
                             raw_delegation_c.as_bytes(),
-                            1,
+                            MetadataVersion::ONE,
                             &[HashAlgorithm::Sha256],
                         )
                         .unwrap(),
@@ -461,7 +480,7 @@ fn diamond_delegation() {
             Err(Error::MetadataMissingSignatures {
                 role,
                 number_of_valid_signatures: 0,
-                threshold: 1,
+                threshold: MetadataThreshold::ONE,
             })
             if role == MetadataPath::new("delegation-c").unwrap()
         );

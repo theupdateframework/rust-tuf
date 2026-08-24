@@ -32,7 +32,7 @@ use std::task::{Context, Poll};
 use tower::{Service, ServiceBuilder, ServiceExt as _};
 use tuf::client::{Client, Config};
 use tuf::crypto::{Ed25519PrivateKey, PrivateKey};
-use tuf::metadata::{MetadataVersion, TargetPath};
+use tuf::metadata::{MetadataThreshold, MetadataVersion, TargetPath};
 use tuf::pouf::Pouf1;
 use tuf::repository::{
     EphemeralRepository, FileSystemRepository, RepositoryProvider, RepositoryStorage,
@@ -176,8 +176,8 @@ where
 {
     let mut client = Client::with_trusted_root_keys(
         config,
-        MetadataVersion::Number(1),
-        1,
+        MetadataVersion::ONE,
+        MetadataThreshold::ONE,
         [root_public_key],
         local,
         remote,

@@ -3,7 +3,7 @@ use futures_util::io::Cursor;
 use tuf::Result;
 use tuf::client::{Client, Config};
 use tuf::crypto::{Ed25519PrivateKey, PrivateKey, PublicKey};
-use tuf::metadata::{MetadataVersion, TargetPath};
+use tuf::metadata::{MetadataThreshold, MetadataVersion, TargetPath};
 use tuf::pouf::Pouf1;
 use tuf::repo_builder::RepoBuilder;
 use tuf::repository::EphemeralRepository;
@@ -52,8 +52,8 @@ async fn init_client(
     let local = EphemeralRepository::new();
     let mut client = Client::with_trusted_root_keys(
         config,
-        MetadataVersion::Number(1),
-        1,
+        MetadataVersion::ONE,
+        MetadataThreshold::ONE,
         root_public_keys,
         local,
         remote,
