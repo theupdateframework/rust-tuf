@@ -2,7 +2,7 @@ use {
     crate::{
         Result, crypto,
         error::Error,
-        metadata::{self, Metadata},
+        metadata::{self, Metadata, MetadataThreshold, MetadataVersion},
     },
     chrono::{offset::Utc, prelude::*},
     semver::Version,
@@ -58,7 +58,7 @@ pub struct RootMetadata {
     #[serde(rename = "_type")]
     typ: metadata::Role,
     spec_version: String,
-    version: u32,
+    version: MetadataVersion,
     consistent_snapshot: bool,
     expires: String,
     #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
@@ -139,7 +139,7 @@ struct RoleDefinitions {
 
 #[derive(Serialize, Deserialize)]
 pub struct RoleDefinition<M: Metadata> {
-    threshold: u32,
+    threshold: MetadataThreshold,
     #[serde(rename = "keyids")]
     key_ids: Vec<crypto::KeyId>,
     #[serde(skip)]
@@ -185,7 +185,7 @@ pub struct TimestampMetadata {
     #[serde(rename = "_type")]
     typ: metadata::Role,
     spec_version: String,
-    version: u32,
+    version: MetadataVersion,
     expires: String,
     meta: TimestampMeta,
     #[serde(flatten)]
@@ -242,7 +242,7 @@ pub struct SnapshotMetadata {
     #[serde(rename = "_type")]
     typ: metadata::Role,
     spec_version: String,
-    version: u32,
+    version: MetadataVersion,
     expires: String,
     #[serde(deserialize_with = "deserialize_reject_duplicates::deserialize")]
     meta: BTreeMap<String, metadata::MetadataDescription<metadata::TargetsMetadata>>,
@@ -310,7 +310,7 @@ pub struct TargetsMetadata {
     #[serde(rename = "_type")]
     typ: metadata::Role,
     spec_version: String,
-    version: u32,
+    version: MetadataVersion,
     expires: String,
     targets: BTreeMap<metadata::TargetPath, metadata::TargetDescription>,
     #[serde(default, skip_serializing_if = "metadata::Delegations::is_empty")]
@@ -415,7 +415,7 @@ pub struct PublicKeyValue {
 pub struct Delegation {
     name: metadata::MetadataPath,
     terminating: bool,
-    threshold: u32,
+    threshold: MetadataThreshold,
     #[serde(rename = "keyids")]
     key_ids: Vec<crypto::KeyId>,
     paths: Vec<metadata::TargetPath>,
@@ -559,7 +559,7 @@ impl TryFrom<TargetDescription> for metadata::TargetDescription {
 
 #[derive(Serialize, Deserialize)]
 pub struct MetadataDescription<M: Metadata> {
-    version: u32,
+    version: MetadataVersion,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     length: Option<usize>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

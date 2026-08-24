@@ -135,7 +135,7 @@ where
         }
     }
 
-    fn metadata_path(&self, meta_path: &MetadataPath, version: MetadataVersion) -> PathBuf {
+    fn metadata_path(&self, meta_path: &MetadataPath, version: Option<MetadataVersion>) -> PathBuf {
         let mut path = self.metadata_path.clone();
         path.extend(meta_path.components::<D>(version));
         path
@@ -150,7 +150,7 @@ where
     fn fetch_metadata_from_path(
         &self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         path: &Path,
     ) -> BoxFuture<'_, Result<Box<dyn AsyncRead + Send + Unpin + '_>>> {
         let reader = File::open(path).map_err(|err| {
@@ -207,7 +207,7 @@ where
     fn fetch_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         let path = self.metadata_path(meta_path, version);
         self.fetch_metadata_from_path(meta_path, version, &path)
@@ -229,7 +229,7 @@ where
     fn store_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         let path = self.metadata_path(meta_path, version);
@@ -384,7 +384,7 @@ where
     fn fetch_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         let path = self.parent_repo.metadata_path(meta_path, version);
         if let Some(temp_path) = self.metadata.read().unwrap().get(&path) {
@@ -417,7 +417,7 @@ where
     fn store_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         read: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         let path = self.parent_repo.metadata_path(meta_path, version);
@@ -511,7 +511,7 @@ mod test {
                 Repository::<_, Pouf1>::new(repo)
                     .fetch_metadata::<RootMetadata>(
                         &MetadataPath::root(),
-                        MetadataVersion::None,
+                        None,
                         None,
                         vec![],
                     )
@@ -520,7 +520,7 @@ mod test {
                     path,
                     version,
                 })
-                if path == MetadataPath::root() && version == MetadataVersion::None
+                if path == MetadataPath::root() && version.is_none()
             );
         })
     }
@@ -585,7 +585,7 @@ mod test {
                 .build();
 
             let meta_path = MetadataPath::new("meta").unwrap();
-            let meta_version = MetadataVersion::None;
+            let meta_version = None;
             let target_path = TargetPath::new("target").unwrap();
 
             // First, write some stuff to the repository.
@@ -694,7 +694,7 @@ mod test {
 
             repo.store_metadata(
                 &MetadataPath::new("meta1").unwrap(),
-                MetadataVersion::None,
+                None,
                 &mut "meta1".as_bytes(),
             )
             .await
@@ -707,7 +707,7 @@ mod test {
 
             repo.store_metadata(
                 &MetadataPath::new("meta2").unwrap(),
-                MetadataVersion::None,
+                None,
                 &mut "meta2".as_bytes(),
             )
             .await
@@ -716,7 +716,7 @@ mod test {
             batch
                 .store_metadata(
                     &MetadataPath::new("meta3").unwrap(),
-                    MetadataVersion::None,
+                    None,
                     &mut "meta3".as_bytes(),
                 )
                 .await

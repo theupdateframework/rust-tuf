@@ -17,19 +17,23 @@ use {
 pub(crate) enum Track {
     Store {
         path: MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         metadata: String,
     },
     FetchFound {
         path: MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         metadata: String,
     },
-    FetchErr(MetadataPath, MetadataVersion),
+    FetchErr(MetadataPath, Option<MetadataVersion>),
 }
 
 impl Track {
-    pub(crate) fn store<T>(meta_path: &MetadataPath, version: MetadataVersion, metadata: T) -> Self
+    pub(crate) fn store<T>(
+        meta_path: &MetadataPath,
+        version: Option<MetadataVersion>,
+        metadata: T,
+    ) -> Self
     where
         T: Into<Vec<u8>>,
     {
@@ -41,7 +45,7 @@ impl Track {
     }
 
     pub(crate) fn store_meta<M, D>(
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         metadata: &RawSignedMetadata<D, M>,
     ) -> Self
     where
@@ -53,7 +57,7 @@ impl Track {
 
     pub(crate) fn fetch_found<T>(
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         metadata: T,
     ) -> Self
     where
@@ -67,7 +71,7 @@ impl Track {
     }
 
     pub(crate) fn fetch_meta_found<M, D>(
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         metadata: &RawSignedMetadata<D, M>,
     ) -> Self
     where
@@ -109,7 +113,7 @@ where
     fn store_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>> {
         let meta_path = meta_path.clone();
@@ -149,7 +153,7 @@ where
     fn fetch_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         let meta_path = meta_path.clone();
         async move {

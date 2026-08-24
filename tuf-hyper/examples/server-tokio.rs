@@ -25,6 +25,7 @@ use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -186,11 +187,11 @@ async fn fetch_from_repo_provider<R: RepositoryProvider<Pouf1>>(
 
         let stem = &filename[..filename.len() - ext.len()];
         let (version, role_str) = match stem.split_once('.') {
-            Some((ver_str, r_str)) => match ver_str.parse::<u32>() {
-                Ok(num) => (MetadataVersion::Number(num), r_str),
-                Err(_) => (MetadataVersion::None, stem),
+            Some((ver_str, r_str)) => match ver_str.parse::<NonZeroU32>() {
+                Ok(num) => (Some(MetadataVersion::new(num)), r_str),
+                Err(_) => (None, stem),
             },
-            None => (MetadataVersion::None, stem),
+            None => (None, stem),
         };
 
         let role_path_str = if dir_prefix.is_empty() {

@@ -50,7 +50,7 @@ where
     fn fetch_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>>;
 
     /// Fetch the given target.
@@ -72,7 +72,7 @@ where
 pub(crate) async fn fetch_metadata_to_string<D, R>(
     repo: &R,
     meta_path: &MetadataPath,
-    version: MetadataVersion,
+    version: Option<MetadataVersion>,
 ) -> Result<String>
 where
     D: Pouf,
@@ -113,7 +113,7 @@ where
     fn store_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         metadata: &'a mut (dyn AsyncRead + Send + Unpin),
     ) -> BoxFuture<'a, Result<()>>;
 
@@ -149,7 +149,7 @@ macro_rules! impl_provider {
             fn fetch_metadata<'a>(
                 &'a self,
                 meta_path: &MetadataPath,
-                version: MetadataVersion,
+                version: Option<MetadataVersion>,
             ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
                 (**self).fetch_metadata(meta_path, version)
             }
@@ -177,7 +177,7 @@ macro_rules! impl_storage {
             fn store_metadata<'a>(
                 &'a self,
                 meta_path: &MetadataPath,
-                version: MetadataVersion,
+                version: Option<MetadataVersion>,
                 metadata: &'a mut (dyn AsyncRead + Send + Unpin),
             ) -> BoxFuture<'a, Result<()>> {
                 (**self).store_metadata(meta_path, version, metadata)
@@ -260,7 +260,7 @@ where
     pub(crate) async fn fetch_metadata<'a, M>(
         &'a self,
         meta_path: &'a MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         max_length: Option<usize>,
         hashes: Vec<(&'static HashAlgorithm, HashValue)>,
     ) -> Result<RawSignedMetadata<D, M>>
@@ -346,7 +346,7 @@ where
     pub async fn store_metadata<'a, M>(
         &'a mut self,
         path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
         metadata: &'a RawSignedMetadata<D, M>,
     ) -> Result<()>
     where
@@ -372,7 +372,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::metadata::{MetadataPath, MetadataVersion, RootMetadata, SnapshotMetadata};
+    use crate::metadata::{MetadataPath, RootMetadata, SnapshotMetadata};
     use crate::pouf::Pouf1;
     use crate::repository::EphemeralRepository;
     use assert_matches::assert_matches;
@@ -386,13 +386,13 @@ mod test {
             assert_matches!(
                 repo.fetch_metadata::<RootMetadata>(
                     &MetadataPath::root(),
-                    MetadataVersion::None,
+                    None,
                     None,
                     vec![],
                 )
                 .await,
                 Err(Error::MetadataNotFound { path, version })
-                if path == MetadataPath::root() && version == MetadataVersion::None
+                if path == MetadataPath::root() && version.is_none()
             );
         });
     }
@@ -403,28 +403,19 @@ mod test {
             let mut repo = Repository::<_, Pouf1>::new(EphemeralRepository::new());
             let fake_metadata = RawSignedMetadata::<Pouf1, RootMetadata>::new(vec![]);
 
-            repo.store_metadata(&MetadataPath::root(), MetadataVersion::None, &fake_metadata)
+            repo.store_metadata(&MetadataPath::root(), None, &fake_metadata)
                 .await
                 .unwrap();
 
             assert_matches!(
-                repo.store_metadata(
-                    &MetadataPath::snapshot(),
-                    MetadataVersion::None,
-                    &fake_metadata,
-                )
-                .await,
+                repo.store_metadata(&MetadataPath::snapshot(), None, &fake_metadata,)
+                    .await,
                 Err(Error::IllegalArgument(_))
             );
 
             assert_matches!(
-                repo.fetch_metadata::<SnapshotMetadata>(
-                    &MetadataPath::root(),
-                    MetadataVersion::None,
-                    None,
-                    vec![],
-                )
-                .await,
+                repo.fetch_metadata::<SnapshotMetadata>(&MetadataPath::root(), None, None, vec![],)
+                    .await,
                 Err(Error::IllegalArgument(_))
             );
         });
@@ -434,7 +425,7 @@ mod test {
     fn repository_verifies_metadata_hash() {
         block_on(async {
             let path = MetadataPath::root();
-            let version = MetadataVersion::None;
+            let version = None;
             let data: &[u8] = b"valid metadata";
             let _metadata = RawSignedMetadata::<Pouf1, RootMetadata>::new(data.to_vec());
             let data_hash = crypto::calculate_hash(data, &HashAlgorithm::Sha256);
@@ -464,7 +455,7 @@ mod test {
     fn repository_rejects_corrupt_metadata() {
         block_on(async {
             let path = MetadataPath::root();
-            let version = MetadataVersion::None;
+            let version = None;
             let data: &[u8] = b"corrupt metadata";
 
             let repo = EphemeralRepository::new();
@@ -492,7 +483,7 @@ mod test {
     fn repository_verifies_metadata_size() {
         block_on(async {
             let path = MetadataPath::root();
-            let version = MetadataVersion::None;
+            let version = None;
             let data: &[u8] = b"reasonably sized metadata";
             let _metadata = RawSignedMetadata::<Pouf1, RootMetadata>::new(data.to_vec());
 
@@ -516,7 +507,7 @@ mod test {
     fn repository_rejects_oversized_metadata() {
         block_on(async {
             let path = MetadataPath::root();
-            let version = MetadataVersion::None;
+            let version = None;
             let data: &[u8] = b"very big metadata";
 
             let repo = EphemeralRepository::new();

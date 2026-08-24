@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crate::crypto::{KeyId, PublicKey, Signature};
 use crate::error::Error;
-use crate::metadata::{Metadata, MetadataPath, RawSignedMetadata};
+use crate::metadata::{Metadata, MetadataPath, MetadataThreshold, RawSignedMetadata};
 use crate::pouf::Pouf;
 
 /// `Verified` is a wrapper type that signifies the inner type has had it's signature verified.
@@ -37,7 +37,7 @@ impl<T> std::ops::Deref for Verified<T> {
 /// # use chrono::prelude::*;
 /// # use tuf::crypto::{Ed25519PrivateKey, PrivateKey, SignatureScheme, HashAlgorithm};
 /// # use tuf::pouf::Pouf1;
-/// # use tuf::metadata::{MetadataPath, SnapshotMetadataBuilder, SignedMetadata};
+/// # use tuf::metadata::{MetadataPath, MetadataThreshold, SnapshotMetadataBuilder, SignedMetadata};
 /// # use tuf::verify::verify_signatures;
 ///
 /// let key_1: &[u8] = include_bytes!("../tests/ed25519/ed25519-1.pk8.der");
@@ -55,7 +55,7 @@ impl<T> std::ops::Deref for Verified<T> {
 /// assert!(verify_signatures(
 ///     &MetadataPath::snapshot(),
 ///     &raw_snapshot,
-///     1,
+///     MetadataThreshold::ONE,
 ///     vec![key_1.public()],
 /// ).is_ok());
 ///
@@ -63,7 +63,7 @@ impl<T> std::ops::Deref for Verified<T> {
 /// assert!(verify_signatures(
 ///     &MetadataPath::snapshot(),
 ///     &raw_snapshot,
-///     2,
+///     MetadataThreshold::new(2.try_into().unwrap()),
 ///     vec![key_1.public()],
 /// ).is_err());
 ///
@@ -71,7 +71,7 @@ impl<T> std::ops::Deref for Verified<T> {
 /// assert!(verify_signatures(
 ///     &MetadataPath::snapshot(),
 ///     &raw_snapshot,
-///     1,
+///     MetadataThreshold::ONE,
 ///     vec![key_2.public()],
 /// ).is_err());
 ///
@@ -79,13 +79,13 @@ impl<T> std::ops::Deref for Verified<T> {
 /// assert!(verify_signatures(
 ///     &MetadataPath::snapshot(),
 ///     &raw_snapshot,
-///     1,
+///     MetadataThreshold::ONE,
 ///     &[],
 /// ).is_err());
 pub fn verify_signatures<'a, D, M, I>(
     role: &MetadataPath,
     raw_metadata: &RawSignedMetadata<D, M>,
-    threshold: u32,
+    threshold: MetadataThreshold,
     authorized_keys: I,
 ) -> Result<Verified<M>, Error>
 where
@@ -93,10 +93,6 @@ where
     M: Metadata,
     I: IntoIterator<Item = &'a PublicKey>,
 {
-    if threshold < 1 {
-        return Err(Error::MetadataThresholdMustBeGreaterThanZero(role.clone()));
-    }
-
     let authorized_keys = authorized_keys
         .into_iter()
         .map(|k| (k.key_id(), k))
@@ -116,7 +112,7 @@ where
         (unverified.signatures, canonical_bytes)
     };
 
-    let mut signatures_needed = threshold;
+    let mut signatures_needed: u32 = threshold.get();
 
     // Create a key_id->signature map to deduplicate the key_ids.
     let signatures = signatures
@@ -129,7 +125,7 @@ where
             Some(pub_key) => match pub_key.verify(role, &canonical_bytes, sig) {
                 Ok(()) => {
                     debug!("Good signature from key ID {:?}", pub_key.key_id());
-                    signatures_needed -= 1;
+                    signatures_needed = signatures_needed.saturating_sub(1);
                 }
                 Err(e) => {
                     warn!("Bad signature from key ID {:?}: {:?}", pub_key.key_id(), e);
@@ -150,7 +146,7 @@ where
     if signatures_needed > 0 {
         return Err(Error::MetadataMissingSignatures {
             role: role.clone(),
-            number_of_valid_signatures: threshold - signatures_needed,
+            number_of_valid_signatures: threshold.get().saturating_sub(signatures_needed),
             threshold,
         });
     }

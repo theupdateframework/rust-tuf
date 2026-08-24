@@ -284,7 +284,7 @@ where
     fn fetch_metadata<'a>(
         &'a self,
         meta_path: &MetadataPath,
-        version: MetadataVersion,
+        version: Option<MetadataVersion>,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
         let meta_path = meta_path.clone();
         let components = meta_path.components::<D>(version);
@@ -559,7 +559,7 @@ mod test {
         .build();
 
         let err = repo
-            .fetch_metadata(&MetadataPath::root(), MetadataVersion::Number(1))
+            .fetch_metadata(&MetadataPath::root(), Some(MetadataVersion::ONE))
             .await
             .err()
             .expect("expected fetch_metadata to fail");
@@ -585,7 +585,7 @@ mod test {
         .build();
 
         let err = repo
-            .fetch_metadata(&MetadataPath::root(), MetadataVersion::Number(1))
+            .fetch_metadata(&MetadataPath::root(), Some(MetadataVersion::ONE))
             .await
             .err()
             .expect("expected fetch_metadata to fail");
@@ -642,7 +642,7 @@ mod test {
         .build();
 
         let err = repo
-            .fetch_metadata(&MetadataPath::root(), MetadataVersion::Number(1))
+            .fetch_metadata(&MetadataPath::root(), Some(MetadataVersion::ONE))
             .await
             .err()
             .expect("expected fetch_metadata to fail");
@@ -720,7 +720,7 @@ mod test {
         .build();
 
         let mut reader = repo
-            .fetch_metadata(&MetadataPath::root(), MetadataVersion::Number(1))
+            .fetch_metadata(&MetadataPath::root(), Some(MetadataVersion::ONE))
             .await
             .expect("expected fetch_metadata to succeed");
         let mut buf = Vec::new();
@@ -771,7 +771,7 @@ mod test {
         .build();
 
         let err = repo
-            .fetch_metadata(&MetadataPath::root(), MetadataVersion::Number(1))
+            .fetch_metadata(&MetadataPath::root(), Some(MetadataVersion::ONE))
             .await
             .err()
             .expect("expected fetch_metadata to fail");
@@ -779,7 +779,7 @@ mod test {
         match err {
             Error::MetadataNotFound { path, version } => {
                 assert_eq!(path, MetadataPath::root());
-                assert_eq!(version, MetadataVersion::Number(1));
+                assert_eq!(version, Some(MetadataVersion::ONE));
             }
             other => panic!("expected Error::MetadataNotFound, got {:?}", other),
         }
@@ -833,7 +833,7 @@ mod test {
         .build();
 
         let err_meta = repo
-            .fetch_metadata(&MetadataPath::root(), MetadataVersion::Number(1))
+            .fetch_metadata(&MetadataPath::root(), Some(MetadataVersion::ONE))
             .await
             .err()
             .expect("expected fetch_metadata to fail on 500");
@@ -909,7 +909,7 @@ mod test {
         .build();
 
         let mut reader = repo
-            .fetch_metadata(&MetadataPath::root(), MetadataVersion::Number(1))
+            .fetch_metadata(&MetadataPath::root(), Some(MetadataVersion::ONE))
             .await
             .expect("should succeed with injected header");
         let mut buf = Vec::new();
