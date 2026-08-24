@@ -1881,14 +1881,10 @@ mod test {
         let root_path = MetadataPath::root();
         let timestamp_path = MetadataPath::timestamp();
 
-        let targets_version;
-        let snapshot_version;
-        if consistent_snapshot {
-            targets_version = MetadataVersion::Number(1);
-            snapshot_version = MetadataVersion::Number(1);
+        let (targets_version, snapshot_version) = if consistent_snapshot {
+            (MetadataVersion::Number(1), MetadataVersion::Number(1))
         } else {
-            targets_version = MetadataVersion::None;
-            snapshot_version = MetadataVersion::None;
+            (MetadataVersion::None, MetadataVersion::None)
         };
 
         // Now, make sure that the local metadata got version 1.
