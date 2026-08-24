@@ -135,6 +135,15 @@ pub enum Error {
         key_id: KeyId,
     },
 
+    /// The metadata signatures array has a duplicate keyid per TUF §4.2.1.
+    #[error("metadata {role} signatures has duplicate key id {key_id}")]
+    MetadataSignaturesHasDuplicateKeyId {
+        /// The metadata role.
+        role: MetadataPath,
+        /// The duplicated key id.
+        key_id: KeyId,
+    },
+
     /// The metadata role does not have enough keyids.
     #[error("metadata role {role} has {key_ids} keyid(s), must have at least {threshold}")]
     MetadataRoleDoesNotHaveEnoughKeyIds {
