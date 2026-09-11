@@ -2823,12 +2823,11 @@ mod test {
                 TWO.into(),
                 &[root_key.public().clone()]
             ),
-            Err(Error::MetadataMissingSignatures {
+            Err(Error::MetadataSignaturesHasDuplicateKeyId {
                 role,
-                number_of_valid_signatures: 1,
-                threshold: MetadataThreshold(TWO),
+                key_id,
             })
-            if role == MetadataPath::root()
+            if role == MetadataPath::root() && key_id == *root_key.public().key_id()
         );
         assert_matches!(
             verify_signatures(
@@ -2837,7 +2836,7 @@ mod test {
                 MetadataThreshold::ONE,
                 &[root_key.public().clone()]
             ),
-            Ok(_)
+            Err(Error::MetadataSignaturesHasDuplicateKeyId { .. })
         );
     }
 
