@@ -588,18 +588,21 @@ impl<D: Pouf> Database<D> {
             }
 
             /////////////////////////////////////////
-            // TUF-1.0.5 §5.3.4:
+            // TUF v1.0.36 §5.5.6 (https://theupdateframework.github.io/specification/v1.0.36/#update-snapshot):
             //
-            //     Check for a freeze attack. The latest known time should be lower than the
-            //     expiration timestamp in the new snapshot metadata file. If so, the new snapshot
+            //     Check for a freeze attack. The expiration timestamp in the new snapshot metadata
+            //     file MUST be higher than the fixed update start time. If so, the new snapshot
             //     metadata file becomes the trusted snapshot metadata file. If the new snapshot
             //     metadata file is expired, discard it, abort the update cycle, and report the
             //     potential freeze attack.
 
-            /////////////////////////////////////////
-            // FIXME(#297): Verify why we don't check expiration here:
-            // Note: this doesn't check the expiration because we need to be able to update it
-            // regardless so we can prevent rollback attacks againsts targets/delegations.
+            if new_snapshot.expires() <= start_time {
+                return Err(Error::ExpiredMetadata {
+                    path: MetadataPath::snapshot(),
+                    expiration: *new_snapshot.expires(),
+                    now: *start_time,
+                });
+            }
 
             new_snapshot
         };
@@ -1559,6 +1562,95 @@ mod test {
             .unwrap();
 
         assert!(tuf.update_snapshot(&now, &raw_snapshot).is_err());
+    }
+
+    #[test]
+    fn bad_snapshot_update_expired() {
+        let now = DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap();
+        let expired_time = now - chrono::Duration::seconds(10);
+
+        let raw_root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[2].public().clone())
+            .signed::<Pouf1>(&KEYS[0])
+            .unwrap()
+            .to_raw()
+            .unwrap();
+
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
+
+        let snapshot = SnapshotMetadataBuilder::new()
+            .expires(expired_time)
+            .signed::<Pouf1>(&KEYS[1])
+            .unwrap();
+
+        let raw_timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Pouf1>(&KEYS[2])
+                .unwrap()
+                .to_raw()
+                .unwrap();
+
+        tuf.update_timestamp(&now, &raw_timestamp).unwrap();
+
+        let raw_snapshot = snapshot.to_raw().unwrap();
+
+        assert_matches!(
+            tuf.update_snapshot(&now, &raw_snapshot),
+            Err(Error::ExpiredMetadata {
+                path,
+                expiration,
+                now: start
+            })
+            if path == MetadataPath::snapshot() && expiration == expired_time && start == now
+        );
+    }
+
+    #[test]
+    fn bad_snapshot_update_expired_equal_time() {
+        let now = DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap();
+
+        let raw_root = RootMetadataBuilder::new()
+            .root_key(KEYS[0].public().clone())
+            .snapshot_key(KEYS[1].public().clone())
+            .targets_key(KEYS[2].public().clone())
+            .timestamp_key(KEYS[2].public().clone())
+            .signed::<Pouf1>(&KEYS[0])
+            .unwrap()
+            .to_raw()
+            .unwrap();
+
+        let mut tuf = Database::from_trusted_root(&raw_root).unwrap();
+
+        let snapshot = SnapshotMetadataBuilder::new()
+            .expires(now)
+            .signed::<Pouf1>(&KEYS[1])
+            .unwrap();
+
+        let raw_timestamp =
+            TimestampMetadataBuilder::from_snapshot(&snapshot, &[HashAlgorithm::Sha256])
+                .unwrap()
+                .signed::<Pouf1>(&KEYS[2])
+                .unwrap()
+                .to_raw()
+                .unwrap();
+
+        tuf.update_timestamp(&now, &raw_timestamp).unwrap();
+
+        let raw_snapshot = snapshot.to_raw().unwrap();
+
+        assert_matches!(
+            tuf.update_snapshot(&now, &raw_snapshot),
+            Err(Error::ExpiredMetadata {
+                path,
+                expiration,
+                now: start
+            })
+            if path == MetadataPath::snapshot() && expiration == now && start == now
+        );
     }
 
     #[test]
