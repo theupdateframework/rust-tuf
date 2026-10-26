@@ -40,9 +40,12 @@
 
 use chrono::{DateTime, offset::Utc};
 use futures_io::AsyncRead;
+use futures_util::io::{copy, sink};
 use log::{error, warn};
 use std::future::Future;
+use std::io;
 use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use crate::crypto::{self, HashAlgorithm, HashValue, PublicKey};
 use crate::database::Database;
@@ -67,6 +70,32 @@ where
     tuf: Database<D>,
     local: Repository<L, D>,
     remote: Repository<R, D>,
+}
+
+enum CachedOrRemoteTarget<L, R> {
+    Cached(L),
+    Remote(R),
+}
+
+impl<L, R> AsyncRead for CachedOrRemoteTarget<L, R>
+where
+    L: AsyncRead + Unpin,
+    R: AsyncRead + Unpin,
+{
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        match self.get_mut() {
+            CachedOrRemoteTarget::Cached(read) => Pin::new(read).poll_read(cx, buf),
+            CachedOrRemoteTarget::Remote(read) => Pin::new(read).poll_read(cx, buf),
+        }
+    }
+}
+
+fn is_cache_read_error(err: &Error) -> bool {
+    matches!(err, Error::Io(_) | Error::IoPath { .. })
 }
 
 impl<D, L, R> Client<D, L, R>
@@ -833,11 +862,13 @@ where
         }
     }
 
-    /// Fetch a target from the remote repo.
+    /// Fetch a target from the local cache, falling back to the remote repo.
     ///
-    /// It is **critical** that none of the bytes written to the `write` are used until this future
-    /// returns `Ok`, as the hash of the target is not verified until all bytes are read from the
-    /// repository.
+    /// Missing or invalid cached targets and cache lookup I/O errors are treated as cache misses.
+    /// Other errors are propagated.
+    ///
+    /// It is **critical** that none of the returned bytes are used until the reader has been
+    /// fully consumed without error, as the hash is verified at the end of the stream.
     pub async fn fetch_target(
         &mut self,
         target: &TargetPath,
@@ -845,11 +876,13 @@ where
         self.fetch_target_with_start_time(target, &Utc::now()).await
     }
 
-    /// Fetch a target from the remote repo.
+    /// Fetch a target from the local cache, falling back to the remote repo.
     ///
-    /// It is **critical** that none of the bytes written to the `write` are used until this future
-    /// returns `Ok`, as the hash of the target is not verified until all bytes are read from the
-    /// repository.
+    /// Missing or invalid cached targets and cache lookup I/O errors are treated as cache misses.
+    /// Other errors are propagated.
+    ///
+    /// It is **critical** that none of the returned bytes are used until the reader has been
+    /// fully consumed without error, as the hash is verified at the end of the stream.
     pub async fn fetch_target_with_start_time(
         &mut self,
         target: &TargetPath,
@@ -859,31 +892,76 @@ where
             .fetch_target_description_with_start_time(target, start_time)
             .await?;
 
-        // TODO: Check the local repository to see if it already has the target.
-        self.remote
+        if let Some(read) = self
+            .find_cached_target_inner(target, target_description.clone())
+            .await?
+        {
+            return Ok(CachedOrRemoteTarget::Cached(read));
+        }
+
+        let read = self
+            .remote
             .fetch_target(
                 self.tuf.trusted_root().consistent_snapshot(),
                 target,
                 target_description,
             )
+            .await?;
+
+        Ok(CachedOrRemoteTarget::Remote(read))
+    }
+
+    /// Check whether a target is already cached locally and still matches trusted metadata.
+    ///
+    /// Metadata lookup may access the remote repo. A valid cache is returned as a streaming
+    /// reader, not an in-memory copy. Missing or invalid cached targets and cache lookup I/O
+    /// errors return `None`; other errors are propagated. Fully consume a returned reader without
+    /// error before using its bytes, since the local file may have changed after initial validation.
+    pub async fn find_cached_target(
+        &mut self,
+        target: &TargetPath,
+    ) -> Result<Option<impl AsyncRead + Send + Unpin + '_ + use<'_, D, L, R>>> {
+        let now = Utc::now();
+        self.find_cached_target_with_start_time(target, &now).await
+    }
+
+    /// Check whether a target is already cached locally and still matches trusted metadata.
+    ///
+    /// Metadata lookup may access the remote repo. Missing or invalid cached targets and cache
+    /// lookup I/O errors return `None`; other errors are propagated. Fully consume a returned
+    /// reader without error before using its bytes, since the cache is revalidated while it is read.
+    pub async fn find_cached_target_with_start_time(
+        &mut self,
+        target: &TargetPath,
+        start_time: &DateTime<Utc>,
+    ) -> Result<Option<impl AsyncRead + Send + Unpin + '_ + use<'_, D, L, R>>> {
+        let target_description = self
+            .fetch_target_description_with_start_time(target, start_time)
+            .await?;
+
+        self.find_cached_target_inner(target, target_description)
             .await
     }
 
-    /// Fetch a target from the remote repo and write it to the local repo.
+    /// Reuse a valid local target, or fetch it from the remote repo and store it locally.
     ///
-    /// It is **critical** that none of the bytes written to the `write` are used until this future
-    /// returns `Ok`, as the hash of the target is not verified until all bytes are read from the
-    /// repository.
+    /// Missing or invalid cached targets and cache lookup I/O errors trigger a remote fetch.
+    /// Other errors, including remote fetch and local storage errors, are propagated.
+    /// Use the local target only after this future returns `Ok`. Cached targets are verified
+    /// without being rewritten. This does not prevent concurrent or subsequent changes to local
+    /// storage; callers must protect it from untrusted writes.
     pub async fn fetch_target_to_local(&mut self, target: &TargetPath) -> Result<()> {
         self.fetch_target_to_local_with_start_time(target, &Utc::now())
             .await
     }
 
-    /// Fetch a target from the remote repo and write it to the local repo.
+    /// Reuse a valid local target, or fetch it from the remote repo and store it locally.
     ///
-    /// It is **critical** that none of the bytes written to the `write` are used until this future
-    /// returns `Ok`, as the hash of the target is not verified until all bytes are read from the
-    /// repository.
+    /// Missing or invalid cached targets and cache lookup I/O errors trigger a remote fetch.
+    /// Other errors, including remote fetch and local storage errors, are propagated.
+    /// Use the local target only after this future returns `Ok`. Cached targets are verified
+    /// without being rewritten. This does not prevent concurrent or subsequent changes to local
+    /// storage; callers must protect it from untrusted writes.
     pub async fn fetch_target_to_local_with_start_time(
         &mut self,
         target: &TargetPath,
@@ -893,6 +971,13 @@ where
             .fetch_target_description_with_start_time(target, start_time)
             .await?;
 
+        if self
+            .validate_cached_target(target, target_description.clone())
+            .await?
+        {
+            return Ok(());
+        }
+
         // Since the async read we fetch from the remote repository has internal
         // lifetimes, we need to break up client into sub-objects so that rust
         // won't complain about trying to borrow `&self` for the fetch, and
@@ -901,7 +986,6 @@ where
             tuf, local, remote, ..
         } = self;
 
-        // TODO: Check the local repository to see if it already has the target.
         let mut read = remote
             .fetch_target(
                 tuf.trusted_root().consistent_snapshot(),
@@ -911,6 +995,65 @@ where
             .await?;
 
         local.store_target(target, &mut read).await
+    }
+
+    async fn find_cached_target_inner(
+        &self,
+        target: &TargetPath,
+        target_description: TargetDescription,
+    ) -> Result<Option<impl AsyncRead + Send + Unpin + '_ + use<'_, D, L, R>>> {
+        if !self
+            .validate_cached_target(target, target_description.clone())
+            .await?
+        {
+            return Ok(None);
+        }
+
+        // The file may have changed since validation, so the returned stream also verifies it.
+        match self
+            .local
+            .fetch_target(false, target, target_description)
+            .await
+        {
+            Ok(read) => Ok(Some(read)),
+            Err(Error::TargetNotFound(_)) => Ok(None),
+            Err(err) if is_cache_read_error(&err) => {
+                warn!("Unable to read cached target {:?}: {:?}", target, err);
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    async fn validate_cached_target(
+        &self,
+        target: &TargetPath,
+        target_description: TargetDescription,
+    ) -> Result<bool> {
+        let mut read = match self
+            .local
+            .fetch_target(false, target, target_description)
+            .await
+        {
+            Ok(read) => read,
+            Err(Error::TargetNotFound(_)) => return Ok(false),
+            Err(err) if is_cache_read_error(&err) => {
+                warn!("Unable to read cached target {:?}: {:?}", target, err);
+                return Ok(false);
+            }
+            Err(err) => return Err(err),
+        };
+
+        match copy(&mut read, &mut sink()).await {
+            Ok(_) => Ok(true),
+            Err(err) => {
+                warn!(
+                    "Invalid or unreadable cached target {:?}: {:?}",
+                    target, err
+                );
+                Ok(false)
+            }
+        }
     }
 
     /// Fetch a target description from the remote repo and return it.
@@ -1308,11 +1451,13 @@ mod test {
     use crate::pouf::Pouf1;
     use crate::repo_builder::RepoBuilder;
     use crate::repository::{
-        EphemeralRepository, ErrorRepository, Track, TrackRepository, fetch_metadata_to_string,
+        EphemeralRepository, ErrorRepository, FileSystemRepository, Track, TrackRepository,
+        fetch_metadata_to_string,
     };
     use assert_matches::assert_matches;
     use chrono::prelude::*;
     use futures_executor::block_on;
+    use futures_util::io::{AsyncReadExt, Cursor};
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use serde_json::json;
@@ -2082,6 +2227,194 @@ mod test {
             )
             .unwrap(),
         ));
+    }
+
+    #[test]
+    fn find_cached_target_allows_fetch_target_without_remote() {
+        block_on(async {
+            let target_path = TargetPath::new("cached-target").unwrap();
+            let target_bytes: &[u8] = b"cached target bytes";
+
+            let mut remote = EphemeralRepository::<Pouf1>::new();
+            let metadata = RepoBuilder::create(&mut remote)
+                .trusted_root_keys(&[&KEYS[0]])
+                .trusted_targets_keys(&[&KEYS[0]])
+                .trusted_snapshot_keys(&[&KEYS[0]])
+                .trusted_timestamp_keys(&[&KEYS[0]])
+                .stage_root()
+                .unwrap()
+                .add_target(target_path.clone(), Cursor::new(target_bytes))
+                .await
+                .unwrap()
+                .commit()
+                .await
+                .unwrap();
+
+            let local_dir = tempfile::tempdir().unwrap();
+            let mut client = Client::with_trusted_root(
+                Config::default(),
+                metadata.root().unwrap(),
+                ErrorRepository::new(FileSystemRepository::<Pouf1>::new(local_dir.path())),
+                remote,
+            )
+            .await
+            .unwrap();
+
+            client.update().await.unwrap();
+            assert!(
+                client
+                    .find_cached_target(&target_path)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+
+            client.fetch_target_to_local(&target_path).await.unwrap();
+
+            for corrupted in [
+                vec![b'x'; target_bytes.len()],
+                target_bytes[..5].to_vec(),
+                vec![b'x'; target_bytes.len() + 1],
+            ] {
+                client
+                    .local
+                    .store_target(&target_path, &mut Cursor::new(corrupted))
+                    .await
+                    .unwrap();
+                assert!(
+                    client
+                        .find_cached_target(&target_path)
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
+                {
+                    let mut fetched = client.fetch_target(&target_path).await.unwrap();
+                    let mut bytes = Vec::new();
+                    fetched.read_to_end(&mut bytes).await.unwrap();
+                    assert_eq!(bytes, target_bytes);
+                }
+                client.fetch_target_to_local(&target_path).await.unwrap();
+            }
+
+            let cached_target_path = local_dir.path().join("targets/cached-target");
+            for with_path in [false, true] {
+                let read_error = || {
+                    let err = io::Error::from(io::ErrorKind::PermissionDenied);
+                    if with_path {
+                        Error::IoPath {
+                            path: cached_target_path.clone(),
+                            err,
+                        }
+                    } else {
+                        Error::Io(err)
+                    }
+                };
+                for reopen in [false, true] {
+                    let errors = || {
+                        if reopen {
+                            vec![None, Some(read_error())]
+                        } else {
+                            vec![Some(read_error())]
+                        }
+                    };
+                    client.local_repo().set_target_fetch_errors(errors());
+                    assert!(
+                        client
+                            .find_cached_target(&target_path)
+                            .await
+                            .unwrap()
+                            .is_none()
+                    );
+                    client.local_repo().set_target_fetch_errors(errors());
+                    let mut fetched = client.fetch_target(&target_path).await.unwrap();
+                    let mut bytes = Vec::new();
+                    fetched.read_to_end(&mut bytes).await.unwrap();
+                    assert_eq!(bytes, target_bytes);
+                }
+                client
+                    .local_repo()
+                    .set_target_fetch_errors(vec![Some(read_error())]);
+                client.fetch_target_to_local(&target_path).await.unwrap();
+            }
+
+            for err in [
+                Error::Opaque("backend failure".into()),
+                Error::Repository {
+                    uri: "local-cache".into(),
+                    err: Box::new(io::Error::other("backend failure")),
+                },
+                Error::NoSupportedHashAlgorithm,
+                Error::IllegalArgument("invalid target".into()),
+            ] {
+                let expected = std::mem::discriminant(&err);
+                client.local_repo().set_target_fetch_errors(vec![Some(err)]);
+                match client.find_cached_target(&target_path).await {
+                    Err(err) => assert_eq!(std::mem::discriminant(&err), expected),
+                    Ok(_) => panic!("non-I/O error must be propagated"),
+                }
+            }
+
+            std::fs::remove_file(&cached_target_path).unwrap();
+            std::fs::create_dir(&cached_target_path).unwrap();
+            assert!(
+                client
+                    .find_cached_target(&target_path)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            {
+                let mut fetched = client.fetch_target(&target_path).await.unwrap();
+                let mut bytes = Vec::new();
+                fetched.read_to_end(&mut bytes).await.unwrap();
+                assert_eq!(bytes, target_bytes);
+            }
+            assert_matches!(
+                client.fetch_target_to_local(&target_path).await,
+                Err(Error::IoPath { .. })
+            );
+            std::fs::remove_dir(&cached_target_path).unwrap();
+            client.fetch_target_to_local(&target_path).await.unwrap();
+
+            let mut parts = client.into_parts();
+            parts.remote = EphemeralRepository::new();
+            let mut client = Client::from_parts(parts);
+
+            let mut cached = client
+                .find_cached_target(&target_path)
+                .await
+                .unwrap()
+                .unwrap();
+            let mut buf = Vec::new();
+            cached.read_to_end(&mut buf).await.unwrap();
+            assert_eq!(buf, target_bytes);
+            drop(cached);
+
+            {
+                let mut fetched = client.fetch_target(&target_path).await.unwrap();
+                let mut buf = Vec::new();
+                fetched.read_to_end(&mut buf).await.unwrap();
+                assert_eq!(buf, target_bytes);
+            }
+
+            client.fetch_target_to_local(&target_path).await.unwrap();
+
+            client.local_repo().set_target_fetch_errors(vec![Some(
+                io::Error::from(io::ErrorKind::PermissionDenied).into(),
+            )]);
+            assert_matches!(
+                client.fetch_target(&target_path).await.err(),
+                Some(Error::TargetNotFound(path)) if path == target_path
+            );
+            client.local_repo().set_target_fetch_errors(vec![Some(
+                io::Error::from(io::ErrorKind::PermissionDenied).into(),
+            )]);
+            assert_matches!(
+                client.fetch_target_to_local(&target_path).await,
+                Err(Error::TargetNotFound(path)) if path == target_path
+            );
+        });
     }
 
     async fn test_fetch_target_description(path: String, expected_description: TargetDescription) {
