@@ -7,15 +7,19 @@ use {
     },
     futures_io::AsyncRead,
     futures_util::future::{BoxFuture, FutureExt},
-    std::sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
+    std::{
+        collections::VecDeque,
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicBool, Ordering},
+        },
     },
 };
 
 pub(crate) struct ErrorRepository<R> {
     repo: R,
     fail_metadata_stores: Arc<AtomicBool>,
+    target_fetch_errors: Mutex<VecDeque<Option<Error>>>,
 }
 
 impl<R> ErrorRepository<R> {
@@ -23,12 +27,17 @@ impl<R> ErrorRepository<R> {
         Self {
             repo,
             fail_metadata_stores: Arc::new(AtomicBool::new(false)),
+            target_fetch_errors: Mutex::new(VecDeque::new()),
         }
     }
 
     pub(crate) fn fail_metadata_stores(&self, fail_metadata_stores: bool) {
         self.fail_metadata_stores
             .store(fail_metadata_stores, Ordering::SeqCst);
+    }
+
+    pub(crate) fn set_target_fetch_errors(&self, errors: Vec<Option<Error>>) {
+        *self.target_fetch_errors.lock().unwrap() = errors.into();
     }
 }
 
@@ -49,7 +58,11 @@ where
         &'a self,
         target_path: &TargetPath,
     ) -> BoxFuture<'a, Result<Box<dyn AsyncRead + Send + Unpin + 'a>>> {
-        self.repo.fetch_target(target_path)
+        if let Some(Some(err)) = self.target_fetch_errors.lock().unwrap().pop_front() {
+            async { Err(err) }.boxed()
+        } else {
+            self.repo.fetch_target(target_path)
+        }
     }
 }
 
