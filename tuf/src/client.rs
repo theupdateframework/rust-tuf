@@ -995,12 +995,17 @@ where
         }
 
         for delegation in targets.delegations().roles() {
+            // https://theupdateframework.github.io/specification/v1.0.30/#delegations
+            //
+            //     TERMINATING: A boolean indicating whether subsequent delegations should be
+            //     considered if a matching target is not found in this delegation. [...]
+            //     terminating delegations instruct the client not to consider future trust
+            //     statements that match this delegation's pattern [...]
+            //
+            // A delegation whose paths do not cover the target is never searched, so it cannot
+            // terminate the search either.
             if !delegation.paths().iter().any(|p| target.is_child(p)) {
-                if delegation.terminating() {
-                    return (true, Err(Error::TargetNotFound(target.clone())));
-                } else {
-                    continue;
-                }
+                continue;
             }
 
             let role_meta = match snapshot.meta().get(delegation.name()) {
@@ -1109,11 +1114,18 @@ where
                         ));
                     let (term, res): (_, Result<_>) = f.await;
 
-                    if term && res.is_err() {
-                        return (true, res);
+                    // https://theupdateframework.github.io/specification/v1.0.30/#update-targets
+                    // 5.6.7.2.2:
+                    //
+                    //     Stop the search, and jump to step 5.7 as soon as a delegation returns
+                    //     a result.
+                    if res.is_ok() {
+                        return (term, res);
                     }
 
-                    // TODO end recursion early
+                    if term {
+                        return (true, res);
+                    }
                 }
                 Err(_) if !delegation.terminating() => continue,
                 Err(e) => return (true, Err(e)),
